@@ -1,0 +1,32 @@
+name: morning_briefing
+schedule: "0 7 * * *"  # 7am daily
+
+fetch:
+  calendar:
+    image: fetcher-gcal:latest
+    secrets: secrets/gcal.env.enc
+    args:
+      range: today
+
+  weather:
+    image: fetcher-weather:latest
+    args:
+      location: denver
+
+prompt: |
+  You're my personal assistant. Give me a quick rundown of my day.
+
+  Today: {date}
+  Weather: {weather}
+  Calendar: {calendar}
+
+  Keep it under 150 words. Flag any early meetings or conflicts.
+
+output:
+  type: imessage
+  to: "+1XXXXXXXXXX"
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 300
+  secrets: secrets/anthropic.env.enc

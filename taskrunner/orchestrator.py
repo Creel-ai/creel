@@ -1,0 +1,171 @@
+"""Orchestrator - the core task execution loop.
+
+Reads task definitions, runs fetchers, calls LLM, routes output.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+from taskrunner.llm import run_llm
+from taskrunner.models import FetcherConfig, TaskDefinition, load_task
+from taskrunner.outputs import send_output
+from taskrunner.secrets import decrypt_env_file
+
+logger = logging.getLogger(__name__)
+
+
+def run_task(
+    task_path: str | Path,
+    use_containers: bool = False,
+    dry_run: bool = False,
+) -> str:
+    """Execute a complete task: fetch -> LLM -> output.
+
+    Args:
+        task_path: Path to the task YAML file.
+        use_containers: If True, run fetchers/LLM in Docker containers.
+        dry_run: If True, print the rendered prompt but skip LLM and output.
+
+    Returns:
+        The LLM response text (or rendered prompt in dry-run mode).
+    """
+    task = load_task(task_path)
+    logger.info("Running task: %s", task.name)
+
+    # Build context with date info
+    now = datetime.now(timezone.utc)
+    context: dict[str, str] = {
+        "date": now.strftime("%A, %B %d, %Y"),
+    }
+
+    # Run each fetcher and collect results
+    for name, fetcher_config in task.fetch.items():
+        logger.info("Running fetcher: %s", name)
+        try:
+            if use_containers:
+                result = _run_fetcher_container(fetcher_config)
+            else:
+                result = _run_fetcher_inline(name, fetcher_config)
+            context[name] = result
+            logger.info("Fetcher %s completed (%d chars)", name, len(result))
+        except Exception:
+            logger.exception("Fetcher %s failed", name)
+            context[name] = f"[Error fetching {name}]"
+
+    # Render the prompt template
+    prompt = task.prompt.format(**context)
+
+    if dry_run:
+        logger.info("Dry run - skipping LLM and output")
+        return prompt
+
+    # Prepare LLM secrets if configured
+    if task.llm.secrets:
+        _load_secrets_to_env(task.llm.secrets)
+
+    # Run through LLM
+    logger.info("Calling LLM (%s)", task.llm.model)
+    result = run_llm(prompt, task.llm, use_container=use_containers)
+    logger.info("LLM response: %d chars", len(result))
+
+    # Route output
+    logger.info("Sending output via %s", task.output.type)
+    send_output(result, task.output)
+
+    return result
+
+
+def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
+    """Run a fetcher by importing and calling it directly (no container)."""
+    # Load secrets if configured
+    env_overrides = {}
+    if config.secrets:
+        env_overrides = decrypt_env_file(config.secrets)
+
+    import os
+
+    old_env = {}
+    for k, v in env_overrides.items():
+        old_env[k] = os.environ.get(k)
+        os.environ[k] = v
+
+    try:
+        if name == "weather":
+            return _fetch_weather_inline(config)
+        elif name == "calendar":
+            return _fetch_gcal_inline(config)
+        else:
+            raise ValueError(f"Unknown inline fetcher: {name}")
+    finally:
+        # Restore original env
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _fetch_weather_inline(config: FetcherConfig) -> str:
+    """Run weather fetcher inline."""
+    from fetchers.weather.fetcher import fetch_weather
+
+    location = config.args.get("location", "Denver")
+    result = fetch_weather(location)
+    return json.dumps(result, indent=2)
+
+
+def _fetch_gcal_inline(config: FetcherConfig) -> str:
+    """Run Google Calendar fetcher inline."""
+    from fetchers.gcal.fetcher import fetch_events
+
+    range_arg = config.args.get("range", "today")
+    events = fetch_events(range_arg)
+    return json.dumps(events, indent=2)
+
+
+def _run_fetcher_container(config: FetcherConfig) -> str:
+    """Run a fetcher in an isolated Docker container."""
+    env_flags: list[str] = []
+
+    # Decrypt and inject secrets
+    if config.secrets:
+        secrets = decrypt_env_file(config.secrets)
+        for key, value in secrets.items():
+            env_flags.extend(["-e", f"{key}={value}"])
+
+    # Pass args as env vars
+    for key, value in config.args.items():
+        env_flags.extend(["-e", f"{key.upper()}={value}"])
+
+    result = subprocess.run(
+        [
+            "docker", "run", "--rm",
+            "--read-only",
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--memory=256m",
+            "--cpus=0.5",
+            *env_flags,
+            config.image,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _load_secrets_to_env(secrets_path: str) -> None:
+    """Decrypt a secrets file and load values into the environment."""
+    import os
+
+    secrets = decrypt_env_file(secrets_path)
+    for key, value in secrets.items():
+        os.environ[key] = value

@@ -1,0 +1,24 @@
+name: weather_check
+schedule: "30 6 * * *"  # 6:30am daily
+
+fetch:
+  weather:
+    image: fetcher-weather:latest
+    args:
+      location: denver
+
+prompt: |
+  Here's today's weather data:
+
+  {weather}
+
+  Give me a one-sentence summary of the weather and what to wear.
+  Today is {date}.
+
+output:
+  type: stdout
+  to: ""
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 150

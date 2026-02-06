@@ -17,20 +17,48 @@ Even if prompt injection occurs (e.g., via a calendar event title), the LLM cont
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    subgraph orch["Orchestrator"]
+        direction TB
+        schedule["Cron Scheduler"]
+        template["Prompt Template"]
+        output["Output Router"]
+    end
+
+    subgraph fetchers["Isolated Fetcher Containers"]
+        direction TB
+        gcal["Fetcher: gcal\n🔑 Google OAuth token\n(read-only scope)"]
+        weather["Fetcher: weather\n🔑 None"]
+    end
+
+    subgraph llm_container["Isolated LLM Container"]
+        llm["LLM Runner\n🔑 Anthropic API key"]
+    end
+
+    subgraph outputs["Delivery"]
+        imsg["iMessage"]
+        stdout["stdout"]
+        file["File"]
+    end
+
+    schedule -- "triggers" --> gcal
+    schedule -- "triggers" --> weather
+    gcal -- "JSON" --> template
+    weather -- "JSON" --> template
+    template -- "rendered prompt\n(no secrets)" --> llm
+    llm -- "text response" --> output
+    output --> imsg
+    output --> stdout
+    output --> file
+
+    style fetchers fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
+    style llm_container fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
+    style orch fill:#2d333b,stroke:#58a6ff,stroke-width:2px,color:#f0f0f0
+    style outputs fill:#2d333b,stroke:#3fb950,stroke-width:2px,color:#f0f0f0
 ```
-Orchestrator
-    │
-    ├── Fetcher (gcal)     ─── JSON ──┐
-    ├── Fetcher (weather)  ─── JSON ──┤
-    │                                  ▼
-    │                           Prompt Template
-    │                                  │
-    │                              LLM Runner
-    │                                  │
-    │                              text output
-    │                                  │
-    └──────────────────────────── Output (iMessage / stdout / file)
-```
+
+> **Key insight:** Even if prompt injection occurs (e.g., via a calendar event title), the LLM container has no access to Google credentials, user contacts, or anything beyond its own API key. Each red box is a separate security boundary.
 
 ## Quick Start
 

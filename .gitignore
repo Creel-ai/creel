@@ -6,10 +6,10 @@ dist/
 build/
 .eggs/
 
-# Secrets - never commit plaintext secrets
+# Secrets - never commit plaintext or encrypted secrets
 secrets/*.env
 secrets/*.json
-!secrets/*.enc
+secrets/*.enc
 
 # Virtual environments
 .venv/
@@ -29,5 +29,4 @@ Thumbs.db
 # Logs
 *.log
 logs/
-secrets/*.enc
 client_secret.json

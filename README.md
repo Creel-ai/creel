@@ -238,14 +238,8 @@ Requires a one-time OAuth setup:
 
 ```bash
 # 1. Create GCP project, enable Calendar API, download OAuth credentials
-# 2. Run the setup script
-python scripts/setup-google-oauth.py gcal
-
-# 3. Encrypt the credentials
-./scripts/encrypt-secret.sh secrets/gcal.env
-
-# 4. Delete plaintext
-rm secrets/gcal.env
+# 2. Run the setup script (--encrypt auto-encrypts and deletes plaintext)
+python scripts/setup-google-oauth.py gcal --encrypt
 ```
 
 The fetcher uses a read-only scope (`calendar.readonly`) and authenticates with a refresh token.
@@ -255,15 +249,8 @@ The fetcher uses a read-only scope (`calendar.readonly`) and authenticates with 
 Reads emails matching a Gmail search query. Requires a one-time OAuth setup:
 
 ```bash
-# 1. Same GCP project — enable the Gmail API
-# 2. Run the setup script (uses the same client_secret.json)
-python scripts/setup-google-oauth.py gmail
-
-# 3. Encrypt the credentials
-./scripts/encrypt-secret.sh secrets/gmail.env
-
-# 4. Delete plaintext
-rm secrets/gmail.env
+# Same GCP project — enable the Gmail API
+python scripts/setup-google-oauth.py gmail --encrypt
 ```
 
 The fetcher uses a read-only scope (`gmail.readonly`). Configuration:
@@ -285,9 +272,7 @@ When `full_body` is enabled, the fetcher decodes MIME parts (prefers `text/plain
 Creates calendar events. Requires a one-time OAuth setup with the `calendar.events` scope:
 
 ```bash
-python scripts/setup-google-oauth.py gcal_write
-./scripts/encrypt-secret.sh secrets/gcal_write.env
-rm secrets/gcal_write.env
+python scripts/setup-google-oauth.py gcal_write --encrypt
 ```
 
 Configuration:
@@ -309,9 +294,7 @@ gcal_write:
 Sends an email. Requires a one-time OAuth setup with the `gmail.send` scope:
 
 ```bash
-python scripts/setup-google-oauth.py gmail_send
-./scripts/encrypt-secret.sh secrets/gmail_send.env
-rm secrets/gmail_send.env
+python scripts/setup-google-oauth.py gmail_send --encrypt
 ```
 
 Configuration:
@@ -331,9 +314,7 @@ gmail_send:
 Modifies, trashes, or permanently deletes Gmail messages. Requires a one-time OAuth setup with the `gmail.modify` scope:
 
 ```bash
-python scripts/setup-google-oauth.py gmail_modify
-./scripts/encrypt-secret.sh secrets/gmail_modify.env
-rm secrets/gmail_modify.env
+python scripts/setup-google-oauth.py gmail_modify --encrypt
 ```
 
 Configuration:
@@ -354,9 +335,7 @@ gmail_modify:
 Lists and reads files from Google Drive. Requires a one-time OAuth setup with the `drive.readonly` scope:
 
 ```bash
-python scripts/setup-google-oauth.py drive
-./scripts/encrypt-secret.sh secrets/drive.env
-rm secrets/drive.env
+python scripts/setup-google-oauth.py drive --encrypt
 ```
 
 Configuration:
@@ -375,9 +354,7 @@ drive:
 Uploads a file to Google Drive. Requires a one-time OAuth setup with the `drive.file` scope:
 
 ```bash
-python scripts/setup-google-oauth.py drive_write
-./scripts/encrypt-secret.sh secrets/drive_write.env
-rm secrets/drive_write.env
+python scripts/setup-google-oauth.py drive_write --encrypt
 ```
 
 Configuration:
@@ -402,7 +379,21 @@ All Google services use the same OAuth2 client credentials (client ID + client s
 - Each refresh token is scoped to a single API permission
 - Revoking one token doesn't affect the others
 
-Use `scripts/setup-google-oauth.py <service>` to run the OAuth flow for each service. Available services: `gcal`, `gcal_write`, `gmail`, `gmail_send`, `gmail_modify`, `drive`, `drive_write`.
+```bash
+# Set up all services at once (encrypts automatically)
+python scripts/setup-google-oauth.py --all
+
+# Or set up specific services
+python scripts/setup-google-oauth.py gmail gcal
+
+# Encrypt with age after each OAuth flow
+python scripts/setup-google-oauth.py gmail --encrypt
+
+# Encrypt all existing .env files in secrets/ (no OAuth flow)
+python scripts/setup-google-oauth.py --encrypt-all
+```
+
+Available services: `gcal`, `gcal_write`, `gmail`, `gmail_send`, `gmail_modify`, `drive`, `drive_write`.
 
 ## Secrets Management
 

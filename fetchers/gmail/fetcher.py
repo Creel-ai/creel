@@ -9,8 +9,10 @@ Outputs JSON to stdout.
 from __future__ import annotations
 
 import base64
+import html
 import json
 import os
+import re
 import sys
 
 from bs4 import BeautifulSoup
@@ -93,7 +95,7 @@ def fetch_emails(
             "from": _extract_headers(headers, ["From"]).get("From", ""),
             "to": _extract_headers(headers, ["To"]).get("To", ""),
             "date": _extract_headers(headers, ["Date"]).get("Date", ""),
-            "snippet": msg.get("snippet", ""),
+            "snippet": _clean_snippet(msg.get("snippet", "")),
             "labels": msg.get("labelIds", []),
         }
 
@@ -165,6 +167,16 @@ def _extract_body(payload: dict) -> str:
         return html_text
 
     return ""
+
+
+_ZERO_WIDTH_RE = re.compile(r"[\u034f\u200b\u200c\u200d\u2060\ufeff]+")
+
+
+def _clean_snippet(text: str) -> str:
+    """Decode HTML entities and strip zero-width characters from a Gmail snippet."""
+    text = html.unescape(text)
+    text = _ZERO_WIDTH_RE.sub("", text)
+    return text.strip()
 
 
 def _extract_headers(headers: list[dict], keys: list[str]) -> dict[str, str]:

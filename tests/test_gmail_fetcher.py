@@ -6,7 +6,12 @@ import base64
 import json
 from unittest.mock import MagicMock, patch
 
-from fetchers.gmail.fetcher import _extract_body, _extract_headers, fetch_emails
+from fetchers.gmail.fetcher import (
+    _clean_snippet,
+    _extract_body,
+    _extract_headers,
+    fetch_emails,
+)
 
 
 class TestExtractBody:
@@ -120,6 +125,23 @@ class TestExtractBody:
             "body": {"data": encoded},
         }
         assert _extract_body(payload) == text
+
+
+class TestCleanSnippet:
+    """Tests for _clean_snippet sanitization."""
+
+    def test_decodes_html_entities(self) -> None:
+        assert _clean_snippet("F1&#39;s Super Bowl") == "F1's Super Bowl"
+
+    def test_strips_zero_width_chars(self) -> None:
+        assert _clean_snippet("Hello \u034f\u200c\u034f\u200c world") == "Hello  world"
+
+    def test_combined(self) -> None:
+        raw = "F1&#39;s race \u034f\u200c \u034f\u200c \u034f\u200c"
+        assert _clean_snippet(raw) == "F1's race"
+
+    def test_passthrough_clean_text(self) -> None:
+        assert _clean_snippet("Normal snippet") == "Normal snippet"
 
 
 class TestExtractHeaders:

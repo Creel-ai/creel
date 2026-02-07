@@ -8,6 +8,8 @@ from pathlib import Path
 
 from taskrunner.models import OutputConfig
 
+MESSAGE_PREFIX = "[safe-claw]"
+
 
 def send_output(text: str, config: OutputConfig) -> None:
     """Route output to the configured destination.
@@ -16,6 +18,8 @@ def send_output(text: str, config: OutputConfig) -> None:
         text: The LLM response text to send.
         config: Output configuration (type and destination).
     """
+    text = f"{MESSAGE_PREFIX} {text}"
+
     handlers = {
         "imessage": _send_imessage,
         "stdout": _send_stdout,

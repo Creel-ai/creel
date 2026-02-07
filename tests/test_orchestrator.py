@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -69,6 +70,46 @@ def test_run_task_calls_llm_and_output(tmp_path: Path) -> None:
     llm_call_args = mock_llm.call_args
     prompt = llm_call_args[0][0]
     assert "70" in prompt
+
+
+def test_gmail_fetcher_through_orchestrator(tmp_path: Path) -> None:
+    """Gmail fetcher branch should work through the orchestrator."""
+    task = {
+        "name": "gmail_test",
+        "schedule": "0 8 * * *",
+        "fetch": {
+            "gmail": {
+                "image": "fetcher-gmail:latest",
+                "args": {"query": "is:unread", "max_results": "5", "full_body": "false"},
+            }
+        },
+        "prompt": "Date: {date}\nEmails: {gmail}",
+        "output": {"type": "stdout", "to": ""},
+        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+    }
+    path = tmp_path / "gmail_test.yaml"
+    path.write_text(yaml.dump(task))
+
+    with (
+        patch("taskrunner.orchestrator._fetch_gmail_inline") as mock_gmail,
+        patch("taskrunner.orchestrator.run_llm") as mock_llm,
+        patch("taskrunner.orchestrator.send_output"),
+    ):
+        mock_gmail.return_value = json.dumps([
+            {"subject": "Important", "from": "boss@example.com", "snippet": "Need reply"},
+        ])
+        mock_llm.return_value = "You have 1 email from your boss."
+
+        result = run_task(path)
+
+    assert result == "You have 1 email from your boss."
+    mock_gmail.assert_called_once()
+
+    # Verify the prompt contained the email data
+    llm_call_args = mock_llm.call_args
+    prompt = llm_call_args[0][0]
+    assert "Important" in prompt
+    assert "boss@example.com" in prompt
 
 
 def test_fetcher_failure_continues(tmp_path: Path) -> None:

@@ -13,14 +13,23 @@ fetch:
     args:
       location: denver
 
+  gmail:
+    image: fetcher-gmail:latest
+    secrets: secrets/gmail.env.enc
+    args:
+      query: "is:unread newer_than:1d"
+      max_results: "10"
+      full_body: "false"
+
 prompt: |
   You're my personal assistant. Give me a quick rundown of my day.
 
   Today: {date}
   Weather: {weather}
   Calendar: {calendar}
+  Recent emails: {gmail}
 
-  Keep it under 150 words. Flag any early meetings or conflicts.
+  Keep it under 200 words. Flag any early meetings, conflicts, or urgent emails.
 
 output:
   type: imessage

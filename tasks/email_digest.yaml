@@ -1,0 +1,34 @@
+name: email_digest
+schedule: "0 8 * * *"  # 8am daily
+
+fetch:
+  gmail:
+    image: fetcher-gmail:latest
+    secrets: secrets/gmail.env.enc
+    args:
+      query: "is:unread newer_than:1d"
+      max_results: "25"
+      full_body: "false"
+
+prompt: |
+  You're my email assistant. Here are my unread emails from the last 24 hours.
+
+  Today: {date}
+  Emails: {gmail}
+
+  Create a prioritized digest:
+  1. Flag anything urgent or time-sensitive at the top
+  2. Group related emails together
+  3. Summarize each email in one line
+  4. Note any emails that need a reply
+
+  Keep it concise and actionable.
+
+output:
+  type: stdout
+  to: ""
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 500
+  secrets: secrets/anthropic.env.enc

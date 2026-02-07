@@ -99,6 +99,8 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
             return _fetch_weather_inline(config)
         elif name == "calendar":
             return _fetch_gcal_inline(config)
+        elif name == "gmail":
+            return _fetch_gmail_inline(config)
         else:
             raise ValueError(f"Unknown inline fetcher: {name}")
     finally:
@@ -126,6 +128,21 @@ def _fetch_gcal_inline(config: FetcherConfig) -> str:
     range_arg = config.args.get("range", "today")
     events = fetch_events(range_arg)
     return json.dumps(events, indent=2)
+
+
+def _fetch_gmail_inline(config: FetcherConfig) -> str:
+    """Run Gmail fetcher inline."""
+    from fetchers.gmail.fetcher import fetch_emails
+
+    query = config.args.get("query", "is:unread newer_than:1d")
+    max_results = int(config.args.get("max_results", 20))
+    full_body = str(config.args.get("full_body", "false")).lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    emails = fetch_emails(query, max_results, full_body)
+    return json.dumps(emails, indent=2)
 
 
 def _run_fetcher_container(config: FetcherConfig) -> str:

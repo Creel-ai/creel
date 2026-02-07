@@ -7,6 +7,7 @@ build/
 .eggs/
 
 # Secrets - never commit plaintext or encrypted secrets
+.env
 secrets/*.env
 secrets/*.json
 secrets/*.enc

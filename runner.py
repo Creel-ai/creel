@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
 from taskrunner.models import load_all_tasks, load_task
 from taskrunner.orchestrator import run_task
+from taskrunner.secrets import parse_env_file
 from taskrunner.scheduler import start_scheduler
 
 DEFAULT_TASKS_DIR = Path("tasks")
@@ -157,6 +159,12 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    # Load root .env if present (for PHONE, etc.)
+    root_env = Path(".env")
+    if root_env.exists():
+        for key, value in parse_env_file(root_env).items():
+            os.environ.setdefault(key, value)
 
     if args.command is None:
         parser.print_help()

@@ -160,6 +160,25 @@ rm secrets/anthropic.env
 
 Then reference it in your task YAML under `llm.secrets`.
 
+### Root `.env` file
+
+The runner loads a root `.env` file (gitignored) at startup for non-secret configuration like phone numbers:
+
+```bash
+# .env (project root — gitignored, never committed)
+PHONE=+1234567890
+```
+
+Values are available as environment variables and can be referenced in task YAMLs with `$VAR` syntax:
+
+```yaml
+output:
+  type: imessage
+  to: "$PHONE"
+```
+
+Real environment variables take precedence over `.env` values.
+
 ## Task Definitions
 
 Tasks are YAML files in `tasks/`. Each defines what data to fetch, how to prompt the LLM, and where to send the result.
@@ -192,7 +211,7 @@ prompt: |
 
 output:
   type: imessage
-  to: "+1XXXXXXXXXX"
+  to: "$PHONE"
 
 llm:
   model: claude-sonnet-4-20250514

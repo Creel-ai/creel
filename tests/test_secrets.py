@@ -40,3 +40,17 @@ def test_parse_env_whitespace_handling() -> None:
     content = "  KEY  =  value  "
     result = _parse_env(content)
     assert result == {"KEY": "value"}
+
+
+def test_parse_env_json_escaped_double_quotes() -> None:
+    """Double-quoted values with JSON escapes (as produced by setup-google-oauth.py)."""
+    import json
+
+    inner = json.dumps({"refresh_token": "tok", "client_id": "cid", "client_secret": "cs"})
+    content = f"GOOGLE_CREDENTIALS_JSON={json.dumps(inner)}"
+    result = _parse_env(content)
+    assert json.loads(result["GOOGLE_CREDENTIALS_JSON"]) == {
+        "refresh_token": "tok",
+        "client_id": "cid",
+        "client_secret": "cs",
+    }

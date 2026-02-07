@@ -29,3 +29,5 @@ Thumbs.db
 # Logs
 *.log
 logs/
+secrets/*.enc
+client_secret.json

@@ -82,13 +82,58 @@ uv pip install -e ".[dev]"
 # Dry run (renders prompt, skips LLM and output)
 ./runner.py run weather_check --dry
 
-# Full run (requires ANTHROPIC_API_KEY)
-export ANTHROPIC_API_KEY=sk-...
+# Full run (requires Anthropic credentials — see Authentication below)
 ./runner.py run weather_check
 
 # Start the cron scheduler
 ./runner.py schedule
 ```
+
+## Authentication
+
+The runner supports two ways to authenticate with the Anthropic API:
+
+| Method | Env var | How to get it |
+|--------|---------|---------------|
+| API key | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) |
+| Claude Code setup token | `ANTHROPIC_AUTH_TOKEN` | `claude setup-token` |
+
+If both are set, `ANTHROPIC_AUTH_TOKEN` takes precedence.
+
+### Using an API key
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+./runner.py run weather_check
+```
+
+### Using a Claude Code setup token
+
+Claude Code can generate OAuth tokens that work with the Anthropic API:
+
+```bash
+# Generate a setup token (requires Claude Code CLI)
+claude setup-token
+# Copy the sk-ant-oat01-... value
+
+export ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-...
+./runner.py run weather_check
+```
+
+### Storing credentials in a secrets file
+
+Either variable can go in an age-encrypted secrets file:
+
+```bash
+# Create the plaintext .env
+echo 'ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-...' > secrets/anthropic.env
+
+# Encrypt and delete plaintext
+./scripts/encrypt-secret.sh secrets/anthropic.env
+rm secrets/anthropic.env
+```
+
+Then reference it in your task YAML under `llm.secrets`.
 
 ## Task Definitions
 
@@ -145,7 +190,7 @@ llm:
 | `output.to` | yes | Phone number, empty string, or file path |
 | `llm.model` | no | Anthropic model ID (default: `claude-sonnet-4-20250514`) |
 | `llm.max_tokens` | no | Max response tokens (default: 300) |
-| `llm.secrets` | no | Path to age-encrypted .env with `ANTHROPIC_API_KEY` |
+| `llm.secrets` | no | Path to age-encrypted .env with `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` |
 
 The `{date}` placeholder is always available and resolves to the current date.
 

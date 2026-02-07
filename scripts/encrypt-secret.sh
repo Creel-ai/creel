@@ -37,7 +37,7 @@ if [ ! -f "$RECIPIENT_FILE" ]; then
     exit 1
 fi
 
-RECIPIENT=$(cat "$RECIPIENT_FILE")
+RECIPIENT=$(grep -oE 'age1[a-z0-9]+' "$RECIPIENT_FILE")
 
 age -e -r "$RECIPIENT" -o "$OUTPUT" "$INPUT"
 

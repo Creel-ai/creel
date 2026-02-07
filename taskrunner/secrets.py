@@ -33,7 +33,12 @@ def decrypt_env_file(enc_path: str | Path, identity_path: str | None = None) -> 
     if not identity_path.exists():
         raise FileNotFoundError(f"Age identity file not found: {identity_path}")
 
-    identity = pyrage.x25519.Identity.from_str(identity_path.read_text().strip())
+    # key.txt contains comment lines; extract just the secret key line
+    identity_line = next(
+        line for line in identity_path.read_text().splitlines()
+        if line.startswith("AGE-SECRET-KEY-")
+    )
+    identity = pyrage.x25519.Identity.from_str(identity_line)
     ciphertext = enc_path.read_bytes()
     plaintext = pyrage.decrypt(ciphertext, [identity])
 
@@ -71,7 +76,11 @@ def encrypt_env_file(
     if not recipient_path.exists():
         raise FileNotFoundError(f"Age recipient file not found: {recipient_path}")
 
-    recipient = pyrage.x25519.Recipient.from_str(recipient_path.read_text().strip())
+    # key.pub may contain "Public key: age1..." prefix; extract just the key
+    pub_text = recipient_path.read_text().strip()
+    if pub_text.startswith("Public key:"):
+        pub_text = pub_text.split()[-1]
+    recipient = pyrage.x25519.Recipient.from_str(pub_text)
     plaintext = env_path.read_bytes()
     ciphertext = pyrage.encrypt(plaintext, [recipient])
 

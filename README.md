@@ -73,6 +73,11 @@ uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 
+# Install age for secrets encryption (one-time)
+brew install age
+mkdir -p ~/.age
+age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
+
 # List available tasks
 ./runner.py list
 

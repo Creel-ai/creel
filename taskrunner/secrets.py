@@ -94,6 +94,11 @@ def encrypt_env_file(
     return output_path
 
 
+def parse_env_file(path: str | Path) -> dict[str, str]:
+    """Read a plaintext .env file and return key-value pairs."""
+    return _parse_env(Path(path).read_text())
+
+
 def _parse_env(content: str) -> dict[str, str]:
     """Parse a .env file into key-value pairs.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,11 @@ class OutputConfig(BaseModel):
         if v not in allowed:
             raise ValueError(f"output type must be one of {allowed}, got '{v}'")
         return v
+
+    @field_validator("to")
+    @classmethod
+    def expand_env_vars(cls, v: str) -> str:
+        return os.path.expandvars(v)
 
 
 class LLMConfig(BaseModel):

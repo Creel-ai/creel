@@ -99,8 +99,16 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
             return _fetch_weather_inline(config)
         elif name == "calendar":
             return _fetch_gcal_inline(config)
+        elif name == "gcal_write":
+            return _fetch_gcal_write_inline(config)
         elif name == "gmail":
             return _fetch_gmail_inline(config)
+        elif name == "gmail_send":
+            return _fetch_gmail_send_inline(config)
+        elif name == "drive":
+            return _fetch_drive_inline(config)
+        elif name == "drive_write":
+            return _fetch_drive_write_inline(config)
         else:
             raise ValueError(f"Unknown inline fetcher: {name}")
     finally:
@@ -130,6 +138,19 @@ def _fetch_gcal_inline(config: FetcherConfig) -> str:
     return json.dumps(events, indent=2)
 
 
+def _fetch_gcal_write_inline(config: FetcherConfig) -> str:
+    """Run Google Calendar write fetcher inline."""
+    from fetchers.gcal_write.fetcher import create_event
+
+    summary = config.args.get("summary", "")
+    start = config.args.get("start", "")
+    end = config.args.get("end", "")
+    description = config.args.get("description", "")
+    location = config.args.get("location", "")
+    event = create_event(summary, start, end, description, location)
+    return json.dumps(event, indent=2)
+
+
 def _fetch_gmail_inline(config: FetcherConfig) -> str:
     """Run Gmail fetcher inline."""
     from fetchers.gmail.fetcher import fetch_emails
@@ -143,6 +164,39 @@ def _fetch_gmail_inline(config: FetcherConfig) -> str:
     )
     emails = fetch_emails(query, max_results, full_body)
     return json.dumps(emails, indent=2)
+
+
+def _fetch_gmail_send_inline(config: FetcherConfig) -> str:
+    """Run Gmail send fetcher inline."""
+    from fetchers.gmail_send.fetcher import send_email
+
+    to = config.args.get("to", "")
+    subject = config.args.get("subject", "")
+    body = config.args.get("body", "")
+    result = send_email(to, subject, body)
+    return json.dumps(result, indent=2)
+
+
+def _fetch_drive_inline(config: FetcherConfig) -> str:
+    """Run Google Drive fetcher inline."""
+    from fetchers.drive.fetcher import list_files
+
+    query = config.args.get("query", "")
+    max_results = int(config.args.get("max_results", 20))
+    files = list_files(query, max_results)
+    return json.dumps(files, indent=2)
+
+
+def _fetch_drive_write_inline(config: FetcherConfig) -> str:
+    """Run Google Drive write fetcher inline."""
+    from fetchers.drive_write.fetcher import upload_file
+
+    name = config.args.get("name", "")
+    content = config.args.get("content", "")
+    mime_type = config.args.get("mime_type", "text/plain")
+    folder_id = config.args.get("folder_id", "")
+    result = upload_file(name, content, mime_type, folder_id)
+    return json.dumps(result, indent=2)
 
 
 def _run_fetcher_container(config: FetcherConfig) -> str:

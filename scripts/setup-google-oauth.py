@@ -6,8 +6,12 @@ Google API. The resulting credentials are saved to a .env file that
 should then be encrypted with age.
 
 Supported services:
-  gcal  — Google Calendar (read-only)
-  gmail — Gmail (read-only)
+  gcal        — Google Calendar (read-only)
+  gcal_write  — Google Calendar (write events)
+  gmail       — Gmail (read-only)
+  gmail_send  — Gmail (send emails)
+  drive       — Google Drive (read-only)
+  drive_write — Google Drive (upload files)
 
 Usage:
     1. Create a GCP project and enable the relevant API
@@ -38,12 +42,32 @@ SERVICES: dict[str, dict[str, str]] = {
     "gcal": {
         "scope": "https://www.googleapis.com/auth/calendar.readonly",
         "output": "secrets/gcal.env",
-        "api_name": "Google Calendar",
+        "api_name": "Google Calendar (read-only)",
+    },
+    "gcal_write": {
+        "scope": "https://www.googleapis.com/auth/calendar.events",
+        "output": "secrets/gcal_write.env",
+        "api_name": "Google Calendar (write)",
     },
     "gmail": {
         "scope": "https://www.googleapis.com/auth/gmail.readonly",
         "output": "secrets/gmail.env",
-        "api_name": "Gmail",
+        "api_name": "Gmail (read-only)",
+    },
+    "gmail_send": {
+        "scope": "https://www.googleapis.com/auth/gmail.send",
+        "output": "secrets/gmail_send.env",
+        "api_name": "Gmail (send)",
+    },
+    "drive": {
+        "scope": "https://www.googleapis.com/auth/drive.readonly",
+        "output": "secrets/drive.env",
+        "api_name": "Google Drive (read-only)",
+    },
+    "drive_write": {
+        "scope": "https://www.googleapis.com/auth/drive.file",
+        "output": "secrets/drive_write.env",
+        "api_name": "Google Drive (write)",
     },
 }
 

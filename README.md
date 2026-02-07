@@ -9,7 +9,11 @@ Agentic LLM systems give the model access to tools, credentials, and untrusted i
 | Component | Has access to | Does NOT have |
 |-----------|--------------|---------------|
 | Fetcher (gcal) | Google OAuth token (read-only) | LLM, other credentials |
+| Fetcher (gcal_write) | Google OAuth token (calendar.events) | LLM, other credentials |
 | Fetcher (gmail) | Google OAuth token (read-only) | LLM, other credentials |
+| Fetcher (gmail_send) | Google OAuth token (gmail.send) | LLM, other credentials |
+| Fetcher (drive) | Google OAuth token (read-only) | LLM, other credentials |
+| Fetcher (drive_write) | Google OAuth token (drive.file) | LLM, other credentials |
 | Fetcher (weather) | Nothing sensitive | LLM, other credentials |
 | LLM Runner | Anthropic API key | Any other credentials |
 | Orchestrator | All secrets, LLM output | Untrusted external input |
@@ -29,8 +33,12 @@ flowchart TD
 
     subgraph fetchers["Isolated Fetcher Containers"]
         direction TB
-        gcal["Fetcher: gcal\n🔑 Google OAuth token\n(read-only scope)"]
-        gmail["Fetcher: gmail\n🔑 Google OAuth token\n(read-only scope)"]
+        gcal["Fetcher: gcal\n🔑 Google OAuth token\n(calendar.readonly)"]
+        gcal_w["Fetcher: gcal_write\n🔑 Google OAuth token\n(calendar.events)"]
+        gmail["Fetcher: gmail\n🔑 Google OAuth token\n(gmail.readonly)"]
+        gmail_s["Fetcher: gmail_send\n🔑 Google OAuth token\n(gmail.send)"]
+        drive["Fetcher: drive\n🔑 Google OAuth token\n(drive.readonly)"]
+        drive_w["Fetcher: drive_write\n🔑 Google OAuth token\n(drive.file)"]
         weather["Fetcher: weather\n🔑 None"]
     end
 
@@ -45,10 +53,18 @@ flowchart TD
     end
 
     schedule -- "triggers" --> gcal
+    schedule -- "triggers" --> gcal_w
     schedule -- "triggers" --> gmail
+    schedule -- "triggers" --> gmail_s
+    schedule -- "triggers" --> drive
+    schedule -- "triggers" --> drive_w
     schedule -- "triggers" --> weather
     gcal -- "JSON" --> template
+    gcal_w -- "JSON" --> template
     gmail -- "JSON" --> template
+    gmail_s -- "JSON" --> template
+    drive -- "JSON" --> template
+    drive_w -- "JSON" --> template
     weather -- "JSON" --> template
     template -- "rendered prompt\n(no secrets)" --> llm
     llm -- "text response" --> output
@@ -260,16 +276,106 @@ gmail:
 
 When `full_body` is enabled, the fetcher decodes MIME parts (prefers `text/plain`, falls back to HTML stripping via BeautifulSoup).
 
+### Google Calendar (Write)
+
+Creates calendar events. Requires a one-time OAuth setup with the `calendar.events` scope:
+
+```bash
+python scripts/setup-google-oauth.py gcal_write
+./scripts/encrypt-secret.sh secrets/gcal_write.env
+rm secrets/gcal_write.env
+```
+
+Configuration:
+
+```yaml
+gcal_write:
+  image: fetcher-gcal-write:latest
+  secrets: secrets/gcal_write.env.enc
+  args:
+    summary: "Team standup"
+    start: "2025-01-15T09:00:00-07:00"   # ISO 8601
+    end: "2025-01-15T09:30:00-07:00"
+    description: "Daily sync"              # optional
+    location: "Room 42"                    # optional
+```
+
+### Gmail (Send)
+
+Sends an email. Requires a one-time OAuth setup with the `gmail.send` scope:
+
+```bash
+python scripts/setup-google-oauth.py gmail_send
+./scripts/encrypt-secret.sh secrets/gmail_send.env
+rm secrets/gmail_send.env
+```
+
+Configuration:
+
+```yaml
+gmail_send:
+  image: fetcher-gmail-send:latest
+  secrets: secrets/gmail_send.env.enc
+  args:
+    to: "recipient@example.com"
+    subject: "Daily report"
+    body: "Here is today's summary..."
+```
+
+### Google Drive (Read)
+
+Lists and reads files from Google Drive. Requires a one-time OAuth setup with the `drive.readonly` scope:
+
+```bash
+python scripts/setup-google-oauth.py drive
+./scripts/encrypt-secret.sh secrets/drive.env
+rm secrets/drive.env
+```
+
+Configuration:
+
+```yaml
+drive:
+  image: fetcher-drive:latest
+  secrets: secrets/drive.env.enc
+  args:
+    query: "mimeType='application/pdf'"   # Drive search query (optional)
+    max_results: "20"
+```
+
+### Google Drive (Write)
+
+Uploads a file to Google Drive. Requires a one-time OAuth setup with the `drive.file` scope:
+
+```bash
+python scripts/setup-google-oauth.py drive_write
+./scripts/encrypt-secret.sh secrets/drive_write.env
+rm secrets/drive_write.env
+```
+
+Configuration:
+
+```yaml
+drive_write:
+  image: fetcher-drive-write:latest
+  secrets: secrets/drive_write.env.enc
+  args:
+    name: "report.txt"
+    content: "File contents here..."
+    mime_type: "text/plain"      # optional, defaults to text/plain
+    folder_id: ""                # optional Drive folder ID
+```
+
 ## Google Services Setup
 
-Google Calendar and Gmail use the same OAuth2 client credentials (client ID + client secret from a single GCP project) but obtain **separate refresh tokens** with different scopes. This means:
+All Google services use the same OAuth2 client credentials (client ID + client secret from a single GCP project) but obtain **separate refresh tokens** with different scopes. This means:
 
-- One `client_secret.json` file works for both services
-- Each service gets its own `.env` file (`secrets/gcal.env`, `secrets/gmail.env`)
-- Each refresh token is scoped to a single API (read-only)
-- Revoking one token doesn't affect the other
+- One `client_secret.json` file works for all services
+- Each service gets its own `.env` file (e.g. `secrets/gcal.env`, `secrets/gmail_send.env`)
+- Each refresh token is scoped to a single API permission
+- Revoking one token doesn't affect the others
 
-Use `scripts/setup-google-oauth.py <service>` to run the OAuth flow for each service.
+Use `scripts/setup-google-oauth.py <service>` to run the OAuth flow for each service. Available services: `gcal`, `gcal_write`, `gmail`, `gmail_send`, `drive`, `drive_write`.
 
 ## Secrets Management
 
@@ -303,7 +409,11 @@ For production use, fetchers and the LLM runner execute in isolated Docker conta
 # Build container images
 docker build -t fetcher-weather:latest fetchers/weather/
 docker build -t fetcher-gcal:latest fetchers/gcal/
+docker build -t fetcher-gcal-write:latest fetchers/gcal_write/
 docker build -t fetcher-gmail:latest fetchers/gmail/
+docker build -t fetcher-gmail-send:latest fetchers/gmail_send/
+docker build -t fetcher-drive:latest fetchers/drive/
+docker build -t fetcher-drive-write:latest fetchers/drive_write/
 docker build -t llm-runner:latest llm/
 
 # Run with containers
@@ -353,8 +463,12 @@ llm-taskrunner/
 │   └── secrets.py         # age encryption/decryption
 ├── fetchers/
 │   ├── weather/           # wttr.in fetcher + Dockerfile
-│   ├── gcal/              # Google Calendar fetcher + Dockerfile
-│   └── gmail/             # Gmail fetcher + Dockerfile
+│   ├── gcal/              # Google Calendar (read) fetcher + Dockerfile
+│   ├── gcal_write/        # Google Calendar (write) fetcher + Dockerfile
+│   ├── gmail/             # Gmail (read) fetcher + Dockerfile
+│   ├── gmail_send/        # Gmail (send) fetcher + Dockerfile
+│   ├── drive/             # Google Drive (read) fetcher + Dockerfile
+│   └── drive_write/       # Google Drive (write) fetcher + Dockerfile
 ├── llm/                   # Containerized LLM runner + Dockerfile
 ├── tasks/                 # Task definitions (YAML)
 ├── secrets/               # Encrypted .env files (gitignored)

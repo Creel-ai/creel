@@ -29,14 +29,19 @@ def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:
 
 def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
     """Call Anthropic API directly (non-containerized)."""
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY not set. Either set it in your environment "
-            "or configure secrets in the task definition."
-        )
 
-    client = anthropic.Anthropic(api_key=api_key)
+    if auth_token:
+        client = anthropic.Anthropic(auth_token=auth_token)
+    elif api_key:
+        client = anthropic.Anthropic(api_key=api_key)
+    else:
+        raise RuntimeError(
+            "No Anthropic credentials found. Set ANTHROPIC_AUTH_TOKEN "
+            "(from `claude setup-token`) or ANTHROPIC_API_KEY in your "
+            "environment, or configure secrets in the task definition."
+        )
     message = client.messages.create(
         model=config.model,
         max_tokens=config.max_tokens,
@@ -55,6 +60,9 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
 def _run_llm_container(prompt: str, config: LLMConfig) -> str:
     """Run LLM call inside an isolated Docker container."""
     env_flags = []
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+    if auth_token:
+        env_flags.extend(["-e", f"ANTHROPIC_AUTH_TOKEN={auth_token}"])
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if api_key:
         env_flags.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])

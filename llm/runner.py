@@ -2,7 +2,7 @@
 """Containerized LLM runner.
 
 Reads a prompt from stdin, calls the Anthropic API, and prints the response to stdout.
-Configured via environment variables: ANTHROPIC_API_KEY, MODEL, MAX_TOKENS.
+Configured via environment variables: ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY, MODEL, MAX_TOKENS.
 """
 
 from __future__ import annotations
@@ -14,9 +14,18 @@ import anthropic
 
 
 def main() -> None:
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("Error: ANTHROPIC_API_KEY not set", file=sys.stderr)
+
+    if auth_token:
+        client = anthropic.Anthropic(auth_token=auth_token)
+    elif api_key:
+        client = anthropic.Anthropic(api_key=api_key)
+    else:
+        print(
+            "Error: Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     model = os.environ.get("MODEL", "claude-sonnet-4-20250514")
@@ -26,8 +35,6 @@ def main() -> None:
     if not prompt:
         print("Error: No prompt provided on stdin", file=sys.stderr)
         sys.exit(1)
-
-    client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
         model=model,
         max_tokens=max_tokens,

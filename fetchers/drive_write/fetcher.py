@@ -54,7 +54,7 @@ def upload_file(
         Dict with the created file's id, name, and mimeType.
     """
     creds = get_credentials()
-    service = build("drive", "v3", credentials=creds)
+    service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     file_metadata: dict = {"name": name}
     if folder_id:

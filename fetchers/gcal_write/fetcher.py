@@ -55,7 +55,7 @@ def create_event(
         Dict with the created event's id, summary, start, end, and htmlLink.
     """
     creds = get_credentials()
-    service = build("calendar", "v3", credentials=creds)
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
 
     event_body: dict = {
         "summary": summary,

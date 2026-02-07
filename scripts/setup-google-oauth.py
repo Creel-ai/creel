@@ -6,12 +6,13 @@ Google API. The resulting credentials are saved to a .env file that
 should then be encrypted with age.
 
 Supported services:
-  gcal        — Google Calendar (read-only)
-  gcal_write  — Google Calendar (write events)
-  gmail       — Gmail (read-only)
-  gmail_send  — Gmail (send emails)
-  drive       — Google Drive (read-only)
-  drive_write — Google Drive (upload files)
+  gcal         — Google Calendar (read-only)
+  gcal_write   — Google Calendar (write events)
+  gmail        — Gmail (read-only)
+  gmail_send   — Gmail (send emails)
+  gmail_modify — Gmail (modify/trash/delete)
+  drive        — Google Drive (read-only)
+  drive_write  — Google Drive (upload files)
 
 Usage:
     1. Create a GCP project and enable the relevant API
@@ -58,6 +59,11 @@ SERVICES: dict[str, dict[str, str]] = {
         "scope": "https://www.googleapis.com/auth/gmail.send",
         "output": "secrets/gmail_send.env",
         "api_name": "Gmail (send)",
+    },
+    "gmail_modify": {
+        "scope": "https://www.googleapis.com/auth/gmail.modify",
+        "output": "secrets/gmail_modify.env",
+        "api_name": "Gmail (modify)",
     },
     "drive": {
         "scope": "https://www.googleapis.com/auth/drive.readonly",

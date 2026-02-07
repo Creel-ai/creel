@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -108,8 +109,11 @@ def _parse_env(content: str) -> dict[str, str]:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip()
-        # Strip surrounding quotes
+        # Strip surrounding quotes (and unescape JSON string escapes for double-quoted values)
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-            value = value[1:-1]
+            if value[0] == '"':
+                value = json.loads(value)
+            else:
+                value = value[1:-1]
         env[key] = value
     return env

@@ -12,6 +12,7 @@ Agentic LLM systems give the model access to tools, credentials, and untrusted i
 | Fetcher (gcal_write) | Google OAuth token (calendar.events) | LLM, other credentials |
 | Fetcher (gmail) | Google OAuth token (read-only) | LLM, other credentials |
 | Fetcher (gmail_send) | Google OAuth token (gmail.send) | LLM, other credentials |
+| Fetcher (gmail_modify) | Google OAuth token (gmail.modify) | LLM, other credentials |
 | Fetcher (drive) | Google OAuth token (read-only) | LLM, other credentials |
 | Fetcher (drive_write) | Google OAuth token (drive.file) | LLM, other credentials |
 | Fetcher (weather) | Nothing sensitive | LLM, other credentials |
@@ -37,6 +38,7 @@ flowchart TD
         gcal_w["Fetcher: gcal_write\n🔑 Google OAuth token\n(calendar.events)"]
         gmail["Fetcher: gmail\n🔑 Google OAuth token\n(gmail.readonly)"]
         gmail_s["Fetcher: gmail_send\n🔑 Google OAuth token\n(gmail.send)"]
+        gmail_m["Fetcher: gmail_modify\n🔑 Google OAuth token\n(gmail.modify)"]
         drive["Fetcher: drive\n🔑 Google OAuth token\n(drive.readonly)"]
         drive_w["Fetcher: drive_write\n🔑 Google OAuth token\n(drive.file)"]
         weather["Fetcher: weather\n🔑 None"]
@@ -56,6 +58,7 @@ flowchart TD
     schedule -- "triggers" --> gcal_w
     schedule -- "triggers" --> gmail
     schedule -- "triggers" --> gmail_s
+    schedule -- "triggers" --> gmail_m
     schedule -- "triggers" --> drive
     schedule -- "triggers" --> drive_w
     schedule -- "triggers" --> weather
@@ -63,6 +66,7 @@ flowchart TD
     gcal_w -- "JSON" --> template
     gmail -- "JSON" --> template
     gmail_s -- "JSON" --> template
+    gmail_m -- "JSON" --> template
     drive -- "JSON" --> template
     drive_w -- "JSON" --> template
     weather -- "JSON" --> template
@@ -322,6 +326,29 @@ gmail_send:
     body: "Here is today's summary..."
 ```
 
+### Gmail (Modify)
+
+Modifies, trashes, or permanently deletes Gmail messages. Requires a one-time OAuth setup with the `gmail.modify` scope:
+
+```bash
+python scripts/setup-google-oauth.py gmail_modify
+./scripts/encrypt-secret.sh secrets/gmail_modify.env
+rm secrets/gmail_modify.env
+```
+
+Configuration:
+
+```yaml
+gmail_modify:
+  image: fetcher-gmail-modify:latest
+  secrets: secrets/gmail_modify.env.enc
+  args:
+    action: "modify"              # modify, trash, or delete
+    message_id: "18f1a2b3c4d5e6f" # Gmail message ID
+    add_labels: "STARRED"         # comma-separated label IDs (modify only)
+    remove_labels: "UNREAD,INBOX" # comma-separated label IDs (modify only)
+```
+
 ### Google Drive (Read)
 
 Lists and reads files from Google Drive. Requires a one-time OAuth setup with the `drive.readonly` scope:
@@ -375,7 +402,7 @@ All Google services use the same OAuth2 client credentials (client ID + client s
 - Each refresh token is scoped to a single API permission
 - Revoking one token doesn't affect the others
 
-Use `scripts/setup-google-oauth.py <service>` to run the OAuth flow for each service. Available services: `gcal`, `gcal_write`, `gmail`, `gmail_send`, `drive`, `drive_write`.
+Use `scripts/setup-google-oauth.py <service>` to run the OAuth flow for each service. Available services: `gcal`, `gcal_write`, `gmail`, `gmail_send`, `gmail_modify`, `drive`, `drive_write`.
 
 ## Secrets Management
 
@@ -412,6 +439,7 @@ docker build -t fetcher-gcal:latest fetchers/gcal/
 docker build -t fetcher-gcal-write:latest fetchers/gcal_write/
 docker build -t fetcher-gmail:latest fetchers/gmail/
 docker build -t fetcher-gmail-send:latest fetchers/gmail_send/
+docker build -t fetcher-gmail-modify:latest fetchers/gmail_modify/
 docker build -t fetcher-drive:latest fetchers/drive/
 docker build -t fetcher-drive-write:latest fetchers/drive_write/
 docker build -t llm-runner:latest llm/
@@ -467,6 +495,7 @@ llm-taskrunner/
 │   ├── gcal_write/        # Google Calendar (write) fetcher + Dockerfile
 │   ├── gmail/             # Gmail (read) fetcher + Dockerfile
 │   ├── gmail_send/        # Gmail (send) fetcher + Dockerfile
+│   ├── gmail_modify/      # Gmail (modify) fetcher + Dockerfile
 │   ├── drive/             # Google Drive (read) fetcher + Dockerfile
 │   └── drive_write/       # Google Drive (write) fetcher + Dockerfile
 ├── llm/                   # Containerized LLM runner + Dockerfile

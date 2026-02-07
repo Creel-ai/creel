@@ -105,6 +105,8 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
             return _fetch_gmail_inline(config)
         elif name == "gmail_send":
             return _fetch_gmail_send_inline(config)
+        elif name == "gmail_modify":
+            return _fetch_gmail_modify_inline(config)
         elif name == "drive":
             return _fetch_drive_inline(config)
         elif name == "drive_write":
@@ -174,6 +176,35 @@ def _fetch_gmail_send_inline(config: FetcherConfig) -> str:
     subject = config.args.get("subject", "")
     body = config.args.get("body", "")
     result = send_email(to, subject, body)
+    return json.dumps(result, indent=2)
+
+
+def _fetch_gmail_modify_inline(config: FetcherConfig) -> str:
+    """Run Gmail modify fetcher inline."""
+    action = config.args.get("action", "")
+    message_id = config.args.get("message_id", "")
+
+    if action == "modify":
+        from fetchers.gmail_modify.fetcher import modify_message
+
+        add_raw = config.args.get("add_labels", "")
+        remove_raw = config.args.get("remove_labels", "")
+        add_labels = [l.strip() for l in add_raw.split(",") if l.strip()] or None
+        remove_labels = (
+            [l.strip() for l in remove_raw.split(",") if l.strip()] or None
+        )
+        result = modify_message(message_id, add_labels, remove_labels)
+    elif action == "trash":
+        from fetchers.gmail_modify.fetcher import trash_message
+
+        result = trash_message(message_id)
+    elif action == "delete":
+        from fetchers.gmail_modify.fetcher import delete_message
+
+        result = delete_message(message_id)
+    else:
+        raise ValueError(f"gmail_modify: unknown action '{action}' (use modify/trash/delete)")
+
     return json.dumps(result, indent=2)
 
 

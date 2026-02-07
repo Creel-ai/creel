@@ -10,6 +10,18 @@ import anthropic
 
 from taskrunner.models import LLMConfig
 
+_OAUTH_HEADERS = {
+    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
+    "user-agent": "claude-cli/2.1.2 (external, cli)",
+    "x-app": "cli",
+}
+
+_CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
+def _is_oauth_token(token: str) -> bool:
+    return "sk-ant-oat" in token
+
 
 def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:
     """Send a prompt to the LLM and return the response text.
@@ -33,7 +45,8 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
 
     if auth_token:
-        client = anthropic.Anthropic(auth_token=auth_token)
+        headers = _OAUTH_HEADERS if _is_oauth_token(auth_token) else {}
+        client = anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
     elif api_key:
         client = anthropic.Anthropic(api_key=api_key)
     else:
@@ -42,11 +55,15 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
             "(from `claude setup-token`) or ANTHROPIC_API_KEY in your "
             "environment, or configure secrets in the task definition."
         )
-    message = client.messages.create(
-        model=config.model,
-        max_tokens=config.max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    create_kwargs: dict = {
+        "model": config.model,
+        "max_tokens": config.max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if auth_token and _is_oauth_token(auth_token):
+        create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
+
+    message = client.messages.create(**create_kwargs)
 
     # Extract text from response
     text_parts = []

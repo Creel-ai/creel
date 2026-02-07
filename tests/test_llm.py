@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from taskrunner.llm import _run_llm_container, _run_llm_direct
+from taskrunner.llm import _OAUTH_HEADERS, _run_llm_container, _run_llm_direct
 from taskrunner.models import LLMConfig
 
 
@@ -36,7 +36,9 @@ def test_direct_uses_auth_token(mock_cls, monkeypatch):
 
     result = _run_llm_direct("hi", _make_config())
 
-    mock_cls.assert_called_once_with(auth_token="sk-ant-oat01-test")
+    mock_cls.assert_called_once_with(
+        auth_token="sk-ant-oat01-test", default_headers=_OAUTH_HEADERS,
+    )
     assert result == "Hello"
 
 
@@ -64,7 +66,24 @@ def test_direct_auth_token_takes_precedence(mock_cls, monkeypatch):
 
     _run_llm_direct("hi", _make_config())
 
-    mock_cls.assert_called_once_with(auth_token="sk-ant-oat01-token")
+    mock_cls.assert_called_once_with(
+        auth_token="sk-ant-oat01-token", default_headers=_OAUTH_HEADERS,
+    )
+
+
+@patch("taskrunner.llm.anthropic.Anthropic")
+def test_direct_non_oauth_auth_token_no_headers(mock_cls, monkeypatch):
+    """A non-OAuth auth_token should not get the spoofed headers."""
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-other-token")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    mock_cls.return_value.messages.create.return_value = _mock_message()
+
+    _run_llm_direct("hi", _make_config())
+
+    mock_cls.assert_called_once_with(
+        auth_token="sk-ant-other-token", default_headers={},
+    )
 
 
 def test_direct_no_credentials_raises(monkeypatch):

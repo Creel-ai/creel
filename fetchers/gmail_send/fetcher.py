@@ -49,7 +49,7 @@ def send_email(to: str, subject: str, body: str) -> dict:
         Dict with the sent message's id and threadId.
     """
     creds = get_credentials()
-    service = build("gmail", "v1", credentials=creds)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     message = MIMEText(body)
     message["to"] = to

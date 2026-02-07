@@ -56,7 +56,7 @@ def fetch_emails(
         and optionally body.
     """
     creds = get_credentials()
-    service = build("gmail", "v1", credentials=creds)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     results = (
         service.users()

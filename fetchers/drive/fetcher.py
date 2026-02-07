@@ -47,7 +47,7 @@ def list_files(query: str = "", max_results: int = 20) -> list[dict]:
         List of file dicts with id, name, mimeType, modifiedTime, and size.
     """
     creds = get_credentials()
-    service = build("drive", "v3", credentials=creds)
+    service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     params: dict = {
         "pageSize": max_results,

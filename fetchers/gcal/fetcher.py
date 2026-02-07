@@ -39,7 +39,7 @@ def get_credentials() -> Credentials:
 def fetch_events(range_arg: str = "today") -> list[dict]:
     """Fetch calendar events for the specified range."""
     creds = get_credentials()
-    service = build("calendar", "v3", credentials=creds)
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
 
     now = datetime.now(timezone.utc)
 

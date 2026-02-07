@@ -51,7 +51,7 @@ def modify_message(
         Dict with the message id and updated labelIds.
     """
     creds = get_credentials()
-    service = build("gmail", "v1", credentials=creds)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     body: dict[str, list[str]] = {}
     if add_labels:
@@ -82,7 +82,7 @@ def trash_message(message_id: str) -> dict:
         Dict with the message id.
     """
     creds = get_credentials()
-    service = build("gmail", "v1", credentials=creds)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     result = (
         service.users()
@@ -107,7 +107,7 @@ def delete_message(message_id: str) -> dict:
         Dict confirming deletion.
     """
     creds = get_credentials()
-    service = build("gmail", "v1", credentials=creds)
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     (
         service.users()

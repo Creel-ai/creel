@@ -46,15 +46,84 @@ class LLMConfig(BaseModel):
     secrets: str | None = None
 
 
+# --- Agent / tool models ---
+
+
+class ToolParameter(BaseModel):
+    """A single parameter exposed to the LLM for a tool."""
+
+    type: str = "string"
+    description: str = ""
+    required: bool = False
+
+
+class ToolConfig(BaseModel):
+    """Configuration for one tool available to the agent."""
+
+    fetcher: str
+    secrets: str | None = None
+    description: str
+    parameters: dict[str, ToolParameter] = Field(default_factory=dict)
+    fixed_args: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentConfig(BaseModel):
+    """Agent loop settings."""
+
+    max_turns: int = Field(default=10, ge=1, le=50)
+
+
+class SessionConfig(BaseModel):
+    """Session storage settings."""
+
+    sessions_dir: str = "sessions"
+    max_history: int = 50
+
+
+class IMessageChannelConfig(BaseModel):
+    """iMessage channel settings."""
+
+    listen_to: str
+    poll_interval: int = 3
+
+    @field_validator("listen_to")
+    @classmethod
+    def expand_env_vars(cls, v: str) -> str:
+        return os.path.expandvars(v)
+
+
+class ChannelsConfig(BaseModel):
+    """All channel configurations."""
+
+    imessage: IMessageChannelConfig | None = None
+
+
+class AgentDefinition(BaseModel):
+    """Global agent config loaded from agent.yaml."""
+
+    system_prompt: str
+    tools: dict[str, ToolConfig] = Field(default_factory=dict)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
+    channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+
+
+# --- Task definition ---
+
+
 class TaskDefinition(BaseModel):
     """A complete task definition parsed from YAML."""
 
     name: str
     schedule: str
-    fetch: dict[str, FetcherConfig]
+    fetch: dict[str, FetcherConfig] = Field(default_factory=dict)
     prompt: str
     output: OutputConfig
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    mode: str = "simple"
+    tools: dict[str, ToolConfig] = Field(default_factory=dict)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
 
     @field_validator("schedule")
     @classmethod
@@ -64,6 +133,14 @@ class TaskDefinition(BaseModel):
             raise ValueError(
                 f"schedule must be a 5-part cron expression, got {len(parts)} parts"
             )
+        return v
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        allowed = {"simple", "agent"}
+        if v not in allowed:
+            raise ValueError(f"mode must be one of {allowed}, got '{v}'")
         return v
 
 
@@ -92,3 +169,18 @@ def load_all_tasks(tasks_dir: str | Path = "tasks") -> list[TaskDefinition]:
     for path in sorted(tasks_dir.glob("*.yaml")):
         tasks.append(load_task(path))
     return tasks
+
+
+def load_agent_config(path: str | Path = "agent.yaml") -> AgentDefinition:
+    """Load the global agent configuration from a YAML file."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Agent config not found: {path}")
+
+    with open(path) as f:
+        raw = yaml.safe_load(f)
+
+    if not isinstance(raw, dict):
+        raise ValueError(f"Agent config must contain a YAML mapping, got {type(raw)}")
+
+    return AgentDefinition(**raw)

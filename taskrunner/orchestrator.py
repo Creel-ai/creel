@@ -26,6 +26,10 @@ def run_task(
 ) -> str:
     """Execute a complete task: fetch -> LLM -> output.
 
+    Branches on task.mode:
+    - "simple" (default): linear pipeline (fetch -> template -> LLM -> output)
+    - "agent": agent loop with tool calling
+
     Args:
         task_path: Path to the task YAML file.
         use_containers: If True, run fetchers/LLM in Docker containers.
@@ -35,7 +39,7 @@ def run_task(
         The LLM response text (or rendered prompt in dry-run mode).
     """
     task = load_task(task_path)
-    logger.info("Running task: %s", task.name)
+    logger.info("Running task: %s (mode=%s)", task.name, task.mode)
 
     # Build context with date info
     now = datetime.now(timezone.utc)
@@ -68,9 +72,13 @@ def run_task(
     if task.llm.secrets:
         _load_secrets_to_env(task.llm.secrets)
 
-    # Run through LLM
-    logger.info("Calling LLM (%s)", task.llm.model)
-    result = run_llm(prompt, task.llm, use_container=use_containers)
+    if task.mode == "agent":
+        result = _run_agent_mode(task, prompt, use_containers)
+    else:
+        # Simple mode: single LLM call
+        logger.info("Calling LLM (%s)", task.llm.model)
+        result = run_llm(prompt, task.llm, use_container=use_containers)
+
     logger.info("LLM response: %d chars", len(result))
 
     # Route output
@@ -78,6 +86,34 @@ def run_task(
     send_output(result, task.output)
 
     return result
+
+
+def _run_agent_mode(
+    task: TaskDefinition,
+    prompt: str,
+    use_containers: bool,
+) -> str:
+    """Run a task in agent mode using the agent loop."""
+    from taskrunner.agent import run_agent_loop
+
+    messages = [{"role": "user", "content": prompt}]
+
+    agent_result = run_agent_loop(
+        messages=messages,
+        llm_config=task.llm,
+        tools_config=task.tools,
+        agent_config=task.agent,
+        use_containers=use_containers,
+    )
+
+    logger.info(
+        "Agent completed: %d turns, %d tool calls, stop=%s",
+        agent_result.turns_used,
+        agent_result.tool_calls_made,
+        agent_result.stop_reason,
+    )
+
+    return agent_result.text
 
 
 def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:

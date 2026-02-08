@@ -27,6 +27,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# Sessions (agent conversation history)
+sessions/
+
 # Logs
 *.log
 logs/

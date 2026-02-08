@@ -7,6 +7,9 @@ Usage:
     ./runner.py schedule                 Start scheduler for all tasks
     ./runner.py list                     List available tasks
     ./runner.py validate <task_name>     Validate a task definition
+    ./runner.py chat                     Interactive CLI chat with agent
+    ./runner.py listen                   Listen for iMessages and respond
+    ./runner.py serve                    Listen for iMessages + run scheduler
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from taskrunner.secrets import parse_env_file
 from taskrunner.scheduler import start_scheduler
 
 DEFAULT_TASKS_DIR = Path("tasks")
+DEFAULT_AGENT_CONFIG = Path("agent.yaml")
 
 
 def _tasks_dir(args: argparse.Namespace) -> Path:
@@ -117,6 +121,127 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 1
 
 
+def _load_agent_def(args: argparse.Namespace):
+    """Load the global agent definition from agent.yaml."""
+    from taskrunner.models import load_agent_config
+
+    config_path = args.agent_config
+    return load_agent_config(config_path)
+
+
+def cmd_chat(args: argparse.Namespace) -> int:
+    """Start interactive CLI chat."""
+    from taskrunner.channels.stdin import StdinChannel
+    from taskrunner.chat import ChatServer
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        return 1
+
+    # Load LLM secrets early
+    if agent_def.llm.secrets:
+        from taskrunner.orchestrator import _load_secrets_to_env
+        _load_secrets_to_env(agent_def.llm.secrets)
+
+    server = ChatServer(agent_def)
+    channel = StdinChannel()
+
+    try:
+        channel.listen(server.handle_message)
+    except KeyboardInterrupt:
+        print("\nChat stopped.")
+
+    return 0
+
+
+def cmd_listen(args: argparse.Namespace) -> int:
+    """Start iMessage listener."""
+    from taskrunner.channels.imessage import IMessageChannel
+    from taskrunner.chat import ChatServer
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        return 1
+
+    if not agent_def.channels.imessage:
+        print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
+        return 1
+
+    # Load LLM secrets early
+    if agent_def.llm.secrets:
+        from taskrunner.orchestrator import _load_secrets_to_env
+        _load_secrets_to_env(agent_def.llm.secrets)
+
+    server = ChatServer(agent_def)
+    channel = IMessageChannel(
+        allowed_senders=[agent_def.channels.imessage.listen_to],
+        poll_interval=agent_def.channels.imessage.poll_interval,
+    )
+
+    print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+    try:
+        channel.listen(server.handle_message)
+    except KeyboardInterrupt:
+        print("\nListener stopped.")
+
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Start iMessage listener + scheduler (daemon mode)."""
+    import threading
+
+    from taskrunner.channels.imessage import IMessageChannel
+    from taskrunner.chat import ChatServer
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        return 1
+
+    if not agent_def.channels.imessage:
+        print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
+        return 1
+
+    # Load LLM secrets early
+    if agent_def.llm.secrets:
+        from taskrunner.orchestrator import _load_secrets_to_env
+        _load_secrets_to_env(agent_def.llm.secrets)
+
+    # Start scheduler in a background thread
+    tasks_dir = _tasks_dir(args)
+    if tasks_dir.is_dir():
+        def run_scheduler():
+            try:
+                start_scheduler(tasks_dir=tasks_dir, use_containers=args.containers)
+            except Exception:
+                logging.getLogger(__name__).exception("Scheduler crashed")
+
+        sched_thread = threading.Thread(target=run_scheduler, daemon=True)
+        sched_thread.start()
+        print("Scheduler started in background.")
+
+    # Start iMessage listener in foreground
+    server = ChatServer(agent_def)
+    channel = IMessageChannel(
+        allowed_senders=[agent_def.channels.imessage.listen_to],
+        poll_interval=agent_def.channels.imessage.poll_interval,
+    )
+
+    print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+    try:
+        channel.listen(server.handle_message)
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="LLM Task Runner - secure, scheduled LLM task execution",
@@ -129,6 +254,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory"
+    )
+    parser.add_argument(
+        "--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG,
+        help="Path to agent.yaml config",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -149,6 +278,15 @@ def main() -> int:
     # validate command
     validate_parser = subparsers.add_parser("validate", help="Validate a task definition")
     validate_parser.add_argument("task_name", help="Name of the task to validate")
+
+    # chat command
+    subparsers.add_parser("chat", help="Interactive CLI chat with agent")
+
+    # listen command
+    subparsers.add_parser("listen", help="Listen for iMessages and respond")
+
+    # serve command
+    subparsers.add_parser("serve", help="Listen for iMessages + run scheduler")
 
     args = parser.parse_args()
 
@@ -175,6 +313,9 @@ def main() -> int:
         "schedule": cmd_schedule,
         "list": cmd_list,
         "validate": cmd_validate,
+        "chat": cmd_chat,
+        "listen": cmd_listen,
+        "serve": cmd_serve,
     }
 
     return commands[args.command](args)

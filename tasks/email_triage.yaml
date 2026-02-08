@@ -1,0 +1,59 @@
+name: email_triage
+schedule: "0 8 * * *"
+mode: agent
+
+fetch:
+  gmail:
+    image: fetcher-gmail:latest
+    secrets: secrets/gmail.env.enc
+    args:
+      query: "is:unread newer_than:1d"
+
+tools:
+  trash_email:
+    fetcher: gmail_modify
+    secrets: secrets/gmail_modify.env.enc
+    description: "Move an email to trash"
+    parameters:
+      message_id:
+        type: string
+        description: "Gmail message ID"
+        required: true
+    fixed_args:
+      action: "trash"
+
+  mark_read:
+    fetcher: gmail_modify
+    secrets: secrets/gmail_modify.env.enc
+    description: "Mark an email as read"
+    parameters:
+      message_id:
+        type: string
+        description: "Gmail message ID"
+        required: true
+    fixed_args:
+      action: "modify"
+      remove_labels: "UNREAD"
+
+agent:
+  max_turns: 10
+
+prompt: |
+  Triage my unread emails. For each email:
+  1. If it's obvious spam or marketing, trash it
+  2. If it's a notification that doesn't need action, mark it as read
+  3. If it needs my attention, leave it unread
+
+  Summarize what you did at the end.
+
+  Here are the emails:
+  {gmail}
+
+output:
+  type: imessage
+  to: "$PHONE"
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 1024
+  secrets: secrets/anthropic.env.enc

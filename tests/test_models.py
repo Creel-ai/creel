@@ -9,10 +9,18 @@ import pytest
 import yaml
 
 from taskrunner.models import (
+    AgentConfig,
+    AgentDefinition,
+    ChannelsConfig,
     FetcherConfig,
+    IMessageChannelConfig,
     LLMConfig,
     OutputConfig,
+    SessionConfig,
     TaskDefinition,
+    ToolConfig,
+    ToolParameter,
+    load_agent_config,
     load_task,
 )
 
@@ -132,3 +140,137 @@ def test_multiple_fetchers(tmp_path: Path) -> None:
     assert len(loaded.fetch) == 2
     assert "weather" in loaded.fetch
     assert "calendar" in loaded.fetch
+
+
+# --- Tool / Agent model tests ---
+
+
+def test_tool_parameter_defaults() -> None:
+    param = ToolParameter()
+    assert param.type == "string"
+    assert param.description == ""
+    assert param.required is False
+
+
+def test_tool_config() -> None:
+    cfg = ToolConfig(
+        fetcher="gmail_modify",
+        secrets="secrets/gmail_modify.env.enc",
+        description="Trash an email",
+        parameters={
+            "message_id": ToolParameter(type="string", required=True),
+        },
+        fixed_args={"action": "trash"},
+    )
+    assert cfg.fetcher == "gmail_modify"
+    assert "message_id" in cfg.parameters
+    assert cfg.fixed_args["action"] == "trash"
+
+
+def test_agent_config_defaults() -> None:
+    cfg = AgentConfig()
+    assert cfg.max_turns == 10
+
+
+def test_agent_config_bounds() -> None:
+    with pytest.raises(Exception):
+        AgentConfig(max_turns=0)
+    with pytest.raises(Exception):
+        AgentConfig(max_turns=51)
+
+
+def test_session_config_defaults() -> None:
+    cfg = SessionConfig()
+    assert cfg.sessions_dir == "sessions"
+    assert cfg.max_history == 50
+
+
+def test_task_definition_mode_default(tmp_path: Path) -> None:
+    """Default mode should be 'simple'."""
+    task = {
+        "name": "simple_task",
+        "schedule": "0 7 * * *",
+        "fetch": {},
+        "prompt": "test",
+        "output": {"type": "stdout", "to": ""},
+    }
+    path = tmp_path / "simple.yaml"
+    path.write_text(yaml.dump(task))
+    loaded = load_task(path)
+    assert loaded.mode == "simple"
+
+
+def test_task_definition_agent_mode(tmp_path: Path) -> None:
+    """Agent mode tasks should parse tools and agent config."""
+    task = {
+        "name": "agent_task",
+        "schedule": "0 8 * * *",
+        "mode": "agent",
+        "fetch": {},
+        "prompt": "Triage emails",
+        "output": {"type": "stdout", "to": ""},
+        "tools": {
+            "trash_email": {
+                "fetcher": "gmail_modify",
+                "description": "Trash email",
+                "parameters": {
+                    "message_id": {"type": "string", "required": True},
+                },
+                "fixed_args": {"action": "trash"},
+            },
+        },
+        "agent": {"max_turns": 5},
+    }
+    path = tmp_path / "agent_task.yaml"
+    path.write_text(yaml.dump(task))
+    loaded = load_task(path)
+    assert loaded.mode == "agent"
+    assert "trash_email" in loaded.tools
+    assert loaded.tools["trash_email"].fixed_args["action"] == "trash"
+    assert loaded.agent.max_turns == 5
+
+
+def test_invalid_mode(tmp_path: Path) -> None:
+    task = {
+        "name": "bad_mode",
+        "schedule": "0 7 * * *",
+        "fetch": {},
+        "prompt": "test",
+        "output": {"type": "stdout", "to": ""},
+        "mode": "invalid",
+    }
+    path = tmp_path / "bad_mode.yaml"
+    path.write_text(yaml.dump(task))
+    with pytest.raises(Exception):
+        load_task(path)
+
+
+def test_load_agent_config(tmp_path: Path) -> None:
+    config = {
+        "system_prompt": "You are helpful. Today is {date}.",
+        "tools": {
+            "check_weather": {
+                "fetcher": "weather",
+                "description": "Get weather",
+                "parameters": {
+                    "location": {"type": "string", "required": True},
+                },
+            },
+        },
+        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 1024},
+        "agent": {"max_turns": 15},
+        "session": {"sessions_dir": "sessions", "max_history": 50},
+    }
+    path = tmp_path / "agent.yaml"
+    path.write_text(yaml.dump(config))
+
+    agent_def = load_agent_config(path)
+    assert agent_def.system_prompt.startswith("You are helpful")
+    assert "check_weather" in agent_def.tools
+    assert agent_def.agent.max_turns == 15
+    assert agent_def.llm.max_tokens == 1024
+
+
+def test_load_agent_config_not_found() -> None:
+    with pytest.raises(FileNotFoundError):
+        load_agent_config("/nonexistent/agent.yaml")

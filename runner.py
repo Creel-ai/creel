@@ -185,7 +185,7 @@ def cmd_listen(args: argparse.Namespace) -> int:
         from taskrunner.orchestrator import _load_secrets_to_env
         _load_secrets_to_env(agent_def.llm.secrets)
 
-    server = ChatServer(agent_def)
+    server = ChatServer(agent_def, use_containers=args.containers)
     channel = IMessageChannel(
         allowed_senders=[agent_def.channels.imessage.listen_to],
         poll_interval=agent_def.channels.imessage.poll_interval,
@@ -236,7 +236,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print("Scheduler started in background.")
 
     # Start iMessage listener in foreground
-    server = ChatServer(agent_def)
+    server = ChatServer(agent_def, use_containers=args.containers)
     channel = IMessageChannel(
         allowed_senders=[agent_def.channels.imessage.listen_to],
         poll_interval=agent_def.channels.imessage.poll_interval,

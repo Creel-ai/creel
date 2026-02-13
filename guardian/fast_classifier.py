@@ -17,13 +17,14 @@ class FastClassifier:
     2. Bare ``transformers`` pipeline (torch)
 
     Raises ``RuntimeError`` if neither backend is available.
-    The model is loaded lazily on the first ``classify()`` call.
+    The model is loaded eagerly at construction time.
     """
 
     def __init__(self, config: FastClassifierConfig) -> None:
         self._config = config
         self._pipeline: object | None = None
-        self._loaded: bool = False
+        if self._config.enabled:
+            self._load()
 
     def _load(self) -> None:
         """Attempt to load the classification pipeline."""
@@ -39,7 +40,6 @@ class FastClassifier:
             self._pipeline = pipeline(
                 "text-classification", model=model, tokenizer=tokenizer
             )
-            self._loaded = True
             logger.info("Fast classifier loaded via optimum/ONNX: %s", model_name)
             return
         except Exception:
@@ -52,7 +52,6 @@ class FastClassifier:
             self._pipeline = pipeline(
                 "text-classification", model=model_name, truncation=True
             )
-            self._loaded = True
             logger.info("Fast classifier loaded via transformers: %s", model_name)
             return
         except Exception:
@@ -71,9 +70,6 @@ class FastClassifier:
         """
         if not self._config.enabled:
             return None
-
-        if not self._loaded:
-            self._load()
 
         # Truncate to 512 tokens (rough char estimate for DeBERTa)
         truncated = text[:2048]

@@ -33,7 +33,6 @@ def valid_task_yaml(tmp_path: Path) -> Path:
         "schedule": "0 7 * * *",
         "fetch": {
             "weather": {
-                "image": "fetcher-weather:latest",
                 "args": {"location": "denver"},
             }
         },
@@ -51,6 +50,7 @@ def test_load_valid_task(valid_task_yaml: Path) -> None:
     assert task.name == "test_task"
     assert task.schedule == "0 7 * * *"
     assert "weather" in task.fetch
+    assert task.fetch["weather"].name == "weather"
     assert task.fetch["weather"].image == "fetcher-weather:latest"
     assert task.output.type == "stdout"
     assert task.llm.model == "claude-sonnet-4-20250514"
@@ -106,17 +106,19 @@ def test_default_llm_config(tmp_path: Path) -> None:
 
 def test_fetcher_config_with_secrets() -> None:
     config = FetcherConfig(
-        image="fetcher-gcal:latest",
+        name="gcal",
         secrets="secrets/gcal.env.enc",
         args={"range": "today"},
     )
     assert config.secrets == "secrets/gcal.env.enc"
     assert config.args["range"] == "today"
+    assert config.image == "fetcher-gcal:latest"
 
 
 def test_fetcher_config_without_secrets() -> None:
-    config = FetcherConfig(image="fetcher-weather:latest", args={"location": "nyc"})
+    config = FetcherConfig(name="weather", args={"location": "nyc"})
     assert config.secrets is None
+    assert config.image == "fetcher-weather:latest"
 
 
 def test_multiple_fetchers(tmp_path: Path) -> None:
@@ -124,9 +126,8 @@ def test_multiple_fetchers(tmp_path: Path) -> None:
         "name": "multi_fetch",
         "schedule": "0 7 * * *",
         "fetch": {
-            "weather": {"image": "fetcher-weather:latest", "args": {"location": "sf"}},
+            "weather": {"args": {"location": "sf"}},
             "calendar": {
-                "image": "fetcher-gcal:latest",
                 "secrets": "secrets/gcal.env.enc",
                 "args": {"range": "today"},
             },

@@ -3,18 +3,15 @@ schedule: "0 7 * * *"  # 7am daily
 
 fetch:
   calendar:
-    image: fetcher-gcal:latest
     secrets: secrets/gcal.env.enc
     args:
       range: today
 
   weather:
-    image: fetcher-weather:latest
     args:
       location: denver
 
   gmail_readonly:
-    image: fetcher-gmail-readonly:latest
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"

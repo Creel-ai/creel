@@ -15,9 +15,14 @@ from guardian.types import GuardianConfig
 class FetcherConfig(BaseModel):
     """Configuration for a single fetcher step."""
 
-    image: str
+    name: str = ""
     secrets: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def image(self) -> str:
+        """Derive Docker image name from fetcher name by convention."""
+        return f"fetcher-{self.name.replace('_', '-')}:latest"
 
 
 class OutputConfig(BaseModel):
@@ -159,7 +164,11 @@ def load_task(path: str | Path) -> TaskDefinition:
     if not isinstance(raw, dict):
         raise ValueError(f"Task file must contain a YAML mapping, got {type(raw)}")
 
-    return TaskDefinition(**raw)
+    task = TaskDefinition(**raw)
+    for fetcher_name, fetcher_cfg in task.fetch.items():
+        if not fetcher_cfg.name:
+            fetcher_cfg.name = fetcher_name
+    return task
 
 
 def load_all_tasks(tasks_dir: str | Path = "tasks") -> list[TaskDefinition]:

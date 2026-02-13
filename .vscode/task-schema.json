@@ -51,12 +51,11 @@
   "$defs": {
     "FetcherConfig": {
       "type": "object",
-      "required": ["image"],
       "additionalProperties": false,
       "properties": {
-        "image": {
+        "name": {
           "type": "string",
-          "description": "Docker image for the fetcher"
+          "description": "Fetcher name (derived from key if omitted)"
         },
         "secrets": {
           "type": "string",

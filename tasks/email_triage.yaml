@@ -4,7 +4,6 @@ mode: agent
 
 fetch:
   gmail_readonly:
-    image: fetcher-gmail-readonly:latest
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"

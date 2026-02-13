@@ -1,0 +1,175 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Creel Task Definition",
+  "description": "Schema for task YAML files in tasks/",
+  "type": "object",
+  "required": ["name", "schedule", "prompt", "output"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Unique task identifier"
+    },
+    "schedule": {
+      "type": "string",
+      "description": "5-part cron expression (e.g. \"30 6 * * *\")"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["simple", "agent"],
+      "default": "simple",
+      "description": "Task mode: simple (default) or agent (tool calling)"
+    },
+    "fetch": {
+      "type": "object",
+      "description": "Map of fetcher name to config",
+      "additionalProperties": {
+        "$ref": "#/$defs/FetcherConfig"
+      }
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Prompt template with {name} placeholders"
+    },
+    "output": {
+      "$ref": "#/$defs/OutputConfig"
+    },
+    "llm": {
+      "$ref": "#/$defs/LLMConfig"
+    },
+    "tools": {
+      "type": "object",
+      "description": "Tools available to the agent (agent mode only)",
+      "additionalProperties": {
+        "$ref": "#/$defs/ToolConfig"
+      }
+    },
+    "agent": {
+      "$ref": "#/$defs/AgentConfig"
+    }
+  },
+  "$defs": {
+    "FetcherConfig": {
+      "type": "object",
+      "required": ["image"],
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Docker image for the fetcher"
+        },
+        "secrets": {
+          "type": "string",
+          "description": "Path to age-encrypted .env file"
+        },
+        "args": {
+          "type": "object",
+          "description": "Key-value args passed to the fetcher",
+          "additionalProperties": true
+        }
+      }
+    },
+    "OutputConfig": {
+      "type": "object",
+      "required": ["type", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["imessage", "stdout", "file"],
+          "description": "Output destination type"
+        },
+        "to": {
+          "type": "string",
+          "description": "Phone number, empty string, or file path"
+        }
+      }
+    },
+    "LLMConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "default": "claude-sonnet-4-20250514",
+          "description": "Anthropic model ID"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "default": 300,
+          "description": "Max response tokens"
+        },
+        "secrets": {
+          "type": "string",
+          "description": "Path to age-encrypted .env with API credentials"
+        }
+      }
+    },
+    "ToolConfig": {
+      "type": "object",
+      "required": ["fetcher", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "fetcher": {
+          "type": "string",
+          "description": "Fetcher to execute (e.g. gmail_modify)"
+        },
+        "secrets": {
+          "type": "string",
+          "description": "Path to age-encrypted .env file"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description shown to the LLM"
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Parameters the LLM can provide",
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolParameter"
+          }
+        },
+        "fixed_args": {
+          "type": "object",
+          "description": "Args always passed to fetcher (override LLM input)",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ToolParameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "default": "string",
+          "description": "Parameter type"
+        },
+        "description": {
+          "type": "string",
+          "description": "Parameter description shown to LLM"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the parameter is required"
+        }
+      }
+    },
+    "AgentConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10,
+          "description": "Max agent loop iterations"
+        }
+      }
+    }
+  }
+}

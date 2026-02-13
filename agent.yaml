@@ -37,7 +37,7 @@ tools:
         description: "Event location"
 
   check_email:
-    fetcher: gmail
+    fetcher: gmail_readonly
     secrets: secrets/gmail.env.enc
     description: "Search Gmail for emails"
     parameters:
@@ -50,7 +50,7 @@ tools:
         description: "Max emails to return (default: 20)"
 
   read_email:
-    fetcher: gmail_read
+    fetcher: gmail_readonly
     secrets: secrets/gmail.env.enc
     description: "Read the full content of a specific email by its ID"
     parameters:

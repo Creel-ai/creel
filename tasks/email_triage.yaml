@@ -3,8 +3,8 @@ schedule: "0 8 * * *"
 mode: agent
 
 fetch:
-  gmail:
-    image: fetcher-gmail:latest
+  gmail_readonly:
+    image: fetcher-gmail-readonly:latest
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"
@@ -47,7 +47,7 @@ prompt: |
   Summarize what you did at the end.
 
   Here are the emails:
-  {gmail}
+  {gmail_readonly}
 
 output:
   type: imessage

@@ -20,6 +20,8 @@ import os
 import sys
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 from taskrunner.models import load_all_tasks, load_task
 from taskrunner.orchestrator import run_task
 from taskrunner.secrets import parse_env_file
@@ -126,7 +128,14 @@ def _load_agent_def(args: argparse.Namespace):
     from taskrunner.models import load_agent_config
 
     config_path = args.agent_config
-    return load_agent_config(config_path)
+    agent_def = load_agent_config(config_path)
+
+    # CLI overrides
+    if getattr(args, "no_judge", False) and agent_def.guardian:
+        agent_def.guardian.llm_judge.enabled = False
+        logger.info("LLM judge disabled via --no-judge flag")
+
+    return agent_def
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
@@ -326,6 +335,70 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Query the guardian audit log."""
+    from guardian.audit import read_audit_log
+    from datetime import datetime
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        return 1
+
+    log_file = agent_def.guardian.audit.log_file if agent_def.guardian else "guardian_audit.jsonl"
+    tail = 0 if args.all else args.tail
+
+    entries = read_audit_log(
+        log_file,
+        tail=tail,
+        event_filter=args.event,
+        blocked_only=args.blocked,
+        denied_only=args.denied,
+    )
+
+    if not entries:
+        print("No audit entries found.")
+        return 0
+
+    # Format output
+    for entry in entries:
+        ts = entry.get("ts", "?")
+        # Truncate to readable format
+        if len(ts) > 19:
+            ts = ts[:19]
+        event = entry.get("event", "?")
+
+        if event == "screen_input":
+            status = "🚫 BLOCKED" if entry.get("blocked") else "✅ passed"
+            source = entry.get("source", "?")
+            conf = entry.get("confidence")
+            conf_str = f" ({conf:.3f})" if conf is not None else ""
+            print(f"[{ts}] {event}: {status} via {source}{conf_str}")
+
+        elif event == "validate_action":
+            verdict = entry.get("verdict", "?")
+            icon = {"allow": "✅", "review": "⚠️", "deny": "🚫"}.get(verdict, "❓")
+            tool = entry.get("tool_name", "?")
+            rule = entry.get("matched_rule", "")
+            print(f"[{ts}] {event}: {icon} {verdict} {tool} (rule: {rule or 'default'})")
+
+        elif event == "tool_result":
+            icon = "✅" if entry.get("success") else "❌"
+            tool = entry.get("tool_name", "?")
+            dur = entry.get("duration_ms", 0)
+            size = entry.get("output_length", 0)
+            err = entry.get("error", "")
+            extra = f" error={err}" if err else ""
+            print(f"[{ts}] {event}: {icon} {tool} {dur:.0f}ms ({size} chars){extra}")
+
+        else:
+            print(f"[{ts}] {event}: {entry}")
+
+    print(f"\n{len(entries)} entries shown.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="LLM Task Runner - secure, scheduled LLM task execution",
@@ -350,6 +423,10 @@ def main() -> int:
     parser.add_argument(
         "--json-logs", action="store_true",
         help="Output structured JSON log lines (for production)",
+    )
+    parser.add_argument(
+        "--no-judge", action="store_true",
+        help="Disable the LLM judge (Stage 2) to save API calls during development",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -404,6 +481,25 @@ def main() -> int:
         for key, value in parse_env_file(root_env).items():
             os.environ.setdefault(key, value)
 
+    # audit command
+    audit_parser = subparsers.add_parser("audit", help="Query the guardian audit log")
+    audit_parser.add_argument(
+        "--tail", type=int, default=20, help="Show last N entries (default: 20)"
+    )
+    audit_parser.add_argument(
+        "--blocked", action="store_true", help="Show only blocked input events"
+    )
+    audit_parser.add_argument(
+        "--denied", action="store_true", help="Show only denied action events"
+    )
+    audit_parser.add_argument(
+        "--event", type=str, default=None,
+        help="Filter by event type (screen_input, validate_action, tool_result)"
+    )
+    audit_parser.add_argument(
+        "--all", action="store_true", help="Show all entries (no tail limit)"
+    )
+
     if args.command is None:
         parser.print_help()
         return 1
@@ -416,6 +512,7 @@ def main() -> int:
         "chat": cmd_chat,
         "listen": cmd_listen,
         "serve": cmd_serve,
+        "audit": cmd_audit,
     }
 
     return commands[args.command](args)

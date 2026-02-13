@@ -123,6 +123,9 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
 
 def _run_llm_container(prompt: str, config: LLMConfig) -> str:
     """Run LLM call inside an isolated Docker container."""
+    from taskrunner.orchestrator import _ensure_image
+    _ensure_image("llm-runner:latest")
+
     env_flags = []
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
     if auth_token:

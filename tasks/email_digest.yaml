@@ -3,7 +3,6 @@ schedule: "0 8 * * *"  # 8am daily
 
 fetch:
   gmail_readonly:
-    image: fetcher-gmail-readonly:latest
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"

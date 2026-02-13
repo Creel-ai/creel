@@ -18,7 +18,6 @@ def _make_task(tmp_path: Path, **overrides) -> Path:
         "schedule": "0 7 * * *",
         "fetch": {
             "weather": {
-                "image": "fetcher-weather:latest",
                 "args": {"location": "denver"},
             }
         },
@@ -79,7 +78,6 @@ def test_gmail_fetcher_through_orchestrator(tmp_path: Path) -> None:
         "schedule": "0 8 * * *",
         "fetch": {
             "gmail_readonly": {
-                "image": "fetcher-gmail-readonly:latest",
                 "args": {"query": "is:unread", "max_results": "5", "full_body": "false"},
             }
         },

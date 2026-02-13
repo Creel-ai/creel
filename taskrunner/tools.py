@@ -88,7 +88,7 @@ def execute_tool_call(
 
     # Build a FetcherConfig for the existing infrastructure
     fetcher_config = FetcherConfig(
-        image=f"fetcher-{cfg.fetcher.replace('_', '-')}:latest",
+        name=cfg.fetcher,
         secrets=cfg.secrets,
         args=string_args,
     )

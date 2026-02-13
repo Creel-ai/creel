@@ -25,12 +25,17 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
 ]
+guardian = [
+    "transformers>=4.36.0",
+    "onnxruntime>=1.16.0",
+    "optimum[onnxruntime]>=1.14.0",
+]
 
 [project.scripts]
 taskrunner = "runner:main"
 
 [tool.setuptools.packages.find]
-include = ["taskrunner*", "fetchers*"]
+include = ["taskrunner*", "fetchers*", "guardian*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

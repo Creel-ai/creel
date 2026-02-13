@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
+from guardian.types import GuardianConfig
+
 
 class FetcherConfig(BaseModel):
     """Configuration for a single fetcher step."""
@@ -107,6 +109,7 @@ class AgentDefinition(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+    guardian: GuardianConfig | None = None
 
 
 # --- Task definition ---

@@ -25,6 +25,14 @@ class ChatServer:
             max_history=agent_def.session.max_history,
         )
 
+        # Initialize guardian if configured and enabled
+        self._guardian = None
+        if agent_def.guardian and agent_def.guardian.enabled:
+            from guardian import Guardian
+
+            self._guardian = Guardian(agent_def.guardian)
+            logger.info("Guardian enabled")
+
     def handle_message(self, sender_id: str, text: str) -> str:
         """Process an incoming message and return a response.
 
@@ -34,6 +42,13 @@ class ChatServer:
         if text.strip().lower() in _CLEAR_COMMANDS:
             self._session_mgr.clear(sender_id)
             return "Session cleared."
+
+        # Screen input through guardian (before adding to session)
+        if self._guardian:
+            screen_result = self._guardian.screen_input(text)
+            if screen_result.blocked:
+                logger.warning("Guardian blocked input from %s", sender_id)
+                return screen_result.rejection_message
 
         # Add user message and get session with history
         session = self._session_mgr.add_user_message(sender_id, text)
@@ -56,6 +71,7 @@ class ChatServer:
             tools_config=self._agent_def.tools,
             agent_config=self._agent_def.agent,
             system_prompt=system_prompt,
+            guardian=self._guardian,
         )
 
         logger.info(

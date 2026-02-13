@@ -30,6 +30,7 @@ def run_agent_loop(
     agent_config: AgentConfig,
     system_prompt: str | None = None,
     use_containers: bool = False,
+    guardian: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -96,6 +97,33 @@ def run_agent_loop(
             tool_name = block.name
             tool_input = block.input
             logger.info("Tool call: %s(%s)", tool_name, tool_input)
+
+            # Guardian action validation (stage 3)
+            if guardian is not None:
+                from guardian.types import ActionVerdict
+
+                decision = guardian.validate_action(tool_name, tool_input)
+                if decision.verdict == ActionVerdict.DENY:
+                    logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
+                    result = f"Action denied by security policy: {decision.reason}"
+                    is_error = True
+
+                    tool_history.append({
+                        "tool": tool_name,
+                        "input": tool_input,
+                        "output": result,
+                        "is_error": is_error,
+                    })
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                        "is_error": is_error,
+                    })
+                    continue
+
+                if decision.verdict == ActionVerdict.REVIEW:
+                    logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
 
             try:
                 result = execute_tool_call(

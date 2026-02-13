@@ -1,0 +1,15 @@
+allow:
+  - check_weather
+  - check_calendar
+  - check_email
+  - check_drive
+
+review:
+  - send_*
+  - upload_*
+  - create_*
+  - mark_*
+
+deny:
+  - trash_*
+  - delete_*

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from guardian.types import ClassifierResult, FastClassifierConfig
 
@@ -19,12 +20,13 @@ class FastClassifier:
     2. Bare ``transformers`` pipeline (torch)
 
     Raises ``RuntimeError`` if neither backend is available.
-    The model is loaded eagerly at construction time.
+    The model is loaded eagerly at construction time, or via ``warm_up()``.
     """
 
     def __init__(self, config: FastClassifierConfig) -> None:
         self._config = config
         self._pipeline: object | None = None
+        self._backend: str = "none"  # "onnx" | "transformers" | "none"
         if self._config.enabled:
             self._load()
 
@@ -42,6 +44,7 @@ class FastClassifier:
             self._pipeline = pipeline(
                 "text-classification", model=model, tokenizer=tokenizer
             )
+            self._backend = "onnx"
             logger.info("Fast classifier loaded via optimum/ONNX: %s", model_name)
             return
         except Exception:
@@ -54,6 +57,7 @@ class FastClassifier:
             self._pipeline = pipeline(
                 "text-classification", model=model_name, truncation=True
             )
+            self._backend = "transformers"
             logger.info("Fast classifier loaded via transformers: %s", model_name)
             return
         except Exception:
@@ -64,6 +68,31 @@ class FastClassifier:
             "Fast classifier requires transformers or optimum+onnxruntime. "
             "Install the dependencies or run with guardian disabled."
         )
+
+    def warm_up(self) -> None:
+        """Run a throwaway inference to avoid cold-start latency.
+
+        Safe to call multiple times (no-op if already loaded or disabled).
+        """
+        if not self._config.enabled or self._pipeline is None:
+            return
+
+        t0 = time.perf_counter()
+        try:
+            self._pipeline("warmup")
+        except Exception:
+            pass
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Fast classifier warm-up complete (backend=%s, %.1fms)",
+            self._backend,
+            elapsed_ms,
+        )
+
+    @property
+    def backend(self) -> str:
+        """Return which backend is active: ``"onnx"``, ``"transformers"``, or ``"none"``."""
+        return self._backend
 
     def classify(self, text: str) -> ClassifierResult | None:
         """Classify text for prompt injection.
@@ -81,11 +110,11 @@ class FastClassifier:
         chunks = [text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)]
 
         best: ClassifierResult | None = None
+        t0 = time.perf_counter()
 
         for idx, chunk in enumerate(chunks):
             try:
                 results = self._pipeline(chunk)
-                # Pipeline returns [{"label": "INJECTION"/"SAFE", "score": 0.99}]
                 top = results[0]
                 label = top["label"].upper()
                 score = top["score"]
@@ -98,23 +127,34 @@ class FastClassifier:
                     idx + 1, len(chunks), label, score, is_injection,
                 )
 
+                elapsed_ms = (time.perf_counter() - t0) * 1000
                 result = ClassifierResult(
                     is_injection=is_injection,
                     confidence=confidence,
                     source="fast_classifier",
-                    reasoning=f"label={label}, score={score:.4f}",
+                    reasoning=f"label={label}, score={score:.4f}, {elapsed_ms:.1f}ms",
                 )
 
                 # Short-circuit: injection found
                 if is_injection:
+                    logger.info(
+                        "Fast classifier: INJECTION label=%s score=%.4f elapsed=%.1fms chunks=%d",
+                        label, score, elapsed_ms, idx + 1,
+                    )
                     return result
 
-                # Track highest injection confidence across safe chunks
                 if best is None or confidence > best.confidence:
                     best = result
             except Exception:
                 logger.warning("Fast classifier inference failed on chunk", exc_info=True)
                 continue
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        if best:
+            logger.info(
+                "Fast classifier: SAFE confidence=%.4f elapsed=%.1fms chunks=%d",
+                best.confidence, elapsed_ms, len(chunks),
+            )
 
         return best
 
@@ -168,7 +208,6 @@ class FastClassifier:
                     reasoning=f"label={label}, score={score:.4f}",
                 )
 
-                # Short-circuit: injection found
                 if is_injection:
                     return result, chunk_details
 

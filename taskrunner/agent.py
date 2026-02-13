@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -152,6 +153,7 @@ def run_agent_loop(
                         continue
                     guardian.log_action_outcome(tool_name, "review", "approved")
 
+            t0 = time.perf_counter()
             try:
                 result = execute_tool_call(
                     tool_name=tool_name,
@@ -160,10 +162,22 @@ def run_agent_loop(
                     use_containers=use_containers,
                 )
                 is_error = False
+                elapsed_ms = (time.perf_counter() - t0) * 1000
             except Exception as e:
                 logger.exception("Tool %s failed", tool_name)
                 result = f"Error: {e}"
                 is_error = True
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+
+            # Audit tool execution result
+            if guardian is not None and hasattr(guardian, "_audit") and guardian._audit:
+                guardian._audit.log_tool_result(
+                    tool_name=tool_name,
+                    success=not is_error,
+                    duration_ms=elapsed_ms,
+                    output_length=len(result) if result else 0,
+                    error=str(result)[:200] if is_error else None,
+                )
 
             # Classify fetcher output for tools that return untrusted content
             tool_cfg = tools_config.get(tool_name)

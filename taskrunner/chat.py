@@ -40,6 +40,7 @@ class ChatServer:
             from guardian import Guardian
 
             self._guardian = Guardian(agent_def.guardian)
+            self._guardian.warm_up()
             logger.info("Guardian enabled")
 
     def handle_message(self, sender_id: str, text: str) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 
 import anthropic
 
@@ -126,33 +127,40 @@ def _run_llm_container(prompt: str, config: LLMConfig) -> str:
     from taskrunner.orchestrator import _ensure_image
     _ensure_image("llm-runner:latest")
 
-    env_flags = []
+    env_vars: dict[str, str] = {}
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
     if auth_token:
-        env_flags.extend(["-e", f"ANTHROPIC_AUTH_TOKEN={auth_token}"])
+        env_vars["ANTHROPIC_AUTH_TOKEN"] = auth_token
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if api_key:
-        env_flags.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+        env_vars["ANTHROPIC_API_KEY"] = api_key
 
-    env_flags.extend(["-e", f"MODEL={config.model}"])
-    env_flags.extend(["-e", f"MAX_TOKENS={config.max_tokens}"])
+    env_vars["MODEL"] = config.model
+    env_vars["MAX_TOKENS"] = str(config.max_tokens)
 
-    result = subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "--read-only",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--memory=256m",
-            "--cpus=0.5",
-            *env_flags,
-            "llm-runner:latest",
-        ],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=True,
-    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".env", delete=True, prefix="creel-"
+    ) as env_file:
+        for key, value in env_vars.items():
+            env_file.write(f"{key}={value}\n")
+        env_file.flush()
+
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "--read-only",
+                "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--memory=256m",
+                "--cpus=0.5",
+                "--env-file", env_file.name,
+                "llm-runner:latest",
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
     return result.stdout.strip()

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -316,35 +317,40 @@ def _ensure_image(image: str) -> None:
 def _run_fetcher_container(config: FetcherConfig) -> str:
     """Run a fetcher in an isolated Docker container."""
     _ensure_image(config.image)
-    env_flags: list[str] = []
+    env_vars: dict[str, str] = {}
 
     # Decrypt and inject secrets
     if config.secrets:
-        secrets = decrypt_env_file(config.secrets)
-        for key, value in secrets.items():
-            env_flags.extend(["-e", f"{key}={value}"])
+        env_vars.update(decrypt_env_file(config.secrets))
 
     # Pass args as env vars
     for key, value in config.args.items():
-        env_flags.extend(["-e", f"{key.upper()}={value}"])
+        env_vars[key.upper()] = value
 
-    result = subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "--read-only",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--memory=256m",
-            "--cpus=0.5",
-            *env_flags,
-            config.image,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=True,
-    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".env", delete=True, prefix="creel-"
+    ) as env_file:
+        for key, value in env_vars.items():
+            env_file.write(f"{key}={value}\n")
+        env_file.flush()
+
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "--read-only",
+                "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--memory=256m",
+                "--cpus=0.5",
+                "--env-file", env_file.name,
+                config.image,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
     return result.stdout.strip()
 
 

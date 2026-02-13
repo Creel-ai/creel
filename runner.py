@@ -342,6 +342,10 @@ def main() -> int:
         "--simple", action="store_true",
         help="Use simple stdin/stdout mode instead of TUI",
     )
+    parser.add_argument(
+        "--json-logs", action="store_true",
+        help="Output structured JSON log lines (for production)",
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -384,12 +388,10 @@ def main() -> int:
     args = parser.parse_args()
 
     # Set up logging
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    from taskrunner.log import setup_logging
+
+    log_level = "DEBUG" if args.verbose else "INFO"
+    setup_logging(json_mode=args.json_logs, level=log_level)
 
     # Load root .env if present (for PHONE, etc.)
     root_env = Path(".env")

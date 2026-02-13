@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from taskrunner.agent import run_agent_loop
+from taskrunner.log import generate_request_id, request_id_var
 from taskrunner.models import AgentDefinition
 from taskrunner.session import SessionManager
 
@@ -46,6 +47,11 @@ class ChatServer:
 
         This is the callback passed to channels.
         """
+        # Set request ID for this message
+        rid = generate_request_id()
+        request_id_var.set(rid)
+        logger.info("Handling message from %s [request_id=%s]", sender_id, rid)
+
         stripped = text.strip()
 
         # Handle clear command

@@ -241,8 +241,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
 
 
 def cmd_listen(args: argparse.Namespace) -> int:
-    """Start iMessage listener."""
-    from taskrunner.channels.imessage import IMessageChannel
+    """Start message listener (iMessage or BlueBubbles)."""
     from taskrunner.chat import ChatServer
 
     try:
@@ -251,22 +250,40 @@ def cmd_listen(args: argparse.Namespace) -> int:
         print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
         return 1
 
-    if not agent_def.channels.imessage:
-        print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
-        return 1
-
     # Load LLM secrets early
     if agent_def.llm.secrets:
         from taskrunner.orchestrator import _load_secrets_to_env
         _load_secrets_to_env(agent_def.llm.secrets)
 
     server = ChatServer(agent_def, use_containers=args.containers)
-    channel = IMessageChannel(
-        allowed_senders=[agent_def.channels.imessage.listen_to],
-        poll_interval=agent_def.channels.imessage.poll_interval,
-    )
+    channel_type = getattr(args, "channel_type", None) or "imessage"
 
-    print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+    if channel_type == "bluebubbles":
+        from taskrunner.channels.bluebubbles import BlueBubblesChannel
+
+        bb_cfg = agent_def.channels.bluebubbles
+        if not bb_cfg:
+            print("Error: No bluebubbles channel configured in agent.yaml", file=sys.stderr)
+            return 1
+        channel = BlueBubblesChannel(
+            server_url=bb_cfg.server_url,
+            password=bb_cfg.password,
+            allowed_senders=bb_cfg.listen_to,
+            poll_interval=bb_cfg.poll_interval,
+        )
+        print(f"Listening for iMessages via BlueBubbles ({bb_cfg.server_url})...")
+    else:
+        from taskrunner.channels.imessage import IMessageChannel
+
+        if not agent_def.channels.imessage:
+            print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
+            return 1
+        channel = IMessageChannel(
+            allowed_senders=[agent_def.channels.imessage.listen_to],
+            poll_interval=agent_def.channels.imessage.poll_interval,
+        )
+        print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+
     try:
         channel.listen(server.handle_message)
     except KeyboardInterrupt:
@@ -276,20 +293,15 @@ def cmd_listen(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    """Start iMessage listener + scheduler (daemon mode)."""
+    """Start message listener + scheduler (daemon mode)."""
     import threading
 
-    from taskrunner.channels.imessage import IMessageChannel
     from taskrunner.chat import ChatServer
 
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
         print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
-        return 1
-
-    if not agent_def.channels.imessage:
-        print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
         return 1
 
     # Load LLM secrets early
@@ -310,14 +322,35 @@ def cmd_serve(args: argparse.Namespace) -> int:
         sched_thread.start()
         print("Scheduler started in background.")
 
-    # Start iMessage listener in foreground
     server = ChatServer(agent_def, use_containers=args.containers)
-    channel = IMessageChannel(
-        allowed_senders=[agent_def.channels.imessage.listen_to],
-        poll_interval=agent_def.channels.imessage.poll_interval,
-    )
+    channel_type = getattr(args, "channel_type", None) or "imessage"
 
-    print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+    if channel_type == "bluebubbles":
+        from taskrunner.channels.bluebubbles import BlueBubblesChannel
+
+        bb_cfg = agent_def.channels.bluebubbles
+        if not bb_cfg:
+            print("Error: No bluebubbles channel configured in agent.yaml", file=sys.stderr)
+            return 1
+        channel = BlueBubblesChannel(
+            server_url=bb_cfg.server_url,
+            password=bb_cfg.password,
+            allowed_senders=bb_cfg.listen_to,
+            poll_interval=bb_cfg.poll_interval,
+        )
+        print(f"Listening for iMessages via BlueBubbles ({bb_cfg.server_url})...")
+    else:
+        from taskrunner.channels.imessage import IMessageChannel
+
+        if not agent_def.channels.imessage:
+            print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
+            return 1
+        channel = IMessageChannel(
+            allowed_senders=[agent_def.channels.imessage.listen_to],
+            poll_interval=agent_def.channels.imessage.poll_interval,
+        )
+        print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+
     try:
         channel.listen(server.handle_message)
     except KeyboardInterrupt:
@@ -385,10 +418,20 @@ def main() -> int:
 
 
     # listen command
-    subparsers.add_parser("listen", help="Listen for iMessages and respond")
+    listen_parser = subparsers.add_parser("listen", help="Listen for messages and respond")
+    listen_parser.add_argument(
+        "--channel", dest="channel_type", default="imessage",
+        choices=["imessage", "bluebubbles"],
+        help="Channel to listen on (default: imessage)",
+    )
 
     # serve command
-    subparsers.add_parser("serve", help="Listen for iMessages + run scheduler")
+    serve_parser = subparsers.add_parser("serve", help="Listen for messages + run scheduler")
+    serve_parser.add_argument(
+        "--channel", dest="channel_type", default="imessage",
+        choices=["imessage", "bluebubbles"],
+        help="Channel to listen on (default: imessage)",
+    )
 
     args = parser.parse_args()
 

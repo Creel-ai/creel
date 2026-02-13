@@ -100,10 +100,37 @@ class IMessageChannelConfig(BaseModel):
         return os.path.expandvars(v)
 
 
+class BlueBubblesChannelConfig(BaseModel):
+    """BlueBubbles channel settings."""
+
+    server_url: str
+    password: str = ""
+    listen_to: list[str] = Field(default_factory=list)
+    poll_interval: int = 3
+
+    @field_validator("server_url")
+    @classmethod
+    def expand_server_url(cls, v: str) -> str:
+        return os.path.expandvars(v)
+
+    @field_validator("password")
+    @classmethod
+    def expand_password(cls, v: str) -> str:
+        return os.path.expandvars(v)
+
+    @field_validator("listen_to", mode="before")
+    @classmethod
+    def expand_listen_to(cls, v: list[str] | str) -> list[str]:
+        if isinstance(v, str):
+            v = [v]
+        return [os.path.expandvars(s) for s in v]
+
+
 class ChannelsConfig(BaseModel):
     """All channel configurations."""
 
     imessage: IMessageChannelConfig | None = None
+    bluebubbles: BlueBubblesChannelConfig | None = None
 
 
 class AgentDefinition(BaseModel):

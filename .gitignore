@@ -18,7 +18,6 @@ venv/
 env/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -33,5 +32,8 @@ sessions/
 # Logs
 *.log
 logs/
+
+# Guardian audit log
+guardian_audit.jsonl
 client_secret.json
 .claude/settings.local.json

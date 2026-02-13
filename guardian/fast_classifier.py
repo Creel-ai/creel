@@ -15,15 +15,15 @@ class FastClassifier:
     Tries to load the model in this order:
     1. ``optimum`` ONNX runtime (fastest)
     2. Bare ``transformers`` pipeline (torch)
-    3. Unavailable — logs a warning and always returns safe
 
+    Raises ``RuntimeError`` if neither backend is available.
     The model is loaded lazily on the first ``classify()`` call.
     """
 
     def __init__(self, config: FastClassifierConfig) -> None:
         self._config = config
         self._pipeline: object | None = None
-        self._available: bool | None = None  # None = not yet checked
+        self._loaded: bool = False
 
     def _load(self) -> None:
         """Attempt to load the classification pipeline."""
@@ -39,7 +39,7 @@ class FastClassifier:
             self._pipeline = pipeline(
                 "text-classification", model=model, tokenizer=tokenizer
             )
-            self._available = True
+            self._loaded = True
             logger.info("Fast classifier loaded via optimum/ONNX: %s", model_name)
             return
         except Exception:
@@ -52,17 +52,16 @@ class FastClassifier:
             self._pipeline = pipeline(
                 "text-classification", model=model_name, truncation=True
             )
-            self._available = True
+            self._loaded = True
             logger.info("Fast classifier loaded via transformers: %s", model_name)
             return
         except Exception:
             logger.debug("transformers not available")
 
-        # Neither available
-        self._available = False
-        logger.warning(
-            "Fast classifier unavailable (install transformers or "
-            "optimum+onnxruntime). Stage 1 will be skipped."
+        # Neither available — refuse to run silently without a classifier
+        raise RuntimeError(
+            "Fast classifier requires transformers or optimum+onnxruntime. "
+            "Install the dependencies or run with guardian disabled."
         )
 
     def classify(self, text: str) -> ClassifierResult | None:
@@ -73,11 +72,8 @@ class FastClassifier:
         if not self._config.enabled:
             return None
 
-        if self._available is None:
+        if not self._loaded:
             self._load()
-
-        if not self._available:
-            return None
 
         # Truncate to 512 tokens (rough char estimate for DeBERTa)
         truncated = text[:2048]

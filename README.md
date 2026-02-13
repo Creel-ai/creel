@@ -658,7 +658,7 @@ GOOGLE_CREDENTIALS_JSON='{"refresh_token": "...", "client_id": "...", "client_se
 
 ## Container Mode
 
-For production use, fetchers and the LLM runner execute in isolated Docker containers with restricted capabilities:
+For production use, fetchers and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with all commands — scheduled tasks, one-off runs, and agent mode (chat, listen, serve):
 
 ```bash
 # Build container images
@@ -672,16 +672,27 @@ docker build -t fetcher-drive:latest fetchers/drive/
 docker build -t fetcher-drive-write:latest fetchers/drive_write/
 docker build -t llm-runner:latest llm/
 
-# Run with containers
+# Run a task with containers
 ./runner.py --containers run morning_briefing
+
+# Agent mode with containerized fetchers
+./runner.py --containers chat
+./runner.py --containers listen
+./runner.py --containers serve
+
+# Scheduler with containers
+./runner.py --containers schedule
 ```
 
 Containers run with:
 - `--read-only` filesystem
 - `--cap-drop=ALL`
 - `--security-opt=no-new-privileges`
-- Memory and CPU limits
+- Memory and CPU limits (`256m`, `0.5` CPU)
+- 60-second timeout
 - Only the secrets each container needs
+
+In agent mode, the agent loop runs on the host while each tool call (fetcher) executes in its own isolated container. This preserves the trust boundary — the LLM never sees credentials, and fetcher code runs sandboxed.
 
 ## CLI Reference
 
@@ -697,9 +708,9 @@ Commands:
   listen            Listen for iMessages and respond
   serve             Listen for iMessages + run scheduler
 
-Options:
+Global options:
   -v, --verbose       Enable verbose/debug output
-  --containers        Run fetchers and LLM in Docker containers
+  --containers        Run fetchers/LLM in Docker containers (all commands)
   --tasks-dir PATH    Tasks directory (default: tasks/)
   --agent-config PATH Path to agent.yaml (default: agent.yaml)
 

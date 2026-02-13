@@ -120,6 +120,70 @@ In agent mode, the same security boundary applies — the LLM requests tool call
 
 Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAML.
 
+### Guardian
+
+The guardian layer screens inputs and validates tool calls before they execute. All stages are optional and independently configurable in `agent.yaml`:
+
+```
+Incoming message
+    │
+    ▼
+screen_input(text)                     ← before session history
+    ├── FastClassifier  (DeBERTa/ONNX, ~10ms)
+    └── LLMJudge        (Haiku, ~300ms, off by default)
+    │
+    │  blocked → return rejection, skip agent loop
+    │
+    ▼
+Agent loop → LLM returns tool_use
+    │
+    ▼
+validate_action(tool, args)            ← before execute_tool_call
+    └── PolicyEngine    (YAML rules, <1ms)
+           allow  → execute
+           review → log warning, execute
+           deny   → return error to LLM
+```
+
+**Stages:**
+
+| Stage | Component | What it does |
+|-------|-----------|--------------|
+| 1 | Fast classifier | Local DeBERTa model scores prompt-injection likelihood against a confidence threshold |
+| 2 | LLM judge | Secondary Haiku-based check (disabled by default) |
+| 3 | Policy engine | `fnmatch` rules in `policies/default.yaml` map tool names to allow/review/deny |
+
+**Policy rules** (`policies/default.yaml`):
+
+```yaml
+allow:  [check_weather, check_calendar, check_email, check_drive]
+review: [send_*, upload_*, create_*, mark_*]
+deny:   [trash_*, delete_*]
+```
+
+Deny wins over review, review wins over allow. Unknown tools default to review.
+
+**Audit logging** writes to `guardian_audit.jsonl` with hashed inputs (never raw text), tool names, arg keys (not values), verdicts, and confidence scores.
+
+**Configuration** in `agent.yaml`:
+
+```yaml
+guardian:
+  enabled: true
+  fast_classifier:
+    enabled: true
+    threshold: 0.85
+    model_name: protectai/deberta-v3-base-prompt-injection-v2
+  llm_judge:
+    enabled: false
+  policy:
+    enabled: true
+    policy_file: policies/default.yaml
+  audit:
+    enabled: true
+    log_file: guardian_audit.jsonl
+```
+
 ## Quick Start
 
 ```bash
@@ -675,6 +739,15 @@ creel/
 │   ├── gmail_modify/      # Gmail (modify) fetcher + Dockerfile
 │   ├── drive/             # Google Drive (read) fetcher + Dockerfile
 │   └── drive_write/       # Google Drive (write) fetcher + Dockerfile
+├── guardian/
+│   ├── __init__.py        # Guardian class (screen_input, validate_action)
+│   ├── types.py           # Data models and config
+│   ├── fast_classifier.py # DeBERTa/ONNX prompt-injection detector
+│   ├── llm_judge.py       # Haiku-based secondary judge
+│   ├── policy.py          # YAML policy engine (allow/review/deny)
+│   └── audit.py           # Privacy-preserving JSONL audit logger
+├── policies/
+│   └── default.yaml       # Default tool action policies
 ├── llm/                   # Containerized LLM runner + Dockerfile
 ├── tasks/                 # Task definitions (YAML)
 ├── sessions/              # Conversation sessions (gitignored)

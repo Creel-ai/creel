@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import queue
 import threading
 from typing import TYPE_CHECKING
 
@@ -9,6 +11,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
+from textual.widget import Widget
 from textual.widgets import Button, Footer, Header, Input, RichLog, Static
 
 if TYPE_CHECKING:
@@ -16,8 +19,24 @@ if TYPE_CHECKING:
 
 SENDER_ID = "cli"
 
+_LOG_POLL_INTERVAL = 0.25
 
-class ConfirmBar(Static):
+
+class _QueueLogHandler(logging.Handler):
+    """Pushes log records into a thread-safe queue for the TUI to poll."""
+
+    def __init__(self, q: queue.Queue) -> None:
+        super().__init__()
+        self._queue = q
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._queue.put_nowait(self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
+class ConfirmBar(Widget):
     """Inline widget with Yes/No buttons for guardian review confirmations."""
 
     def __init__(
@@ -34,13 +53,16 @@ class ConfirmBar(Static):
         self._reason = reason
 
     def compose(self) -> ComposeResult:
-        with Horizontal():
-            yield Static(
-                f"  Guardian review: [bold]{self._tool_name}[/bold] — {self._reason}  ",
-                markup=True,
-            )
+        yield Static(
+            f"  Allow [bold]{self._tool_name}[/bold]? ({self._reason})",
+            markup=True,
+        )
+        with Horizontal(id="confirm-buttons"):
             yield Button("Yes", id="confirm-yes", variant="success")
             yield Button("No", id="confirm-no", variant="error")
+
+    def on_mount(self) -> None:
+        self.query_one("#confirm-yes", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self._result["allowed"] = event.button.id == "confirm-yes"
@@ -59,36 +81,44 @@ class ChatApp(App):
     ]
 
     CSS = """
+    #chat-log {
+        padding: 1 2;
+    }
     #status {
         dock: bottom;
         height: 1;
         background: $surface;
         color: $text-muted;
-        padding: 0 1;
+        padding: 0 2;
         display: none;
     }
     #chat-input {
         dock: bottom;
+        margin: 2 2;
     }
     ConfirmBar {
         dock: bottom;
-        height: 3;
+        height: auto;
+        max-height: 5;
         background: $warning 20%;
-        padding: 0 1;
+        padding: 1 2;
     }
-    ConfirmBar Horizontal {
+    #confirm-buttons {
         height: 3;
-        align: center middle;
+        align: left middle;
     }
-    ConfirmBar Button {
+    #confirm-buttons Button {
         margin: 0 1;
-        min-width: 8;
+        min-width: 10;
     }
     """
 
     def __init__(self, server: ChatServer) -> None:
         super().__init__()
         self._server = server
+        self._log_queue: queue.Queue[str] = queue.Queue()
+        self._log_handler: _QueueLogHandler | None = None
+        self._log_poller = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -101,6 +131,25 @@ class ChatApp(App):
         self.query_one("#chat-input", Input).focus()
         self._update_subtitle()
         self._replay_history()
+        self._install_log_handler()
+
+    def _install_log_handler(self) -> None:
+        """Route Python logging into a queue, polled by a timer."""
+        self._log_handler = _QueueLogHandler(self._log_queue)
+        self._log_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+        logging.getLogger("taskrunner").addHandler(self._log_handler)
+        self._log_poller = self.set_interval(_LOG_POLL_INTERVAL, self._poll_logs)
+
+    def _poll_logs(self) -> None:
+        """Drain the log queue and show the latest message as a toast."""
+        latest = None
+        while True:
+            try:
+                latest = self._log_queue.get_nowait()
+            except queue.Empty:
+                break
+        if latest is not None:
+            self.notify(latest, timeout=4)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -185,6 +234,8 @@ class ChatApp(App):
         self._update_subtitle()
 
     def action_quit(self) -> None:
+        if self._log_handler:
+            logging.getLogger("taskrunner").removeHandler(self._log_handler)
         self.exit()
 
 
@@ -206,7 +257,7 @@ def _make_tui_confirm_fn(app: ChatApp):
                 f"  Reason: {reason}"
             )
             bar = ConfirmBar(tool_name, reason, event, result)
-            app.mount(bar, before="#status")
+            app.mount(bar, before="#chat-input")
 
         app.call_from_thread(_mount_bar)
         event.wait(timeout=300)

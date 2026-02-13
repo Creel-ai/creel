@@ -146,3 +146,18 @@ channels:
   imessage:
     listen_to: "$PHONE"
     poll_interval: 3
+
+guardian:
+  enabled: true
+  fast_classifier:
+    enabled: true
+    threshold: 0.85
+    model_name: protectai/deberta-v3-base-prompt-injection-v2
+  llm_judge:
+    enabled: false
+  policy:
+    enabled: true
+    policy_file: policies/default.yaml
+  audit:
+    enabled: true
+    log_file: guardian_audit.jsonl

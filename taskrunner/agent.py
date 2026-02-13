@@ -134,10 +134,13 @@ def run_agent_loop(
 
                 if decision.verdict == ActionVerdict.REVIEW:
                     logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
-                    if confirm_action is not None and not confirm_action(tool_name, tool_input, decision.reason):
-                        logger.info("User denied tool %s during review", tool_name)
-                        guardian.log_action_outcome(tool_name, "review", "denied_by_user")
-                        result = f"Action denied by user: {decision.reason}"
+                    approved = confirm_action(tool_name, tool_input, decision.reason) if confirm_action is not None else False
+                    if not approved:
+                        deny_source = "user" if confirm_action is not None else "policy (no confirm handler — fail-closed)"
+                        logger.info("Tool %s denied during review by %s", tool_name, deny_source)
+                        if hasattr(guardian, 'log_action_outcome'):
+                            guardian.log_action_outcome(tool_name, "review", f"denied_by_{deny_source}")
+                        result = f"Action denied by {deny_source}: {decision.reason}"
                         is_error = True
 
                         tool_history.append({
@@ -153,7 +156,8 @@ def run_agent_loop(
                             "is_error": is_error,
                         })
                         continue
-                    guardian.log_action_outcome(tool_name, "review", "approved")
+                    if hasattr(guardian, 'log_action_outcome'):
+                        guardian.log_action_outcome(tool_name, "review", "approved")
 
             t0 = time.perf_counter()
             try:

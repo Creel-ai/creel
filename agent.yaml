@@ -231,6 +231,9 @@ channels:
 guardian:
   enabled: true
   debug: true
+  review:
+    timeout_seconds: 60
+    default_on_timeout: deny
   fast_classifier:
     enabled: true
     threshold: 0.95

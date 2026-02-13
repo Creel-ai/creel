@@ -307,6 +307,7 @@ def _ensure_image(image: str) -> None:
     subprocess.run(
         ["docker", "build", "-t", image, str(context)],
         check=True,
+        capture_output=True,
     )
 
 

@@ -277,8 +277,45 @@ def _fetch_drive_write_inline(config: FetcherConfig) -> str:
     return json.dumps(result, indent=2)
 
 
+def _ensure_image(image: str) -> None:
+    """Build the Docker image if it doesn't already exist.
+
+    Derives the build context from the image name:
+      fetcher-gmail-modify:latest -> fetchers/gmail_modify/
+      llm-runner:latest           -> llm/
+    """
+    result = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return
+
+    tag = image.split(":")[0]
+    if tag.startswith("fetcher-"):
+        # fetcher-gmail-modify -> fetchers/gmail_modify/
+        name = tag.removeprefix("fetcher-").replace("-", "_")
+        context = Path("fetchers") / name
+    else:
+        # llm-runner -> llm/
+        context = Path(tag.replace("-", "_"))
+        # Try hyphenated too: llm/ exists as-is
+        if not context.exists():
+            context = Path(tag)
+
+    if not (context / "Dockerfile").exists():
+        raise FileNotFoundError(f"No Dockerfile at {context} for image {image}")
+
+    logger.info("Building image %s from %s", image, context)
+    subprocess.run(
+        ["docker", "build", "-t", image, str(context)],
+        check=True,
+    )
+
+
 def _run_fetcher_container(config: FetcherConfig) -> str:
     """Run a fetcher in an isolated Docker container."""
+    _ensure_image(config.image)
     env_flags: list[str] = []
 
     # Decrypt and inject secrets

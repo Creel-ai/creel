@@ -98,8 +98,9 @@ def test_direct_no_credentials_raises(monkeypatch):
 # -- _run_llm_container auth tests --
 
 
+@patch("taskrunner.orchestrator._ensure_image")
 @patch("taskrunner.llm.subprocess.run")
-def test_container_passes_auth_token(mock_run, monkeypatch):
+def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch):
     """ANTHROPIC_AUTH_TOKEN should be passed to the container."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -114,8 +115,9 @@ def test_container_passes_auth_token(mock_run, monkeypatch):
     assert cmd[idx - 1] == "-e"
 
 
+@patch("taskrunner.orchestrator._ensure_image")
 @patch("taskrunner.llm.subprocess.run")
-def test_container_passes_api_key(mock_run, monkeypatch):
+def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch):
     """ANTHROPIC_API_KEY should be passed to the container."""
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
@@ -128,8 +130,9 @@ def test_container_passes_api_key(mock_run, monkeypatch):
     assert "ANTHROPIC_API_KEY=sk-ant-key" in cmd
 
 
+@patch("taskrunner.orchestrator._ensure_image")
 @patch("taskrunner.llm.subprocess.run")
-def test_container_passes_both_when_set(mock_run, monkeypatch):
+def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch):
     """Both env vars should be forwarded to the container when set."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")

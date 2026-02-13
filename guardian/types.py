@@ -88,6 +88,8 @@ class ReviewConfig(BaseModel):
 
     timeout_seconds: int = 60
     default_on_timeout: str = "deny"  # "deny" or "allow"
+    approvals_dir: str = "approvals"
+    max_pending_age_hours: int = 24
 
 
 class GuardianConfig(BaseModel):

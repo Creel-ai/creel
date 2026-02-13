@@ -176,6 +176,12 @@ def cmd_chat(args: argparse.Namespace) -> int:
             args.simple = True  # fall back if textual not installed
 
     if not args.simple:
+        # Suppress console log handlers — Textual owns the terminal
+        root = logging.getLogger()
+        for handler in root.handlers[:]:
+            if isinstance(handler, logging.StreamHandler):
+                root.removeHandler(handler)
+
         server = ChatServer(agent_def, use_containers=args.containers)
         app = ChatApp(server)
         server._confirm_fn = _make_tui_confirm_fn(app)

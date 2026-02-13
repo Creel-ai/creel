@@ -62,6 +62,26 @@ class AuditLogger:
             "confidence": confidence,
         })
 
+    def log_tool_screen(
+        self,
+        *,
+        tool_name: str,
+        text: str,
+        blocked: bool,
+        source: str,
+        confidence: float | None = None,
+    ) -> None:
+        """Log a tool result screening event (includes raw text for debugging)."""
+        self._write({
+            "event": "screen_tool_result",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "tool_name": tool_name,
+            "text": text,
+            "blocked": blocked,
+            "source": source,
+            "confidence": confidence,
+        })
+
     def log_action(
         self,
         *,

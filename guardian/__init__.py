@@ -106,6 +106,26 @@ class Guardian:
             rejection_message=rejection_message,
         )
 
+    def screen_tool_result(self, tool_name: str, text: str) -> ScreenResult:
+        """Screen a tool result for prompt injection and log details.
+
+        Like ``screen_input`` but additionally writes the raw text and tool
+        name to the audit log so blocked results can be debugged offline.
+        """
+        result = self.screen_input(text)
+
+        if result.blocked and self._audit:
+            blocker = result.classifier_result or result.judge_result
+            self._audit.log_tool_screen(
+                tool_name=tool_name,
+                text=text,
+                blocked=True,
+                source=blocker.source if blocker else "unknown",
+                confidence=blocker.confidence if blocker else None,
+            )
+
+        return result
+
     def validate_action(self, tool_name: str, tool_args: dict) -> ActionDecision:
         """Validate a proposed tool action against the policy engine (stage 3).
 

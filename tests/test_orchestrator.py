@@ -78,12 +78,12 @@ def test_gmail_fetcher_through_orchestrator(tmp_path: Path) -> None:
         "name": "gmail_test",
         "schedule": "0 8 * * *",
         "fetch": {
-            "gmail": {
-                "image": "fetcher-gmail:latest",
+            "gmail_readonly": {
+                "image": "fetcher-gmail-readonly:latest",
                 "args": {"query": "is:unread", "max_results": "5", "full_body": "false"},
             }
         },
-        "prompt": "Date: {date}\nEmails: {gmail}",
+        "prompt": "Date: {date}\nEmails: {gmail_readonly}",
         "output": {"type": "stdout", "to": ""},
         "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
     }
@@ -91,7 +91,7 @@ def test_gmail_fetcher_through_orchestrator(tmp_path: Path) -> None:
     path.write_text(yaml.dump(task))
 
     with (
-        patch("taskrunner.orchestrator._fetch_gmail_inline") as mock_gmail,
+        patch("taskrunner.orchestrator._fetch_gmail_readonly_inline") as mock_gmail,
         patch("taskrunner.orchestrator.run_llm") as mock_llm,
         patch("taskrunner.orchestrator.send_output"),
     ):

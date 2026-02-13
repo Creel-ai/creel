@@ -13,8 +13,8 @@ fetch:
     args:
       location: denver
 
-  gmail:
-    image: fetcher-gmail:latest
+  gmail_readonly:
+    image: fetcher-gmail-readonly:latest
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"
@@ -27,7 +27,7 @@ prompt: |
   Today: {date}
   Weather: {weather}
   Calendar: {calendar}
-  Recent emails: {gmail}
+  Recent emails: {gmail_readonly}
 
   Keep it under 200 words. Flag any early meetings, conflicts, or urgent emails.
 

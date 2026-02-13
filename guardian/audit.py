@@ -8,6 +8,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from taskrunner.log import request_id_var
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,6 +32,10 @@ class AuditLogger:
 
     def _write(self, record: dict) -> None:
         """Append a JSON record to the log file."""
+        # Include request_id if set in current context
+        rid = request_id_var.get(None)
+        if rid is not None:
+            record["request_id"] = rid
         try:
             with open(self._path, "a") as f:
                 f.write(json.dumps(record, default=str) + "\n")

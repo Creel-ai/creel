@@ -70,13 +70,40 @@ class TestFastClassifier:
         result = clf.classify("test")
         assert result is None
 
-    def test_text_truncation(self, clf: FastClassifier) -> None:
-        """Long text should be truncated before classification."""
+    def test_chunking_long_text(self, clf: FastClassifier) -> None:
+        """Long text should be split into CHUNK_SIZE chunks."""
         mock_pipeline = MagicMock(return_value=[{"label": "SAFE", "score": 0.99}])
         clf._pipeline = mock_pipeline
 
         long_text = "x" * 5000
         clf.classify(long_text)
-        # Check the pipeline was called with truncated text
-        called_text = mock_pipeline.call_args[0][0]
-        assert len(called_text) == 2048
+        # 5000 chars → chunks of 2048, 2048, 904 = 3 calls
+        assert mock_pipeline.call_count == 3
+        sizes = [len(call.args[0]) for call in mock_pipeline.call_args_list]
+        assert sizes == [2048, 2048, 904]
+
+    def test_chunking_injection_in_later_chunk(self, clf: FastClassifier) -> None:
+        """Injection hidden past the first chunk should still be caught."""
+
+        def side_effect(text):
+            if "INJECT" in text:
+                return [{"label": "INJECTION", "score": 0.95}]
+            return [{"label": "SAFE", "score": 0.99}]
+
+        clf._pipeline = MagicMock(side_effect=side_effect)
+
+        # Place injection payload in 2nd chunk
+        text = "a" * 2048 + "INJECT"
+        result = clf.classify(text)
+        assert result is not None
+        assert result.is_injection is True
+        assert result.confidence == 0.95
+
+    def test_short_text_single_chunk(self, clf: FastClassifier) -> None:
+        """Short text should result in a single pipeline call."""
+        mock_pipeline = MagicMock(return_value=[{"label": "SAFE", "score": 0.99}])
+        clf._pipeline = mock_pipeline
+
+        clf.classify("hello")
+        assert mock_pipeline.call_count == 1
+        assert mock_pipeline.call_args[0][0] == "hello"

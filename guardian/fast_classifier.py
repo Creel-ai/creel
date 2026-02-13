@@ -8,6 +8,8 @@ from guardian.types import ClassifierResult, FastClassifierConfig
 
 logger = logging.getLogger(__name__)
 
+CHUNK_SIZE = 2048
+
 
 class FastClassifier:
     """DeBERTa-based prompt-injection classifier.
@@ -66,29 +68,47 @@ class FastClassifier:
     def classify(self, text: str) -> ClassifierResult | None:
         """Classify text for prompt injection.
 
+        Splits the input into ``CHUNK_SIZE``-character chunks and classifies
+        each one.  Short-circuits immediately when any chunk crosses the
+        injection threshold.  For all-safe inputs the chunk with the highest
+        injection confidence is returned.
+
         Returns ``None`` if the classifier is unavailable or disabled.
         """
         if not self._config.enabled:
             return None
 
-        # Truncate to 512 tokens (rough char estimate for DeBERTa)
-        truncated = text[:2048]
+        chunks = [text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)]
 
-        try:
-            results = self._pipeline(truncated)
-            # Pipeline returns [{"label": "INJECTION"/"SAFE", "score": 0.99}]
-            top = results[0]
-            label = top["label"].upper()
-            score = top["score"]
+        best: ClassifierResult | None = None
 
-            is_injection = label == "INJECTION" and score >= self._config.threshold
+        for chunk in chunks:
+            try:
+                results = self._pipeline(chunk)
+                # Pipeline returns [{"label": "INJECTION"/"SAFE", "score": 0.99}]
+                top = results[0]
+                label = top["label"].upper()
+                score = top["score"]
 
-            return ClassifierResult(
-                is_injection=is_injection,
-                confidence=score if label == "INJECTION" else 1.0 - score,
-                source="fast_classifier",
-                reasoning=f"label={label}, score={score:.4f}",
-            )
-        except Exception:
-            logger.warning("Fast classifier inference failed", exc_info=True)
-            return None
+                is_injection = label == "INJECTION" and score >= self._config.threshold
+                confidence = score if label == "INJECTION" else 1.0 - score
+
+                result = ClassifierResult(
+                    is_injection=is_injection,
+                    confidence=confidence,
+                    source="fast_classifier",
+                    reasoning=f"label={label}, score={score:.4f}",
+                )
+
+                # Short-circuit: injection found
+                if is_injection:
+                    return result
+
+                # Track highest injection confidence across safe chunks
+                if best is None or confidence > best.confidence:
+                    best = result
+            except Exception:
+                logger.warning("Fast classifier inference failed on chunk", exc_info=True)
+                continue
+
+        return best

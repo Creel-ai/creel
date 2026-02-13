@@ -338,6 +338,10 @@ def main() -> int:
         "--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG,
         help="Path to agent.yaml config",
     )
+    parser.add_argument(
+        "--simple", action="store_true",
+        help="Use simple stdin/stdout mode instead of TUI",
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -369,10 +373,7 @@ def main() -> int:
     chat_parser.add_argument(
         "--list-sessions", action="store_true", help="List sessions and exit"
     )
-    chat_parser.add_argument(
-        "--simple", action="store_true",
-        help="Use simple stdin/stdout mode instead of TUI",
-    )
+
 
     # listen command
     subparsers.add_parser("listen", help="Listen for iMessages and respond")

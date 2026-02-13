@@ -28,10 +28,19 @@ class ChatServer:
         agent_def: AgentDefinition,
         use_containers: bool = False,
         confirm_fn: Callable[[str, dict, str], bool] | None = None,
+        imessage_channel: object | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
-        self._confirm_fn = confirm_fn
+        self._imessage_channel = imessage_channel
+
+        # If no explicit confirm_fn but we have an iMessage channel, use iMessage approval
+        if confirm_fn is not None:
+            self._confirm_fn = confirm_fn
+        elif imessage_channel is not None and agent_def.channels.imessage:
+            self._confirm_fn = self._imessage_confirm_action
+        else:
+            self._confirm_fn = confirm_fn  # None — agent will fail-closed
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
@@ -130,6 +139,48 @@ class ChatServer:
         self._session_mgr._save(session)
 
         return result.text
+
+    def _imessage_confirm_action(self, tool_name: str, tool_input: dict, reason: str) -> bool:
+        """Request approval via iMessage and wait for reply."""
+        if not self._imessage_channel or not self._agent_def.channels.imessage:
+            logger.warning("iMessage confirm called but no channel available — denying")
+            return False
+
+        recipient = self._agent_def.channels.imessage.listen_to
+        timeout = 60
+        if self._agent_def.guardian and self._agent_def.guardian.review:
+            timeout = self._agent_def.guardian.review.timeout_seconds
+
+        # Format args summary (truncate long values)
+        args_lines = []
+        for k, v in tool_input.items():
+            v_str = str(v)
+            if len(v_str) > 80:
+                v_str = v_str[:77] + "..."
+            args_lines.append(f"  {k}: {v_str}")
+        args_summary = "\n".join(args_lines) if args_lines else "  (none)"
+
+        msg = (
+            f"⚠️ Action requires approval:\n\n"
+            f"🔧 Tool: {tool_name}\n"
+            f"📋 Args:\n{args_summary}\n"
+            f"📝 Reason: {reason}\n\n"
+            f"Reply Y to approve, N to deny (auto-denies in {timeout}s)"
+        )
+
+        try:
+            self._imessage_channel.send(recipient, msg)
+        except Exception:
+            logger.exception("Failed to send approval request — denying")
+            return False
+
+        reply = self._imessage_channel.wait_for_reply(recipient, timeout_seconds=timeout)
+        if reply and reply.strip().lower() in ("y", "yes"):
+            logger.info("User approved action %s via iMessage", tool_name)
+            return True
+
+        logger.info("User denied/timed out action %s via iMessage", tool_name)
+        return False
 
     def _format_sessions_list(self, sender_id: str) -> str:
         """Format the sessions list for display."""

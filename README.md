@@ -156,7 +156,7 @@ validate_action(tool, args)            ← before execute_tool_call
 **Policy rules** (`policies/default.yaml`):
 
 ```yaml
-allow:  [check_weather, check_calendar, check_email, check_drive]
+allow:  [check_weather, check_calendar, check_email, read_email, check_drive]
 review: [send_*, upload_*, create_*, mark_*]
 deny:   [trash_*, delete_*]
 ```

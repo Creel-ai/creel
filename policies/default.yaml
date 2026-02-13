@@ -2,6 +2,7 @@ allow:
   - check_weather
   - check_calendar
   - check_email
+  - read_email
   - check_drive
 
 review:
@@ -9,7 +10,7 @@ review:
   - upload_*
   - create_*
   - mark_*
+  - trash_*
 
 deny:
-  - trash_*
   - delete_*

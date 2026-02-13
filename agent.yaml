@@ -49,6 +49,16 @@ tools:
         type: string
         description: "Max emails to return (default: 20)"
 
+  read_email:
+    fetcher: gmail_read
+    secrets: secrets/gmail.env.enc
+    description: "Read the full content of a specific email by its ID"
+    parameters:
+      message_id:
+        type: string
+        description: "Gmail message ID (from check_email results)"
+        required: true
+
   send_email:
     fetcher: gmail_send
     secrets: secrets/gmail_send.env.enc

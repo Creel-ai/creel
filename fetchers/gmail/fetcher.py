@@ -91,6 +91,7 @@ def fetch_emails(
 
         headers = msg.get("payload", {}).get("headers", [])
         email_data = {
+            "id": msg_ref["id"],
             "subject": _extract_headers(headers, ["Subject"]).get("Subject", ""),
             "from": _extract_headers(headers, ["From"]).get("From", ""),
             "to": _extract_headers(headers, ["To"]).get("To", ""),
@@ -105,6 +106,40 @@ def fetch_emails(
         emails.append(email_data)
 
     return emails
+
+
+def read_email(message_id: str) -> dict:
+    """Fetch a single email by its message ID with full body.
+
+    Args:
+        message_id: Gmail message ID.
+
+    Returns:
+        Dict with id, subject, from, to, date, snippet, labels, body.
+    """
+    creds = get_credentials()
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+    msg = (
+        service.users()
+        .messages()
+        .get(userId="me", id=message_id, format="full")
+        .execute()
+    )
+
+    headers = msg.get("payload", {}).get("headers", [])
+    extracted = _extract_headers(headers, ["Subject", "From", "To", "Date"])
+
+    return {
+        "id": msg["id"],
+        "subject": extracted.get("Subject", ""),
+        "from": extracted.get("From", ""),
+        "to": extracted.get("To", ""),
+        "date": extracted.get("Date", ""),
+        "snippet": _clean_snippet(msg.get("snippet", "")),
+        "labels": msg.get("labelIds", []),
+        "body": _extract_body(msg.get("payload", {})),
+    }
 
 
 def _extract_body(payload: dict) -> str:
@@ -194,6 +229,18 @@ def _extract_headers(headers: list[dict], keys: list[str]) -> dict[str, str]:
 
 
 def main() -> None:
+    message_id = os.environ.get("MESSAGE_ID", "")
+
+    if message_id:
+        # Single message read mode
+        try:
+            email = read_email(message_id)
+            print(json.dumps(email, indent=2))
+        except Exception as e:
+            print(json.dumps({"error": str(e)}), file=sys.stderr)
+            sys.exit(1)
+        return
+
     query = os.environ.get("QUERY", "is:unread newer_than:1d")
     max_results = int(os.environ.get("MAX_RESULTS", "20"))
     full_body = os.environ.get("FULL_BODY", "false").lower() in ("true", "1", "yes")

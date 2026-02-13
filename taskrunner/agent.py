@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from taskrunner.llm import call_llm, extract_text
@@ -31,6 +32,7 @@ def run_agent_loop(
     system_prompt: str | None = None,
     use_containers: bool = False,
     guardian: object | None = None,
+    confirm_action: Callable[[str, dict, str], bool] | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -41,6 +43,10 @@ def run_agent_loop(
         agent_config: Agent settings (max_turns, etc.).
         system_prompt: Optional system prompt.
         use_containers: If True, run fetchers in Docker containers.
+        guardian: Optional Guardian instance for action validation.
+        confirm_action: Optional callback for REVIEW verdicts. Takes
+            (tool_name, tool_input, reason) and returns True to proceed
+            or False to deny. If None, REVIEW logs and proceeds.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -124,6 +130,24 @@ def run_agent_loop(
 
                 if decision.verdict == ActionVerdict.REVIEW:
                     logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
+                    if confirm_action is not None and not confirm_action(tool_name, tool_input, decision.reason):
+                        logger.info("User denied tool %s during review", tool_name)
+                        result = f"Action denied by user: {decision.reason}"
+                        is_error = True
+
+                        tool_history.append({
+                            "tool": tool_name,
+                            "input": tool_input,
+                            "output": result,
+                            "is_error": is_error,
+                        })
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                            "is_error": is_error,
+                        })
+                        continue
 
             try:
                 result = execute_tool_call(

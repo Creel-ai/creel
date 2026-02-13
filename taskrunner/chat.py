@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from taskrunner.agent import run_agent_loop
@@ -18,8 +19,15 @@ _CLEAR_COMMANDS = {"clear", "reset", "/clear", "/reset"}
 class ChatServer:
     """Connects a channel to the agent loop via session management."""
 
-    def __init__(self, agent_def: AgentDefinition):
+    def __init__(
+        self,
+        agent_def: AgentDefinition,
+        use_containers: bool = False,
+        confirm_fn: Callable[[str, dict, str], bool] | None = None,
+    ):
         self._agent_def = agent_def
+        self._use_containers = use_containers
+        self._confirm_fn = confirm_fn
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
@@ -71,7 +79,9 @@ class ChatServer:
             tools_config=self._agent_def.tools,
             agent_config=self._agent_def.agent,
             system_prompt=system_prompt,
+            use_containers=self._use_containers,
             guardian=self._guardian,
+            confirm_action=self._confirm_fn,
         )
 
         logger.info(

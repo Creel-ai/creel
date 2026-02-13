@@ -145,7 +145,16 @@ def cmd_chat(args: argparse.Namespace) -> int:
         from taskrunner.orchestrator import _load_secrets_to_env
         _load_secrets_to_env(agent_def.llm.secrets)
 
-    server = ChatServer(agent_def)
+    def _confirm_action(tool_name: str, tool_input: dict, reason: str) -> bool:
+        print(f"\n⚠ Guardian review: {tool_name}({tool_input})")
+        print(f"  Reason: {reason}")
+        try:
+            answer = input("  Allow? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer in ("y", "yes")
+
+    server = ChatServer(agent_def, use_containers=args.containers, confirm_fn=_confirm_action)
     channel = StdinChannel()
 
     try:

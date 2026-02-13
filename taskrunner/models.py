@@ -86,6 +86,17 @@ class SessionConfig(BaseModel):
 
     sessions_dir: str = "sessions"
     max_history: int = 50
+    summarize_on_trim: bool = True
+
+
+class WorkspaceConfig(BaseModel):
+    """Workspace directory settings for personality/memory files."""
+
+    path: str = "workspace"
+    timezone: str = "UTC"
+    memory_days: int = 2
+    memory_max_chars: int = 5000
+    max_chars_per_file: int = 20_000
 
 
 class IMessageChannelConfig(BaseModel):
@@ -110,10 +121,12 @@ class AgentDefinition(BaseModel):
     """Global agent config loaded from agent.yaml."""
 
     system_prompt: str
+    system_prompt_file: str | None = None
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
+    workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     guardian: GuardianConfig | None = None
 

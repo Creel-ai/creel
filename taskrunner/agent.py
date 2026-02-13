@@ -33,6 +33,7 @@ def run_agent_loop(
     use_containers: bool = False,
     guardian: object | None = None,
     confirm_action: Callable[[str, dict, str], bool] | None = None,
+    memory_manager: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -51,7 +52,8 @@ def run_agent_loop(
     Returns:
         AgentResult with the final response and execution metadata.
     """
-    tool_defs = build_tool_definitions(tools_config) if tools_config else []
+    include_memory = memory_manager is not None
+    tool_defs = build_tool_definitions(tools_config, include_memory_tools=include_memory) if tools_config else []
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []
@@ -158,6 +160,7 @@ def run_agent_loop(
                     tool_input=tool_input,
                     tools_config=tools_config,
                     use_containers=use_containers,
+                    memory_manager=memory_manager,
                 )
                 is_error = False
             except Exception as e:

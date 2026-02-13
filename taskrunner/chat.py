@@ -46,10 +46,25 @@ class ChatServer:
 
         This is the callback passed to channels.
         """
+        stripped = text.strip()
+
         # Handle clear command
-        if text.strip().lower() in _CLEAR_COMMANDS:
+        if stripped.lower() in _CLEAR_COMMANDS:
             self._session_mgr.clear(sender_id)
             return "Session cleared."
+
+        # Handle /new — start a new session
+        if stripped.lower() == "/new":
+            session = self._session_mgr.new_session(sender_id)
+            return f"Started new session {session.session_id}."
+
+        # Handle /sessions — list all sessions
+        if stripped.lower() == "/sessions":
+            return self._format_sessions_list(sender_id)
+
+        # Handle /resume <id> — resume a session
+        if stripped.lower().startswith("/resume"):
+            return self._handle_resume(sender_id, stripped)
 
         # Screen input through guardian (before adding to session)
         if self._guardian:
@@ -97,3 +112,37 @@ class ChatServer:
         self._session_mgr._save(session)
 
         return result.text
+
+    def _format_sessions_list(self, sender_id: str) -> str:
+        """Format the sessions list for display."""
+        sessions = self._session_mgr.list_sessions(sender_id)
+        if not sessions:
+            return "No sessions found."
+
+        active_id = self._session_mgr._get_active_session_id(sender_id)
+        lines = ["Sessions:", ""]
+        for s in sessions:
+            marker = " *" if s["session_id"] == active_id else ""
+            dt = datetime.fromtimestamp(s["last_active"], tz=timezone.utc)
+            date_str = dt.strftime("%Y-%m-%d %H:%M")
+            title = s["title"] or "(untitled)"
+            lines.append(
+                f"  {s['session_id']}{marker}  {title}  "
+                f"({s['message_count']} msgs, {date_str})"
+            )
+        lines.append("")
+        lines.append("* = active session. Use /resume <id> to switch.")
+        return "\n".join(lines)
+
+    def _handle_resume(self, sender_id: str, text: str) -> str:
+        """Handle the /resume <id> command."""
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return "Usage: /resume <session_id>"
+        session_id = parts[1].strip()
+        try:
+            session = self._session_mgr.resume_session(sender_id, session_id)
+            title = session.title or "(untitled)"
+            return f"Resumed session {session_id}: {title}"
+        except ValueError as e:
+            return str(e)

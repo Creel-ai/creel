@@ -21,6 +21,27 @@ SENDER_ID = "cli"
 
 _LOG_POLL_INTERVAL = 0.25
 
+# Commands handled locally in the TUI (not sent to ChatServer)
+_TUI_COMMANDS = {"/compact", "/exit", "/quit", "/help"}
+# Commands handled by ChatServer that return instantly (no LLM call)
+_SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions"}
+# /resume is a prefix match, handled separately
+
+_HELP_TEXT = """\
+[bold]Commands:[/bold]
+  [cyan]/help[/cyan]         Show this help
+  [cyan]/compact[/cyan]      Clear the display (keeps session history)
+  [cyan]/new[/cyan]          Start a new session
+  [cyan]/sessions[/cyan]     List all sessions
+  [cyan]/resume <id>[/cyan]  Resume a session by ID
+  [cyan]/clear[/cyan]        Clear session history
+  [cyan]/exit[/cyan]         Quit
+
+[bold]Shortcuts:[/bold]
+  [cyan]ctrl+n[/cyan]        New session
+  [cyan]ctrl+c[/cyan]        Quit\
+"""
+
 
 class _QueueLogHandler(logging.Handler):
     """Pushes log records into a thread-safe queue for the TUI to poll."""
@@ -159,11 +180,36 @@ class ChatApp(App):
         inp = self.query_one("#chat-input", Input)
         inp.value = ""
 
+        cmd = text.split()[0].lower()
+
+        # TUI-local commands
+        if cmd in _TUI_COMMANDS:
+            self._handle_tui_command(cmd)
+            return
+
         log = self.query_one("#chat-log", RichLog)
         log.write(f"[bold cyan]You:[/bold cyan] {text}")
 
+        # Server commands that return instantly (no LLM call)
+        if cmd in _SERVER_COMMANDS or cmd == "/resume":
+            response = self._server.handle_message(SENDER_ID, text)
+            self._append_response(response)
+            self._update_subtitle()
+            return
+
+        # Normal message — send to agent
         inp.disabled = True
         self._send_message(text)
+
+    def _handle_tui_command(self, cmd: str) -> None:
+        log = self.query_one("#chat-log", RichLog)
+        if cmd == "/help":
+            log.write(_HELP_TEXT)
+        elif cmd == "/compact":
+            log.clear()
+            log.write("[dim]Display cleared. Session history preserved.[/dim]")
+        elif cmd in ("/exit", "/quit"):
+            self.action_quit()
 
     @work(thread=True)
     def _send_message(self, text: str) -> None:

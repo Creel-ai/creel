@@ -162,3 +162,71 @@ async def test_subtitle_shows_session_info(tmp_path):
         await pilot.pause()
         assert "Session" in app.sub_title
         assert "Weather question" in app.sub_title
+
+
+@pytest.mark.asyncio
+async def test_help_command(tmp_path):
+    """/help should show command list without calling the server."""
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input")
+        inp.value = "/help"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "/compact" in lines_text
+        assert "/exit" in lines_text
+        assert "/new" in lines_text
+        server.handle_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_compact_command(tmp_path):
+    """/compact should clear the display but not the session."""
+    server = _make_mock_server(tmp_path)
+    mgr = server._session_mgr
+    mgr.add_user_message(SENDER_ID, "Hello there")
+
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "Hello there" in lines_text
+
+        inp = app.query_one("#chat-input")
+        inp.value = "/compact"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "Hello there" not in lines_text
+        assert "Display cleared" in lines_text
+
+        # Session history should still be intact
+        session = mgr.get_or_create(SENDER_ID)
+        assert len(session.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_server_command_no_thinking(tmp_path):
+    """Server commands like /sessions should not show Thinking indicator."""
+    server = _make_mock_server(tmp_path, "Sessions:\n  ...")
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input")
+        inp.value = "/sessions"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # Input should NOT be disabled (no worker launched)
+        assert inp.disabled is False
+        server.handle_message.assert_called_once_with(SENDER_ID, "/sessions")

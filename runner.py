@@ -131,8 +131,8 @@ def _load_agent_def(args: argparse.Namespace):
 
 def cmd_chat(args: argparse.Namespace) -> int:
     """Start interactive CLI chat."""
-    from taskrunner.channels.stdin import StdinChannel
     from taskrunner.chat import ChatServer
+    from taskrunner.session import SessionManager
 
     try:
         agent_def = _load_agent_def(args)
@@ -145,6 +145,56 @@ def cmd_chat(args: argparse.Namespace) -> int:
         from taskrunner.orchestrator import _load_secrets_to_env
         _load_secrets_to_env(agent_def.llm.secrets)
 
+    # Handle --list-sessions: print and exit
+    if args.list_sessions:
+        from datetime import datetime, timezone
+
+        mgr = SessionManager(
+            sessions_dir=agent_def.session.sessions_dir,
+            max_history=agent_def.session.max_history,
+        )
+        sessions = mgr.list_sessions("cli")
+        if not sessions:
+            print("No sessions found.")
+            return 0
+        active_id = mgr._get_active_session_id("cli")
+        print(f"{'ID':<12} {'Title':<40} {'Messages':>8}  {'Last Active'}")
+        print("-" * 80)
+        for s in sessions:
+            marker = " *" if s["session_id"] == active_id else ""
+            dt = datetime.fromtimestamp(s["last_active"], tz=timezone.utc)
+            date_str = dt.strftime("%Y-%m-%d %H:%M")
+            title = (s["title"] or "(untitled)")[:38]
+            print(f"{s['session_id']}{marker:<{12 - len(s['session_id'])}} {title:<40} {s['message_count']:>8}  {date_str}")
+        return 0
+
+    # -- TUI mode (default) --
+    if not args.simple:
+        try:
+            from taskrunner.tui import ChatApp, _make_tui_confirm_fn
+        except ImportError:
+            args.simple = True  # fall back if textual not installed
+
+    if not args.simple:
+        server = ChatServer(agent_def, use_containers=args.containers)
+        app = ChatApp(server)
+        server._confirm_fn = _make_tui_confirm_fn(app)
+
+        if args.new:
+            server._session_mgr.new_session("cli")
+        if args.resume:
+            try:
+                server._session_mgr.resume_session("cli", args.resume)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
+
+        app.run()
+        return 0
+
+    # -- Simple stdin/stdout mode --
+    from taskrunner.channels.stdin import StdinChannel
+
     def _confirm_action(tool_name: str, tool_input: dict, reason: str) -> bool:
         print(f"\n⚠ Guardian review: {tool_name}({tool_input})")
         print(f"  Reason: {reason}")
@@ -155,6 +205,20 @@ def cmd_chat(args: argparse.Namespace) -> int:
         return answer in ("y", "yes")
 
     server = ChatServer(agent_def, use_containers=args.containers, confirm_fn=_confirm_action)
+
+    if args.new:
+        session = server._session_mgr.new_session("cli")
+        print(f"Started new session {session.session_id}.")
+
+    if args.resume:
+        try:
+            session = server._session_mgr.resume_session("cli", args.resume)
+            title = session.title or "(untitled)"
+            print(f"Resumed session {args.resume}: {title}")
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     channel = StdinChannel()
 
     try:
@@ -289,7 +353,20 @@ def main() -> int:
     validate_parser.add_argument("task_name", help="Name of the task to validate")
 
     # chat command
-    subparsers.add_parser("chat", help="Interactive CLI chat with agent")
+    chat_parser = subparsers.add_parser("chat", help="Interactive CLI chat with agent")
+    chat_parser.add_argument(
+        "--new", action="store_true", help="Start a new session (don't resume the active one)"
+    )
+    chat_parser.add_argument(
+        "--resume", metavar="ID", help="Resume a specific session by ID"
+    )
+    chat_parser.add_argument(
+        "--list-sessions", action="store_true", help="List sessions and exit"
+    )
+    chat_parser.add_argument(
+        "--simple", action="store_true",
+        help="Use simple stdin/stdout mode instead of TUI",
+    )
 
     # listen command
     subparsers.add_parser("listen", help="Listen for iMessages and respond")

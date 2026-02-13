@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -100,47 +100,57 @@ def test_direct_no_credentials_raises(monkeypatch):
 
 @patch("taskrunner.orchestrator._ensure_image")
 @patch("taskrunner.llm.subprocess.run")
-def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch):
-    """ANTHROPIC_AUTH_TOKEN should be passed to the container."""
+def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_path):
+    """ANTHROPIC_AUTH_TOKEN should be written to the env file."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
+    # Use a real temp file in tmp_path so we can read it back
+    env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response")
 
-    _run_llm_container("hi", _make_config())
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
+               return_value=open(env_file, "w+")):
+        _run_llm_container("hi", _make_config())
 
     cmd = mock_run.call_args[0][0]
-    assert "-e" in cmd
-    idx = cmd.index("ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-token")
-    assert cmd[idx - 1] == "-e"
+    assert "--env-file" in cmd
+    contents = env_file.read_text()
+    assert "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-token" in contents
 
 
 @patch("taskrunner.orchestrator._ensure_image")
 @patch("taskrunner.llm.subprocess.run")
-def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch):
-    """ANTHROPIC_API_KEY should be passed to the container."""
+def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path):
+    """ANTHROPIC_API_KEY should be written to the env file."""
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
 
+    env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response")
 
-    _run_llm_container("hi", _make_config())
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
+               return_value=open(env_file, "w+")):
+        _run_llm_container("hi", _make_config())
 
-    cmd = mock_run.call_args[0][0]
-    assert "ANTHROPIC_API_KEY=sk-ant-key" in cmd
+    contents = env_file.read_text()
+    assert "ANTHROPIC_API_KEY=sk-ant-key" in contents
 
 
 @patch("taskrunner.orchestrator._ensure_image")
 @patch("taskrunner.llm.subprocess.run")
-def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch):
-    """Both env vars should be forwarded to the container when set."""
+def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch, tmp_path):
+    """Both env vars should be written to the env file."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
 
+    env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response")
 
-    _run_llm_container("hi", _make_config())
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
+               return_value=open(env_file, "w+")):
+        _run_llm_container("hi", _make_config())
 
-    cmd = mock_run.call_args[0][0]
-    assert "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-token" in cmd
-    assert "ANTHROPIC_API_KEY=sk-ant-key" in cmd
+    contents = env_file.read_text()
+    assert "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-token" in contents
+    assert "ANTHROPIC_API_KEY=sk-ant-key" in contents

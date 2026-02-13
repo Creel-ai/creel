@@ -139,6 +139,8 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
             return _fetch_gcal_write_inline(config)
         elif name == "gmail":
             return _fetch_gmail_inline(config)
+        elif name == "gmail_read":
+            return _fetch_gmail_read_inline(config)
         elif name == "gmail_send":
             return _fetch_gmail_send_inline(config)
         elif name == "gmail_modify":
@@ -202,6 +204,15 @@ def _fetch_gmail_inline(config: FetcherConfig) -> str:
     )
     emails = fetch_emails(query, max_results, full_body)
     return json.dumps(emails, indent=2)
+
+
+def _fetch_gmail_read_inline(config: FetcherConfig) -> str:
+    """Run Gmail read fetcher inline."""
+    from fetchers.gmail.fetcher import read_email
+
+    message_id = config.args.get("message_id", "")
+    result = read_email(message_id)
+    return json.dumps(result, indent=2)
 
 
 def _fetch_gmail_send_inline(config: FetcherConfig) -> str:

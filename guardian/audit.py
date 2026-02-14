@@ -195,8 +195,20 @@ def read_audit_log(
     event_filter: str | None = None,
     blocked_only: bool = False,
     denied_only: bool = False,
+    tool_filter: str | None = None,
+    since: str | None = None,
 ) -> list[dict]:
-    """Read and filter audit log entries."""
+    """Read and filter audit log entries.
+
+    Args:
+        log_file: Path to the JSONL audit log.
+        tail: Return only the last N entries (0 = no limit).
+        event_filter: Only include entries with this event type.
+        blocked_only: Only include entries where ``blocked`` is true.
+        denied_only: Only include entries where ``verdict`` is ``deny``.
+        tool_filter: Only include entries mentioning this tool name.
+        since: Only include entries with ``ts`` >= this ISO date string.
+    """
     path = Path(log_file)
     if not path.exists():
         return []
@@ -217,6 +229,10 @@ def read_audit_log(
             if blocked_only and not entry.get("blocked"):
                 continue
             if denied_only and entry.get("verdict") != "deny":
+                continue
+            if tool_filter and entry.get("tool_name") != tool_filter:
+                continue
+            if since and entry.get("ts", "") < since:
                 continue
 
             entries.append(entry)

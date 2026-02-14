@@ -148,6 +148,14 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
             return _fetch_drive_inline(config)
         elif name == "drive_write":
             return _fetch_drive_write_inline(config)
+        elif name == "bluebubbles":
+            return _fetch_bluebubbles_inline(config, "get_recent_messages")
+        elif name == "bluebubbles_send":
+            return _fetch_bluebubbles_inline(config, "send_message")
+        elif name == "bluebubbles_react":
+            return _fetch_bluebubbles_inline(config, "send_reaction")
+        elif name == "bluebubbles_chats":
+            return _fetch_bluebubbles_inline(config, "get_chats")
         else:
             raise ValueError(f"Unknown inline fetcher: {name}")
     finally:
@@ -271,6 +279,68 @@ def _fetch_drive_write_inline(config: FetcherConfig) -> str:
     mime_type = config.args.get("mime_type", "text/plain")
     folder_id = config.args.get("folder_id", "")
     result = upload_file(name, content, mime_type, folder_id)
+    return json.dumps(result, indent=2)
+
+
+def _fetch_bluebubbles_inline(config: FetcherConfig, action: str) -> str:
+    """Run BlueBubbles fetcher inline."""
+    import os
+    from fetchers.bluebubbles.fetcher import (
+        get_chats,
+        get_recent_messages,
+        send_message,
+        send_reaction,
+    )
+
+    server_url = os.environ.get("BLUEBUBBLES_URL", "")
+    password = os.environ.get("BLUEBUBBLES_PASSWORD", "")
+    allowed_recipients = {
+        v.strip()
+        for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",")
+        if v.strip()
+    }
+    allowed_chats = {
+        v.strip()
+        for v in os.environ.get("ALLOWED_CHATS", "").split(",")
+        if v.strip()
+    }
+
+    if action == "get_recent_messages":
+        result = get_recent_messages(
+            server_url,
+            password,
+            allowed_chats,
+            chat_id=config.args.get("chat_id") or None,
+            limit=int(config.args.get("limit", "20")),
+            after_date=config.args.get("after_date") or None,
+        )
+    elif action == "send_message":
+        result = send_message(
+            server_url,
+            password,
+            allowed_recipients,
+            chat_id=config.args.get("chat_id", ""),
+            text=config.args.get("text", ""),
+        )
+    elif action == "send_reaction":
+        result = send_reaction(
+            server_url,
+            password,
+            allowed_recipients,
+            chat_id=config.args.get("chat_id", ""),
+            message_guid=config.args.get("message_guid", ""),
+            reaction=config.args.get("reaction", ""),
+        )
+    elif action == "get_chats":
+        result = get_chats(
+            server_url,
+            password,
+            allowed_chats,
+            limit=int(config.args.get("limit", "20")),
+        )
+    else:
+        raise ValueError(f"Unknown bluebubbles action: {action}")
+
     return json.dumps(result, indent=2)
 
 

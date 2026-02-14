@@ -12,7 +12,7 @@ from taskrunner.models import (
     AgentConfig,
     AgentDefinition,
     ChannelsConfig,
-    FetcherConfig,
+    ExecutorConfig,
     IMessageChannelConfig,
     LLMConfig,
     OutputConfig,
@@ -49,9 +49,9 @@ def test_load_valid_task(valid_task_yaml: Path) -> None:
     task = load_task(valid_task_yaml)
     assert task.name == "test_task"
     assert task.schedule == "0 7 * * *"
-    assert "weather" in task.fetch
-    assert task.fetch["weather"].name == "weather"
-    assert task.fetch["weather"].image == "fetcher-weather:latest"
+    assert "weather" in task.executors
+    assert task.executors["weather"].name == "weather"
+    assert task.executors["weather"].image == "executor-weather:latest"
     assert task.output.type == "stdout"
     assert task.llm.model == "claude-sonnet-4-20250514"
 
@@ -104,24 +104,24 @@ def test_default_llm_config(tmp_path: Path) -> None:
     assert loaded.llm.max_tokens == 300
 
 
-def test_fetcher_config_with_secrets() -> None:
-    config = FetcherConfig(
+def test_executor_config_with_secrets() -> None:
+    config = ExecutorConfig(
         name="gcal",
         secrets="secrets/gcal.env.enc",
         args={"range": "today"},
     )
     assert config.secrets == "secrets/gcal.env.enc"
     assert config.args["range"] == "today"
-    assert config.image == "fetcher-gcal:latest"
+    assert config.image == "executor-gcal:latest"
 
 
-def test_fetcher_config_without_secrets() -> None:
-    config = FetcherConfig(name="weather", args={"location": "nyc"})
+def test_executor_config_without_secrets() -> None:
+    config = ExecutorConfig(name="weather", args={"location": "nyc"})
     assert config.secrets is None
-    assert config.image == "fetcher-weather:latest"
+    assert config.image == "executor-weather:latest"
 
 
-def test_multiple_fetchers(tmp_path: Path) -> None:
+def test_multiple_executors(tmp_path: Path) -> None:
     task = {
         "name": "multi_fetch",
         "schedule": "0 7 * * *",
@@ -155,7 +155,7 @@ def test_tool_parameter_defaults() -> None:
 
 def test_tool_config() -> None:
     cfg = ToolConfig(
-        fetcher="gmail_modify",
+        executor="gmail_modify",
         secrets="secrets/gmail_modify.env.enc",
         description="Trash an email",
         parameters={
@@ -163,7 +163,7 @@ def test_tool_config() -> None:
         },
         fixed_args={"action": "trash"},
     )
-    assert cfg.fetcher == "gmail_modify"
+    assert cfg.executor == "gmail_modify"
     assert "message_id" in cfg.parameters
     assert cfg.fixed_args["action"] == "trash"
 
@@ -212,7 +212,7 @@ def test_task_definition_agent_mode(tmp_path: Path) -> None:
         "output": {"type": "stdout", "to": ""},
         "tools": {
             "trash_email": {
-                "fetcher": "gmail_modify",
+                "executor": "gmail_modify",
                 "description": "Trash email",
                 "parameters": {
                     "message_id": {"type": "string", "required": True},
@@ -251,7 +251,7 @@ def test_load_agent_config(tmp_path: Path) -> None:
         "system_prompt": "You are helpful. Today is {date}.",
         "tools": {
             "check_weather": {
-                "fetcher": "weather",
+                "executor": "weather",
                 "description": "Get weather",
                 "parameters": {
                     "location": {"type": "string", "required": True},

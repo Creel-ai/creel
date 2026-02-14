@@ -12,18 +12,18 @@ from pydantic import BaseModel, Field, field_validator
 from guardian.types import GuardianConfig
 
 
-class FetcherConfig(BaseModel):
-    """Configuration for a single fetcher step."""
+class ExecutorConfig(BaseModel):
+    """Configuration for a single executor step."""
 
     name: str = ""
     secrets: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)
-    timeout: int = 60  # seconds, per-fetcher configurable
+    timeout: int = 60  # seconds, per-executor configurable
 
     @property
     def image(self) -> str:
-        """Derive Docker image name from fetcher name by convention."""
-        return f"fetcher-{self.name.replace('_', '-')}:latest"
+        """Derive Docker image name from executor name by convention."""
+        return f"executor-{self.name.replace('_', '-')}:latest"
 
 
 class OutputConfig(BaseModel):
@@ -68,7 +68,7 @@ class ToolParameter(BaseModel):
 class ToolConfig(BaseModel):
     """Configuration for one tool available to the agent."""
 
-    fetcher: str
+    executor: str
     secrets: str | None = None
     description: str
     parameters: dict[str, ToolParameter] = Field(default_factory=dict)
@@ -167,7 +167,7 @@ class TaskDefinition(BaseModel):
 
     name: str
     schedule: str
-    fetch: dict[str, FetcherConfig] = Field(default_factory=dict)
+    executors: dict[str, ExecutorConfig] = Field(default_factory=dict)
     prompt: str
     output: OutputConfig
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -207,9 +207,9 @@ def load_task(path: str | Path) -> TaskDefinition:
         raise ValueError(f"Task file must contain a YAML mapping, got {type(raw)}")
 
     task = TaskDefinition(**raw)
-    for fetcher_name, fetcher_cfg in task.fetch.items():
-        if not fetcher_cfg.name:
-            fetcher_cfg.name = fetcher_name
+    for executor_name, executor_cfg in task.executors.items():
+        if not executor_cfg.name:
+            executor_cfg.name = executor_name
     return task
 
 

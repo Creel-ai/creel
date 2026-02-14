@@ -1,7 +1,7 @@
 name: weather_check
 schedule: "30 6 * * *"  # 6:30am daily
 
-fetch:
+executors:
   weather:
     args:
       location: denver

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BlueBubbles fetcher — iMessage integration via BlueBubbles REST API.
+"""BlueBubbles executor — iMessage integration via BlueBubbles REST API.
 
 Security: enforces allowlists, rate limits, and caps independent of Guardian.
 All configuration comes from environment variables, never from LLM input.

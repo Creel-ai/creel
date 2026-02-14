@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gmail send fetcher - sends an email via the Gmail API.
+"""Gmail send executor - sends an email via the Gmail API.
 
 Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
 (refresh token, client ID, client secret).

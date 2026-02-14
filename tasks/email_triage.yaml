@@ -2,7 +2,7 @@ name: email_triage
 schedule: "0 8 * * *"
 mode: agent
 
-fetch:
+executors:
   gmail_readonly:
     secrets: secrets/gmail.env.enc
     args:
@@ -10,7 +10,7 @@ fetch:
 
 tools:
   trash_email:
-    fetcher: gmail_modify
+    executor: gmail_modify
     secrets: secrets/gmail_modify.env.enc
     description: "Move an email to trash. Always include the subject."
     parameters:
@@ -26,7 +26,7 @@ tools:
       action: "trash"
 
   mark_read:
-    fetcher: gmail_modify
+    executor: gmail_modify
     secrets: secrets/gmail_modify.env.enc
     description: "Mark an email as read"
     parameters:

@@ -18,6 +18,7 @@ class FetcherConfig(BaseModel):
     name: str = ""
     secrets: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)
+    timeout: int = 60  # seconds, per-fetcher configurable
 
     @property
     def image(self) -> str:

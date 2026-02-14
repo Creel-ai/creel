@@ -17,3 +17,8 @@ review:
 
 deny:
   - delete_*
+
+# Tools that match 'review' rules but can skip human approval
+auto_approve:
+  - mark_read
+  - react_imessage

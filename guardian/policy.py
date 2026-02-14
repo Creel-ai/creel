@@ -64,6 +64,7 @@ class PolicyEngine:
         self._allow: list[str] = []
         self._deny_when: list[dict] = []
         self._review_when: list[dict] = []
+        self._auto_approve: list[str] = []
         self._load(Path(policy_file))
 
     def _load(self, path: Path) -> None:
@@ -79,14 +80,16 @@ class PolicyEngine:
         self._allow = data.get("allow", [])
         self._deny_when = data.get("deny_when", [])
         self._review_when = data.get("review_when", [])
+        self._auto_approve = data.get("auto_approve", [])
 
         logger.info(
-            "Loaded policy: %d deny, %d review, %d allow, %d deny_when, %d review_when rules",
+            "Loaded policy: %d deny, %d review, %d allow, %d deny_when, %d review_when, %d auto_approve rules",
             len(self._deny),
             len(self._review),
             len(self._allow),
             len(self._deny_when),
             len(self._review_when),
+            len(self._auto_approve),
         )
 
     def evaluate(self, tool_name: str, tool_args: dict | None = None) -> ActionDecision:
@@ -119,9 +122,18 @@ class PolicyEngine:
                     reason=f"Tool '{tool_name}' denied by conditional rule (arg '{rule.get('arg')}' matches '{rule.get('pattern')}')",
                 )
 
-        # Then review
+        # Then review (but check auto_approve override)
         for pattern in self._review:
             if fnmatch.fnmatch(tool_name, pattern):
+                # Check if tool has auto_approve override
+                for ap_pattern in self._auto_approve:
+                    if fnmatch.fnmatch(tool_name, ap_pattern):
+                        return ActionDecision(
+                            verdict=ActionVerdict.ALLOW,
+                            tool_name=tool_name,
+                            matched_rule=f"auto_approve:{ap_pattern}",
+                            reason=f"Tool '{tool_name}' auto-approved (matched review '{pattern}' but overridden by auto_approve '{ap_pattern}')",
+                        )
                 return ActionDecision(
                     verdict=ActionVerdict.REVIEW,
                     tool_name=tool_name,
@@ -151,7 +163,15 @@ class PolicyEngine:
                     reason=f"Tool '{tool_name}' allowed by rule '{pattern}'",
                 )
 
-        # Unknown tool — default to review
+        # Unknown tool — default to review (but check auto_approve)
+        for ap_pattern in self._auto_approve:
+            if fnmatch.fnmatch(tool_name, ap_pattern):
+                return ActionDecision(
+                    verdict=ActionVerdict.ALLOW,
+                    tool_name=tool_name,
+                    matched_rule=f"auto_approve:{ap_pattern}",
+                    reason=f"Tool '{tool_name}' auto-approved (would default to review but overridden by auto_approve '{ap_pattern}')",
+                )
         return ActionDecision(
             verdict=ActionVerdict.REVIEW,
             tool_name=tool_name,

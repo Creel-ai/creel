@@ -180,6 +180,44 @@ def run_agent_loop(
                             ),
                         )
 
+            # Guardian coherence check — verify tool call matches user intent
+            if guardian is not None and hasattr(guardian, "check_coherence"):
+                # Extract the user's last message for coherence comparison
+                user_request = ""
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        content = msg.get("content", "")
+                        if isinstance(content, str):
+                            user_request = content
+                        elif isinstance(content, list):
+                            user_request = " ".join(
+                                b.get("text", "") for b in content if b.get("type") == "text"
+                            )
+                        break
+
+                if user_request:
+                    coherence = guardian.check_coherence(user_request, tool_name, tool_input)
+                    if not coherence.is_coherent:
+                        logger.warning(
+                            "Guardian coherence check failed for %s: %s",
+                            tool_name, coherence.reasoning,
+                        )
+                        result = f"Action blocked — not coherent with user request: {coherence.reasoning}"
+                        is_error = True
+                        tool_history.append({
+                            "tool": tool_name,
+                            "input": tool_input,
+                            "output": result,
+                            "is_error": is_error,
+                        })
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                            "is_error": is_error,
+                        })
+                        continue
+
             t0 = time.perf_counter()
             try:
                 result = execute_tool_call(

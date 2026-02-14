@@ -16,7 +16,7 @@ def _make_task(tmp_path: Path, **overrides) -> Path:
     task = {
         "name": "test_task",
         "schedule": "0 7 * * *",
-        "fetch": {
+        "executors": {
             "weather": {
                 "args": {"location": "denver"},
             }
@@ -76,7 +76,7 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
     task = {
         "name": "gmail_test",
         "schedule": "0 8 * * *",
-        "fetch": {
+        "executors": {
             "gmail_readonly": {
                 "args": {"query": "is:unread", "max_results": "5", "full_body": "false"},
             }
@@ -89,7 +89,7 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
     path.write_text(yaml.dump(task))
 
     with (
-        patch("taskrunner.orchestrator._fetch_gmail_readonly_inline") as mock_gmail,
+        patch("taskrunner.orchestrator._exec_gmail_readonly_inline") as mock_gmail,
         patch("taskrunner.orchestrator.run_llm") as mock_llm,
         patch("taskrunner.orchestrator.send_output"),
     ):

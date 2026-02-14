@@ -25,6 +25,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=7.0",
 ]
 guardian = [
     "transformers>=4.36.0",
@@ -41,3 +42,11 @@ include = ["taskrunner*", "fetchers*", "guardian*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "--cov=taskrunner --cov=guardian --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["taskrunner", "guardian"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

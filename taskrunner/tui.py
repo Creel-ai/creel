@@ -300,11 +300,19 @@ def _make_tui_confirm_fn(app: ChatApp):
 
         def _mount_bar() -> None:
             log = app.query_one("#chat-log", RichLog)
-            log.write(
-                f"[bold yellow]⚠ Guardian review:[/bold yellow] "
-                f"[bold]{tool_name}[/bold]({tool_input})\n"
-                f"  Reason: {reason}"
-            )
+            subject = tool_input.get("subject")
+            if subject:
+                header = (
+                    f"[bold yellow]⚠ Guardian review:[/bold yellow] "
+                    f'[bold]{tool_name}[/bold] — "{subject}"\n'
+                    f"  Input: {tool_input}"
+                )
+            else:
+                header = (
+                    f"[bold yellow]⚠ Guardian review:[/bold yellow] "
+                    f"[bold]{tool_name}[/bold]({tool_input})"
+                )
+            log.write(f"{header}\n  Reason: {reason}")
             bar = ConfirmBar(tool_name, reason, event, result)
             app.mount(bar, before="#chat-input")
 

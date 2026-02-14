@@ -80,11 +80,15 @@ tools:
   trash_email:
     fetcher: gmail_modify
     secrets: secrets/gmail_modify.env.enc
-    description: "Move an email to trash"
+    description: "Move an email to trash. Always include the subject."
     parameters:
       message_id:
         type: string
         description: "Gmail message ID"
+        required: true
+      subject:
+        type: string
+        description: "Email subject line (for confirmation display)"
         required: true
     fixed_args:
       action: "trash"
@@ -159,9 +163,10 @@ channels:
 
 guardian:
   enabled: true
+  debug: true
   fast_classifier:
     enabled: true
-    threshold: 0.85
+    threshold: 0.95
     model_name: protectai/deberta-v3-base-prompt-injection-v2
   llm_judge:
     enabled: false

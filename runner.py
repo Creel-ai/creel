@@ -202,7 +202,12 @@ def cmd_chat(args: argparse.Namespace) -> int:
     from taskrunner.channels.stdin import StdinChannel
 
     def _confirm_action(tool_name: str, tool_input: dict, reason: str) -> bool:
-        print(f"\n⚠ Guardian review: {tool_name}({tool_input})")
+        subject = tool_input.get("subject")
+        if subject:
+            print(f'\n⚠ Guardian review: {tool_name} — "{subject}"')
+            print(f"  Input: {tool_input}")
+        else:
+            print(f"\n⚠ Guardian review: {tool_name}({tool_input})")
         print(f"  Reason: {reason}")
         try:
             answer = input("  Allow? [y/N]: ").strip().lower()

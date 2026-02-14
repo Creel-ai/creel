@@ -145,3 +145,27 @@ class TestAuditLogger:
         assert len(record["chunks"]) == 2
         assert record["chunks"][0]["is_injection"] is False
         assert record["chunks"][1]["is_injection"] is True
+
+    def test_log_action_outcome_writes_jsonl(self, logger: AuditLogger, log_file: Path) -> None:
+        logger.log_action_outcome(
+            tool_name="trash_email",
+            verdict="review",
+            outcome="approved",
+        )
+        lines = log_file.read_text().strip().split("\n")
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        assert record["event"] == "action_outcome"
+        assert record["tool_name"] == "trash_email"
+        assert record["verdict"] == "review"
+        assert record["outcome"] == "approved"
+        assert "ts" in record
+
+    def test_log_action_outcome_denied(self, logger: AuditLogger, log_file: Path) -> None:
+        logger.log_action_outcome(
+            tool_name="trash_email",
+            verdict="deny",
+            outcome="denied_by_policy",
+        )
+        record = json.loads(log_file.read_text().strip())
+        assert record["outcome"] == "denied_by_policy"

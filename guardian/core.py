@@ -167,3 +167,19 @@ class Guardian:
             )
 
         return decision
+
+    def log_action_outcome(self, tool_name: str, verdict: str, outcome: str) -> None:
+        """Log the final outcome of an action after user review.
+
+        Args:
+            tool_name: The tool that was evaluated.
+            verdict: The original policy verdict (review/deny).
+            outcome: What actually happened — "approved", "denied_by_user",
+                     or "denied_by_policy".
+        """
+        if self._audit:
+            self._audit.log_action_outcome(
+                tool_name=tool_name,
+                verdict=verdict,
+                outcome=outcome,
+            )

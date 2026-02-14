@@ -111,6 +111,7 @@ def run_agent_loop(
                 decision = guardian.validate_action(tool_name, tool_input)
                 if decision.verdict == ActionVerdict.DENY:
                     logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
+                    guardian.log_action_outcome(tool_name, "deny", "denied_by_policy")
                     result = f"Action denied by security policy: {decision.reason}"
                     is_error = True
 
@@ -132,6 +133,7 @@ def run_agent_loop(
                     logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
                     if confirm_action is not None and not confirm_action(tool_name, tool_input, decision.reason):
                         logger.info("User denied tool %s during review", tool_name)
+                        guardian.log_action_outcome(tool_name, "review", "denied_by_user")
                         result = f"Action denied by user: {decision.reason}"
                         is_error = True
 
@@ -148,6 +150,7 @@ def run_agent_loop(
                             "is_error": is_error,
                         })
                         continue
+                    guardian.log_action_outcome(tool_name, "review", "approved")
 
             try:
                 result = execute_tool_call(

@@ -50,3 +50,8 @@ source = ["taskrunner", "guardian"]
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]

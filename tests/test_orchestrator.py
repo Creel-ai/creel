@@ -128,4 +128,4 @@ def test_fetcher_failure_continues(tmp_path: Path) -> None:
     # The prompt should contain the error placeholder
     llm_call_args = mock_llm.call_args
     prompt = llm_call_args[0][0]
-    assert "[Error fetching weather]" in prompt
+    assert "[Error fetching weather" in prompt

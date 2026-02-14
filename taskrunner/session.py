@@ -30,26 +30,64 @@ class Session:
 class SessionManager:
     """Manages conversation sessions persisted as JSON files."""
 
-    def __init__(self, sessions_dir: str = "sessions", max_history: int = 50):
+    def __init__(self, sessions_dir: str = "sessions", max_history: int = 50, ttl_hours: float = 0):
         self._dir = Path(sessions_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._max_history = max_history
+        self._ttl_seconds = ttl_hours * 3600 if ttl_hours > 0 else 0
 
     # -- public API --
 
     def get_or_create(self, sender_id: str) -> Session:
-        """Load the active session from the index, or create a new one."""
+        """Load the active session from the index, or create a new one.
+
+        If TTL is configured and the active session has expired, a new session
+        is created automatically.
+        """
         active_id = self._get_active_session_id(sender_id)
         if active_id:
             session = self._load(active_id)
             if session is not None:
-                return session
+                if self._is_expired(session):
+                    logger.info(
+                        "Session %s expired (last_active=%.0f), starting new session",
+                        session.session_id, session.last_active,
+                    )
+                else:
+                    return session
 
-        # No active session (or file missing) — create fresh
+        # No active session (or file missing or expired) — create fresh
         session = Session(sender_id=sender_id)
         self._set_active_session_id(sender_id, session.session_id)
         logger.info("Created new session %s for %s", session.session_id, sender_id)
         return session
+
+    def _is_expired(self, session: Session) -> bool:
+        """Check if a session has exceeded the TTL."""
+        if not self._ttl_seconds:
+            return False
+        return (time.time() - session.last_active) > self._ttl_seconds
+
+    def cleanup_expired(self, sender_id: str) -> int:
+        """Remove expired sessions for a sender. Returns count of removed sessions."""
+        if not self._ttl_seconds:
+            return 0
+        removed = 0
+        for path in self._dir.glob("*.json"):
+            if path.name == _ACTIVE_INDEX_FILE:
+                continue
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            if data.get("sender_id") != sender_id:
+                continue
+            last_active = data.get("last_active", 0)
+            if (time.time() - last_active) > self._ttl_seconds:
+                path.unlink()
+                removed += 1
+                logger.info("Removed expired session %s", path.stem)
+        return removed
 
     def new_session(self, sender_id: str) -> Session:
         """Save the current session and start a fresh one."""

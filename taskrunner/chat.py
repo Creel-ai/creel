@@ -42,6 +42,7 @@ class ChatServer:
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
+            ttl_hours=agent_def.session.ttl_hours,
         )
 
         # Initialize memory manager if workspace is configured

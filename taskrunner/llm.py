@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
 import tempfile
+import time
 
 import anthropic
 
 from taskrunner.models import LLMConfig
+
+logger = logging.getLogger(__name__)
+
+# Retry configuration
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1.0  # seconds
 
 _OAUTH_HEADERS = {
     "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
@@ -51,6 +60,29 @@ def extract_text(message: anthropic.types.Message) -> str:
     return "\n".join(text_parts)
 
 
+def _retry_on_transient(fn, *args, **kwargs):
+    """Call fn with retry on transient API errors (429/500/502/503).
+
+    Uses exponential backoff: 1s, 2s, 4s between attempts.
+    """
+    last_exc = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            return fn(*args, **kwargs)
+        except anthropic.APIStatusError as exc:
+            if exc.status_code not in RETRYABLE_STATUS_CODES:
+                raise
+            last_exc = exc
+            if attempt < MAX_RETRIES - 1:
+                delay = RETRY_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "LLM call failed with %d, retrying in %.1fs (attempt %d/%d)",
+                    exc.status_code, delay, attempt + 1, MAX_RETRIES,
+                )
+                time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
+
 def call_llm(
     messages: list[dict],
     config: LLMConfig,
@@ -86,7 +118,7 @@ def call_llm(
     if tools:
         create_kwargs["tools"] = tools
 
-    return client.messages.create(**create_kwargs)
+    return _retry_on_transient(client.messages.create, **create_kwargs)
 
 
 def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:
@@ -118,7 +150,7 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
     if auth_token and _is_oauth_token(auth_token):
         create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
 
-    message = client.messages.create(**create_kwargs)
+    message = _retry_on_transient(client.messages.create, **create_kwargs)
     return extract_text(message)
 
 

@@ -15,14 +15,24 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class PendingApproval:
+    """Info about a tool call that needs async approval."""
+
+    tool_name: str
+    tool_input: dict
+    reason: str
+
+
+@dataclass
 class AgentResult:
     """Result of an agent loop execution."""
 
     text: str
     turns_used: int
     tool_calls_made: int
-    stop_reason: str  # "end_turn" | "max_turns" | "error"
+    stop_reason: str  # "end_turn" | "max_turns" | "error" | "approval_required"
     tool_history: list[dict] = field(default_factory=list)
+    pending_approval: PendingApproval | None = None
 
 
 def run_agent_loop(
@@ -46,9 +56,6 @@ def run_agent_loop(
         system_prompt: Optional system prompt.
         use_containers: If True, run executors in Docker containers.
         guardian: Optional Guardian instance for action validation.
-        confirm_action: Optional callback for REVIEW verdicts. Takes
-            (tool_name, tool_input, reason) and returns True to proceed
-            or False to deny. If None, REVIEW logs and proceeds.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -134,26 +141,44 @@ def run_agent_loop(
 
                 if decision.verdict == ActionVerdict.REVIEW:
                     logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
-                    if confirm_action is not None and not confirm_action(tool_name, tool_input, decision.reason):
-                        logger.info("User denied tool %s during review", tool_name)
-                        guardian.log_action_outcome(tool_name, "review", "denied_by_user")
-                        result = f"Action denied by user: {decision.reason}"
-                        is_error = True
 
-                        tool_history.append({
-                            "tool": tool_name,
-                            "input": tool_input,
-                            "output": result,
-                            "is_error": is_error,
-                        })
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                            "is_error": is_error,
-                        })
-                        continue
-                    guardian.log_action_outcome(tool_name, "review", "approved")
+                    # If a synchronous confirm callback is provided (TUI/CLI),
+                    # use it directly instead of the async approval queue.
+                    if confirm_action is not None:
+                        if not confirm_action(tool_name, tool_input, decision.reason):
+                            logger.info("User denied tool %s during review", tool_name)
+                            guardian.log_action_outcome(tool_name, "review", "denied_by_user")
+                            result = f"Action denied by user: {decision.reason}"
+                            is_error = True
+                            tool_history.append({
+                                "tool": tool_name,
+                                "input": tool_input,
+                                "output": result,
+                                "is_error": is_error,
+                            })
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result,
+                                "is_error": is_error,
+                            })
+                            continue
+                        # User approved — fall through to execute
+                        guardian.log_action_outcome(tool_name, "review", "approved_by_user")
+                    else:
+                        # No callback — return for async approval queue
+                        return AgentResult(
+                            text="This action requires approval before proceeding.",
+                            turns_used=turns_used,
+                            tool_calls_made=tool_calls_made,
+                            stop_reason="approval_required",
+                            tool_history=tool_history,
+                            pending_approval=PendingApproval(
+                                tool_name=tool_name,
+                                tool_input=tool_input,
+                                reason=decision.reason,
+                            ),
+                        )
 
             t0 = time.perf_counter()
             try:

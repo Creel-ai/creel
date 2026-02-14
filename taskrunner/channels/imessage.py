@@ -95,6 +95,47 @@ class IMessageChannel(Channel):
             logger.error("Failed to send iMessage: %s", e.stderr)
             raise
 
+    def wait_for_reply(self, sender_id: str, timeout_seconds: int = 60) -> str | None:
+        """Wait for a reply from a specific sender within a timeout.
+
+        Returns the reply text, or None if timeout is reached.
+        """
+        start_rowid = self._get_latest_rowid()
+        deadline = time.time() + timeout_seconds
+        logger.info("Waiting for reply from %s (timeout=%ds)", sender_id, timeout_seconds)
+
+        while time.time() < deadline:
+            time.sleep(self._poll_interval)
+            try:
+                conn = sqlite3.connect(f"file:{self.MESSAGES_DB}?mode=ro", uri=True)
+                try:
+                    cursor = conn.execute(
+                        """
+                        SELECT m.ROWID, m.text
+                        FROM message m
+                        LEFT JOIN handle h ON m.handle_id = h.ROWID
+                        WHERE m.ROWID > ?
+                          AND m.is_from_me = 0
+                          AND m.text IS NOT NULL
+                          AND m.text != ''
+                          AND h.id = ?
+                        ORDER BY m.ROWID ASC
+                        LIMIT 1
+                        """,
+                        (start_rowid, sender_id),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        logger.info("Got reply from %s: %s", sender_id, row[1][:40])
+                        return row[1]
+                finally:
+                    conn.close()
+            except Exception:
+                logger.exception("Error polling for reply")
+
+        logger.info("Timeout waiting for reply from %s", sender_id)
+        return None
+
     def _get_latest_rowid(self) -> int:
         """Get the highest ROWID in chat.db."""
         conn = sqlite3.connect(f"file:{self.MESSAGES_DB}?mode=ro", uri=True)

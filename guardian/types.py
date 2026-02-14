@@ -83,6 +83,15 @@ class AuditConfig(BaseModel):
     max_size_mb: float = 0  # 0 = no size limit
 
 
+class ReviewConfig(BaseModel):
+    """Configuration for REVIEW verdict approval flow."""
+
+    timeout_seconds: int = 60
+    default_on_timeout: str = "deny"  # "deny" or "allow"
+    approvals_dir: str = "approvals"
+    max_pending_age_hours: int = 24
+
+
 class GuardianConfig(BaseModel):
     """Top-level guardian configuration."""
 
@@ -92,3 +101,4 @@ class GuardianConfig(BaseModel):
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    review: ReviewConfig = Field(default_factory=ReviewConfig)

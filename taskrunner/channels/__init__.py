@@ -9,6 +9,8 @@ from typing import Callable
 class Channel(ABC):
     """Base class for communication channels."""
 
+    _stop_requested: bool = False
+
     @abstractmethod
     def listen(self, callback: Callable[[str, str], str]) -> None:
         """Listen for incoming messages.
@@ -20,3 +22,7 @@ class Channel(ABC):
     @abstractmethod
     def send(self, recipient: str, text: str) -> None:
         """Send a message to a recipient."""
+
+    def stop(self) -> None:
+        """Request the channel to stop listening."""
+        self._stop_requested = True

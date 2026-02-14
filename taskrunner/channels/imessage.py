@@ -52,7 +52,7 @@ class IMessageChannel(Channel):
             last_rowid,
         )
 
-        while True:
+        while not self._stop_requested:
             try:
                 new_messages = self._poll(last_rowid)
                 for msg in new_messages:
@@ -66,6 +66,8 @@ class IMessageChannel(Channel):
                 logger.exception("Error polling messages")
 
             time.sleep(self._poll_interval)
+
+        logger.info("iMessage listener stopped")
 
     def send(self, recipient: str, text: str) -> None:
         """Send an iMessage via AppleScript."""

@@ -93,6 +93,9 @@ class FakeGuardian:
     def validate_action(self, tool_name, tool_input):
         return ActionDecision(verdict=self._verdict, tool_name=tool_name, reason=self._reason)
 
+    def log_action_outcome(self, tool_name, stage, outcome):
+        pass
+
 
 class FakeToolUse:
     type = "tool_use"
@@ -175,7 +178,13 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
     agent_def.session.max_history = 10
     agent_def.guardian = None
     agent_def.channels.imessage = None
-    agent_def.system_prompt = "You are a test agent. Date: {date}"
+    agent_def.system_prompt = "You are a test agent."
+    agent_def.system_prompt_file = None
+    agent_def.workspace.path = str(tmp_path / "workspace")
+    agent_def.workspace.timezone = "UTC"
+    agent_def.workspace.memory_days = 2
+    agent_def.workspace.memory_max_chars = 1000
+    agent_def.workspace.max_chars_per_file = 500
     agent_def.llm.secrets = None
     agent_def.tools = {"send_email": MagicMock()}
 
@@ -184,6 +193,8 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
     server._use_containers = False
     server._imessage_channel = imessage_channel
     server._guardian = guardian
+    server._confirm_fn = None
+    server._memory = None
     server._approval_queue = ApprovalQueue(approvals_dir=str(tmp_path / "approvals"))
 
     from taskrunner.session import SessionManager

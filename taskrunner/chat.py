@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 
 from taskrunner.agent import run_agent_loop
 from taskrunner.log import generate_request_id, request_id_var
+from taskrunner.memory import MemoryManager
 from taskrunner.models import AgentDefinition
+from taskrunner.prompt_builder import build_system_prompt
 from taskrunner.session import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,16 @@ class ChatServer:
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
         )
+
+        # Initialize memory manager if workspace is configured
+        self._memory: MemoryManager | None = None
+        ws_path = Path(agent_def.workspace.path)
+        if ws_path.is_dir():
+            self._memory = MemoryManager(
+                workspace_dir=agent_def.workspace.path,
+                timezone_name=agent_def.workspace.timezone,
+            )
+            logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
         # Initialize guardian if configured and enabled
         self._guardian = None
@@ -83,11 +96,8 @@ class ChatServer:
         # Add user message and get session with history
         session = self._session_mgr.add_user_message(sender_id, text)
 
-        # Build system prompt with current date
-        now = datetime.now(timezone.utc)
-        system_prompt = self._agent_def.system_prompt.format(
-            date=now.strftime("%A, %B %d, %Y"),
-        )
+        # Build system prompt using the prompt builder
+        system_prompt = self._build_system_prompt()
 
         # Load LLM secrets if configured
         if self._agent_def.llm.secrets:
@@ -104,6 +114,7 @@ class ChatServer:
             use_containers=self._use_containers,
             guardian=self._guardian,
             confirm_action=self._confirm_fn,
+            memory_manager=self._memory,
         )
 
         logger.info(
@@ -153,3 +164,35 @@ class ChatServer:
             return f"Resumed session {session_id}: {title}"
         except ValueError as e:
             return str(e)
+
+    def _build_system_prompt(self) -> str:
+        """Build the system prompt from workspace files, memory, and config.
+
+        This mirrors OpenClaw's pattern of assembling the system prompt from
+        multiple sources each run, rather than using a static string.
+        """
+        ws_cfg = self._agent_def.workspace
+
+        # Load base prompt from file if configured, else use inline
+        base_prompt = self._agent_def.system_prompt
+        if self._agent_def.system_prompt_file:
+            prompt_path = Path(self._agent_def.system_prompt_file)
+            if prompt_path.exists():
+                base_prompt = prompt_path.read_text().strip()
+
+        # Get memory context
+        memory_context = None
+        if self._memory:
+            memory_context = self._memory.get_recent_context(
+                days=ws_cfg.memory_days,
+                max_chars=ws_cfg.memory_max_chars,
+            )
+
+        return build_system_prompt(
+            base_prompt=base_prompt,
+            workspace_dir=ws_cfg.path,
+            timezone_name=ws_cfg.timezone,
+            tools_config=self._agent_def.tools,
+            memory_context=memory_context,
+            max_chars_per_file=ws_cfg.max_chars_per_file,
+        )

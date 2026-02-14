@@ -155,6 +155,14 @@ agent:
 session:
   sessions_dir: sessions
   max_history: 50
+  summarize_on_trim: true
+
+workspace:
+  path: workspace
+  timezone: "America/Denver"
+  memory_days: 2
+  memory_max_chars: 5000
+  max_chars_per_file: 20000
 
 channels:
   imessage:

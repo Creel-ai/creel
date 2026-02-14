@@ -45,7 +45,7 @@ class BlueBubblesChannel(Channel):
             ", ".join(self._allowed_senders),
         )
 
-        while True:
+        while not self._stop_requested:
             try:
                 messages = self._poll(last_ts)
                 for msg in messages:
@@ -62,6 +62,8 @@ class BlueBubblesChannel(Channel):
                 logger.exception("Error polling BlueBubbles")
 
             time.sleep(self._poll_interval)
+
+        logger.info("BlueBubbles listener stopped")
 
     def send(self, recipient: str, text: str) -> None:
         """Send a message via BlueBubbles REST API."""

@@ -296,16 +296,30 @@ def cmd_listen(args: argparse.Namespace) -> int:
 
     server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
 
+    # Set up graceful shutdown on SIGTERM/SIGINT
+    import signal
+
+    def _handle_shutdown(signum, frame):
+        sig_name = signal.Signals(signum).name
+        logger.info("Received %s, initiating graceful shutdown...", sig_name)
+        print(f"\nReceived {sig_name}, shutting down...")
+        channel.stop()
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     try:
         channel.listen(server.handle_message)
     except KeyboardInterrupt:
-        print("\nListener stopped.")
+        pass
 
+    print("Listener stopped.")
     return 0
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
     """Start message listener + scheduler (daemon mode)."""
+    import signal
     import threading
 
     from taskrunner.chat import ChatServer
@@ -366,11 +380,25 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
 
+    # Set up graceful shutdown on SIGTERM/SIGINT
+    shutdown_event = threading.Event()
+
+    def _handle_shutdown(signum, frame):
+        sig_name = signal.Signals(signum).name
+        logger.info("Received %s, initiating graceful shutdown...", sig_name)
+        print(f"\nReceived {sig_name}, shutting down...")
+        shutdown_event.set()
+        channel.stop()
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     try:
         channel.listen(server.handle_message)
     except KeyboardInterrupt:
-        print("\nServer stopped.")
+        pass
 
+    print("Server stopped.")
     return 0
 
 

@@ -197,6 +197,135 @@ tools:
         type: string
         description: "Number of chats to return (max 50)"
 
+  # Apple Notes
+  list_notes:
+    executor: apple_notes
+    description: "List notes from Apple Notes"
+    parameters:
+      folder:
+        type: string
+        description: "Notes folder (default: Notes)"
+    fixed_args:
+      action: "list_notes"
+
+  search_notes:
+    executor: apple_notes
+    description: "Search Apple Notes by text content"
+    parameters:
+      query:
+        type: string
+        description: "Search query"
+        required: true
+    fixed_args:
+      action: "search_notes"
+
+  read_note:
+    executor: apple_notes
+    description: "Read the full content of a note by title"
+    parameters:
+      name:
+        type: string
+        description: "Note title"
+        required: true
+    fixed_args:
+      action: "read_note"
+
+  create_note:
+    executor: apple_notes
+    description: "Create a new note in Apple Notes"
+    parameters:
+      title:
+        type: string
+        description: "Note title"
+        required: true
+      body:
+        type: string
+        description: "Note content"
+        required: true
+      folder:
+        type: string
+        description: "Target folder (default: Notes)"
+    fixed_args:
+      action: "create_note"
+
+  # Apple Reminders
+  list_reminders:
+    executor: apple_reminders
+    description: "List reminders from Apple Reminders"
+    parameters:
+      list_name:
+        type: string
+        description: "Reminder list name (default: Reminders)"
+    fixed_args:
+      action: "list_reminders"
+
+  create_reminder:
+    executor: apple_reminders
+    description: "Create a new reminder"
+    parameters:
+      title:
+        type: string
+        description: "Reminder title"
+        required: true
+      due_date:
+        type: string
+        description: "Due date (ISO 8601, e.g. 2024-03-15T09:00:00)"
+      notes:
+        type: string
+        description: "Additional notes"
+      list_name:
+        type: string
+        description: "Reminder list (default: Reminders)"
+    fixed_args:
+      action: "create_reminder"
+
+  complete_reminder:
+    executor: apple_reminders
+    description: "Mark a reminder as completed"
+    parameters:
+      name:
+        type: string
+        description: "Reminder title"
+        required: true
+      list_name:
+        type: string
+        description: "Reminder list (default: Reminders)"
+    fixed_args:
+      action: "complete_reminder"
+
+  get_reminder_lists:
+    executor: apple_reminders
+    description: "List available reminder lists"
+    parameters: {}
+    fixed_args:
+      action: "get_lists"
+
+  # Web Search
+  web_search:
+    executor: brave_search
+    secrets: secrets/brave.env.enc
+    description: "Search the web using Brave Search"
+    parameters:
+      query:
+        type: string
+        description: "Search query"
+        required: true
+      count:
+        type: string
+        description: "Number of results (default: 5, max: 20)"
+
+  fetch_url:
+    executor: fetch_url
+    description: "Fetch and extract text content from a URL"
+    parameters:
+      url:
+        type: string
+        description: "URL to fetch"
+        required: true
+      max_chars:
+        type: string
+        description: "Max characters to return (default: 10000)"
+
 llm:
   model: claude-sonnet-4-20250514
   max_tokens: 1024

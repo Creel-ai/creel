@@ -88,6 +88,7 @@ class SessionConfig(BaseModel):
     sessions_dir: str = "sessions"
     max_history: int = 50
     summarize_on_trim: bool = True
+    ttl_hours: float = 0  # 0 = no expiry
 
 
 class WorkspaceConfig(BaseModel):

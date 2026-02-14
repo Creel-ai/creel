@@ -214,9 +214,9 @@ def cmd_chat(args: argparse.Namespace) -> int:
         subject = tool_input.get("subject")
         if subject:
             print(f'\n⚠ Guardian review: {tool_name} — "{subject}"')
-            print(f"  Input: {tool_input}")
         else:
-            print(f"\n⚠ Guardian review: {tool_name}({tool_input})")
+            print(f"\n⚠ Guardian review: {tool_name}")
+        print(f"  Input: {tool_input}")
         print(f"  Reason: {reason}")
         try:
             answer = input("  Allow? [y/N]: ").strip().lower()
@@ -264,8 +264,8 @@ def cmd_listen(args: argparse.Namespace) -> int:
         from taskrunner.orchestrator import _load_secrets_to_env
         _load_secrets_to_env(agent_def.llm.secrets)
 
-    server = ChatServer(agent_def, use_containers=args.containers)
     channel_type = getattr(args, "channel_type", None) or "imessage"
+    imessage_channel = None
 
     if channel_type == "bluebubbles":
         from taskrunner.channels.bluebubbles import BlueBubblesChannel
@@ -291,7 +291,10 @@ def cmd_listen(args: argparse.Namespace) -> int:
             allowed_senders=[agent_def.channels.imessage.listen_to],
             poll_interval=agent_def.channels.imessage.poll_interval,
         )
+        imessage_channel = channel
         print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+
+    server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
 
     try:
         channel.listen(server.handle_message)
@@ -331,8 +334,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         sched_thread.start()
         print("Scheduler started in background.")
 
-    server = ChatServer(agent_def, use_containers=args.containers)
     channel_type = getattr(args, "channel_type", None) or "imessage"
+    imessage_channel = None
 
     if channel_type == "bluebubbles":
         from taskrunner.channels.bluebubbles import BlueBubblesChannel
@@ -358,7 +361,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
             allowed_senders=[agent_def.channels.imessage.listen_to],
             poll_interval=agent_def.channels.imessage.poll_interval,
         )
+        imessage_channel = channel
         print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+
+    server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
 
     try:
         channel.listen(server.handle_message)

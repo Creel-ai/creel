@@ -11,7 +11,7 @@ from taskrunner.tools import build_tool_definitions, execute_tool_call
 def _make_tools() -> dict[str, ToolConfig]:
     return {
         "check_weather": ToolConfig(
-            fetcher="weather",
+            executor="weather",
             description="Get weather for a location",
             parameters={
                 "location": ToolParameter(
@@ -22,7 +22,7 @@ def _make_tools() -> dict[str, ToolConfig]:
             },
         ),
         "trash_email": ToolConfig(
-            fetcher="gmail_modify",
+            executor="gmail_modify",
             secrets="secrets/gmail_modify.env.enc",
             description="Trash an email",
             parameters={
@@ -64,7 +64,7 @@ def test_build_tool_definitions_no_required():
     """Tools with no required params should have no 'required' key."""
     tools = {
         "check_drive": ToolConfig(
-            fetcher="drive",
+            executor="drive",
             description="Search Drive",
             parameters={
                 "query": ToolParameter(type="string", description="Search query"),
@@ -79,7 +79,7 @@ def test_fixed_args_excluded_from_schema():
     """Parameters that are in fixed_args should be excluded from the schema."""
     tools = {
         "mark_read": ToolConfig(
-            fetcher="gmail_modify",
+            executor="gmail_modify",
             description="Mark as read",
             parameters={
                 "message_id": ToolParameter(type="string", required=True),
@@ -96,7 +96,7 @@ def test_fixed_args_excluded_from_schema():
     assert "remove_labels" not in props
 
 
-@patch("taskrunner.tools._run_fetcher_inline")
+@patch("taskrunner.tools._run_executor_inline")
 def test_execute_tool_call_merges_fixed_args(mock_fetch):
     """fixed_args should override LLM input."""
     mock_fetch.return_value = '{"status": "trashed"}'
@@ -110,14 +110,14 @@ def test_execute_tool_call_merges_fixed_args(mock_fetch):
 
     assert result == '{"status": "trashed"}'
 
-    # Verify the fetcher was called with merged args
+    # Verify the executor was called with merged args
     call_args = mock_fetch.call_args
-    fetcher_config = call_args[0][1]
-    assert fetcher_config.args["message_id"] == "abc123"
-    assert fetcher_config.args["action"] == "trash"
+    executor_config = call_args[0][1]
+    assert executor_config.args["message_id"] == "abc123"
+    assert executor_config.args["action"] == "trash"
 
 
-@patch("taskrunner.tools._run_fetcher_inline")
+@patch("taskrunner.tools._run_executor_inline")
 def test_execute_tool_call_fixed_args_win(mock_fetch):
     """If LLM tries to override a fixed_arg, the fixed value wins."""
     mock_fetch.return_value = '{"ok": true}'
@@ -129,8 +129,8 @@ def test_execute_tool_call_fixed_args_win(mock_fetch):
         tools_config=tools,
     )
 
-    fetcher_config = mock_fetch.call_args[0][1]
-    assert fetcher_config.args["action"] == "trash"  # fixed wins
+    executor_config = mock_fetch.call_args[0][1]
+    assert executor_config.args["action"] == "trash"  # fixed wins
 
 
 def test_execute_tool_call_unknown_tool():

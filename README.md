@@ -10,14 +10,14 @@ Agentic LLM systems give the model access to tools, credentials, and untrusted i
 
 | Component | Has access to | Does NOT have |
 |-----------|--------------|---------------|
-| Fetcher (gcal) | Google OAuth token (read-only) | LLM, other credentials |
-| Fetcher (gcal_write) | Google OAuth token (calendar.events) | LLM, other credentials |
-| Fetcher (gmail) | Google OAuth token (read-only) | LLM, other credentials |
-| Fetcher (gmail_send) | Google OAuth token (gmail.send) | LLM, other credentials |
-| Fetcher (gmail_modify) | Google OAuth token (gmail.modify) | LLM, other credentials |
-| Fetcher (drive) | Google OAuth token (read-only) | LLM, other credentials |
-| Fetcher (drive_write) | Google OAuth token (drive.file) | LLM, other credentials |
-| Fetcher (weather) | Nothing sensitive | LLM, other credentials |
+| Executor (gcal) | Google OAuth token (read-only) | LLM, other credentials |
+| Executor (gcal_write) | Google OAuth token (calendar.events) | LLM, other credentials |
+| Executor (gmail) | Google OAuth token (read-only) | LLM, other credentials |
+| Executor (gmail_send) | Google OAuth token (gmail.send) | LLM, other credentials |
+| Executor (gmail_modify) | Google OAuth token (gmail.modify) | LLM, other credentials |
+| Executor (drive) | Google OAuth token (read-only) | LLM, other credentials |
+| Executor (drive_write) | Google OAuth token (drive.file) | LLM, other credentials |
+| Executor (weather) | Nothing sensitive | LLM, other credentials |
 | LLM Runner | Anthropic API key | Any other credentials |
 | Orchestrator | All secrets, LLM output | Untrusted external input |
 
@@ -34,16 +34,16 @@ flowchart TD
         output["Output Router"]
     end
 
-    subgraph fetchers["Isolated Fetcher Containers"]
+    subgraph executors["Isolated Executor Containers"]
         direction TB
-        gcal["Fetcher: gcal\n🔑 Google OAuth token\n(calendar.readonly)"]
-        gcal_w["Fetcher: gcal_write\n🔑 Google OAuth token\n(calendar.events)"]
-        gmail["Fetcher: gmail\n🔑 Google OAuth token\n(gmail.readonly)"]
-        gmail_s["Fetcher: gmail_send\n🔑 Google OAuth token\n(gmail.send)"]
-        gmail_m["Fetcher: gmail_modify\n🔑 Google OAuth token\n(gmail.modify)"]
-        drive["Fetcher: drive\n🔑 Google OAuth token\n(drive.readonly)"]
-        drive_w["Fetcher: drive_write\n🔑 Google OAuth token\n(drive.file)"]
-        weather["Fetcher: weather\n🔑 None"]
+        gcal["Executor: gcal\n🔑 Google OAuth token\n(calendar.readonly)"]
+        gcal_w["Executor: gcal_write\n🔑 Google OAuth token\n(calendar.events)"]
+        gmail["Executor: gmail\n🔑 Google OAuth token\n(gmail.readonly)"]
+        gmail_s["Executor: gmail_send\n🔑 Google OAuth token\n(gmail.send)"]
+        gmail_m["Executor: gmail_modify\n🔑 Google OAuth token\n(gmail.modify)"]
+        drive["Executor: drive\n🔑 Google OAuth token\n(drive.readonly)"]
+        drive_w["Executor: drive_write\n🔑 Google OAuth token\n(drive.file)"]
+        weather["Executor: weather\n🔑 None"]
     end
 
     subgraph llm_container["Isolated LLM Container"]
@@ -78,7 +78,7 @@ flowchart TD
     output --> stdout
     output --> file
 
-    style fetchers fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
+    style executors fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
     style llm_container fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
     style orch fill:#2d333b,stroke:#58a6ff,stroke-width:2px,color:#f0f0f0
     style outputs fill:#2d333b,stroke:#3fb950,stroke-width:2px,color:#f0f0f0
@@ -88,7 +88,7 @@ flowchart TD
 
 ### Agent Mode
 
-In agent mode, the same security boundary applies — the LLM requests tool calls, but the orchestrator handles secrets injection and fetcher execution:
+In agent mode, the same security boundary applies — the LLM requests tool calls, but the orchestrator handles secrets injection and executor execution:
 
 ```
                     ┌─────────────┐
@@ -111,7 +111,7 @@ In agent mode, the same security boundary applies — the LLM requests tool call
               │               ↓        │
               │          tool_use? ─no─→ response
               │               ↓ yes    │
-              │     execute via fetcher │
+              │     execute via executor │
               │     (secrets injected)  │
               │               ↓        │
               │     tool_result → loop  │
@@ -299,13 +299,13 @@ schedule: "0 7 * * *"  # 7am daily
 
 fetch:
   calendar:
-    image: fetcher-gcal:latest
+    image: executor-gcal:latest
     secrets: secrets/gcal.env.enc
     args:
       range: today
 
   weather:
-    image: fetcher-weather:latest
+    image: executor-weather:latest
     args:
       location: denver
 
@@ -334,10 +334,10 @@ llm:
 |-------|----------|-------------|
 | `name` | yes | Unique task identifier |
 | `schedule` | yes | 5-part cron expression |
-| `fetch` | yes | Map of fetcher name to config |
+| `fetch` | yes | Map of executor name to config |
 | `fetch.<name>.image` | yes | Docker image for containerized mode |
 | `fetch.<name>.secrets` | no | Path to age-encrypted .env file |
-| `fetch.<name>.args` | no | Key-value args passed to the fetcher |
+| `fetch.<name>.args` | no | Key-value args passed to the executor |
 | `prompt` | yes | Prompt template with `{name}` placeholders |
 | `output.type` | yes | `imessage`, `stdout`, or `file` |
 | `output.to` | yes | Phone number, empty string, or file path |
@@ -359,14 +359,14 @@ mode: agent
 
 fetch:
   gmail:
-    image: fetcher-gmail:latest
+    image: executor-gmail:latest
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"
 
 tools:
   trash_email:
-    fetcher: gmail_modify
+    executor: gmail_modify
     secrets: secrets/gmail_modify.env.enc
     description: "Move an email to trash"
     parameters:
@@ -400,11 +400,11 @@ Agent mode task fields (in addition to standard fields):
 |-------|----------|-------------|
 | `mode` | no | `simple` (default) or `agent` |
 | `tools` | no | Map of tool name to tool config |
-| `tools.<name>.fetcher` | yes | Fetcher to execute (e.g., `gmail_modify`) |
+| `tools.<name>.executor` | yes | Executor to execute (e.g., `gmail_modify`) |
 | `tools.<name>.secrets` | no | Path to age-encrypted .env file |
 | `tools.<name>.description` | yes | Description shown to the LLM |
 | `tools.<name>.parameters` | no | Parameters the LLM can provide |
-| `tools.<name>.fixed_args` | no | Args always passed to fetcher (override LLM input) |
+| `tools.<name>.fixed_args` | no | Args always passed to executor (override LLM input) |
 | `agent.max_turns` | no | Max agent loop iterations (default: 10) |
 
 ## Agent Configuration
@@ -418,7 +418,7 @@ system_prompt: |
 
 tools:
   check_weather:
-    fetcher: weather
+    executor: weather
     description: "Get current weather and forecast"
     parameters:
       location:
@@ -427,7 +427,7 @@ tools:
         required: true
 
   check_email:
-    fetcher: gmail
+    executor: gmail
     secrets: secrets/gmail.env.enc
     description: "Search Gmail for emails"
     parameters:
@@ -456,7 +456,7 @@ channels:
 
 Sessions are stored as JSON files in `sessions/` (gitignored) and persist conversation history across interactions.
 
-## Fetchers
+## Executors
 
 ### Weather
 
@@ -464,7 +464,7 @@ Uses [wttr.in](https://wttr.in) - no API key required.
 
 ```yaml
 weather:
-  image: fetcher-weather:latest
+  image: executor-weather:latest
   args:
     location: denver   # city name or coordinates
 ```
@@ -479,7 +479,7 @@ Requires a one-time OAuth setup:
 python scripts/setup-google-oauth.py gcal --encrypt
 ```
 
-The fetcher uses a read-only scope (`calendar.readonly`) and authenticates with a refresh token.
+The executor uses a read-only scope (`calendar.readonly`) and authenticates with a refresh token.
 
 ### Gmail
 
@@ -490,11 +490,11 @@ Reads emails matching a Gmail search query. Requires a one-time OAuth setup:
 python scripts/setup-google-oauth.py gmail --encrypt
 ```
 
-The fetcher uses a read-only scope (`gmail.readonly`). Configuration:
+The executor uses a read-only scope (`gmail.readonly`). Configuration:
 
 ```yaml
 gmail:
-  image: fetcher-gmail:latest
+  image: executor-gmail:latest
   secrets: secrets/gmail.env.enc
   args:
     query: "is:unread newer_than:1d"   # Gmail search syntax
@@ -502,7 +502,7 @@ gmail:
     full_body: "false"                  # set "true" to include decoded body text
 ```
 
-When `full_body` is enabled, the fetcher decodes MIME parts (prefers `text/plain`, falls back to HTML stripping via BeautifulSoup).
+When `full_body` is enabled, the executor decodes MIME parts (prefers `text/plain`, falls back to HTML stripping via BeautifulSoup).
 
 ### Google Calendar (Write)
 
@@ -516,7 +516,7 @@ Configuration:
 
 ```yaml
 gcal_write:
-  image: fetcher-gcal-write:latest
+  image: executor-gcal-write:latest
   secrets: secrets/gcal_write.env.enc
   args:
     summary: "Team standup"
@@ -538,7 +538,7 @@ Configuration:
 
 ```yaml
 gmail_send:
-  image: fetcher-gmail-send:latest
+  image: executor-gmail-send:latest
   secrets: secrets/gmail_send.env.enc
   args:
     to: "recipient@example.com"
@@ -558,7 +558,7 @@ Configuration:
 
 ```yaml
 gmail_modify:
-  image: fetcher-gmail-modify:latest
+  image: executor-gmail-modify:latest
   secrets: secrets/gmail_modify.env.enc
   args:
     action: "modify"              # modify, trash, or delete
@@ -579,7 +579,7 @@ Configuration:
 
 ```yaml
 drive:
-  image: fetcher-drive:latest
+  image: executor-drive:latest
   secrets: secrets/drive.env.enc
   args:
     query: "mimeType='application/pdf'"   # Drive search query (optional)
@@ -598,7 +598,7 @@ Configuration:
 
 ```yaml
 drive_write:
-  image: fetcher-drive-write:latest
+  image: executor-drive-write:latest
   secrets: secrets/drive_write.env.enc
   args:
     name: "report.txt"
@@ -658,24 +658,24 @@ GOOGLE_CREDENTIALS_JSON='{"refresh_token": "...", "client_id": "...", "client_se
 
 ## Container Mode
 
-For production use, fetchers and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with all commands — scheduled tasks, one-off runs, and agent mode (chat, listen, serve):
+For production use, executors and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with all commands — scheduled tasks, one-off runs, and agent mode (chat, listen, serve):
 
 ```bash
 # Build container images
-docker build -t fetcher-weather:latest fetchers/weather/
-docker build -t fetcher-gcal:latest fetchers/gcal/
-docker build -t fetcher-gcal-write:latest fetchers/gcal_write/
-docker build -t fetcher-gmail:latest fetchers/gmail/
-docker build -t fetcher-gmail-send:latest fetchers/gmail_send/
-docker build -t fetcher-gmail-modify:latest fetchers/gmail_modify/
-docker build -t fetcher-drive:latest fetchers/drive/
-docker build -t fetcher-drive-write:latest fetchers/drive_write/
+docker build -t executor-weather:latest executors/weather/
+docker build -t executor-gcal:latest executors/gcal/
+docker build -t executor-gcal-write:latest executors/gcal_write/
+docker build -t executor-gmail:latest executors/gmail/
+docker build -t executor-gmail-send:latest executors/gmail_send/
+docker build -t executor-gmail-modify:latest executors/gmail_modify/
+docker build -t executor-drive:latest executors/drive/
+docker build -t executor-drive-write:latest executors/drive_write/
 docker build -t llm-runner:latest llm/
 
 # Run a task with containers
 ./runner.py --containers run morning_briefing
 
-# Agent mode with containerized fetchers
+# Agent mode with containerized executors
 ./runner.py --containers chat
 ./runner.py --containers listen
 ./runner.py --containers serve
@@ -692,7 +692,7 @@ Containers run with:
 - 60-second timeout
 - Only the secrets each container needs
 
-In agent mode, the agent loop runs on the host while each tool call (fetcher) executes in its own isolated container. This preserves the trust boundary — the LLM never sees credentials, and fetcher code runs sandboxed.
+In agent mode, the agent loop runs on the host while each tool call (executor) executes in its own isolated container. This preserves the trust boundary — the LLM never sees credentials, and executor code runs sandboxed.
 
 ## CLI Reference
 
@@ -710,7 +710,7 @@ Commands:
 
 Global options:
   -v, --verbose       Enable verbose/debug output
-  --containers        Run fetchers/LLM in Docker containers (all commands)
+  --containers        Run executors/LLM in Docker containers (all commands)
   --tasks-dir PATH    Tasks directory (default: tasks/)
   --agent-config PATH Path to agent.yaml (default: agent.yaml)
 
@@ -730,7 +730,7 @@ creel/
 │   ├── models.py          # Pydantic models (tasks, tools, agent config)
 │   ├── orchestrator.py    # Core loop: fetch -> LLM -> output (simple + agent)
 │   ├── agent.py           # Agent loop: LLM -> tool_use -> execute -> loop
-│   ├── tools.py           # Tool definitions + fetcher execution bridge
+│   ├── tools.py           # Tool definitions + executor execution bridge
 │   ├── session.py         # JSON file-backed conversation sessions
 │   ├── chat.py            # Chat server (channels + sessions + agent)
 │   ├── channels/
@@ -741,15 +741,15 @@ creel/
 │   ├── llm.py             # Anthropic API calls (direct + container + tools)
 │   ├── outputs.py         # Output routing (iMessage, stdout, file)
 │   └── secrets.py         # age encryption/decryption
-├── fetchers/
-│   ├── weather/           # wttr.in fetcher + Dockerfile
-│   ├── gcal/              # Google Calendar (read) fetcher + Dockerfile
-│   ├── gcal_write/        # Google Calendar (write) fetcher + Dockerfile
-│   ├── gmail/             # Gmail (read) fetcher + Dockerfile
-│   ├── gmail_send/        # Gmail (send) fetcher + Dockerfile
-│   ├── gmail_modify/      # Gmail (modify) fetcher + Dockerfile
-│   ├── drive/             # Google Drive (read) fetcher + Dockerfile
-│   └── drive_write/       # Google Drive (write) fetcher + Dockerfile
+├── executors/
+│   ├── weather/           # wttr.in executor + Dockerfile
+│   ├── gcal/              # Google Calendar (read) executor + Dockerfile
+│   ├── gcal_write/        # Google Calendar (write) executor + Dockerfile
+│   ├── gmail/             # Gmail (read) executor + Dockerfile
+│   ├── gmail_send/        # Gmail (send) executor + Dockerfile
+│   ├── gmail_modify/      # Gmail (modify) executor + Dockerfile
+│   ├── drive/             # Google Drive (read) executor + Dockerfile
+│   └── drive_write/       # Google Drive (write) executor + Dockerfile
 ├── guardian/
 │   ├── __init__.py        # Guardian class (screen_input, validate_action)
 │   ├── types.py           # Data models and config

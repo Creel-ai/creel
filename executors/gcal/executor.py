@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Google Calendar fetcher - retrieves today's events.
+"""Google Calendar executor - retrieves today's events.
 
 Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
 (refresh token, client ID, client secret).

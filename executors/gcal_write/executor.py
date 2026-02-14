@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Google Calendar write fetcher - creates calendar events.
+"""Google Calendar write executor - creates calendar events.
 
 Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
 (refresh token, client ID, client secret).

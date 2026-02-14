@@ -1,11 +1,11 @@
-"""Tool system - bridges YAML tool configs to Anthropic tool definitions and fetcher execution."""
+"""Tool system - bridges YAML tool configs to Anthropic tool definitions and executor execution."""
 
 from __future__ import annotations
 
 import logging
 
-from taskrunner.models import FetcherConfig, ToolConfig
-from taskrunner.orchestrator import _run_fetcher_container, _run_fetcher_inline
+from taskrunner.models import ExecutorConfig, ToolConfig
+from taskrunner.orchestrator import _run_executor_container, _run_executor_inline
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +109,11 @@ def execute_tool_call(
     use_containers: bool = False,
     memory_manager: object | None = None,
 ) -> str:
-    """Execute a tool call via the corresponding fetcher.
+    """Execute a tool call via the corresponding executor.
 
     Merges fixed_args over LLM-provided input (fixed_args always win).
-    Converts the tool config into a FetcherConfig and delegates to
-    the existing fetcher infrastructure.
+    Converts the tool config into a ExecutorConfig and delegates to
+    the existing executor infrastructure.
 
     Args:
         tool_name: Name of the tool to execute.
@@ -122,7 +122,7 @@ def execute_tool_call(
         use_containers: If True, run in Docker container.
 
     Returns:
-        The fetcher output as a string.
+        The executor output as a string.
 
     Raises:
         ValueError: If tool_name is not found in tools_config.
@@ -149,18 +149,18 @@ def execute_tool_call(
     # Merge: LLM input as base, fixed_args override
     merged_args = {**tool_input, **cfg.fixed_args}
 
-    # Convert all values to strings (fetchers expect string args)
+    # Convert all values to strings (executors expect string args)
     string_args = {k: str(v) for k, v in merged_args.items()}
 
-    # Build a FetcherConfig for the existing infrastructure
-    fetcher_config = FetcherConfig(
-        name=cfg.fetcher,
+    # Build a ExecutorConfig for the existing infrastructure
+    executor_config = ExecutorConfig(
+        name=cfg.executor,
         secrets=cfg.secrets,
         args=string_args,
     )
 
-    logger.info("Executing tool %s (fetcher: %s)", tool_name, cfg.fetcher)
+    logger.info("Executing tool %s (executor: %s)", tool_name, cfg.executor)
 
     if use_containers:
-        return _run_fetcher_container(fetcher_config)
-    return _run_fetcher_inline(cfg.fetcher, fetcher_config)
+        return _run_executor_container(executor_config)
+    return _run_executor_inline(cfg.executor, executor_config)

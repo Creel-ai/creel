@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Weather fetcher - retrieves weather data from wttr.in.
+"""Weather executor - retrieves weather data from wttr.in.
 
 No authentication required. Accepts location as argument.
 Outputs JSON to stdout.

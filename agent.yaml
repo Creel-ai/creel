@@ -4,7 +4,7 @@ system_prompt: |
 
 tools:
   check_calendar:
-    fetcher: calendar
+    executor: calendar
     secrets: secrets/gcal.env.enc
     description: "Check today's calendar events"
     parameters:
@@ -13,7 +13,7 @@ tools:
         description: "Time range: 'today' or 'week'"
 
   create_event:
-    fetcher: gcal_write
+    executor: gcal_write
     secrets: secrets/gcal_write.env.enc
     description: "Create a calendar event"
     parameters:
@@ -37,7 +37,7 @@ tools:
         description: "Event location"
 
   check_email:
-    fetcher: gmail_readonly
+    executor: gmail_readonly
     secrets: secrets/gmail.env.enc
     description: "Search Gmail for emails"
     parameters:
@@ -50,7 +50,7 @@ tools:
         description: "Max emails to return (default: 20)"
 
   read_email:
-    fetcher: gmail_readonly
+    executor: gmail_readonly
     secrets: secrets/gmail.env.enc
     description: "Read the full content of a specific email by its ID"
     parameters:
@@ -60,7 +60,7 @@ tools:
         required: true
 
   send_email:
-    fetcher: gmail_send
+    executor: gmail_send
     secrets: secrets/gmail_send.env.enc
     description: "Send an email"
     parameters:
@@ -78,7 +78,7 @@ tools:
         required: true
 
   trash_email:
-    fetcher: gmail_modify
+    executor: gmail_modify
     secrets: secrets/gmail_modify.env.enc
     description: "Move an email to trash. Always include the subject."
     parameters:
@@ -94,7 +94,7 @@ tools:
       action: "trash"
 
   mark_read:
-    fetcher: gmail_modify
+    executor: gmail_modify
     secrets: secrets/gmail_modify.env.enc
     description: "Mark an email as read"
     parameters:
@@ -107,7 +107,7 @@ tools:
       remove_labels: "UNREAD"
 
   check_weather:
-    fetcher: weather
+    executor: weather
     description: "Get current weather and forecast"
     parameters:
       location:
@@ -116,7 +116,7 @@ tools:
         required: true
 
   check_drive:
-    fetcher: drive
+    executor: drive
     secrets: secrets/drive.env.enc
     description: "Search Google Drive files"
     parameters:
@@ -128,7 +128,7 @@ tools:
         description: "Max files to return"
 
   upload_file:
-    fetcher: drive_write
+    executor: drive_write
     secrets: secrets/drive_write.env.enc
     description: "Upload a file to Google Drive"
     parameters:
@@ -145,7 +145,7 @@ tools:
         description: "MIME type (default: text/plain)"
 
   check_messages:
-    fetcher: bluebubbles
+    executor: bluebubbles
     secrets: secrets/bluebubbles.env.enc
     description: "Check recent iMessages"
     parameters:
@@ -157,7 +157,7 @@ tools:
         description: "Number of messages (max 50)"
 
   send_imessage:
-    fetcher: bluebubbles_send
+    executor: bluebubbles_send
     secrets: secrets/bluebubbles.env.enc
     description: "Send an iMessage"
     parameters:
@@ -171,7 +171,7 @@ tools:
         required: true
 
   react_imessage:
-    fetcher: bluebubbles_react
+    executor: bluebubbles_react
     secrets: secrets/bluebubbles.env.enc
     description: "React to an iMessage with a tapback"
     parameters:
@@ -189,7 +189,7 @@ tools:
         required: true
 
   get_chats:
-    fetcher: bluebubbles_chats
+    executor: bluebubbles_chats
     secrets: secrets/bluebubbles.env.enc
     description: "List recent iMessage chats"
     parameters:

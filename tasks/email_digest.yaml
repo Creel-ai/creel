@@ -1,7 +1,7 @@
 name: email_digest
 schedule: "0 8 * * *"  # 8am daily
 
-fetch:
+executors:
   gmail_readonly:
     secrets: secrets/gmail.env.enc
     args:

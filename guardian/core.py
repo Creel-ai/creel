@@ -48,7 +48,11 @@ class Guardian:
         Returns a ScreenResult indicating whether the input was blocked.
         """
         # Stage 1: fast classifier
-        classifier_result = self._classifier.classify(text)
+        chunk_details: list[dict] = []
+        if self._config.debug:
+            classifier_result, chunk_details = self._classifier.classify_detailed(text)
+        else:
+            classifier_result = self._classifier.classify(text)
 
         blocked = False
         if classifier_result and classifier_result.is_injection:
@@ -91,6 +95,14 @@ class Guardian:
                 source=source,
                 confidence=confidence,
             )
+
+            if self._config.debug and chunk_details:
+                self._audit.log_screen_debug(
+                    text=text,
+                    chunks=chunk_details,
+                    blocked=blocked,
+                    source=source,
+                )
 
         rejection_message = ""
         if blocked:

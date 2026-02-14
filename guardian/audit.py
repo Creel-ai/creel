@@ -82,6 +82,24 @@ class AuditLogger:
             "confidence": confidence,
         })
 
+    def log_screen_debug(
+        self,
+        *,
+        text: str,
+        chunks: list[dict],
+        blocked: bool,
+        source: str,
+    ) -> None:
+        """Log a debug screening event with raw text and per-chunk breakdown."""
+        self._write({
+            "event": "screen_input_debug",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "text": text,
+            "chunks": chunks,
+            "blocked": blocked,
+            "source": source,
+        })
+
     def log_action(
         self,
         *,

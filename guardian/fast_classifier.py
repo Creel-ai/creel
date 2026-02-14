@@ -82,7 +82,7 @@ class FastClassifier:
 
         best: ClassifierResult | None = None
 
-        for chunk in chunks:
+        for idx, chunk in enumerate(chunks):
             try:
                 results = self._pipeline(chunk)
                 # Pipeline returns [{"label": "INJECTION"/"SAFE", "score": 0.99}]
@@ -92,6 +92,11 @@ class FastClassifier:
 
                 is_injection = label == "INJECTION" and score >= self._config.threshold
                 confidence = score if label == "INJECTION" else 1.0 - score
+
+                logger.debug(
+                    "chunk %d/%d: label=%s score=%.4f is_injection=%s",
+                    idx + 1, len(chunks), label, score, is_injection,
+                )
 
                 result = ClassifierResult(
                     is_injection=is_injection,
@@ -112,3 +117,65 @@ class FastClassifier:
                 continue
 
         return best
+
+    def classify_detailed(self, text: str) -> tuple[ClassifierResult | None, list[dict]]:
+        """Classify text and return per-chunk diagnostic details.
+
+        Same logic as ``classify()`` but collects a details list with one
+        entry per chunk for debugging false positives.
+
+        Returns ``(result, chunk_details)`` where *chunk_details* is a list
+        of dicts like::
+
+            {"index": 0, "length": 137, "label": "INJECTION",
+             "score": 0.9953, "is_injection": True}
+        """
+        if not self._config.enabled:
+            return None, []
+
+        chunks = [text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)]
+
+        best: ClassifierResult | None = None
+        chunk_details: list[dict] = []
+
+        for idx, chunk in enumerate(chunks):
+            try:
+                results = self._pipeline(chunk)
+                top = results[0]
+                label = top["label"].upper()
+                score = top["score"]
+
+                is_injection = label == "INJECTION" and score >= self._config.threshold
+                confidence = score if label == "INJECTION" else 1.0 - score
+
+                chunk_details.append({
+                    "index": idx,
+                    "length": len(chunk),
+                    "label": label,
+                    "score": round(score, 4),
+                    "is_injection": is_injection,
+                })
+
+                logger.debug(
+                    "chunk %d/%d: label=%s score=%.4f is_injection=%s",
+                    idx + 1, len(chunks), label, score, is_injection,
+                )
+
+                result = ClassifierResult(
+                    is_injection=is_injection,
+                    confidence=confidence,
+                    source="fast_classifier",
+                    reasoning=f"label={label}, score={score:.4f}",
+                )
+
+                # Short-circuit: injection found
+                if is_injection:
+                    return result, chunk_details
+
+                if best is None or confidence > best.confidence:
+                    best = result
+            except Exception:
+                logger.warning("Fast classifier inference failed on chunk", exc_info=True)
+                continue
+
+        return best, chunk_details

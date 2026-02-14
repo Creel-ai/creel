@@ -82,6 +82,7 @@ class GuardianConfig(BaseModel):
     """Top-level guardian configuration."""
 
     enabled: bool = True
+    debug: bool = False
     fast_classifier: FastClassifierConfig = Field(default_factory=FastClassifierConfig)
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)

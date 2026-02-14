@@ -1,1 +1,42 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Secrets - never commit plaintext or encrypted secrets
+.env
+secrets/*.env
+secrets/*.json
+secrets/*.enc
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sessions (agent conversation history)
+sessions/
+
+# Logs
+*.log
+logs/
+
+# Guardian audit log
+guardian_audit.jsonl
+client_secret.json
+.claude/settings.local.json
+
+# Coverage
 .coverage

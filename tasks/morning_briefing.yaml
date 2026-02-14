@@ -3,18 +3,15 @@ schedule: "0 7 * * *"  # 7am daily
 
 fetch:
   calendar:
-    image: fetcher-gcal:latest
     secrets: secrets/gcal.env.enc
     args:
       range: today
 
   weather:
-    image: fetcher-weather:latest
     args:
       location: denver
 
-  gmail:
-    image: fetcher-gmail:latest
+  gmail_readonly:
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"
@@ -27,7 +24,7 @@ prompt: |
   Today: {date}
   Weather: {weather}
   Calendar: {calendar}
-  Recent emails: {gmail}
+  Recent emails: {gmail_readonly}
 
   Keep it under 200 words. Flag any early meetings, conflicts, or urgent emails.
 

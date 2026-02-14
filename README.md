@@ -1,10 +1,12 @@
-# LLM Task Runner
+# Creel
 
-A secure, scheduled task runner that separates credential-bearing data fetching from LLM processing. Designed for predictable, recurring tasks (morning briefings, weather summaries) where full agentic autonomy is unnecessary and the security risk isn't worth it.
+A secure LLM task runner and personal AI assistant that separates credential-bearing data fetching from LLM processing. Supports both scheduled tasks (morning briefings, weather summaries) and interactive agent mode (chat via CLI or iMessage with tool calling).
+
+A creel is a wicker basket usually used for carrying fish or blocks of peat. It is also the fish trap used to catch lobsters and other crustaceans.
 
 ## Why
 
-Agentic LLM systems give the model access to tools, credentials, and untrusted input all at once. For scheduled tasks with known data sources and fixed output destinations, that's a bad trade-off. This project splits the problem:
+Agentic LLM systems give the model access to tools, credentials, and untrusted input all at once. This project preserves the core security property — the LLM never sees credentials — whether running scheduled tasks or interactive agent conversations:
 
 | Component | Has access to | Does NOT have |
 |-----------|--------------|---------------|
@@ -84,6 +86,104 @@ flowchart TD
 
 > **Key insight:** Even if prompt injection occurs (e.g., via a calendar event title), the LLM container has no access to Google credentials, user contacts, or anything beyond its own API key. Each red box is a separate security boundary.
 
+### Agent Mode
+
+In agent mode, the same security boundary applies — the LLM requests tool calls, but the orchestrator handles secrets injection and fetcher execution:
+
+```
+                    ┌─────────────┐
+                    │   Channels  │
+                    │ stdin | iMsg│
+                    └──────┬──────┘
+                           │ incoming message
+                           ▼
+                    ┌──────────────┐
+                    │   Session    │
+                    │   Manager   │
+                    │ (JSON files) │
+                    └──────┬──────┘
+                           │ message + history
+                           ▼
+              ┌────────────────────────┐
+              │      Agent Loop        │
+              │                        │
+              │  messages ──→ LLM call │
+              │               ↓        │
+              │          tool_use? ─no─→ response
+              │               ↓ yes    │
+              │     execute via fetcher │
+              │     (secrets injected)  │
+              │               ↓        │
+              │     tool_result → loop  │
+              └────────────────────────┘
+```
+
+Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAML.
+
+### Guardian
+
+The guardian layer screens inputs and validates tool calls before they execute. All stages are optional and independently configurable in `agent.yaml`:
+
+```
+Incoming message
+    │
+    ▼
+screen_input(text)                     ← before session history
+    ├── FastClassifier  (DeBERTa/ONNX, ~10ms)
+    └── LLMJudge        (Haiku, ~300ms, off by default)
+    │
+    │  blocked → return rejection, skip agent loop
+    │
+    ▼
+Agent loop → LLM returns tool_use
+    │
+    ▼
+validate_action(tool, args)            ← before execute_tool_call
+    └── PolicyEngine    (YAML rules, <1ms)
+           allow  → execute
+           review → log warning, execute
+           deny   → return error to LLM
+```
+
+**Stages:**
+
+| Stage | Component | What it does |
+|-------|-----------|--------------|
+| 1 | Fast classifier | Local DeBERTa model scores prompt-injection likelihood against a confidence threshold |
+| 2 | LLM judge | Secondary Haiku-based check (disabled by default) |
+| 3 | Policy engine | `fnmatch` rules in `policies/default.yaml` map tool names to allow/review/deny |
+
+**Policy rules** (`policies/default.yaml`):
+
+```yaml
+allow:  [check_weather, check_calendar, check_email, read_email, check_drive]
+review: [send_*, upload_*, create_*, mark_*]
+deny:   [trash_*, delete_*]
+```
+
+Deny wins over review, review wins over allow. Unknown tools default to review.
+
+**Audit logging** writes to `guardian_audit.jsonl` with hashed inputs (never raw text), tool names, arg keys (not values), verdicts, and confidence scores.
+
+**Configuration** in `agent.yaml`:
+
+```yaml
+guardian:
+  enabled: true
+  fast_classifier:
+    enabled: true
+    threshold: 0.85
+    model_name: protectai/deberta-v3-base-prompt-injection-v2
+  llm_judge:
+    enabled: false
+  policy:
+    enabled: true
+    policy_file: policies/default.yaml
+  audit:
+    enabled: true
+    log_file: guardian_audit.jsonl
+```
+
 ## Quick Start
 
 ```bash
@@ -112,6 +212,15 @@ age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 
 # Start the cron scheduler
 ./runner.py schedule
+
+# Interactive CLI chat (agent mode)
+./runner.py chat
+
+# Listen for iMessages and respond
+./runner.py listen
+
+# Listen + scheduler (daemon mode)
+./runner.py serve
 ```
 
 ## Authentication
@@ -237,6 +346,115 @@ llm:
 | `llm.secrets` | no | Path to age-encrypted .env with `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` |
 
 The `{date}` placeholder is always available and resolves to the current date.
+
+### Agent mode tasks
+
+Tasks can use the agent loop for multi-step tool calling by setting `mode: agent`:
+
+```yaml
+# tasks/email_triage.yaml
+name: email_triage
+schedule: "0 8 * * *"
+mode: agent
+
+fetch:
+  gmail:
+    image: fetcher-gmail:latest
+    secrets: secrets/gmail.env.enc
+    args:
+      query: "is:unread newer_than:1d"
+
+tools:
+  trash_email:
+    fetcher: gmail_modify
+    secrets: secrets/gmail_modify.env.enc
+    description: "Move an email to trash"
+    parameters:
+      message_id:
+        type: string
+        description: "Gmail message ID"
+        required: true
+    fixed_args:
+      action: "trash"
+
+agent:
+  max_turns: 10
+
+prompt: |
+  Triage my unread emails. Trash spam. Summarize what you did.
+  {gmail}
+
+output:
+  type: imessage
+  to: "$PHONE"
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 1024
+  secrets: secrets/anthropic.env.enc
+```
+
+Agent mode task fields (in addition to standard fields):
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `mode` | no | `simple` (default) or `agent` |
+| `tools` | no | Map of tool name to tool config |
+| `tools.<name>.fetcher` | yes | Fetcher to execute (e.g., `gmail_modify`) |
+| `tools.<name>.secrets` | no | Path to age-encrypted .env file |
+| `tools.<name>.description` | yes | Description shown to the LLM |
+| `tools.<name>.parameters` | no | Parameters the LLM can provide |
+| `tools.<name>.fixed_args` | no | Args always passed to fetcher (override LLM input) |
+| `agent.max_turns` | no | Max agent loop iterations (default: 10) |
+
+## Agent Configuration
+
+The global agent config (`agent.yaml`) defines tools, LLM settings, session behavior, and channels for interactive chat mode:
+
+```yaml
+system_prompt: |
+  You are a personal assistant. Be concise and helpful.
+  Today is {date}.
+
+tools:
+  check_weather:
+    fetcher: weather
+    description: "Get current weather and forecast"
+    parameters:
+      location:
+        type: string
+        description: "City name or coordinates"
+        required: true
+
+  check_email:
+    fetcher: gmail
+    secrets: secrets/gmail.env.enc
+    description: "Search Gmail for emails"
+    parameters:
+      query:
+        type: string
+        description: "Gmail search query"
+        required: true
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 1024
+  secrets: secrets/anthropic.env.enc
+
+agent:
+  max_turns: 15
+
+session:
+  sessions_dir: sessions
+  max_history: 50
+
+channels:
+  imessage:
+    listen_to: "$PHONE"
+    poll_interval: 3
+```
+
+Sessions are stored as JSON files in `sessions/` (gitignored) and persist conversation history across interactions.
 
 ## Fetchers
 
@@ -440,7 +658,7 @@ GOOGLE_CREDENTIALS_JSON='{"refresh_token": "...", "client_id": "...", "client_se
 
 ## Container Mode
 
-For production use, fetchers and the LLM runner execute in isolated Docker containers with restricted capabilities:
+For production use, fetchers and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with all commands — scheduled tasks, one-off runs, and agent mode (chat, listen, serve):
 
 ```bash
 # Build container images
@@ -454,16 +672,27 @@ docker build -t fetcher-drive:latest fetchers/drive/
 docker build -t fetcher-drive-write:latest fetchers/drive_write/
 docker build -t llm-runner:latest llm/
 
-# Run with containers
+# Run a task with containers
 ./runner.py --containers run morning_briefing
+
+# Agent mode with containerized fetchers
+./runner.py --containers chat
+./runner.py --containers listen
+./runner.py --containers serve
+
+# Scheduler with containers
+./runner.py --containers schedule
 ```
 
 Containers run with:
 - `--read-only` filesystem
 - `--cap-drop=ALL`
 - `--security-opt=no-new-privileges`
-- Memory and CPU limits
+- Memory and CPU limits (`256m`, `0.5` CPU)
+- 60-second timeout
 - Only the secrets each container needs
+
+In agent mode, the agent loop runs on the host while each tool call (fetcher) executes in its own isolated container. This preserves the trust boundary — the LLM never sees credentials, and fetcher code runs sandboxed.
 
 ## CLI Reference
 
@@ -475,11 +704,15 @@ Commands:
   schedule          Start cron scheduler for all tasks
   list              List available tasks
   validate <task>   Validate a task YAML file
+  chat              Interactive CLI chat with agent
+  listen            Listen for iMessages and respond
+  serve             Listen for iMessages + run scheduler
 
-Options:
-  -v, --verbose     Enable verbose/debug output
-  --containers      Run fetchers and LLM in Docker containers
-  --tasks-dir PATH  Tasks directory (default: tasks/)
+Global options:
+  -v, --verbose       Enable verbose/debug output
+  --containers        Run fetchers/LLM in Docker containers (all commands)
+  --tasks-dir PATH    Tasks directory (default: tasks/)
+  --agent-config PATH Path to agent.yaml (default: agent.yaml)
 
 Run options:
   --dry             Render prompt only, skip LLM and output
@@ -488,15 +721,24 @@ Run options:
 ## Project Structure
 
 ```
-llm-taskrunner/
+creel/
 ├── runner.py              # CLI entry point
+├── agent.yaml             # Global agent config (tools, channels, sessions)
 ├── pyproject.toml
 ├── .python-version        # pyenv Python version pin (3.12)
 ├── taskrunner/
-│   ├── models.py          # Task YAML parsing + Pydantic validation
-│   ├── orchestrator.py    # Core loop: fetch -> LLM -> output
+│   ├── models.py          # Pydantic models (tasks, tools, agent config)
+│   ├── orchestrator.py    # Core loop: fetch -> LLM -> output (simple + agent)
+│   ├── agent.py           # Agent loop: LLM -> tool_use -> execute -> loop
+│   ├── tools.py           # Tool definitions + fetcher execution bridge
+│   ├── session.py         # JSON file-backed conversation sessions
+│   ├── chat.py            # Chat server (channels + sessions + agent)
+│   ├── channels/
+│   │   ├── __init__.py    # Channel ABC
+│   │   ├── stdin.py       # Interactive CLI channel
+│   │   └── imessage.py    # iMessage channel (polls chat.db)
 │   ├── scheduler.py       # APScheduler cron integration
-│   ├── llm.py             # Anthropic API calls (direct + container)
+│   ├── llm.py             # Anthropic API calls (direct + container + tools)
 │   ├── outputs.py         # Output routing (iMessage, stdout, file)
 │   └── secrets.py         # age encryption/decryption
 ├── fetchers/
@@ -508,8 +750,18 @@ llm-taskrunner/
 │   ├── gmail_modify/      # Gmail (modify) fetcher + Dockerfile
 │   ├── drive/             # Google Drive (read) fetcher + Dockerfile
 │   └── drive_write/       # Google Drive (write) fetcher + Dockerfile
+├── guardian/
+│   ├── __init__.py        # Guardian class (screen_input, validate_action)
+│   ├── types.py           # Data models and config
+│   ├── fast_classifier.py # DeBERTa/ONNX prompt-injection detector
+│   ├── llm_judge.py       # Haiku-based secondary judge
+│   ├── policy.py          # YAML policy engine (allow/review/deny)
+│   └── audit.py           # Privacy-preserving JSONL audit logger
+├── policies/
+│   └── default.yaml       # Default tool action policies
 ├── llm/                   # Containerized LLM runner + Dockerfile
 ├── tasks/                 # Task definitions (YAML)
+├── sessions/              # Conversation sessions (gitignored)
 ├── secrets/               # Encrypted .env files (gitignored)
 ├── scripts/
 │   ├── encrypt-secret.sh    # age encryption helper

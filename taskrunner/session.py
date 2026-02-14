@@ -1,0 +1,243 @@
+"""Session manager - persistent conversation sessions backed by JSON files."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import secrets
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+_ACTIVE_INDEX_FILE = "_active.json"
+
+
+@dataclass
+class Session:
+    """A conversation session with message history."""
+
+    sender_id: str
+    session_id: str = field(default_factory=lambda: secrets.token_hex(4))
+    title: str = ""
+    messages: list[dict] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+    last_active: float = field(default_factory=time.time)
+
+
+class SessionManager:
+    """Manages conversation sessions persisted as JSON files."""
+
+    def __init__(self, sessions_dir: str = "sessions", max_history: int = 50):
+        self._dir = Path(sessions_dir)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._max_history = max_history
+
+    # -- public API --
+
+    def get_or_create(self, sender_id: str) -> Session:
+        """Load the active session from the index, or create a new one."""
+        active_id = self._get_active_session_id(sender_id)
+        if active_id:
+            session = self._load(active_id)
+            if session is not None:
+                return session
+
+        # No active session (or file missing) — create fresh
+        session = Session(sender_id=sender_id)
+        self._set_active_session_id(sender_id, session.session_id)
+        logger.info("Created new session %s for %s", session.session_id, sender_id)
+        return session
+
+    def new_session(self, sender_id: str) -> Session:
+        """Save the current session and start a fresh one."""
+        # Save any existing active session first
+        active_id = self._get_active_session_id(sender_id)
+        if active_id:
+            existing = self._load(active_id)
+            if existing is not None:
+                self._save(existing)
+
+        session = Session(sender_id=sender_id)
+        self._save(session)
+        self._set_active_session_id(sender_id, session.session_id)
+        logger.info("Started new session %s for %s", session.session_id, sender_id)
+        return session
+
+    def list_sessions(self, sender_id: str) -> list[dict]:
+        """Return metadata for all sessions belonging to a sender, sorted by last_active desc."""
+        results = []
+        for path in self._dir.glob("*.json"):
+            if path.name == _ACTIVE_INDEX_FILE:
+                continue
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            if data.get("sender_id") != sender_id:
+                continue
+            results.append({
+                "session_id": data.get("session_id", path.stem),
+                "title": data.get("title", ""),
+                "created_at": data.get("created_at", 0),
+                "last_active": data.get("last_active", 0),
+                "message_count": len(data.get("messages", [])),
+            })
+        results.sort(key=lambda r: r["last_active"], reverse=True)
+        return results
+
+    def resume_session(self, sender_id: str, session_id: str) -> Session:
+        """Switch the active session to an existing one.
+
+        Raises ValueError if the session doesn't exist or belongs to another sender.
+        """
+        session = self._load(session_id)
+        if session is None:
+            raise ValueError(f"Session {session_id} not found")
+        if session.sender_id != sender_id:
+            raise ValueError(f"Session {session_id} not found")
+        self._set_active_session_id(sender_id, session_id)
+        logger.info("Resumed session %s for %s", session_id, sender_id)
+        return session
+
+    def add_user_message(self, sender_id: str, text: str) -> Session:
+        """Add a user message, save to disk, and return the updated session."""
+        session = self.get_or_create(sender_id)
+        session.messages.append({"role": "user", "content": text})
+        session.last_active = time.time()
+        # Set title from the first user message
+        if not session.title:
+            session.title = text[:60].strip()
+        self._save(session)
+        return session
+
+    def add_assistant_response(self, sender_id: str, content: list) -> None:
+        """Add an assistant response (may include tool_use blocks), save."""
+        session = self.get_or_create(sender_id)
+        session.messages.append({"role": "assistant", "content": content})
+        session.last_active = time.time()
+        self._save(session)
+
+    def add_tool_results(self, sender_id: str, results: list[dict]) -> None:
+        """Add tool results as a user message, save."""
+        session = self.get_or_create(sender_id)
+        session.messages.append({"role": "user", "content": results})
+        session.last_active = time.time()
+        self._save(session)
+
+    def clear(self, sender_id: str) -> None:
+        """Clear the active session's messages (keeps file, resets messages)."""
+        active_id = self._get_active_session_id(sender_id)
+        if active_id:
+            session = self._load(active_id)
+            if session is not None:
+                session.messages = []
+                session.title = ""
+                self._save(session)
+                logger.info("Cleared session %s for %s", active_id, sender_id)
+                return
+        logger.info("No active session to clear for %s", sender_id)
+
+    # -- persistence --
+
+    @staticmethod
+    def _ensure_valid_start(messages: list[dict]) -> list[dict]:
+        """Strip orphaned messages so the list starts with a user text message.
+
+        After trimming by max_history, the list may begin with a user
+        ``tool_result`` message whose matching assistant ``tool_use`` was
+        trimmed away, or with an assistant message.  The Anthropic API
+        requires the first message to be a ``user`` message with text
+        content, so we drop leading messages until that invariant holds.
+        """
+        while messages:
+            msg = messages[0]
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                break
+            messages.pop(0)
+        return messages
+
+    def _save(self, session: Session) -> None:
+        """Write session to disk, trimming to max_history."""
+        if len(session.messages) > self._max_history:
+            session.messages = session.messages[-self._max_history:]
+            self._ensure_valid_start(session.messages)
+
+        data = {
+            "session_id": session.session_id,
+            "sender_id": session.sender_id,
+            "title": session.title,
+            "created_at": session.created_at,
+            "last_active": session.last_active,
+            "messages": session.messages,
+        }
+
+        path = self._session_path(session.session_id)
+        path.write_text(json.dumps(data, indent=2))
+
+    def _load(self, session_id: str) -> Session | None:
+        """Load a session by its session_id."""
+        path = self._session_path(session_id)
+        if not path.exists():
+            return None
+
+        try:
+            data = json.loads(path.read_text())
+            session = Session(
+                sender_id=data["sender_id"],
+                session_id=data.get("session_id", session_id),
+                title=data.get("title", ""),
+                messages=data.get("messages", []),
+                created_at=data.get("created_at", time.time()),
+                last_active=data.get("last_active", time.time()),
+            )
+            if len(session.messages) > self._max_history:
+                session.messages = session.messages[-self._max_history:]
+                self._ensure_valid_start(session.messages)
+            return session
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Corrupt session file %s, ignoring: %s", session_id, e)
+            return None
+
+    def _session_path(self, session_id: str) -> Path:
+        """Get the filesystem path for a session file."""
+        return self._dir / f"{session_id}.json"
+
+    # -- active index --
+
+    def _load_active_index(self) -> dict[str, str]:
+        """Read the sender_id → session_id mapping."""
+        path = self._dir / _ACTIVE_INDEX_FILE
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_active_index(self, index: dict[str, str]) -> None:
+        """Write the sender_id → session_id mapping."""
+        path = self._dir / _ACTIVE_INDEX_FILE
+        path.write_text(json.dumps(index, indent=2))
+
+    def _get_active_session_id(self, sender_id: str) -> str | None:
+        """Get the active session ID for a sender, or None."""
+        return self._load_active_index().get(sender_id)
+
+    def _set_active_session_id(self, sender_id: str, session_id: str) -> None:
+        """Set the active session ID for a sender."""
+        index = self._load_active_index()
+        index[sender_id] = session_id
+        self._save_active_index(index)
+
+
+def _sanitize_sender_id(sender_id: str) -> str:
+    """Sanitize a sender ID for use as a filename.
+
+    Phone numbers -> digits only. Other IDs -> alphanumeric + underscore.
+    """
+    # Strip everything except alphanumeric and underscore
+    sanitized = re.sub(r"[^\w]", "", sender_id)
+    return sanitized or "unknown"

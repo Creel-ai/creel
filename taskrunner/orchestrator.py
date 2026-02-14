@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +27,10 @@ def run_task(
 ) -> str:
     """Execute a complete task: fetch -> LLM -> output.
 
+    Branches on task.mode:
+    - "simple" (default): linear pipeline (fetch -> template -> LLM -> output)
+    - "agent": agent loop with tool calling
+
     Args:
         task_path: Path to the task YAML file.
         use_containers: If True, run fetchers/LLM in Docker containers.
@@ -35,7 +40,7 @@ def run_task(
         The LLM response text (or rendered prompt in dry-run mode).
     """
     task = load_task(task_path)
-    logger.info("Running task: %s", task.name)
+    logger.info("Running task: %s (mode=%s)", task.name, task.mode)
 
     # Build context with date info
     now = datetime.now(timezone.utc)
@@ -68,9 +73,13 @@ def run_task(
     if task.llm.secrets:
         _load_secrets_to_env(task.llm.secrets)
 
-    # Run through LLM
-    logger.info("Calling LLM (%s)", task.llm.model)
-    result = run_llm(prompt, task.llm, use_container=use_containers)
+    if task.mode == "agent":
+        result = _run_agent_mode(task, prompt, use_containers)
+    else:
+        # Simple mode: single LLM call
+        logger.info("Calling LLM (%s)", task.llm.model)
+        result = run_llm(prompt, task.llm, use_container=use_containers)
+
     logger.info("LLM response: %d chars", len(result))
 
     # Route output
@@ -78,6 +87,34 @@ def run_task(
     send_output(result, task.output)
 
     return result
+
+
+def _run_agent_mode(
+    task: TaskDefinition,
+    prompt: str,
+    use_containers: bool,
+) -> str:
+    """Run a task in agent mode using the agent loop."""
+    from taskrunner.agent import run_agent_loop
+
+    messages = [{"role": "user", "content": prompt}]
+
+    agent_result = run_agent_loop(
+        messages=messages,
+        llm_config=task.llm,
+        tools_config=task.tools,
+        agent_config=task.agent,
+        use_containers=use_containers,
+    )
+
+    logger.info(
+        "Agent completed: %d turns, %d tool calls, stop=%s",
+        agent_result.turns_used,
+        agent_result.tool_calls_made,
+        agent_result.stop_reason,
+    )
+
+    return agent_result.text
 
 
 def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
@@ -101,8 +138,8 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
             return _fetch_gcal_inline(config)
         elif name == "gcal_write":
             return _fetch_gcal_write_inline(config)
-        elif name == "gmail":
-            return _fetch_gmail_inline(config)
+        elif name == "gmail_readonly":
+            return _fetch_gmail_readonly_inline(config)
         elif name == "gmail_send":
             return _fetch_gmail_send_inline(config)
         elif name == "gmail_modify":
@@ -153,9 +190,16 @@ def _fetch_gcal_write_inline(config: FetcherConfig) -> str:
     return json.dumps(event, indent=2)
 
 
-def _fetch_gmail_inline(config: FetcherConfig) -> str:
-    """Run Gmail fetcher inline."""
-    from fetchers.gmail.fetcher import fetch_emails
+def _fetch_gmail_readonly_inline(config: FetcherConfig) -> str:
+    """Run Gmail readonly fetcher inline (check_email or read_email)."""
+    message_id = config.args.get("message_id", "")
+    if message_id:
+        from fetchers.gmail_readonly.fetcher import read_email
+
+        result = read_email(message_id)
+        return json.dumps(result, indent=2)
+
+    from fetchers.gmail_readonly.fetcher import fetch_emails
 
     query = config.args.get("query", "is:unread newer_than:1d")
     max_results = int(config.args.get("max_results", 20))
@@ -230,37 +274,80 @@ def _fetch_drive_write_inline(config: FetcherConfig) -> str:
     return json.dumps(result, indent=2)
 
 
+def _ensure_image(image: str) -> None:
+    """Build the Docker image if it doesn't already exist.
+
+    Derives the build context from the image name:
+      fetcher-gmail-modify:latest -> fetchers/gmail_modify/
+      llm-runner:latest           -> llm/
+    """
+    result = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return
+
+    tag = image.split(":")[0]
+    if tag.startswith("fetcher-"):
+        # fetcher-gmail-modify -> fetchers/gmail_modify/
+        name = tag.removeprefix("fetcher-").replace("-", "_")
+        context = Path("fetchers") / name
+    else:
+        # llm-runner -> llm/
+        context = Path(tag.replace("-", "_"))
+        # Try hyphenated too: llm/ exists as-is
+        if not context.exists():
+            context = Path(tag)
+
+    if not (context / "Dockerfile").exists():
+        raise FileNotFoundError(f"No Dockerfile at {context} for image {image}")
+
+    logger.info("Building image %s from %s", image, context)
+    subprocess.run(
+        ["docker", "build", "-t", image, str(context)],
+        check=True,
+        capture_output=True,
+    )
+
+
 def _run_fetcher_container(config: FetcherConfig) -> str:
     """Run a fetcher in an isolated Docker container."""
-    env_flags: list[str] = []
+    _ensure_image(config.image)
+    env_vars: dict[str, str] = {}
 
     # Decrypt and inject secrets
     if config.secrets:
-        secrets = decrypt_env_file(config.secrets)
-        for key, value in secrets.items():
-            env_flags.extend(["-e", f"{key}={value}"])
+        env_vars.update(decrypt_env_file(config.secrets))
 
     # Pass args as env vars
     for key, value in config.args.items():
-        env_flags.extend(["-e", f"{key.upper()}={value}"])
+        env_vars[key.upper()] = value
 
-    result = subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "--read-only",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--memory=256m",
-            "--cpus=0.5",
-            *env_flags,
-            config.image,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=True,
-    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".env", delete=True, prefix="creel-"
+    ) as env_file:
+        for key, value in env_vars.items():
+            env_file.write(f"{key}={value}\n")
+        env_file.flush()
+
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "--read-only",
+                "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--memory=256m",
+                "--cpus=0.5",
+                "--env-file", env_file.name,
+                config.image,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
     return result.stdout.strip()
 
 

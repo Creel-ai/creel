@@ -58,7 +58,7 @@ class FastClassifierConfig(BaseModel):
 class LLMJudgeConfig(BaseModel):
     """Configuration for the LLM-based judge (Haiku)."""
 
-    enabled: bool = False  # off by default — adds latency/cost
+    enabled: bool = True  # enabled by default for security
     model: str = "claude-haiku-4-5-20251001"
     max_tokens: int = 256
     timeout: float = 3.0

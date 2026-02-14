@@ -168,7 +168,7 @@ class Guardian:
                 reason="Policy engine disabled",
             )
 
-        decision = self._policy.evaluate(tool_name)
+        decision = self._policy.evaluate(tool_name, tool_args)
 
         if decision.verdict == ActionVerdict.REVIEW:
             logger.warning("Action flagged for review: %s — %s", tool_name, decision.reason)

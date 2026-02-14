@@ -10,16 +10,67 @@ from taskrunner.orchestrator import _run_fetcher_container, _run_fetcher_inline
 logger = logging.getLogger(__name__)
 
 
-def build_tool_definitions(tools_config: dict[str, ToolConfig]) -> list[dict]:
+BUILTIN_MEMORY_TOOLS = [
+    {
+        "name": "remember",
+        "description": (
+            "Save important information to daily memory. Use this when the user "
+            "asks you to remember something, or when you encounter information "
+            "worth preserving across sessions (decisions, preferences, facts)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The information to remember.",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category tag (e.g. 'preference', 'decision', 'fact', 'general').",
+                },
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "update_long_term_memory",
+        "description": (
+            "Update curated long-term memory (MEMORY.md) with distilled, "
+            "important information that should persist indefinitely. Use sparingly "
+            "for significant facts, not daily notes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Content to append to long-term memory.",
+                },
+            },
+            "required": ["text"],
+        },
+    },
+]
+
+
+def build_tool_definitions(
+    tools_config: dict[str, ToolConfig],
+    include_memory_tools: bool = False,
+) -> list[dict]:
     """Convert YAML tool configs to Anthropic API tool definitions.
 
     Args:
         tools_config: Mapping of tool name -> ToolConfig.
+        include_memory_tools: If True, include built-in memory tools.
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
     """
     tool_defs = []
+
+    if include_memory_tools:
+        tool_defs.extend(BUILTIN_MEMORY_TOOLS)
     for name, cfg in tools_config.items():
         properties: dict[str, dict] = {}
         required: list[str] = []
@@ -56,6 +107,7 @@ def execute_tool_call(
     tool_input: dict,
     tools_config: dict[str, ToolConfig],
     use_containers: bool = False,
+    memory_manager: object | None = None,
 ) -> str:
     """Execute a tool call via the corresponding fetcher.
 
@@ -75,6 +127,20 @@ def execute_tool_call(
     Raises:
         ValueError: If tool_name is not found in tools_config.
     """
+    # Handle built-in tools
+    if tool_name == "remember" and memory_manager is not None:
+        from taskrunner.memory import MemoryManager
+
+        text = tool_input.get("text", "")
+        category = tool_input.get("category", "general")
+        return memory_manager.remember(text, category)
+
+    if tool_name == "update_long_term_memory" and memory_manager is not None:
+        from taskrunner.memory import MemoryManager
+
+        text = tool_input.get("text", "")
+        return memory_manager.update_long_term(text)
+
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")
 

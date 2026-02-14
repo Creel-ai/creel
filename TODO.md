@@ -118,6 +118,8 @@ The goal: Replace OpenClaw for daily personal agent tasks.
   - [ ] **Session summarization:** When trimming old messages, summarize them into a compact context block instead of dropping
   - [ ] **System prompt enrichment:** Inject relevant memories into system prompt (RAG-lite — keyword match on user message → retrieve relevant memories)
   - [ ] **Memory tools:** `remember` and `recall` tools the LLM can call to explicitly store/retrieve information
+  - [ ] **Vector memory search:** Embed memories and use semantic similarity for retrieval (RAG with local embeddings — e.g., `sentence-transformers` or Ollama embeddings)
+  - [ ] **Session summarization on compaction:** When trimming old messages, LLM-summarize them into a compact context block instead of dropping (config flag exists, implementation deferred)
   - [ ] Model: `taskrunner/memory.py` with `MemoryStore` class
 
 ### 3.2 System Prompt & Personality 🟡
@@ -153,6 +155,7 @@ The goal: Replace OpenClaw for daily personal agent tasks.
   - [ ] Scheduled check tasks: "every 30 min, check calendar for upcoming events, notify if <1hr away"
   - [ ] Rate limiting on notifications (don't spam)
   - [ ] Quiet hours configuration
+  - [ ] **Heartbeat / proactive loop:** Periodic self-triggered check-in (like OpenClaw's heartbeat) — agent wakes up on interval, checks inbox/calendar/weather/etc., sends notifications if needed. Requires scheduler integration.
 
 ### 3.6 Multiple Channels 🟡
 - **What exists:** `Channel` ABC, `IMessageChannel`, `StdinChannel`. Only one channel active at a time.

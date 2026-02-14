@@ -146,12 +146,18 @@ class SessionManager:
     def _ensure_valid_start(messages: list[dict]) -> list[dict]:
         """Strip orphaned messages so the list starts with a user text message.
 
-        After trimming by max_history, the list may begin with a user
-        ``tool_result`` message whose matching assistant ``tool_use`` was
-        trimmed away, or with an assistant message.  The Anthropic API
-        requires the first message to be a ``user`` message with text
-        content, so we drop leading messages until that invariant holds.
+        After trimming by max_history, the list may begin mid-tool-call
+        (e.g. with an assistant tool_use whose tool_result comes next, or
+        a user tool_result whose matching tool_use was trimmed away).
+
+        This method finds the first position where a complete,
+        non-tool-call user text message begins and drops everything before it.
+        This ensures we never start mid-tool-call.
         """
+        # Find the first user text message that is NOT followed by being
+        # part of an orphaned tool-call sequence.  The simplest safe rule:
+        # walk forward until we find a user message with string content
+        # that is NOT a tool_result.
         while messages:
             msg = messages[0]
             if msg.get("role") == "user" and isinstance(msg.get("content"), str):
@@ -159,11 +165,44 @@ class SessionManager:
             messages.pop(0)
         return messages
 
+    @staticmethod
+    def _trim_preserving_tool_pairs(messages: list[dict], max_history: int) -> list[dict]:
+        """Trim messages to max_history while keeping complete tool-call pairs.
+
+        A tool-call sequence is:
+          1. assistant message with tool_use block(s)
+          2. user message with tool_result block(s)
+
+        We never split these apart. After naive trimming, we scan from the
+        start to find the first safe boundary (a user text message not part
+        of an incomplete tool-call pair).
+        """
+        if len(messages) <= max_history:
+            return messages
+
+        # Start with naive trim from the end
+        trimmed = messages[-max_history:]
+
+        # Now find first safe start point
+        i = 0
+        while i < len(trimmed):
+            msg = trimmed[i]
+            # A user message with string content (not tool_result) is safe
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                break
+            # An assistant message with only text blocks (no tool_use) is safe
+            # if it's followed by a user text message, but we prefer starting
+            # with user messages for API compatibility
+            i += 1
+
+        return trimmed[i:]
+
     def _save(self, session: Session) -> None:
         """Write session to disk, trimming to max_history."""
         if len(session.messages) > self._max_history:
-            session.messages = session.messages[-self._max_history:]
-            self._ensure_valid_start(session.messages)
+            session.messages = self._trim_preserving_tool_pairs(
+                session.messages, self._max_history,
+            )
 
         data = {
             "session_id": session.session_id,
@@ -194,8 +233,9 @@ class SessionManager:
                 last_active=data.get("last_active", time.time()),
             )
             if len(session.messages) > self._max_history:
-                session.messages = session.messages[-self._max_history:]
-                self._ensure_valid_start(session.messages)
+                session.messages = self._trim_preserving_tool_pairs(
+                    session.messages, self._max_history,
+                )
             return session
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Corrupt session file %s, ignoring: %s", session_id, e)

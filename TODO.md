@@ -234,6 +234,52 @@ The goal: Replace OpenClaw for daily personal agent tasks.
 
 ---
 
+## Phase 5: Web UI — Configuration & Dashboard
+
+The goal: A local web interface that replaces YAML editing and provides operational visibility.
+
+### 5.1 Approval Queue UI 🔴 (do this first)
+- **What exists:** iMessage Y/N flow (clunky, async but awkward UX)
+- **TODO:**
+  - [ ] Local web server (FastAPI or similar) serving a simple approval dashboard
+  - [ ] Pending actions list with approve/deny buttons
+  - [ ] Action details: tool name, args, policy rule that triggered REVIEW, timestamp
+  - [ ] History of past approvals/denials
+  - [ ] Optional: push notifications to browser when new action is pending
+
+### 5.2 Guardian Dashboard 🔴
+- **TODO:**
+  - [ ] Audit log viewer with filtering (blocked, denied, by tool, by date)
+  - [ ] Classifier stats: hit rate, average confidence, false positive tracking
+  - [ ] LLM judge usage: calls, tokens, cost
+  - [ ] Real-time feed of guardian events
+
+### 5.3 Configuration Editor 🔴
+- **TODO:**
+  - [ ] Executor management: add/edit/toggle executors, secrets mapping, timeout config
+  - [ ] Policy editor: visual deny/review/allow rules (drag to reorder, glob pattern helper)
+  - [ ] Tool editor: map tools to executors, set fixed args, parameter schemas
+  - [ ] Guardian settings: thresholds, enable/disable stages, model selection
+  - [ ] System prompt editor with live preview
+  - [ ] Validate config before saving (schema check + dry run)
+
+### 5.4 Operational Dashboard 🔴
+- **TODO:**
+  - [ ] Active sessions and conversation history
+  - [ ] Scheduled tasks overview (cron jobs, next run times)
+  - [ ] Token usage and cost tracking (daily/weekly/monthly)
+  - [ ] Executor health: last run, success rate, average duration
+  - [ ] Channel status (connected/disconnected)
+
+### 5.5 Tech Stack Considerations
+- Local-only by default (bind to 127.0.0.1)
+- Auth: simple token or local-only (no auth needed if localhost-only)
+- Lightweight: FastAPI + htmx or similar (no heavy SPA framework)
+- Config changes write back to YAML files (source of truth stays in files)
+- Dashboard reads from audit log + session files (no separate database needed initially)
+
+---
+
 ## Priority Order (Suggested)
 
 If doing this incrementally alongside OpenClaw:

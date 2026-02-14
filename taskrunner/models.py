@@ -57,6 +57,13 @@ class LLMConfig(BaseModel):
 # --- Agent / tool models ---
 
 
+class MountConfig(BaseModel):
+    """Configuration for mounting a host path into an executor container."""
+    
+    path: str
+    mode: str = Field(default="ro", pattern="^(ro|rw)$")
+
+
 class ToolParameter(BaseModel):
     """A single parameter exposed to the LLM for a tool."""
 
@@ -74,6 +81,9 @@ class ToolConfig(BaseModel):
     parameters: dict[str, ToolParameter] = Field(default_factory=dict)
     fixed_args: dict[str, str] = Field(default_factory=dict)
     classify_output: bool = False
+    mounts: list[MountConfig] = Field(default_factory=list)
+    network: bool = False
+    image: str | None = None
 
 
 class AgentConfig(BaseModel):

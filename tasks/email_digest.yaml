@@ -2,8 +2,7 @@ name: email_digest
 schedule: "0 8 * * *"  # 8am daily
 
 fetch:
-  gmail:
-    image: fetcher-gmail:latest
+  gmail_readonly:
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"
@@ -14,7 +13,7 @@ prompt: |
   You're my email assistant. Here are my unread emails from the last 24 hours.
 
   Today: {date}
-  Emails: {gmail}
+  Emails: {gmail_readonly}
 
   Create a prioritized digest:
   1. Flag anything urgent or time-sensitive at the top

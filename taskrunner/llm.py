@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 
 import anthropic
 
@@ -21,6 +22,71 @@ _CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for 
 
 def _is_oauth_token(token: str) -> bool:
     return "sk-ant-oat" in token
+
+
+def _get_client() -> anthropic.Anthropic:
+    """Create an Anthropic client using available credentials."""
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    if auth_token:
+        headers = _OAUTH_HEADERS if _is_oauth_token(auth_token) else {}
+        return anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
+    elif api_key:
+        return anthropic.Anthropic(api_key=api_key)
+    else:
+        raise RuntimeError(
+            "No Anthropic credentials found. Set ANTHROPIC_AUTH_TOKEN "
+            "(from `claude setup-token`) or ANTHROPIC_API_KEY in your "
+            "environment, or configure secrets in the task definition."
+        )
+
+
+def extract_text(message: anthropic.types.Message) -> str:
+    """Extract concatenated text from an Anthropic Message response."""
+    text_parts = []
+    for block in message.content:
+        if block.type == "text":
+            text_parts.append(block.text)
+    return "\n".join(text_parts)
+
+
+def call_llm(
+    messages: list[dict],
+    config: LLMConfig,
+    tools: list[dict] | None = None,
+    system: str | None = None,
+) -> anthropic.types.Message:
+    """Call the Anthropic API with multi-turn messages and optional tools.
+
+    Args:
+        messages: Conversation messages in Anthropic format.
+        config: LLM configuration (model, max_tokens).
+        tools: Anthropic tool definitions, or None.
+        system: System prompt, or None.
+
+    Returns:
+        The raw Anthropic Message object.
+    """
+    client = _get_client()
+
+    create_kwargs: dict = {
+        "model": config.model,
+        "max_tokens": config.max_tokens,
+        "messages": messages,
+    }
+
+    # System prompt: use explicit if provided, else OAuth prefix if needed
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    if system:
+        create_kwargs["system"] = system
+    elif auth_token and _is_oauth_token(auth_token):
+        create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
+
+    if tools:
+        create_kwargs["tools"] = tools
+
+    return client.messages.create(**create_kwargs)
 
 
 def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:
@@ -41,20 +107,9 @@ def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:
 
 def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
     """Call Anthropic API directly (non-containerized)."""
-    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    client = _get_client()
 
-    if auth_token:
-        headers = _OAUTH_HEADERS if _is_oauth_token(auth_token) else {}
-        client = anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
-    elif api_key:
-        client = anthropic.Anthropic(api_key=api_key)
-    else:
-        raise RuntimeError(
-            "No Anthropic credentials found. Set ANTHROPIC_AUTH_TOKEN "
-            "(from `claude setup-token`) or ANTHROPIC_API_KEY in your "
-            "environment, or configure secrets in the task definition."
-        )
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
     create_kwargs: dict = {
         "model": config.model,
         "max_tokens": config.max_tokens,
@@ -64,45 +119,48 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
         create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
 
     message = client.messages.create(**create_kwargs)
-
-    # Extract text from response
-    text_parts = []
-    for block in message.content:
-        if block.type == "text":
-            text_parts.append(block.text)
-
-    return "\n".join(text_parts)
+    return extract_text(message)
 
 
 def _run_llm_container(prompt: str, config: LLMConfig) -> str:
     """Run LLM call inside an isolated Docker container."""
-    env_flags = []
+    from taskrunner.orchestrator import _ensure_image
+    _ensure_image("llm-runner:latest")
+
+    env_vars: dict[str, str] = {}
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
     if auth_token:
-        env_flags.extend(["-e", f"ANTHROPIC_AUTH_TOKEN={auth_token}"])
+        env_vars["ANTHROPIC_AUTH_TOKEN"] = auth_token
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if api_key:
-        env_flags.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+        env_vars["ANTHROPIC_API_KEY"] = api_key
 
-    env_flags.extend(["-e", f"MODEL={config.model}"])
-    env_flags.extend(["-e", f"MAX_TOKENS={config.max_tokens}"])
+    env_vars["MODEL"] = config.model
+    env_vars["MAX_TOKENS"] = str(config.max_tokens)
 
-    result = subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "--read-only",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--memory=256m",
-            "--cpus=0.5",
-            *env_flags,
-            "llm-runner:latest",
-        ],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=True,
-    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".env", delete=True, prefix="creel-"
+    ) as env_file:
+        for key, value in env_vars.items():
+            env_file.write(f"{key}={value}\n")
+        env_file.flush()
+
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "--read-only",
+                "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--memory=256m",
+                "--cpus=0.5",
+                "--env-file", env_file.name,
+                "llm-runner:latest",
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
     return result.stdout.strip()

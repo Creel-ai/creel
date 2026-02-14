@@ -3,7 +3,6 @@ schedule: "30 6 * * *"  # 6:30am daily
 
 fetch:
   weather:
-    image: fetcher-weather:latest
     args:
       location: denver
 

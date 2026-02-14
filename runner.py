@@ -438,6 +438,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
         event_filter=args.event,
         blocked_only=args.blocked,
         denied_only=args.denied,
+        tool_filter=getattr(args, "tool", None),
+        since=getattr(args, "since", None),
     )
 
     if not entries:
@@ -591,6 +593,14 @@ def main() -> int:
     )
     audit_parser.add_argument(
         "--all", action="store_true", help="Show all entries (no tail limit)"
+    )
+    audit_parser.add_argument(
+        "--tool", type=str, default=None,
+        help="Filter by tool name"
+    )
+    audit_parser.add_argument(
+        "--since", type=str, default=None,
+        help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
     )
 
     if args.command is None:

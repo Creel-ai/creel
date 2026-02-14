@@ -62,6 +62,9 @@ class LLMJudgeConfig(BaseModel):
     model: str = "claude-haiku-4-5-20251001"
     max_tokens: int = 256
     timeout: float = 3.0
+    uncertain_only: bool = True  # only run when classifier is uncertain
+    uncertain_low: float = 0.5   # lower bound of uncertain range
+    uncertain_high: float = 0.85  # upper bound of uncertain range
 
 
 class PolicyConfig(BaseModel):
@@ -76,6 +79,8 @@ class AuditConfig(BaseModel):
 
     enabled: bool = True
     log_file: str = "guardian_audit.jsonl"
+    rotate_daily: bool = False
+    max_size_mb: float = 0  # 0 = no size limit
 
 
 class GuardianConfig(BaseModel):

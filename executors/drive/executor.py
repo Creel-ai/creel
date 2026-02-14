@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Google Drive fetcher - lists and reads files.
+"""Google Drive executor - lists and reads files.
 
 Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
 (refresh token, client ID, client secret).

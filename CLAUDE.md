@@ -32,7 +32,7 @@ Coverage is configured automatically via `pyproject.toml` (`--cov=taskrunner --c
 
 - `taskrunner/` — Core orchestration, agent loop, LLM calls, session management, tool execution, output routing, channels (stdin, iMessage)
 - `guardian/` — Security pipeline: fast classifier (DeBERTa/ONNX), LLM judge (Haiku), YAML policy engine, audit logging
-- `fetchers/` — Isolated data fetchers (weather, gcal, gmail, drive), each with minimal OAuth scopes
+- `executors/ — Isolated data executors (weather, gcal, gmail, drive), each with minimal OAuth scopes
 - `tasks/` — Task definitions in YAML (morning briefing, weather, email digest/triage)
 - `policies/` — Tool access policy rules (allow/review/deny via fnmatch)
 - `tests/` — Pytest suite covering all modules
@@ -44,5 +44,5 @@ Coverage is configured automatically via `pyproject.toml` (`--cov=taskrunner --c
 - Configuration is YAML-based (`agent.yaml`, `tasks/*.yaml`, `policies/default.yaml`)
 - Data models use **Pydantic v2**
 - Secrets encrypted with **age** (decrypted via `pyrage`); decryption key at `~/.age/key.txt`
-- Fetchers run in isolated Docker containers in production (`--read-only`, `--cap-drop=ALL`, memory/CPU limits) or as subprocesses in development
+- Executors run in isolated Docker containers in production (`--read-only`, `--cap-drop=ALL`, memory/CPU limits) or as subprocesses in development
 - All async code uses `pytest-asyncio` for testing

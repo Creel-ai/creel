@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Google Drive write fetcher - uploads a file to Drive.
+"""Google Drive write executor - uploads a file to Drive.
 
 Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
 (refresh token, client ID, client secret).

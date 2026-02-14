@@ -20,9 +20,9 @@
       "default": "simple",
       "description": "Task mode: simple (default) or agent (tool calling)"
     },
-    "fetch": {
+    "executors": {
       "type": "object",
-      "description": "Map of fetcher name to config",
+      "description": "Map of executor name to config",
       "additionalProperties": {
         "$ref": "#/$defs/FetcherConfig"
       }
@@ -63,7 +63,7 @@
         },
         "args": {
           "type": "object",
-          "description": "Key-value args passed to the fetcher",
+          "description": "Key-value args passed to the executor",
           "additionalProperties": true
         }
       }
@@ -106,10 +106,10 @@
     },
     "ToolConfig": {
       "type": "object",
-      "required": ["fetcher", "description"],
+      "required": ["executor", "description"],
       "additionalProperties": false,
       "properties": {
-        "fetcher": {
+        "executor": {
           "type": "string",
           "description": "Fetcher to execute (e.g. gmail_modify)"
         },
@@ -130,7 +130,7 @@
         },
         "fixed_args": {
           "type": "object",
-          "description": "Args always passed to fetcher (override LLM input)",
+          "description": "Args always passed to executor (override LLM input)",
           "additionalProperties": {
             "type": "string"
           }

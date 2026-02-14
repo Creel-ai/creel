@@ -15,7 +15,7 @@ def _make_llm_config() -> LLMConfig:
 def _make_tools() -> dict[str, ToolConfig]:
     return {
         "check_weather": ToolConfig(
-            fetcher="weather",
+            executor="weather",
             description="Get weather",
             parameters={
                 "location": ToolParameter(
@@ -201,7 +201,7 @@ def test_system_prompt_passed(mock_call_llm):
 @patch("taskrunner.agent.execute_tool_call")
 @patch("taskrunner.agent.call_llm")
 def test_tool_results_not_screened(mock_call_llm, mock_execute):
-    """Tool results from our own fetchers should not be run through the classifier."""
+    """Tool results from our own executors should not be run through the classifier."""
     mock_call_llm.side_effect = [
         _tool_use_message("check_weather", {"location": "Denver"}),
         _text_message("It's sunny!"),
@@ -228,7 +228,7 @@ def test_tool_results_not_screened(mock_call_llm, mock_execute):
 
 @patch("taskrunner.agent.execute_tool_call")
 @patch("taskrunner.agent.call_llm")
-def test_classify_output_screens_fetcher_result(mock_call_llm, mock_execute):
+def test_classify_output_screens_executor_result(mock_call_llm, mock_execute):
     """Tools with classify_output=True should have output run through the classifier."""
     mock_call_llm.side_effect = [
         _tool_use_message("read_email", {"message_id": "abc"}),
@@ -238,7 +238,7 @@ def test_classify_output_screens_fetcher_result(mock_call_llm, mock_execute):
 
     tools = {
         "read_email": ToolConfig(
-            fetcher="gmail_readonly",
+            executor="gmail_readonly",
             description="Read email",
             parameters={"message_id": ToolParameter(type="string", description="ID", required=True)},
             classify_output=True,
@@ -281,7 +281,7 @@ def test_classify_output_passes_clean_result(mock_call_llm, mock_execute):
 
     tools = {
         "read_email": ToolConfig(
-            fetcher="gmail_readonly",
+            executor="gmail_readonly",
             description="Read email",
             parameters={"message_id": ToolParameter(type="string", description="ID", required=True)},
             classify_output=True,

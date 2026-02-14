@@ -93,11 +93,11 @@ def cmd_list(args: argparse.Namespace) -> int:
         print("No tasks found.")
         return 0
 
-    print(f"{'Name':<25} {'Schedule':<20} {'Fetchers':<30} {'Output'}")
+    print(f"{'Name':<25} {'Schedule':<20} {'Executors':<30} {'Output'}")
     print("-" * 90)
     for task in tasks:
-        fetchers = ", ".join(task.fetch.keys())
-        print(f"{task.name:<25} {task.schedule:<20} {fetchers:<30} {task.output.type}:{task.output.to}")
+        executors_list = ", ".join(task.executors.keys())
+        print(f"{task.name:<25} {task.schedule:<20} {executors_list:<30} {task.output.type}:{task.output.to}")
 
     return 0
 
@@ -114,7 +114,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
         task = load_task(task_file)
         print(f"Task '{task.name}' is valid.")
         print(f"  Schedule: {task.schedule}")
-        print(f"  Fetchers: {', '.join(task.fetch.keys())}")
+        print(f"  Executors: {', '.join(task.executors.keys())}")
         print(f"  Output: {task.output.type} -> {task.output.to}")
         print(f"  LLM: {task.llm.model} (max {task.llm.max_tokens} tokens)")
         return 0
@@ -440,7 +440,7 @@ def main() -> int:
         "-v", "--verbose", action="store_true", help="Enable verbose output"
     )
     parser.add_argument(
-        "--containers", action="store_true", help="Run fetchers/LLM in Docker containers"
+        "--containers", action="store_true", help="Run executors/LLM in Docker containers"
     )
     parser.add_argument(
         "--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory"

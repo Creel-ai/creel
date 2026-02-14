@@ -22,7 +22,7 @@ def start_scheduler(
 
     Args:
         tasks_dir: Directory containing task YAML files.
-        use_containers: Whether to run fetchers/LLM in Docker containers.
+        use_containers: Whether to run executors/LLM in Docker containers.
     """
     tasks_dir = Path(tasks_dir)
     tasks = load_all_tasks(tasks_dir)

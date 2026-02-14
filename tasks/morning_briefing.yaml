@@ -1,7 +1,7 @@
 name: morning_briefing
 schedule: "0 7 * * *"  # 7am daily
 
-fetch:
+executors:
   calendar:
     secrets: secrets/gcal.env.enc
     args:

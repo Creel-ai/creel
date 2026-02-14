@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gmail modify fetcher - modify, trash, or delete messages via the Gmail API.
+"""Gmail modify executor - modify, trash, or delete messages via the Gmail API.
 
 Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
 (refresh token, client ID, client secret).

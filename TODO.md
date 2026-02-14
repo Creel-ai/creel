@@ -17,11 +17,11 @@ The goal: `./runner.py serve` runs without crashing, handles messages, executes 
   - [ ] CI pipeline (GitHub Actions) — run tests on push to `agent` branch
 
 ### 1.2 Error Handling & Resilience 🟡
-- **What exists:** Try/except around LLM calls in `agent.py`, fetcher failures caught in `orchestrator.py`, corrupt session recovery in `session.py`
-- **What's missing:** No retry logic anywhere. LLM API 429/500 → immediate failure. iMessage poll errors just log and continue (good) but no backoff. Fetcher timeouts not configurable.
+- **What exists:** Try/except around LLM calls in `agent.py`, executor failures caught in `orchestrator.py`, corrupt session recovery in `session.py`
+- **What's missing:** No retry logic anywhere. LLM API 429/500 → immediate failure. iMessage poll errors just log and continue (good) but no backoff. Executor timeouts not configurable.
 - **TODO:**
   - [ ] Add retry with exponential backoff for LLM calls in `taskrunner/llm.py` (`call_llm` and `run_llm`)
-  - [ ] Add configurable timeout per fetcher in `FetcherConfig` (currently hardcoded 60s in `_run_fetcher_container`)
+  - [ ] Add configurable timeout per executor in `ExecutorConfig` (currently hardcoded 60s in `_run_executor_container`)
   - [ ] Add exponential backoff to iMessage polling in `channels/imessage.py` on repeated errors
   - [ ] Graceful shutdown in `runner.py cmd_serve` — signal handler for SIGTERM/SIGINT to cleanly stop scheduler + listener
 
@@ -48,18 +48,18 @@ The goal: `./runner.py serve` runs without crashing, handles messages, executes 
   - [ ] Structured JSON logging option (for production; keep human-readable for dev)
   - [ ] Log response times: LLM call duration, tool execution duration, total request duration
 
-### 1.6 Fetcher Output Structuring 🔴
-- **What exists:** Fetchers print raw text to stdout. The entire stdout is returned as the tool result. Stderr is now captured and logged (PR #7).
+### 1.6 Executor Output Structuring 🔴
+- **What exists:** Executors print raw text to stdout. The entire stdout is returned as the tool result. Stderr is now captured and logged (PR #7).
 - **What's missing:** No structured protocol between container and host. No way to distinguish data output from log/debug output. No metadata (timing, status codes, content type). No streaming support.
 - **TODO:**
   - [ ] Define a lightweight output protocol (e.g., JSON envelope: `{"status": "ok", "data": "...", "meta": {...}}`)
-  - [ ] Support mixed output: fetcher can emit structured logs to stderr + final result to stdout via envelope
-  - [ ] Return metadata alongside result (HTTP status codes, API rate limits, response times from the fetcher's perspective)
-  - [ ] Consider content-type awareness: fetchers that return JSON vs plain text vs binary (base64)
+  - [ ] Support mixed output: executor can emit structured logs to stderr + final result to stdout via envelope
+  - [ ] Return metadata alongside result (HTTP status codes, API rate limits, response times from the executor's perspective)
+  - [ ] Consider content-type awareness: executors that return JSON vs plain text vs binary (base64)
   - [ ] Backward-compatible: plain stdout still works (treated as raw text result), envelope is opt-in
   - [ ] Schema validation on envelope responses (reject malformed output early)
-  - [ ] Add `CREEL_OUTPUT_FORMAT=envelope` env var so fetchers know to use the structured protocol
-  - [ ] Update `_run_fetcher_container` to detect and parse envelope responses
+  - [ ] Add `CREEL_OUTPUT_FORMAT=envelope` env var so executors know to use the structured protocol
+  - [ ] Update `_run_executor_container` to detect and parse envelope responses
 
 ---
 
@@ -142,8 +142,8 @@ The goal: Replace OpenClaw for daily personal agent tasks.
 ### 3.4 Web Fetching / Browsing 🔴
 - **What exists:** Nothing
 - **TODO:**
-  - [ ] Add `web_search` fetcher (Brave Search API or similar)
-  - [ ] Add `web_fetch` fetcher (fetch URL → markdown via `trafilatura` or `readability`)
+  - [ ] Add `web_search` executor (Brave Search API or similar)
+  - [ ] Add `web_fetch` executor (fetch URL → markdown via `trafilatura` or `readability`)
   - [ ] Add corresponding tools in `agent.yaml`
   - [ ] Policy: `web_search` → allow, `web_fetch` → allow (read-only)
 
@@ -176,7 +176,7 @@ The goal: Replace OpenClaw for daily personal agent tasks.
 ### 3.8 Things 3 / Task Management Integration 🔴
 - **What exists:** Nothing (but Ross uses Things 3 heavily per TOOLS.md)
 - **TODO:**
-  - [ ] Add `things3` fetcher using Things URL scheme or AppleScript
+  - [ ] Add `things3` executor using Things URL scheme or AppleScript
   - [ ] Tools: `create_task`, `list_tasks`, `complete_task`
   - [ ] Policy: `create_task` → review, `list_tasks` → allow, `complete_task` → review
 
@@ -216,7 +216,7 @@ The goal: Replace OpenClaw for daily personal agent tasks.
 ### 4.4 Multi-Model Support 🔴
 - **What exists:** Model name is configurable in `agent.yaml`, but code is Anthropic-only
 - **TODO:**
-  - [ ] Abstract LLM interface so fetchers/tools don't depend on Anthropic SDK types
+  - [ ] Abstract LLM interface so executors/tools don't depend on Anthropic SDK types
   - [ ] Add OpenAI-compatible backend (for local models via Ollama, or GPT-4)
   - [ ] Model routing: use cheaper models for simple queries, expensive for complex
 
@@ -303,14 +303,14 @@ If doing this incrementally alongside OpenClaw:
 ## Architecture Notes
 
 **What's well-designed:**
-- Clean separation: fetchers → tools → agent loop → channels
+- Clean separation: executors → tools → agent loop → channels
 - Guardian pipeline is properly layered (fast→expensive→policy)
 - Audit log is privacy-preserving by default (hashes, key-only)
 - Docker container security is solid (read-only, cap-drop, memory limits)
 - `age` encryption for secrets is a good choice
 
 **What needs rethinking:**
-- `orchestrator.py` has a growing `_run_fetcher_inline` switch statement — needs a registry pattern
+- `orchestrator.py` has a growing `_run_executor_inline` switch statement — needs a registry pattern
 - `_load_secrets_to_env` mutates `os.environ` globally — not safe for concurrent requests
 - The `ChatServer` → `run_agent_loop` flow mutates the message list in-place, then saves — fragile
 - No dependency injection — Guardian, session manager, etc. are created inside `ChatServer.__init__`

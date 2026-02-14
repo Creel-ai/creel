@@ -106,3 +106,42 @@ class TestAuditLogger:
         bad_logger.log_screen(
             input_hash="x", input_length=1, blocked=False, source="test"
         )
+
+    def test_log_screen_debug_writes_jsonl(self, logger: AuditLogger, log_file: Path) -> None:
+        chunks = [
+            {"index": 0, "length": 137, "label": "INJECTION", "score": 0.9953, "is_injection": True},
+        ]
+        logger.log_screen_debug(
+            text='{"id": "msg_123"}',
+            chunks=chunks,
+            blocked=True,
+            source="fast_classifier",
+        )
+        lines = log_file.read_text().strip().split("\n")
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        assert record["event"] == "screen_input_debug"
+        assert record["text"] == '{"id": "msg_123"}'
+        assert record["blocked"] is True
+        assert record["source"] == "fast_classifier"
+        assert len(record["chunks"]) == 1
+        assert record["chunks"][0]["label"] == "INJECTION"
+        assert record["chunks"][0]["score"] == 0.9953
+        assert record["chunks"][0]["is_injection"] is True
+        assert "ts" in record
+
+    def test_log_screen_debug_multiple_chunks(self, logger: AuditLogger, log_file: Path) -> None:
+        chunks = [
+            {"index": 0, "length": 2048, "label": "SAFE", "score": 0.99, "is_injection": False},
+            {"index": 1, "length": 500, "label": "INJECTION", "score": 0.95, "is_injection": True},
+        ]
+        logger.log_screen_debug(
+            text="x" * 2548,
+            chunks=chunks,
+            blocked=True,
+            source="fast_classifier",
+        )
+        record = json.loads(log_file.read_text().strip())
+        assert len(record["chunks"]) == 2
+        assert record["chunks"][0]["is_injection"] is False
+        assert record["chunks"][1]["is_injection"] is True

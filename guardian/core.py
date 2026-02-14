@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 
 from guardian.audit import AuditLogger, _hash_text
+from guardian.coherence import CoherenceChecker
 from guardian.fast_classifier import FastClassifier
 from guardian.llm_judge import LLMJudge
 from guardian.policy import PolicyEngine
 from guardian.types import (
     ActionDecision,
     ActionVerdict,
+    CoherenceResult,
     GuardianConfig,
     ScreenResult,
 )
@@ -36,6 +38,7 @@ class Guardian:
         self._policy = (
             PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
         )
+        self._coherence = CoherenceChecker(config.coherence)
         self._audit = (
             AuditLogger(
                 config.audit.log_file,
@@ -185,6 +188,37 @@ class Guardian:
             )
 
         return decision
+
+    def check_coherence(
+        self,
+        user_request: str,
+        tool_name: str,
+        tool_args: dict,
+    ) -> CoherenceResult:
+        """Check if a tool call is coherent with the user's original request.
+
+        Returns a CoherenceResult. When coherence checking is disabled,
+        returns coherent=True.
+        """
+        result = self._coherence.check(user_request, tool_name, tool_args)
+
+        if not result.coherent:
+            logger.warning(
+                "Action coherence failed: %s — %s", tool_name, result.reasoning
+            )
+
+        if self._audit:
+            self._audit._write({
+                "event": "coherence_check",
+                "ts": __import__("datetime").datetime.now(
+                    __import__("datetime").timezone.utc
+                ).isoformat(),
+                "tool_name": tool_name,
+                "coherent": result.coherent,
+                "confidence": result.confidence,
+            })
+
+        return result
 
     def log_action_outcome(self, tool_name: str, verdict: str, outcome: str) -> None:
         """Log the final outcome of an action after user review.

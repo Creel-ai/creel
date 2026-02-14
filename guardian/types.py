@@ -35,6 +35,15 @@ class ScreenResult:
 
 
 @dataclass
+class CoherenceResult:
+    """Result from the action coherence check."""
+
+    coherent: bool
+    confidence: float  # 0.0-1.0
+    reasoning: str = ""
+
+
+@dataclass
 class ActionDecision:
     """Result from policy-based action validation (stage 3)."""
 
@@ -83,6 +92,15 @@ class AuditConfig(BaseModel):
     max_size_mb: float = 0  # 0 = no size limit
 
 
+class CoherenceConfig(BaseModel):
+    """Configuration for the action coherence checker."""
+
+    enabled: bool = False  # off by default — opt-in
+    model: str = "claude-haiku-4-5-20251001"
+    max_tokens: int = 256
+    timeout: float = 3.0
+
+
 class ReviewConfig(BaseModel):
     """Configuration for REVIEW verdict approval flow."""
 
@@ -101,4 +119,5 @@ class GuardianConfig(BaseModel):
     llm_judge: LLMJudgeConfig = Field(default_factory=LLMJudgeConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    coherence: CoherenceConfig = Field(default_factory=CoherenceConfig)
     review: ReviewConfig = Field(default_factory=ReviewConfig)

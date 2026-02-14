@@ -180,7 +180,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
     # -- TUI mode (default) --
     if not args.simple:
         try:
-            from taskrunner.tui import ChatApp
+            from taskrunner.tui import ChatApp, _make_tui_confirm_fn
         except ImportError:
             args.simple = True  # fall back if textual not installed
 
@@ -193,6 +193,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
 
         server = ChatServer(agent_def, use_containers=args.containers)
         app = ChatApp(server)
+        server._confirm_fn = _make_tui_confirm_fn(app)
 
         if args.new:
             server._session_mgr.new_session("cli")
@@ -209,7 +210,21 @@ def cmd_chat(args: argparse.Namespace) -> int:
     # -- Simple stdin/stdout mode --
     from taskrunner.channels.stdin import StdinChannel
 
-    server = ChatServer(agent_def, use_containers=args.containers)
+    def _confirm_action(tool_name: str, tool_input: dict, reason: str) -> bool:
+        subject = tool_input.get("subject")
+        if subject:
+            print(f'\n⚠ Guardian review: {tool_name} — "{subject}"')
+        else:
+            print(f"\n⚠ Guardian review: {tool_name}")
+        print(f"  Input: {tool_input}")
+        print(f"  Reason: {reason}")
+        try:
+            answer = input("  Allow? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer in ("y", "yes")
+
+    server = ChatServer(agent_def, use_containers=args.containers, confirm_fn=_confirm_action)
 
     if args.new:
         session = server._session_mgr.new_session("cli")

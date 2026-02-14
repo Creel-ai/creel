@@ -4,6 +4,9 @@ allow:
   - check_email
   - read_email
   - check_drive
+  - check_messages
+  - get_chats
+  - react_imessage
 
 review:
   - send_*

@@ -144,6 +144,59 @@ tools:
         type: string
         description: "MIME type (default: text/plain)"
 
+  check_messages:
+    fetcher: bluebubbles
+    secrets: secrets/bluebubbles.env.enc
+    description: "Check recent iMessages"
+    parameters:
+      chat_id:
+        type: string
+        description: "Specific chat to check (optional)"
+      limit:
+        type: string
+        description: "Number of messages (max 50)"
+
+  send_imessage:
+    fetcher: bluebubbles_send
+    secrets: secrets/bluebubbles.env.enc
+    description: "Send an iMessage"
+    parameters:
+      chat_id:
+        type: string
+        description: "Chat to send to"
+        required: true
+      text:
+        type: string
+        description: "Message text (max 2000 chars)"
+        required: true
+
+  react_imessage:
+    fetcher: bluebubbles_react
+    secrets: secrets/bluebubbles.env.enc
+    description: "React to an iMessage with a tapback"
+    parameters:
+      chat_id:
+        type: string
+        description: "Chat ID"
+        required: true
+      message_guid:
+        type: string
+        description: "Message GUID to react to"
+        required: true
+      reaction:
+        type: string
+        description: "Reaction type (love, like, dislike, laugh, emphasis, question)"
+        required: true
+
+  get_chats:
+    fetcher: bluebubbles_chats
+    secrets: secrets/bluebubbles.env.enc
+    description: "List recent iMessage chats"
+    parameters:
+      limit:
+        type: string
+        description: "Number of chats to return (max 50)"
+
 llm:
   model: claude-sonnet-4-20250514
   max_tokens: 1024
@@ -167,6 +220,12 @@ workspace:
 channels:
   imessage:
     listen_to: "$PHONE"
+    poll_interval: 3
+  bluebubbles:
+    server_url: "$BLUEBUBBLES_URL"
+    password: "$BLUEBUBBLES_PASSWORD"
+    listen_to:
+      - "$PHONE"
     poll_interval: 3
 
 guardian:

@@ -100,6 +100,43 @@ def test_max_history_trimming(tmp_path: Path) -> None:
     assert session.messages[4]["content"] == "Message 9"
 
 
+def test_max_history_trimming_skips_orphaned_tool_results(tmp_path: Path) -> None:
+    """Trimming should not leave orphaned tool_result messages at the start.
+
+    If naive trimming would place a user tool_result message (or an assistant
+    message) at position 0, those messages must be stripped so the history
+    starts with a user text message — otherwise the Anthropic API rejects the
+    request with 'unexpected tool_use_id'.
+    """
+    mgr = SessionManager(sessions_dir=str(tmp_path), max_history=4)
+
+    # Simulate a conversation with tool calls:
+    # [0] user text, [1] assistant tool_use, [2] user tool_result,
+    # [3] assistant text, [4] user text, [5] assistant text
+    session = mgr.get_or_create("cli")
+    session.messages = [
+        {"role": "user", "content": "Check weather"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "weather", "input": {}},
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "sunny"},
+        ]},
+        {"role": "assistant", "content": [{"type": "text", "text": "It's sunny!"}]},
+        {"role": "user", "content": "Thanks"},
+        {"role": "assistant", "content": [{"type": "text", "text": "You're welcome!"}]},
+    ]
+    mgr._save(session)
+
+    # Reload — naive [-4:] would start with assistant tool_use (index 1)
+    loaded = mgr.get_or_create("cli")
+
+    # Must start with a user text message
+    assert loaded.messages[0]["role"] == "user"
+    assert isinstance(loaded.messages[0]["content"], str)
+    assert loaded.messages[0]["content"] == "Thanks"
+
+
 def test_persistence_across_instances(tmp_path: Path) -> None:
     """Session should survive creating a new SessionManager instance."""
     mgr1 = SessionManager(sessions_dir=str(tmp_path))

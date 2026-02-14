@@ -142,10 +142,28 @@ class SessionManager:
 
     # -- persistence --
 
+    @staticmethod
+    def _ensure_valid_start(messages: list[dict]) -> list[dict]:
+        """Strip orphaned messages so the list starts with a user text message.
+
+        After trimming by max_history, the list may begin with a user
+        ``tool_result`` message whose matching assistant ``tool_use`` was
+        trimmed away, or with an assistant message.  The Anthropic API
+        requires the first message to be a ``user`` message with text
+        content, so we drop leading messages until that invariant holds.
+        """
+        while messages:
+            msg = messages[0]
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                break
+            messages.pop(0)
+        return messages
+
     def _save(self, session: Session) -> None:
         """Write session to disk, trimming to max_history."""
         if len(session.messages) > self._max_history:
             session.messages = session.messages[-self._max_history:]
+            self._ensure_valid_start(session.messages)
 
         data = {
             "session_id": session.session_id,
@@ -177,6 +195,7 @@ class SessionManager:
             )
             if len(session.messages) > self._max_history:
                 session.messages = session.messages[-self._max_history:]
+                self._ensure_valid_start(session.messages)
             return session
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Corrupt session file %s, ignoring: %s", session_id, e)

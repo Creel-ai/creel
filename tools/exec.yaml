@@ -1,0 +1,19 @@
+# Example tool configuration for the exec executor
+tools:
+  exec:
+    executor: exec
+    description: "Run shell commands in a sandboxed environment"
+    image: creel-exec:minimal
+    parameters:
+      command:
+        type: string
+        description: "Shell command to execute"
+        required: true
+      workdir:
+        type: string
+        description: "Working directory (must be within a mounted path)"
+    mounts:
+      - path: ~/.creel/workspace
+        mode: rw
+    network: false
+    timeout: 300

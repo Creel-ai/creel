@@ -155,11 +155,11 @@ class ChatServer:
             )
             self._send_approval_request(sender_id, action)
             # Save session state
-            self._session_mgr._save(session)
+            self._session_mgr.save_session(session)
             return "⏳ Waiting for your approval to proceed."
 
         # Save the updated messages (agent loop mutates the list)
-        self._session_mgr._save(session)
+        self._session_mgr.save_session(session)
 
         return result.text
 

@@ -127,6 +127,13 @@ class SessionManager:
         session.last_active = time.time()
         self._save(session)
 
+    def save_session(self, session: Session) -> None:
+        """Save a session to disk (public API).
+
+        Trims messages to max_history and persists to the session file.
+        """
+        self._save(session)
+
     def clear(self, sender_id: str) -> None:
         """Clear the active session's messages (keeps file, resets messages)."""
         active_id = self._get_active_session_id(sender_id)

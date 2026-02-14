@@ -58,9 +58,9 @@ def run_task(
                 result = _run_fetcher_inline(name, fetcher_config)
             context[name] = result
             logger.info("Fetcher %s completed (%d chars)", name, len(result))
-        except Exception:
+        except Exception as e:
             logger.exception("Fetcher %s failed", name)
-            context[name] = f"[Error fetching {name}]"
+            context[name] = f"[Error fetching {name}: {e}]"
 
     # Render the prompt template
     prompt = task.prompt.format(**context)
@@ -304,15 +304,27 @@ def _ensure_image(image: str) -> None:
         raise FileNotFoundError(f"No Dockerfile at {context} for image {image}")
 
     logger.info("Building image %s from %s", image, context)
-    subprocess.run(
+    build_result = subprocess.run(
         ["docker", "build", "-t", image, str(context)],
-        check=True,
         capture_output=True,
+        text=True,
     )
+    if build_result.returncode != 0:
+        build_err = build_result.stderr.strip() if build_result.stderr else "unknown error"
+        logger.error("Docker build failed for %s:\n%s", image, build_err)
+        raise RuntimeError(f"Docker build failed for {image}: {build_err[:500]}")
 
 
 def _run_fetcher_container(config: FetcherConfig) -> str:
-    """Run a fetcher in an isolated Docker container."""
+    """Run a fetcher in an isolated Docker container.
+
+    Captures both stdout (data) and stderr (logs/errors). Stderr is
+    always logged at DEBUG on success and ERROR on failure. The
+    request_id is passed into the container as ``CREEL_REQUEST_ID``
+    for log correlation.
+    """
+    from taskrunner.log import request_id_var
+
     _ensure_image(config.image)
     env_vars: dict[str, str] = {}
 
@@ -324,6 +336,11 @@ def _run_fetcher_container(config: FetcherConfig) -> str:
     for key, value in config.args.items():
         env_vars[key.upper()] = value
 
+    # Pass request ID for correlation
+    rid = request_id_var.get(None)
+    if rid:
+        env_vars["CREEL_REQUEST_ID"] = rid
+
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".env", delete=True, prefix="creel-"
     ) as env_file:
@@ -331,23 +348,49 @@ def _run_fetcher_container(config: FetcherConfig) -> str:
             env_file.write(f"{key}={value}\n")
         env_file.flush()
 
-        result = subprocess.run(
-            [
-                "docker", "run", "--rm",
-                "--read-only",
-                "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
-                "--cap-drop=ALL",
-                "--security-opt=no-new-privileges",
-                "--memory=256m",
-                "--cpus=0.5",
-                "--env-file", env_file.name,
-                config.image,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=True,
+        try:
+            result = subprocess.run(
+                [
+                    "docker", "run", "--rm",
+                    "--read-only",
+                    "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+                    "--cap-drop=ALL",
+                    "--security-opt=no-new-privileges",
+                    "--memory=256m",
+                    "--cpus=0.5",
+                    "--env-file", env_file.name,
+                    config.image,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=config.timeout,
+            )
+        except subprocess.TimeoutExpired as e:
+            stderr = (e.stderr or "").strip() if isinstance(e.stderr, str) else ""
+            if stderr:
+                logger.error(
+                    "Fetcher %s stderr (timeout after %ds):\n%s",
+                    config.name, config.timeout, stderr,
+                )
+            raise RuntimeError(
+                f"Fetcher '{config.name}' timed out after {config.timeout}s"
+            ) from e
+
+    # Log stderr regardless of exit code
+    stderr = result.stderr.strip() if result.stderr else ""
+    if stderr:
+        if result.returncode == 0:
+            logger.debug("Fetcher %s stderr (success):\n%s", config.name, stderr)
+        else:
+            logger.error("Fetcher %s stderr (exit %d):\n%s", config.name, result.returncode, stderr)
+
+    if result.returncode != 0:
+        # Include stderr in the error so it propagates to the LLM
+        error_detail = stderr[:500] if stderr else f"exit code {result.returncode}"
+        raise RuntimeError(
+            f"Fetcher '{config.name}' failed: {error_detail}"
         )
+
     return result.stdout.strip()
 
 

@@ -45,9 +45,13 @@ class BlueBubblesChannel(Channel):
             ", ".join(self._allowed_senders),
         )
 
+        consecutive_errors = 0
+        max_backoff = 60  # seconds
+
         while not self._stop_requested:
             try:
                 messages = self._poll(last_ts)
+                consecutive_errors = 0  # reset on success
                 for msg in messages:
                     sender = msg["sender"]
                     ts = msg["timestamp"]
@@ -59,7 +63,14 @@ class BlueBubblesChannel(Channel):
                     if ts > last_ts:
                         last_ts = ts
             except Exception:
-                logger.exception("Error polling BlueBubbles")
+                consecutive_errors += 1
+                backoff = min(self._poll_interval * (2 ** consecutive_errors), max_backoff)
+                logger.exception(
+                    "Error polling BlueBubbles (consecutive=%d, backoff=%.1fs)",
+                    consecutive_errors, backoff,
+                )
+                time.sleep(backoff)
+                continue
 
             time.sleep(self._poll_interval)
 

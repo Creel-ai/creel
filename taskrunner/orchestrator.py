@@ -164,6 +164,8 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
             return _exec_brave_search_inline(config)
         elif name == "fetch_url":
             return _exec_fetch_url_inline(config)
+        elif name == "exec":
+            return _exec_exec_inline(config)
         else:
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
@@ -438,6 +440,20 @@ def _exec_fetch_url_inline(config: ExecutorConfig) -> str:
     return json.dumps(result, indent=2)
 
 
+def _exec_exec_inline(config: ExecutorConfig) -> str:
+    """Run exec executor inline."""
+    from executors.exec.executor import run_command
+
+    command = config.args.get("command", "")
+    workdir = config.args.get("workdir")
+
+    if not command:
+        raise ValueError("exec executor requires a 'command' argument")
+
+    result = run_command(command, workdir)
+    return json.dumps(result, indent=2)
+
+
 def _ensure_image(image: str) -> None:
     """Build the Docker image if it doesn't already exist.
 
@@ -479,17 +495,27 @@ def _ensure_image(image: str) -> None:
         raise RuntimeError(f"Docker build failed for {image}: {build_err[:500]}")
 
 
-def _run_executor_container(config: ExecutorConfig) -> str:
+def _run_executor_container(
+    config: ExecutorConfig, 
+    tool_config: "ToolConfig | None" = None
+) -> str:
     """Run an executor in an isolated Docker container.
 
     Captures both stdout (data) and stderr (logs/errors). Stderr is
     always logged at DEBUG on success and ERROR on failure. The
     request_id is passed into the container as ``CREEL_REQUEST_ID``
     for log correlation.
+    
+    Args:
+        config: Executor configuration
+        tool_config: Optional tool configuration with mount/network/image overrides
     """
     from taskrunner.log import request_id_var
 
-    _ensure_image(config.image)
+    # Determine image to use - tool config overrides executor config
+    image = tool_config.image if (tool_config and tool_config.image) else config.image
+    _ensure_image(image)
+    
     env_vars: dict[str, str] = {}
 
     # Decrypt and inject secrets
@@ -512,19 +538,36 @@ def _run_executor_container(config: ExecutorConfig) -> str:
             env_file.write(f"{key}={value}\n")
         env_file.flush()
 
+        # Build docker run command
+        docker_cmd = [
+            "docker", "run", "--rm",
+            "--read-only",
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--memory=256m",
+            "--cpus=0.5",
+            "--env-file", env_file.name,
+        ]
+        
+        # Add mount options from tool config
+        if tool_config and tool_config.mounts:
+            import os
+            for mount in tool_config.mounts:
+                # Expand ~ to home directory
+                host_path = os.path.expanduser(mount.path)
+                docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
+        
+        # Add network isolation if disabled
+        if tool_config and not tool_config.network:
+            docker_cmd.extend(["--network=none"])
+        
+        # Add image name
+        docker_cmd.append(image)
+
         try:
             result = subprocess.run(
-                [
-                    "docker", "run", "--rm",
-                    "--read-only",
-                    "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
-                    "--cap-drop=ALL",
-                    "--security-opt=no-new-privileges",
-                    "--memory=256m",
-                    "--cpus=0.5",
-                    "--env-file", env_file.name,
-                    config.image,
-                ],
+                docker_cmd,
                 capture_output=True,
                 text=True,
                 timeout=config.timeout,

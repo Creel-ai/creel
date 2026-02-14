@@ -252,11 +252,19 @@ def cmd_chat(args: argparse.Namespace) -> int:
 def cmd_listen(args: argparse.Namespace) -> int:
     """Start message listener (iMessage or BlueBubbles)."""
     from taskrunner.chat import ChatServer
+    from taskrunner.startup import SecretsValidationError, validate_secrets
 
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
         print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        return 1
+
+    # Validate secrets before starting
+    try:
+        validate_secrets(agent_def)
+    except SecretsValidationError as e:
+        print(f"Error: {e}", file=sys.stderr)
         return 1
 
     # Load LLM secrets early
@@ -323,11 +331,19 @@ def cmd_serve(args: argparse.Namespace) -> int:
     import threading
 
     from taskrunner.chat import ChatServer
+    from taskrunner.startup import SecretsValidationError, validate_secrets
 
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
         print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        return 1
+
+    # Validate secrets before starting
+    try:
+        validate_secrets(agent_def)
+    except SecretsValidationError as e:
+        print(f"Error: {e}", file=sys.stderr)
         return 1
 
     # Load LLM secrets early

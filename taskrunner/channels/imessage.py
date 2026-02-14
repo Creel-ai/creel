@@ -52,9 +52,13 @@ class IMessageChannel(Channel):
             last_rowid,
         )
 
+        consecutive_errors = 0
+        max_backoff = 60  # seconds
+
         while not self._stop_requested:
             try:
                 new_messages = self._poll(last_rowid)
+                consecutive_errors = 0  # reset on success
                 for msg in new_messages:
                     sender = msg["sender"]
                     if sender in self._allowed_senders:
@@ -63,7 +67,14 @@ class IMessageChannel(Channel):
                         self.send(sender, response)
                     last_rowid = max(last_rowid, msg["rowid"])
             except Exception:
-                logger.exception("Error polling messages")
+                consecutive_errors += 1
+                backoff = min(self._poll_interval * (2 ** consecutive_errors), max_backoff)
+                logger.exception(
+                    "Error polling messages (consecutive=%d, backoff=%.1fs)",
+                    consecutive_errors, backoff,
+                )
+                time.sleep(backoff)
+                continue
 
             time.sleep(self._poll_interval)
 

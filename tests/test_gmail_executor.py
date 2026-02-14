@@ -1,4 +1,4 @@
-"""Tests for the Gmail fetcher."""
+"""Tests for the Gmail executor."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import base64
 import json
 from unittest.mock import MagicMock, patch
 
-from fetchers.gmail_readonly.fetcher import (
+from executors.gmail_readonly.executor import (
     _clean_snippet,
     _extract_body,
     _extract_headers,
@@ -186,8 +186,8 @@ class TestExtractHeaders:
 class TestFetchEmails:
     """Tests for fetch_emails with mocked API."""
 
-    @patch("fetchers.gmail_readonly.fetcher.get_credentials")
-    @patch("fetchers.gmail_readonly.fetcher.build")
+    @patch("executors.gmail_readonly.executor.get_credentials")
+    @patch("executors.gmail_readonly.executor.build")
     def test_fetch_emails_metadata_mode(
         self, mock_build: MagicMock, mock_creds: MagicMock
     ) -> None:
@@ -235,8 +235,8 @@ class TestFetchEmails:
             metadataHeaders=["Subject", "From", "Date", "To"],
         )
 
-    @patch("fetchers.gmail_readonly.fetcher.get_credentials")
-    @patch("fetchers.gmail_readonly.fetcher.build")
+    @patch("executors.gmail_readonly.executor.get_credentials")
+    @patch("executors.gmail_readonly.executor.build")
     def test_fetch_emails_full_body_mode(
         self, mock_build: MagicMock, mock_creds: MagicMock
     ) -> None:
@@ -276,8 +276,8 @@ class TestFetchEmails:
         # Verify full format was requested
         mock_get.assert_called_with(userId="me", id="msg1", format="full")
 
-    @patch("fetchers.gmail_readonly.fetcher.get_credentials")
-    @patch("fetchers.gmail_readonly.fetcher.build")
+    @patch("executors.gmail_readonly.executor.get_credentials")
+    @patch("executors.gmail_readonly.executor.build")
     def test_fetch_emails_empty_results(
         self, mock_build: MagicMock, mock_creds: MagicMock
     ) -> None:

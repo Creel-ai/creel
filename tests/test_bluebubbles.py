@@ -1,4 +1,4 @@
-"""Tests for BlueBubbles fetcher — security enforcement and API integration."""
+"""Tests for BlueBubbles executor — security enforcement and API integration."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fetchers.bluebubbles.fetcher import (
+from executors.bluebubbles.executor import (
     MAX_MESSAGE_LENGTH,
     MAX_MESSAGES_PER_REQUEST,
     VALID_REACTIONS,
@@ -63,7 +63,7 @@ def test_send_reaction_blocked_recipient():
 
 # --- Message cap enforcement ---
 
-@patch("fetchers.bluebubbles.fetcher.requests.request")
+@patch("executors.bluebubbles.executor.requests.request")
 def test_message_cap_enforced(mock_req):
     """Requesting more than MAX_MESSAGES_PER_REQUEST returns at most the cap."""
     mock_req.return_value = _mock_api_response([])
@@ -109,7 +109,7 @@ def test_invalid_reaction_rejected():
 
 # --- Successful operations (mocked HTTP) ---
 
-@patch("fetchers.bluebubbles.fetcher.requests.request")
+@patch("executors.bluebubbles.executor.requests.request")
 def test_send_message_allowed(mock_req):
     """Sending to an allowed recipient succeeds."""
     mock_req.return_value = _mock_api_response({"guid": "msg-123"})
@@ -121,7 +121,7 @@ def test_send_message_allowed(mock_req):
     mock_req.assert_called_once()
 
 
-@patch("fetchers.bluebubbles.fetcher.requests.request")
+@patch("executors.bluebubbles.executor.requests.request")
 def test_get_recent_messages_format(mock_req):
     """get_recent_messages returns expected format."""
     mock_req.return_value = _mock_api_response([
@@ -147,7 +147,7 @@ def test_get_recent_messages_format(mock_req):
     assert "id" not in msg
 
 
-@patch("fetchers.bluebubbles.fetcher.requests.request")
+@patch("executors.bluebubbles.executor.requests.request")
 def test_get_recent_messages_filters_disallowed_chats(mock_req):
     """Messages from chats not in allowed_chats are filtered out."""
     mock_req.return_value = _mock_api_response([
@@ -172,7 +172,7 @@ def test_get_recent_messages_filters_disallowed_chats(mock_req):
     assert result[0]["text"] == "Allowed"
 
 
-@patch("fetchers.bluebubbles.fetcher.requests.request")
+@patch("executors.bluebubbles.executor.requests.request")
 def test_get_chats(mock_req):
     """get_chats returns expected format."""
     mock_req.return_value = _mock_api_response([
@@ -189,7 +189,7 @@ def test_get_chats(mock_req):
     assert result[0]["display_name"] == "John"
 
 
-@patch("fetchers.bluebubbles.fetcher.requests.request")
+@patch("executors.bluebubbles.executor.requests.request")
 def test_send_reaction_valid(mock_req):
     """Valid reaction to allowed recipient succeeds."""
     mock_req.return_value = _mock_api_response({})

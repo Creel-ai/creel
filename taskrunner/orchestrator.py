@@ -1,6 +1,6 @@
 """Orchestrator - the core task execution loop.
 
-Reads task definitions, runs fetchers, calls LLM, routes output.
+Reads task definitions, runs executors, calls LLM, routes output.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from taskrunner.llm import run_llm
-from taskrunner.models import FetcherConfig, TaskDefinition, load_task
+from taskrunner.models import ExecutorConfig, TaskDefinition, load_task
 from taskrunner.outputs import send_output
 from taskrunner.secrets import decrypt_env_file
 
@@ -33,7 +33,7 @@ def run_task(
 
     Args:
         task_path: Path to the task YAML file.
-        use_containers: If True, run fetchers/LLM in Docker containers.
+        use_containers: If True, run executors/LLM in Docker containers.
         dry_run: If True, print the rendered prompt but skip LLM and output.
 
     Returns:
@@ -48,18 +48,18 @@ def run_task(
         "date": now.strftime("%A, %B %d, %Y"),
     }
 
-    # Run each fetcher and collect results
-    for name, fetcher_config in task.fetch.items():
-        logger.info("Running fetcher: %s", name)
+    # Run each executor and collect results
+    for name, executor_config in task.executors.items():
+        logger.info("Running executor: %s", name)
         try:
             if use_containers:
-                result = _run_fetcher_container(fetcher_config)
+                result = _run_executor_container(executor_config)
             else:
-                result = _run_fetcher_inline(name, fetcher_config)
+                result = _run_executor_inline(name, executor_config)
             context[name] = result
-            logger.info("Fetcher %s completed (%d chars)", name, len(result))
+            logger.info("Executor %s completed (%d chars)", name, len(result))
         except Exception as e:
-            logger.exception("Fetcher %s failed", name)
+            logger.exception("Executor %s failed", name)
             context[name] = f"[Error fetching {name}: {e}]"
 
     # Render the prompt template
@@ -117,8 +117,8 @@ def _run_agent_mode(
     return agent_result.text
 
 
-def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
-    """Run a fetcher by importing and calling it directly (no container)."""
+def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
+    """Run an executor by importing and calling it directly (no container)."""
     # Load secrets if configured
     env_overrides = {}
     if config.secrets:
@@ -133,31 +133,31 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
 
     try:
         if name == "weather":
-            return _fetch_weather_inline(config)
+            return _exec_weather_inline(config)
         elif name == "calendar":
-            return _fetch_gcal_inline(config)
+            return _exec_gcal_inline(config)
         elif name == "gcal_write":
-            return _fetch_gcal_write_inline(config)
+            return _exec_gcal_write_inline(config)
         elif name == "gmail_readonly":
-            return _fetch_gmail_readonly_inline(config)
+            return _exec_gmail_readonly_inline(config)
         elif name == "gmail_send":
-            return _fetch_gmail_send_inline(config)
+            return _exec_gmail_send_inline(config)
         elif name == "gmail_modify":
-            return _fetch_gmail_modify_inline(config)
+            return _exec_gmail_modify_inline(config)
         elif name == "drive":
-            return _fetch_drive_inline(config)
+            return _exec_drive_inline(config)
         elif name == "drive_write":
-            return _fetch_drive_write_inline(config)
+            return _exec_drive_write_inline(config)
         elif name == "bluebubbles":
-            return _fetch_bluebubbles_inline(config, "get_recent_messages")
+            return _exec_bluebubbles_inline(config, "get_recent_messages")
         elif name == "bluebubbles_send":
-            return _fetch_bluebubbles_inline(config, "send_message")
+            return _exec_bluebubbles_inline(config, "send_message")
         elif name == "bluebubbles_react":
-            return _fetch_bluebubbles_inline(config, "send_reaction")
+            return _exec_bluebubbles_inline(config, "send_reaction")
         elif name == "bluebubbles_chats":
-            return _fetch_bluebubbles_inline(config, "get_chats")
+            return _exec_bluebubbles_inline(config, "get_chats")
         else:
-            raise ValueError(f"Unknown inline fetcher: {name}")
+            raise ValueError(f"Unknown inline executor: {name}")
     finally:
         # Restore original env
         for k, v in old_env.items():
@@ -167,27 +167,27 @@ def _run_fetcher_inline(name: str, config: FetcherConfig) -> str:
                 os.environ[k] = v
 
 
-def _fetch_weather_inline(config: FetcherConfig) -> str:
-    """Run weather fetcher inline."""
-    from fetchers.weather.fetcher import fetch_weather
+def _exec_weather_inline(config: ExecutorConfig) -> str:
+    """Run weather executor inline."""
+    from executors.weather.executor import fetch_weather
 
     location = config.args.get("location", "Denver")
     result = fetch_weather(location)
     return json.dumps(result, indent=2)
 
 
-def _fetch_gcal_inline(config: FetcherConfig) -> str:
-    """Run Google Calendar fetcher inline."""
-    from fetchers.gcal.fetcher import fetch_events
+def _exec_gcal_inline(config: ExecutorConfig) -> str:
+    """Run Google Calendar executor inline."""
+    from executors.gcal.executor import fetch_events
 
     range_arg = config.args.get("range", "today")
     events = fetch_events(range_arg)
     return json.dumps(events, indent=2)
 
 
-def _fetch_gcal_write_inline(config: FetcherConfig) -> str:
-    """Run Google Calendar write fetcher inline."""
-    from fetchers.gcal_write.fetcher import create_event
+def _exec_gcal_write_inline(config: ExecutorConfig) -> str:
+    """Run Google Calendar write executor inline."""
+    from executors.gcal_write.executor import create_event
 
     summary = config.args.get("summary", "")
     start = config.args.get("start", "")
@@ -198,16 +198,16 @@ def _fetch_gcal_write_inline(config: FetcherConfig) -> str:
     return json.dumps(event, indent=2)
 
 
-def _fetch_gmail_readonly_inline(config: FetcherConfig) -> str:
-    """Run Gmail readonly fetcher inline (check_email or read_email)."""
+def _exec_gmail_readonly_inline(config: ExecutorConfig) -> str:
+    """Run Gmail readonly executor inline (check_email or read_email)."""
     message_id = config.args.get("message_id", "")
     if message_id:
-        from fetchers.gmail_readonly.fetcher import read_email
+        from executors.gmail_readonly.executor import read_email
 
         result = read_email(message_id)
         return json.dumps(result, indent=2)
 
-    from fetchers.gmail_readonly.fetcher import fetch_emails
+    from executors.gmail_readonly.executor import fetch_emails
 
     query = config.args.get("query", "is:unread newer_than:1d")
     max_results = int(config.args.get("max_results", 20))
@@ -220,9 +220,9 @@ def _fetch_gmail_readonly_inline(config: FetcherConfig) -> str:
     return json.dumps(emails, indent=2)
 
 
-def _fetch_gmail_send_inline(config: FetcherConfig) -> str:
-    """Run Gmail send fetcher inline."""
-    from fetchers.gmail_send.fetcher import send_email
+def _exec_gmail_send_inline(config: ExecutorConfig) -> str:
+    """Run Gmail send executor inline."""
+    from executors.gmail_send.executor import send_email
 
     to = config.args.get("to", "")
     subject = config.args.get("subject", "")
@@ -231,13 +231,13 @@ def _fetch_gmail_send_inline(config: FetcherConfig) -> str:
     return json.dumps(result, indent=2)
 
 
-def _fetch_gmail_modify_inline(config: FetcherConfig) -> str:
-    """Run Gmail modify fetcher inline."""
+def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
+    """Run Gmail modify executor inline."""
     action = config.args.get("action", "")
     message_id = config.args.get("message_id", "")
 
     if action == "modify":
-        from fetchers.gmail_modify.fetcher import modify_message
+        from executors.gmail_modify.executor import modify_message
 
         add_raw = config.args.get("add_labels", "")
         remove_raw = config.args.get("remove_labels", "")
@@ -247,11 +247,11 @@ def _fetch_gmail_modify_inline(config: FetcherConfig) -> str:
         )
         result = modify_message(message_id, add_labels, remove_labels)
     elif action == "trash":
-        from fetchers.gmail_modify.fetcher import trash_message
+        from executors.gmail_modify.executor import trash_message
 
         result = trash_message(message_id)
     elif action == "delete":
-        from fetchers.gmail_modify.fetcher import delete_message
+        from executors.gmail_modify.executor import delete_message
 
         result = delete_message(message_id)
     else:
@@ -260,9 +260,9 @@ def _fetch_gmail_modify_inline(config: FetcherConfig) -> str:
     return json.dumps(result, indent=2)
 
 
-def _fetch_drive_inline(config: FetcherConfig) -> str:
-    """Run Google Drive fetcher inline."""
-    from fetchers.drive.fetcher import list_files
+def _exec_drive_inline(config: ExecutorConfig) -> str:
+    """Run Google Drive executor inline."""
+    from executors.drive.executor import list_files
 
     query = config.args.get("query", "")
     max_results = int(config.args.get("max_results", 20))
@@ -270,9 +270,9 @@ def _fetch_drive_inline(config: FetcherConfig) -> str:
     return json.dumps(files, indent=2)
 
 
-def _fetch_drive_write_inline(config: FetcherConfig) -> str:
-    """Run Google Drive write fetcher inline."""
-    from fetchers.drive_write.fetcher import upload_file
+def _exec_drive_write_inline(config: ExecutorConfig) -> str:
+    """Run Google Drive write executor inline."""
+    from executors.drive_write.executor import upload_file
 
     name = config.args.get("name", "")
     content = config.args.get("content", "")
@@ -282,10 +282,10 @@ def _fetch_drive_write_inline(config: FetcherConfig) -> str:
     return json.dumps(result, indent=2)
 
 
-def _fetch_bluebubbles_inline(config: FetcherConfig, action: str) -> str:
-    """Run BlueBubbles fetcher inline."""
+def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
+    """Run BlueBubbles executor inline."""
     import os
-    from fetchers.bluebubbles.fetcher import (
+    from executors.bluebubbles.executor import (
         get_chats,
         get_recent_messages,
         send_message,
@@ -348,7 +348,7 @@ def _ensure_image(image: str) -> None:
     """Build the Docker image if it doesn't already exist.
 
     Derives the build context from the image name:
-      fetcher-gmail-modify:latest -> fetchers/gmail_modify/
+      executor-gmail-modify:latest -> executors/gmail_modify/
       llm-runner:latest           -> llm/
     """
     result = subprocess.run(
@@ -359,10 +359,10 @@ def _ensure_image(image: str) -> None:
         return
 
     tag = image.split(":")[0]
-    if tag.startswith("fetcher-"):
-        # fetcher-gmail-modify -> fetchers/gmail_modify/
-        name = tag.removeprefix("fetcher-").replace("-", "_")
-        context = Path("fetchers") / name
+    if tag.startswith("executor-"):
+        # executor-gmail-modify -> executors/gmail_modify/
+        name = tag.removeprefix("executor-").replace("-", "_")
+        context = Path("executors") / name
     else:
         # llm-runner -> llm/
         context = Path(tag.replace("-", "_"))
@@ -385,8 +385,8 @@ def _ensure_image(image: str) -> None:
         raise RuntimeError(f"Docker build failed for {image}: {build_err[:500]}")
 
 
-def _run_fetcher_container(config: FetcherConfig) -> str:
-    """Run a fetcher in an isolated Docker container.
+def _run_executor_container(config: ExecutorConfig) -> str:
+    """Run an executor in an isolated Docker container.
 
     Captures both stdout (data) and stderr (logs/errors). Stderr is
     always logged at DEBUG on success and ERROR on failure. The
@@ -439,26 +439,26 @@ def _run_fetcher_container(config: FetcherConfig) -> str:
             stderr = (e.stderr or "").strip() if isinstance(e.stderr, str) else ""
             if stderr:
                 logger.error(
-                    "Fetcher %s stderr (timeout after %ds):\n%s",
+                    "Executor %s stderr (timeout after %ds):\n%s",
                     config.name, config.timeout, stderr,
                 )
             raise RuntimeError(
-                f"Fetcher '{config.name}' timed out after {config.timeout}s"
+                f"Executor '{config.name}' timed out after {config.timeout}s"
             ) from e
 
     # Log stderr regardless of exit code
     stderr = result.stderr.strip() if result.stderr else ""
     if stderr:
         if result.returncode == 0:
-            logger.debug("Fetcher %s stderr (success):\n%s", config.name, stderr)
+            logger.debug("Executor %s stderr (success):\n%s", config.name, stderr)
         else:
-            logger.error("Fetcher %s stderr (exit %d):\n%s", config.name, result.returncode, stderr)
+            logger.error("Executor %s stderr (exit %d):\n%s", config.name, result.returncode, stderr)
 
     if result.returncode != 0:
         # Include stderr in the error so it propagates to the LLM
         error_detail = stderr[:500] if stderr else f"exit code {result.returncode}"
         raise RuntimeError(
-            f"Fetcher '{config.name}' failed: {error_detail}"
+            f"Executor '{config.name}' failed: {error_detail}"
         )
 
     return result.stdout.strip()

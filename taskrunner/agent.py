@@ -44,7 +44,7 @@ def run_agent_loop(
         tools_config: Available tools.
         agent_config: Agent settings (max_turns, etc.).
         system_prompt: Optional system prompt.
-        use_containers: If True, run fetchers in Docker containers.
+        use_containers: If True, run executors in Docker containers.
         guardian: Optional Guardian instance for action validation.
         confirm_action: Optional callback for REVIEW verdicts. Takes
             (tool_name, tool_input, reason) and returns True to proceed
@@ -182,7 +182,7 @@ def run_agent_loop(
                     error=str(result)[:200] if is_error else None,
                 )
 
-            # Classify fetcher output for tools that return untrusted content
+            # Classify executor output for tools that return untrusted content
             tool_cfg = tools_config.get(tool_name)
             if (
                 not is_error

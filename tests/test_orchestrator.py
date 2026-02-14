@@ -36,7 +36,7 @@ def test_dry_run(tmp_path: Path) -> None:
     task_path = _make_task(tmp_path)
 
     with patch(
-        "taskrunner.orchestrator._run_fetcher_inline"
+        "taskrunner.orchestrator._run_executor_inline"
     ) as mock_fetch:
         mock_fetch.return_value = '{"temp_f": "72", "condition": "sunny"}'
         result = run_task(task_path, dry_run=True)
@@ -48,11 +48,11 @@ def test_dry_run(tmp_path: Path) -> None:
 
 
 def test_run_task_calls_llm_and_output(tmp_path: Path) -> None:
-    """Full run should call fetcher, LLM, and output."""
+    """Full run should call executor, LLM, and output."""
     task_path = _make_task(tmp_path)
 
     with (
-        patch("taskrunner.orchestrator._run_fetcher_inline") as mock_fetch,
+        patch("taskrunner.orchestrator._run_executor_inline") as mock_fetch,
         patch("taskrunner.orchestrator.run_llm") as mock_llm,
         patch("taskrunner.orchestrator.send_output") as mock_output,
     ):
@@ -71,8 +71,8 @@ def test_run_task_calls_llm_and_output(tmp_path: Path) -> None:
     assert "70" in prompt
 
 
-def test_gmail_fetcher_through_orchestrator(tmp_path: Path) -> None:
-    """Gmail fetcher branch should work through the orchestrator."""
+def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
+    """Gmail executor branch should work through the orchestrator."""
     task = {
         "name": "gmail_test",
         "schedule": "0 8 * * *",
@@ -110,12 +110,12 @@ def test_gmail_fetcher_through_orchestrator(tmp_path: Path) -> None:
     assert "boss@example.com" in prompt
 
 
-def test_fetcher_failure_continues(tmp_path: Path) -> None:
-    """If a fetcher fails, the task should continue with an error placeholder."""
+def test_executor_failure_continues(tmp_path: Path) -> None:
+    """If a executor fails, the task should continue with an error placeholder."""
     task_path = _make_task(tmp_path)
 
     with (
-        patch("taskrunner.orchestrator._run_fetcher_inline") as mock_fetch,
+        patch("taskrunner.orchestrator._run_executor_inline") as mock_fetch,
         patch("taskrunner.orchestrator.run_llm") as mock_llm,
         patch("taskrunner.orchestrator.send_output"),
     ):

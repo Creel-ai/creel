@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gmail fetcher - retrieves emails matching a query.
+"""Gmail executor - retrieves emails matching a query.
 
 Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
 (refresh token, client ID, client secret).

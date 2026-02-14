@@ -31,7 +31,7 @@ def valid_task_yaml(tmp_path: Path) -> Path:
     task = {
         "name": "test_task",
         "schedule": "0 7 * * *",
-        "fetch": {
+        "executors": {
             "weather": {
                 "args": {"location": "denver"},
             }
@@ -65,7 +65,7 @@ def test_invalid_cron_schedule(tmp_path: Path) -> None:
     task = {
         "name": "bad_cron",
         "schedule": "not a cron",
-        "fetch": {},
+        "executors": {},
         "prompt": "test",
         "output": {"type": "stdout", "to": ""},
     }
@@ -79,7 +79,7 @@ def test_invalid_output_type(tmp_path: Path) -> None:
     task = {
         "name": "bad_output",
         "schedule": "0 7 * * *",
-        "fetch": {},
+        "executors": {},
         "prompt": "test",
         "output": {"type": "telegram", "to": "someone"},
     }
@@ -93,7 +93,7 @@ def test_default_llm_config(tmp_path: Path) -> None:
     task = {
         "name": "defaults",
         "schedule": "0 7 * * *",
-        "fetch": {},
+        "executors": {},
         "prompt": "test",
         "output": {"type": "stdout", "to": ""},
     }
@@ -125,7 +125,7 @@ def test_multiple_executors(tmp_path: Path) -> None:
     task = {
         "name": "multi_fetch",
         "schedule": "0 7 * * *",
-        "fetch": {
+        "executors": {
             "weather": {"args": {"location": "sf"}},
             "calendar": {
                 "secrets": "secrets/gcal.env.enc",
@@ -138,9 +138,9 @@ def test_multiple_executors(tmp_path: Path) -> None:
     path = tmp_path / "multi.yaml"
     path.write_text(yaml.dump(task))
     loaded = load_task(path)
-    assert len(loaded.fetch) == 2
-    assert "weather" in loaded.fetch
-    assert "calendar" in loaded.fetch
+    assert len(loaded.executors) == 2
+    assert "weather" in loaded.executors
+    assert "calendar" in loaded.executors
 
 
 # --- Tool / Agent model tests ---
@@ -191,7 +191,7 @@ def test_task_definition_mode_default(tmp_path: Path) -> None:
     task = {
         "name": "simple_task",
         "schedule": "0 7 * * *",
-        "fetch": {},
+        "executors": {},
         "prompt": "test",
         "output": {"type": "stdout", "to": ""},
     }
@@ -207,7 +207,7 @@ def test_task_definition_agent_mode(tmp_path: Path) -> None:
         "name": "agent_task",
         "schedule": "0 8 * * *",
         "mode": "agent",
-        "fetch": {},
+        "executors": {},
         "prompt": "Triage emails",
         "output": {"type": "stdout", "to": ""},
         "tools": {
@@ -235,7 +235,7 @@ def test_invalid_mode(tmp_path: Path) -> None:
     task = {
         "name": "bad_mode",
         "schedule": "0 7 * * *",
-        "fetch": {},
+        "executors": {},
         "prompt": "test",
         "output": {"type": "stdout", "to": ""},
         "mode": "invalid",

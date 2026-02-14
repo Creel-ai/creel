@@ -244,7 +244,7 @@ guardian:
     enabled: true
     policy_file: policies/default.yaml
   coherence:
-    enabled: false  # LLM-based check that tool calls match user intent
+    enabled: true  # LLM-based check that tool calls match user intent
     model: claude-haiku-4-5-20251001
     max_tokens: 256
   audit:

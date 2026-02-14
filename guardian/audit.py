@@ -25,10 +25,30 @@ class AuditLogger:
     the keys of tool arguments (never values).  Write failures are
     caught and logged as warnings — the audit log must never crash the
     main pipeline.
+
+    Supports daily log rotation: when ``rotate_daily=True``, log files
+    are named ``<base>-YYYY-MM-DD.jsonl``.
     """
 
-    def __init__(self, log_file: str | Path) -> None:
-        self._path = Path(log_file)
+    def __init__(
+        self,
+        log_file: str | Path,
+        *,
+        rotate_daily: bool = False,
+        max_size_mb: float = 0,
+    ) -> None:
+        self._base_path = Path(log_file)
+        self._rotate_daily = rotate_daily
+        self._max_size_bytes = int(max_size_mb * 1024 * 1024) if max_size_mb > 0 else 0
+
+    def _get_path(self) -> Path:
+        """Return the current log file path, accounting for rotation."""
+        if self._rotate_daily:
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            stem = self._base_path.stem
+            suffix = self._base_path.suffix or ".jsonl"
+            return self._base_path.parent / f"{stem}-{today}{suffix}"
+        return self._base_path
 
     def _write(self, record: dict) -> None:
         """Append a JSON record to the log file."""
@@ -37,10 +57,21 @@ class AuditLogger:
         if rid is not None:
             record["request_id"] = rid
         try:
-            with open(self._path, "a") as f:
+            path = self._get_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Size-based rotation
+            if self._max_size_bytes > 0 and path.exists():
+                if path.stat().st_size >= self._max_size_bytes:
+                    rotated = path.with_suffix(f"{path.suffix}.1")
+                    if rotated.exists():
+                        rotated.unlink()
+                    path.rename(rotated)
+
+            with open(path, "a") as f:
                 f.write(json.dumps(record, default=str) + "\n")
         except Exception:
-            logger.warning("Failed to write audit log to %s", self._path, exc_info=True)
+            logger.warning("Failed to write audit log to %s", self._base_path, exc_info=True)
 
     def log_screen(
         self,
@@ -125,7 +156,7 @@ class AuditLogger:
         verdict: str,
         outcome: str,
     ) -> None:
-        """Log the outcome of a review/deny action (approved, denied_by_user, denied_by_policy)."""
+        """Log the outcome of a review/deny action."""
         self._write({
             "event": "action_outcome",
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -133,3 +164,64 @@ class AuditLogger:
             "verdict": verdict,
             "outcome": outcome,
         })
+
+    def log_tool_result(
+        self,
+        *,
+        tool_name: str,
+        success: bool,
+        duration_ms: float,
+        output_length: int,
+        error: str | None = None,
+    ) -> None:
+        """Log a tool execution result (no output content — just metadata)."""
+        record = {
+            "event": "tool_result",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "tool_name": tool_name,
+            "success": success,
+            "duration_ms": round(duration_ms, 1),
+            "output_length": output_length,
+        }
+        if error:
+            record["error"] = error[:200]
+        self._write(record)
+
+
+def read_audit_log(
+    log_file: str | Path,
+    *,
+    tail: int = 0,
+    event_filter: str | None = None,
+    blocked_only: bool = False,
+    denied_only: bool = False,
+) -> list[dict]:
+    """Read and filter audit log entries."""
+    path = Path(log_file)
+    if not path.exists():
+        return []
+
+    entries = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if event_filter and entry.get("event") != event_filter:
+                continue
+            if blocked_only and not entry.get("blocked"):
+                continue
+            if denied_only and entry.get("verdict") != "deny":
+                continue
+
+            entries.append(entry)
+
+    if tail > 0:
+        entries = entries[-tail:]
+
+    return entries

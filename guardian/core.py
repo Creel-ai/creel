@@ -36,11 +36,28 @@ class Guardian:
         self._policy = (
             PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
         )
-        self._audit = AuditLogger(config.audit.log_file) if config.audit.enabled else None
+        self._audit = (
+            AuditLogger(
+                config.audit.log_file,
+                rotate_daily=config.audit.rotate_daily,
+                max_size_mb=config.audit.max_size_mb,
+            )
+            if config.audit.enabled
+            else None
+        )
         logger.info("Guardian initialized (classifier=%s, judge=%s, policy=%s)",
                      config.fast_classifier.enabled,
                      config.llm_judge.enabled,
                      config.policy.enabled)
+
+    def warm_up(self) -> None:
+        """Eagerly warm up the fast classifier at startup."""
+        self._classifier.warm_up()
+
+    @property
+    def judge_usage(self) -> dict:
+        """Return cumulative LLM judge usage stats."""
+        return self._judge.usage_stats
 
     def screen_input(self, text: str) -> ScreenResult:
         """Screen incoming text for prompt injection (stages 1+2).
@@ -62,9 +79,10 @@ class Guardian:
                 classifier_result.confidence,
             )
 
-        # Stage 2: LLM judge (only if classifier didn't block, or if configured)
+        # Stage 2: LLM judge — conditional on classifier uncertainty
+        classifier_confidence = classifier_result.confidence if classifier_result else None
         judge_result = None
-        if not blocked:
+        if not blocked and self._judge.should_run(classifier_confidence):
             judge_result = self._judge.judge(text)
             if judge_result and judge_result.is_injection:
                 blocked = True

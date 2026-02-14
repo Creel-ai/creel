@@ -39,7 +39,10 @@ _HELP_TEXT = """\
 
 [bold]Shortcuts:[/bold]
   [cyan]ctrl+n[/cyan]        New session
-  [cyan]ctrl+c[/cyan]        Quit\
+  [cyan]ctrl+c[/cyan]        Quit
+
+[bold]Tips:[/bold]
+  Hold [cyan]shift[/cyan] and drag to select/copy text\
 """
 
 

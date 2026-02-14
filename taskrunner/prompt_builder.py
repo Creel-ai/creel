@@ -1,6 +1,6 @@
 """System prompt builder - assembles the system prompt from multiple sources.
 
-Inspired by OpenClaw's multi-file workspace injection pattern where AGENTS.md,
+Multi-file workspace injection pattern where AGENTS.md,
 SOUL.md, USER.md, IDENTITY.md, and memory files are loaded and injected into
 the system prompt at the start of each session.
 """
@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
-# Max characters to inject per workspace file (matches OpenClaw's bootstrapMaxChars default)
+# Max characters to inject per workspace file
 DEFAULT_MAX_CHARS_PER_FILE = 20_000
 
 # Standard workspace files to inject, in order
@@ -38,7 +38,7 @@ def build_system_prompt(
 ) -> str:
     """Build a complete system prompt from multiple sources.
 
-    Mirrors OpenClaw's approach of assembling the system prompt from:
+    Assemble the system prompt from:
     - A base prompt template
     - Workspace personality/context files (SOUL.md, USER.md, etc.)
     - Current date/time with timezone

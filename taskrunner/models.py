@@ -72,6 +72,7 @@ class ToolConfig(BaseModel):
     description: str
     parameters: dict[str, ToolParameter] = Field(default_factory=dict)
     fixed_args: dict[str, str] = Field(default_factory=dict)
+    classify_output: bool = False
 
 
 class AgentConfig(BaseModel):

@@ -117,3 +117,19 @@ class AuditLogger:
             "verdict": verdict,
             "matched_rule": matched_rule,
         })
+
+    def log_action_outcome(
+        self,
+        *,
+        tool_name: str,
+        verdict: str,
+        outcome: str,
+    ) -> None:
+        """Log the outcome of a review/deny action (approved, denied_by_user, denied_by_policy)."""
+        self._write({
+            "event": "action_outcome",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "tool_name": tool_name,
+            "verdict": verdict,
+            "outcome": outcome,
+        })

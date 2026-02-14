@@ -156,6 +156,28 @@ class TestAuditIntegration:
         assert "location" in content
         assert "SF" not in content
 
+    def test_action_outcome_logged(self, guardian: Guardian, guardian_config: GuardianConfig) -> None:
+        guardian.log_action_outcome("trash_email", "review", "approved")
+        log_path = Path(guardian_config.audit.log_file)
+        content = log_path.read_text()
+        record = json.loads(content.strip())
+        assert record["event"] == "action_outcome"
+        assert record["tool_name"] == "trash_email"
+        assert record["verdict"] == "review"
+        assert record["outcome"] == "approved"
+
+    def test_action_outcome_noop_without_audit(self, tmp_path: Path) -> None:
+        config = GuardianConfig(
+            enabled=True,
+            fast_classifier=FastClassifierConfig(enabled=False),
+            llm_judge=LLMJudgeConfig(enabled=False),
+            policy=PolicyConfig(enabled=False),
+            audit=AuditConfig(enabled=False),
+        )
+        g = Guardian(config)
+        # Should not raise even with audit disabled
+        g.log_action_outcome("trash_email", "deny", "denied_by_policy")
+
 
 class TestDebugMode:
     """Test debug mode produces screen_input_debug audit entries."""

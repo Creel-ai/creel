@@ -33,10 +33,12 @@ class ChatServer:
         agent_def: AgentDefinition,
         use_containers: bool = False,
         imessage_channel: object | None = None,
+        confirm_fn: object | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._imessage_channel = imessage_channel
+        self._confirm_fn = confirm_fn
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
@@ -129,6 +131,7 @@ class ChatServer:
             system_prompt=system_prompt,
             use_containers=self._use_containers,
             guardian=self._guardian,
+            confirm_action=self._confirm_fn,
             memory_manager=self._memory,
         )
 

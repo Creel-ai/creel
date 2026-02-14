@@ -165,6 +165,29 @@ def run_agent_loop(
                 result = f"Error: {e}"
                 is_error = True
 
+            # Classify fetcher output for tools that return untrusted content
+            tool_cfg = tools_config.get(tool_name)
+            if (
+                not is_error
+                and guardian is not None
+                and tool_cfg is not None
+                and tool_cfg.classify_output
+            ):
+                screen_result = guardian.screen_tool_result(tool_name, result)
+                if screen_result.blocked:
+                    logger.warning(
+                        "Guardian blocked output from %s (confidence=%.3f)",
+                        tool_name,
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
+                    )
+                    result = (
+                        f"[Guardian] Output from '{tool_name}' was blocked by the "
+                        f"security classifier. The content may contain prompt injection."
+                    )
+                    is_error = True
+
             tool_history.append({
                 "tool": tool_name,
                 "input": tool_input,

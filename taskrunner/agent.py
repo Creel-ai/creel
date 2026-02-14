@@ -165,26 +165,6 @@ def run_agent_loop(
                 result = f"Error: {e}"
                 is_error = True
 
-            # Screen tool results for prompt injection (untrusted data)
-            if not is_error and guardian is not None:
-                screen_result = guardian.screen_tool_result(tool_name, result)
-                if screen_result.blocked:
-                    logger.warning(
-                        "Guardian blocked tool result from %s: %s",
-                        tool_name, screen_result.rejection_message,
-                    )
-                    blocker = screen_result.classifier_result or screen_result.judge_result
-                    source = blocker.source if blocker else "unknown"
-                    confidence = f"{blocker.confidence:.2f}" if blocker else "N/A"
-                    result = (
-                        f"Tool '{tool_name}' executed successfully but its output was "
-                        f"blocked by the security classifier ({source}, "
-                        f"confidence={confidence}). The content was flagged as "
-                        f"potentially containing prompt injection. This may be a "
-                        f"false positive."
-                    )
-                    is_error = True
-
             tool_history.append({
                 "tool": tool_name,
                 "input": tool_input,

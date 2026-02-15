@@ -344,6 +344,70 @@ tools:
         mode: rw
     network: false
 
+  # Things 3 (via bridge)
+  list_things:
+    executor: things
+    description: "List tasks from Things 3"
+    parameters:
+      filter:
+        type: string
+        description: "Task filter: inbox, today, anytime, upcoming, someday, logbook"
+    fixed_args:
+      action: "list"
+
+  create_things_task:
+    executor: things
+    description: "Create a new task in Things 3"
+    parameters:
+      title:
+        type: string
+        description: "Task title"
+        required: true
+      notes:
+        type: string
+        description: "Task notes/description"
+      when:
+        type: string
+        description: "Schedule: today, evening, tomorrow, or specific date"
+      deadline:
+        type: string
+        description: "Deadline date (YYYY-MM-DD format)"
+      tags:
+        type: string
+        description: "Comma-separated tag names"
+      list:
+        type: string
+        description: "Area or project name"
+    fixed_args:
+      action: "create"
+
+  complete_things_task:
+    executor: things
+    description: "Mark a Things 3 task as completed"
+    parameters:
+      title:
+        type: string
+        description: "Task title to complete"
+        required: true
+    fixed_args:
+      action: "complete"
+
+  # iMessage Bridge (for broader iMessage access)
+  imessage_send:
+    executor: imessage_bridge
+    description: "Send iMessage via bridge (broader recipient support)"
+    parameters:
+      recipient:
+        type: string
+        description: "Phone number or email address"
+        required: true
+      text:
+        type: string
+        description: "Message text"
+        required: true
+    fixed_args:
+      action: "send"
+
 llm:
   model: claude-sonnet-4-20250514
   max_tokens: 1024
@@ -356,6 +420,11 @@ session:
   sessions_dir: sessions
   max_history: 50
   summarize_on_trim: true
+
+bridge:
+  enabled: true
+  url: "http://localhost:8766"
+  token: "$BRIDGE_TOKEN"
 
 workspace:
   path: workspace

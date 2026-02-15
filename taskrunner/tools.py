@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from taskrunner.models import ExecutorConfig, ToolConfig
+from taskrunner.models import BridgeConfig, ExecutorConfig, ToolConfig
 from taskrunner.orchestrator import _run_executor_container, _run_executor_inline
 
 logger = logging.getLogger(__name__)
@@ -108,6 +108,7 @@ def execute_tool_call(
     tools_config: dict[str, ToolConfig],
     use_containers: bool = False,
     memory_manager: object | None = None,
+    bridge_config: BridgeConfig | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -162,5 +163,5 @@ def execute_tool_call(
     logger.info("Executing tool %s (executor: %s)", tool_name, cfg.executor)
 
     if use_containers:
-        return _run_executor_container(executor_config, cfg)
+        return _run_executor_container(executor_config, cfg, bridge_config)
     return _run_executor_inline(cfg.executor, executor_config)

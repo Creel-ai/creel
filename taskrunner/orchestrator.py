@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from taskrunner.llm import run_llm
-from taskrunner.models import ExecutorConfig, TaskDefinition, load_task
+from taskrunner.models import BridgeConfig, ExecutorConfig, TaskDefinition, load_task
 from taskrunner.outputs import send_output
 from taskrunner.secrets import decrypt_env_file
 
@@ -355,69 +355,88 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
 
 
 def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
-    """Run Apple Notes executor inline."""
-    action = config.args.get("action", "list_notes")
-
-    if action == "list_notes":
-        from executors.apple_notes.executor import list_notes
-
-        folder = config.args.get("folder", "Notes")
-        limit = int(config.args.get("limit", "25"))
-        result = list_notes(folder, limit)
-    elif action == "search_notes":
-        from executors.apple_notes.executor import search_notes
-
-        query = config.args.get("query", "")
-        result = search_notes(query)
-    elif action == "read_note":
-        from executors.apple_notes.executor import read_note
-
-        name = config.args.get("name", "")
-        result = read_note(name)
-    elif action == "create_note":
-        from executors.apple_notes.executor import create_note
-
-        title = config.args.get("title", "")
-        body = config.args.get("body", "")
-        folder = config.args.get("folder", "Notes")
-        result = create_note(title, body, folder)
-    else:
-        raise ValueError(f"Unknown apple_notes action: {action}")
-
-    return json.dumps(result, indent=2)
+    """Run Apple Notes executor inline via bridge."""
+    import os
+    from executors.apple_notes.executor import main as apple_notes_main
+    
+    # Set environment variables for the bridge-calling executor
+    old_env = {}
+    env_vars = {
+        "ACTION": config.args.get("action", "list"),
+        "FOLDER": config.args.get("folder", ""),
+        "QUERY": config.args.get("query", ""),
+        "TITLE": config.args.get("title", ""),
+        "BODY": config.args.get("body", ""),
+    }
+    
+    for key, value in env_vars.items():
+        if value:  # Only set non-empty values
+            old_env[key] = os.environ.get(key)
+            os.environ[key] = str(value)
+    
+    try:
+        # Capture stdout from the bridge executor
+        import sys
+        from io import StringIO
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = StringIO()
+        
+        apple_notes_main()
+        
+        result = captured_output.getvalue()
+        return result.strip() or "{}"
+        
+    finally:
+        # Restore environment
+        sys.stdout = old_stdout
+        for key in env_vars:
+            if old_env.get(key) is not None:
+                os.environ[key] = old_env[key]
+            else:
+                os.environ.pop(key, None)
 
 
 def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
-    """Run Apple Reminders executor inline."""
-    action = config.args.get("action", "list_reminders")
-
-    if action == "list_reminders":
-        from executors.apple_reminders.executor import list_reminders
-
-        list_name = config.args.get("list_name", "Reminders")
-        result = list_reminders(list_name)
-    elif action == "create_reminder":
-        from executors.apple_reminders.executor import create_reminder
-
-        title = config.args.get("title", "")
-        due_date = config.args.get("due_date") or None
-        list_name = config.args.get("list_name", "Reminders")
-        notes = config.args.get("notes") or None
-        result = create_reminder(title, due_date, list_name, notes)
-    elif action == "complete_reminder":
-        from executors.apple_reminders.executor import complete_reminder
-
-        name = config.args.get("name", "")
-        list_name = config.args.get("list_name", "Reminders")
-        result = complete_reminder(name, list_name)
-    elif action == "get_lists":
-        from executors.apple_reminders.executor import get_lists
-
-        result = get_lists()
-    else:
-        raise ValueError(f"Unknown apple_reminders action: {action}")
-
-    return json.dumps(result, indent=2)
+    """Run Apple Reminders executor inline via bridge."""
+    import os
+    from executors.apple_reminders.executor import main as apple_reminders_main
+    
+    # Set environment variables for the bridge-calling executor
+    old_env = {}
+    env_vars = {
+        "ACTION": config.args.get("action", "list"),
+        "FILTER": config.args.get("filter", "all"), 
+        "TITLE": config.args.get("title", ""),
+        "LIST": config.args.get("list_name", ""),
+        "DUE": config.args.get("due_date", ""),
+        "ID": config.args.get("id", ""),
+    }
+    
+    for key, value in env_vars.items():
+        if value:  # Only set non-empty values
+            old_env[key] = os.environ.get(key)
+            os.environ[key] = str(value)
+    
+    try:
+        # Capture stdout from the bridge executor
+        import sys
+        from io import StringIO
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = StringIO()
+        
+        apple_reminders_main()
+        
+        result = captured_output.getvalue()
+        return result.strip() or "{}"
+        
+    finally:
+        # Restore environment
+        sys.stdout = old_stdout
+        for key in env_vars:
+            if old_env.get(key) is not None:
+                os.environ[key] = old_env[key]
+            else:
+                os.environ.pop(key, None)
 
 
 def _exec_brave_search_inline(config: ExecutorConfig) -> str:
@@ -497,7 +516,8 @@ def _ensure_image(image: str) -> None:
 
 def _run_executor_container(
     config: ExecutorConfig, 
-    tool_config: "ToolConfig | None" = None
+    tool_config: "ToolConfig | None" = None,
+    bridge_config: BridgeConfig | None = None
 ) -> str:
     """Run an executor in an isolated Docker container.
 
@@ -509,6 +529,7 @@ def _run_executor_container(
     Args:
         config: Executor configuration
         tool_config: Optional tool configuration with mount/network/image overrides
+        bridge_config: Optional bridge configuration for macOS host tools
     """
     from taskrunner.log import request_id_var
 
@@ -530,6 +551,12 @@ def _run_executor_container(
     rid = request_id_var.get(None)
     if rid:
         env_vars["CREEL_REQUEST_ID"] = rid
+    
+    # Add bridge configuration if enabled
+    if bridge_config and bridge_config.enabled:
+        env_vars["BRIDGE_URL"] = bridge_config.url
+        if bridge_config.token:
+            env_vars["BRIDGE_TOKEN"] = bridge_config.token
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".env", delete=True, prefix="creel-"

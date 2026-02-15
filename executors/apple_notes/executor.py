@@ -1,147 +1,125 @@
 #!/usr/bin/env python3
-"""Apple Notes executor - interacts with Notes.app via JXA.
+"""Apple Notes executor - bridge-calling executor for macOS Notes app.
 
-No authentication required. Uses osascript with JavaScript for Automation
-(JXA), which is significantly faster than AppleScript for bulk operations.
-
-NOTE: This executor is host-only — osascript cannot run inside Docker.
-Outputs JSON to stdout.
+Instead of running AppleScript directly, this executor makes HTTP calls
+to the bridge server which executes memo CLI commands on the host.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
+from typing import Any
+
+import requests
 
 
-def _run_jxa(script: str, timeout: int = 30) -> str:
-    """Execute a JXA script and return its stdout."""
+def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
+    """Make an HTTP call to the bridge server.
+    
+    Args:
+        endpoint: Bridge endpoint path (e.g., '/notes/list')
+        data: Request body data (optional)
+        timeout: Request timeout in seconds
+    
+    Returns:
+        Bridge response as dict
+        
+    Raises:
+        RuntimeError: If bridge call fails or returns error
+    """
+    bridge_url = os.environ.get("BRIDGE_URL")
+    bridge_token = os.environ.get("BRIDGE_TOKEN")
+    
+    if not bridge_url:
+        raise RuntimeError("BRIDGE_URL environment variable not set")
+    if not bridge_token:
+        raise RuntimeError("BRIDGE_TOKEN environment variable not set")
+    
+    url = f"{bridge_url}{endpoint}"
+    headers = {
+        "Authorization": f"Bearer {bridge_token}",
+        "Content-Type": "application/json",
+    }
+    
     try:
-        result = subprocess.run(
-            ["osascript", "-l", "JavaScript", "-e", script],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"JXA script timed out after {timeout}s")
-    if result.returncode != 0:
-        raise RuntimeError(f"JXA error: {result.stderr.strip()}")
-    return result.stdout.strip()
+        if data is not None:
+            response = requests.post(url, json=data, headers=headers, timeout=timeout)
+        else:
+            response = requests.post(url, json={}, headers=headers, timeout=timeout)
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        if not result.get("ok"):
+            raise RuntimeError(f"Bridge error: {result.get('error', 'Unknown error')}")
+        
+        return result
+    
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Bridge request failed: {e}") from e
 
 
-def list_notes(folder: str = "Notes", limit: int = 25) -> list[dict]:
-    """List note titles and IDs from a folder."""
-    script = f'''
-        const app = Application("Notes");
-        const folder = app.folders.byName({json.dumps(folder)});
-        const notes = folder.notes();
-        const limit = Math.min(notes.length, {limit});
-        const results = [];
-        for (let i = 0; i < limit; i++) {{
-            results.push({{
-                name: notes[i].name(),
-                id: notes[i].id(),
-                modified: notes[i].modificationDate().toISOString()
-            }});
-        }}
-        JSON.stringify(results);
-    '''
-    output = _run_jxa(script)
-    if not output:
-        return []
-    return json.loads(output)
+def list_notes(folder: str | None = None) -> dict[str, Any]:
+    """List notes via bridge."""
+    data = {}
+    if folder:
+        data["folder"] = folder
+    
+    return call_bridge("/notes/list", data if data else None)
 
 
-def search_notes(query: str) -> list[dict]:
-    """Search notes by text content."""
-    script = f'''
-        const app = Application("Notes");
-        const notes = app.notes();
-        const query = {json.dumps(query)}.toLowerCase();
-        const results = [];
-        for (let i = 0; i < notes.length && results.length < 25; i++) {{
-            try {{
-                const name = notes[i].name();
-                const body = notes[i].plaintext();
-                if (name.toLowerCase().includes(query) || body.toLowerCase().includes(query)) {{
-                    results.push({{name: name, id: notes[i].id()}});
-                }}
-            }} catch(e) {{}}
-        }}
-        JSON.stringify(results);
-    '''
-    output = _run_jxa(script)
-    if not output:
-        return []
-    return json.loads(output)
+def search_notes(query: str) -> dict[str, Any]:
+    """Search notes via bridge."""
+    return call_bridge("/notes/search", {"query": query})
 
 
-def read_note(name: str) -> dict:
-    """Read the full content of a note by title."""
-    script = f'''
-        const app = Application("Notes");
-        const notes = app.notes.whose({{name: {json.dumps(name)}}})();
-        if (notes.length === 0) throw new Error("Note not found: " + {json.dumps(name)});
-        const n = notes[0];
-        JSON.stringify({{
-            name: n.name(),
-            id: n.id(),
-            modified: n.modificationDate().toISOString(),
-            body: n.plaintext()
-        }});
-    '''
-    output = _run_jxa(script)
-    return json.loads(output)
-
-
-def create_note(title: str, body: str, folder: str = "Notes") -> dict:
-    """Create a new note in Apple Notes."""
-    script = f'''
-        const app = Application("Notes");
-        const folder = app.folders.byName({json.dumps(folder)});
-        const n = app.Note({{name: {json.dumps(title)}, body: {json.dumps(body)}}});
-        folder.notes.push(n);
-        JSON.stringify({{name: n.name(), id: n.id(), status: "created"}});
-    '''
-    output = _run_jxa(script)
-    return json.loads(output)
+def create_note(title: str, body: str = "", folder: str | None = None) -> dict[str, Any]:
+    """Create a note via bridge."""
+    data = {"title": title, "body": body}
+    if folder:
+        data["folder"] = folder
+    
+    return call_bridge("/notes/create", data)
 
 
 def main() -> None:
-    action = os.environ.get("ACTION", "list_notes")
+    """Main executor entry point."""
+    action = os.environ.get("ACTION", "list")
+    
     try:
-        if action == "list_notes":
-            folder = os.environ.get("FOLDER", "Notes")
-            limit = int(os.environ.get("LIMIT", "25"))
-            result = list_notes(folder, limit)
-        elif action == "search_notes":
-            query = os.environ.get("QUERY", "")
+        if action == "list":
+            folder = os.environ.get("FOLDER")
+            result = list_notes(folder)
+        
+        elif action == "search":
+            query = os.environ.get("QUERY")
             if not query:
-                print(json.dumps({"error": "QUERY is required"}), file=sys.stderr)
-                sys.exit(1)
+                raise ValueError("QUERY environment variable required for search action")
             result = search_notes(query)
-        elif action == "read_note":
-            name = os.environ.get("NAME", "")
-            if not name:
-                print(json.dumps({"error": "NAME is required"}), file=sys.stderr)
-                sys.exit(1)
-            result = read_note(name)
-        elif action == "create_note":
-            title = os.environ.get("TITLE", "")
+        
+        elif action == "create":
+            title = os.environ.get("TITLE")
             body = os.environ.get("BODY", "")
-            folder = os.environ.get("FOLDER", "Notes")
-            if not title or not body:
-                print(json.dumps({"error": "TITLE and BODY are required"}), file=sys.stderr)
-                sys.exit(1)
+            folder = os.environ.get("FOLDER")
+            
+            if not title:
+                raise ValueError("TITLE environment variable required for create action")
+            
             result = create_note(title, body, folder)
+        
+        elif action == "read":
+            # Note: memo CLI doesn't have a direct read by ID function,
+            # so we'd need to implement this differently or use search
+            raise NotImplementedError("Read action not implemented - use search instead")
+        
         else:
-            print(json.dumps({"error": f"Unknown action: {action}"}), file=sys.stderr)
-            sys.exit(1)
-
-        print(json.dumps(result, indent=2))
+            raise ValueError(f"Unknown action: {action}")
+        
+        # Output the bridge response output
+        print(result.get("output", ""))
+        
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Apple Reminders executor - interacts with Reminders.app via AppleScript.
+"""Apple Reminders executor - interacts with Reminders.app via JXA.
 
-No authentication required. Uses local osascript commands.
+No authentication required. Uses osascript with JavaScript for Automation
+(JXA), which is significantly faster than AppleScript for bulk operations.
+
+NOTE: This executor is host-only — osascript cannot run inside Docker.
 Outputs JSON to stdout.
 """
 
@@ -13,89 +16,49 @@ import subprocess
 import sys
 
 
-def _run_applescript(script: str, timeout: int = 30) -> str:
-    """Execute an AppleScript and return its stdout."""
+def _run_jxa(script: str, timeout: int = 30) -> str:
+    """Execute a JXA script and return its stdout."""
     try:
         result = subprocess.run(
-            ["osascript", "-e", script],
+            ["osascript", "-l", "JavaScript", "-e", script],
             capture_output=True,
             text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"AppleScript timed out after {timeout}s")
+        raise RuntimeError(f"JXA script timed out after {timeout}s")
     if result.returncode != 0:
-        raise RuntimeError(f"AppleScript error: {result.stderr.strip()}")
+        raise RuntimeError(f"JXA error: {result.stderr.strip()}")
     return result.stdout.strip()
 
 
 def list_reminders(list_name: str = "Reminders", show_completed: bool = False) -> list[dict]:
-    """List reminders from a list."""
-    completed_filter = "" if show_completed else "whose completed is false"
+    """List reminders from a list.
+
+    Uses bulk property access for names/completed status (fast), then
+    fetches due dates only for the matching subset.
+    """
+    filter_js = "true" if show_completed else "!completed[i]"
     script = f'''
-        tell application "Reminders"
-            set reminderList to {{}}
-            set theList to list "{list_name}"
-            set theReminders to (every reminder of theList {completed_filter})
-            repeat with theReminder in theReminders
-                set dueStr to ""
-                try
-                    set dueStr to due date of theReminder as string
-                end try
-                set reminderInfo to (name of theReminder) & "|||" & (completed of theReminder as string) & "|||" & dueStr
-                set end of reminderList to reminderInfo
-            end repeat
-            set AppleScript's text item delimiters to "\\n"
-            return reminderList as text
-        end tell
+        const app = Application("Reminders");
+        const list = app.lists.byName({json.dumps(list_name)});
+        const names = list.reminders.name();
+        const completed = list.reminders.completed();
+        const indices = [];
+        for (let i = 0; i < names.length && indices.length < 50; i++) {{
+            if ({filter_js}) indices.push(i);
+        }}
+        const results = indices.map(i => {{
+            let due = null;
+            try {{ due = list.reminders[i].dueDate(); if (due) due = due.toISOString(); }} catch(e) {{}}
+            return {{name: names[i], completed: completed[i], due_date: due}};
+        }});
+        JSON.stringify(results);
     '''
-    output = _run_applescript(script)
+    output = _run_jxa(script)
     if not output:
         return []
-
-    reminders = []
-    for line in output.split("\n"):
-        parts = line.split("|||")
-        if len(parts) >= 3:
-            reminders.append({
-                "name": parts[0].strip(),
-                "completed": parts[1].strip().lower() == "true",
-                "due_date": parts[2].strip() or None,
-            })
-    return reminders
-
-
-def _parse_due_date(due_date: str) -> str:
-    """Convert an ISO 8601 date string to AppleScript date-setting commands.
-
-    AppleScript's ``date`` coercion is locale-dependent, so we build the
-    date from components using ``current date`` as a template.
-    """
-    from datetime import datetime
-
-    # Strip trailing Z and handle common ISO formats
-    cleaned = due_date.replace("Z", "").replace("T", " ")
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(cleaned, fmt)
-            break
-        except ValueError:
-            continue
-    else:
-        # Fall back to letting AppleScript try to parse it
-        safe = due_date.replace('"', '\\"')
-        return f'set due date of theReminder to date "{safe}"'
-
-    return (
-        f"set dueDate to current date\n"
-        f"            set year of dueDate to {dt.year}\n"
-        f"            set month of dueDate to {dt.month}\n"
-        f"            set day of dueDate to {dt.day}\n"
-        f"            set hours of dueDate to {dt.hour}\n"
-        f"            set minutes of dueDate to {dt.minute}\n"
-        f"            set seconds of dueDate to {dt.second}\n"
-        f"            set due date of theReminder to dueDate"
-    )
+    return json.loads(output)
 
 
 def create_reminder(
@@ -105,80 +68,65 @@ def create_reminder(
     notes: str | None = None,
 ) -> dict:
     """Create a new reminder."""
-    safe_title = title.replace('"', '\\"')
-    properties = f'name:"{safe_title}"'
-
+    props = {"name": title}
     if notes:
-        safe_notes = notes.replace('"', '\\"')
-        properties += f', body:"{safe_notes}"'
+        props["body"] = notes
 
-    due_clause = ""
+    due_js = ""
     if due_date:
-        due_clause = _parse_due_date(due_date)
+        due_js = f"""
+        try {{
+            const d = new Date({json.dumps(due_date)});
+            if (!isNaN(d.getTime())) r.dueDate = d;
+        }} catch(e) {{}}
+        """
 
     script = f'''
-        tell application "Reminders"
-            tell list "{list_name}"
-                set theReminder to make new reminder with properties {{{properties}}}
-            end tell
-            {due_clause}
-            return (name of theReminder) & "|||" & (id of theReminder)
-        end tell
+        const app = Application("Reminders");
+        const list = app.lists.byName({json.dumps(list_name)});
+        const r = app.Reminder({json.dumps(props)});
+        list.reminders.push(r);
+        {due_js}
+        JSON.stringify({{name: r.name(), id: r.id(), status: "created"}});
     '''
-    output = _run_applescript(script)
-    parts = output.split("|||")
-    return {
-        "name": parts[0].strip() if parts else title,
-        "id": parts[1].strip() if len(parts) > 1 else "",
-        "status": "created",
-    }
+    output = _run_jxa(script)
+    return json.loads(output)
 
 
 def complete_reminder(name: str, list_name: str = "Reminders") -> dict:
-    """Mark a reminder as completed."""
-    safe_name = name.replace('"', '\\"')
+    """Mark a reminder as completed by name."""
     script = f'''
-        tell application "Reminders"
-            set theList to list "{list_name}"
-            set theReminder to first reminder of theList whose name is "{safe_name}"
-            set completed of theReminder to true
-            return name of theReminder
-        end tell
+        const app = Application("Reminders");
+        const list = app.lists.byName({json.dumps(list_name)});
+        const names = list.reminders.name();
+        const completed = list.reminders.completed();
+        let found = false;
+        for (let i = 0; i < names.length; i++) {{
+            if (names[i] === {json.dumps(name)} && !completed[i]) {{
+                list.reminders[i].completed = true;
+                found = true;
+                break;
+            }}
+        }}
+        if (!found) throw new Error("Reminder not found: " + {json.dumps(name)});
+        JSON.stringify({{name: {json.dumps(name)}, status: "completed"}});
     '''
-    result_name = _run_applescript(script)
-    return {
-        "name": result_name,
-        "status": "completed",
-    }
+    output = _run_jxa(script)
+    return json.loads(output)
 
 
 def get_lists() -> list[dict]:
     """Get available reminder lists."""
     script = '''
-        tell application "Reminders"
-            set listInfo to {}
-            repeat with theList in every list
-                set info to (name of theList) & "|||" & (id of theList) & "|||" & (count of reminders of theList whose completed is false)
-                set end of listInfo to info
-            end repeat
-            set AppleScript's text item delimiters to "\\n"
-            return listInfo as text
-        end tell
+        const app = Application("Reminders");
+        const lists = app.lists();
+        const results = lists.map(l => ({name: l.name(), id: l.id()}));
+        JSON.stringify(results);
     '''
-    output = _run_applescript(script)
+    output = _run_jxa(script)
     if not output:
         return []
-
-    lists = []
-    for line in output.split("\n"):
-        parts = line.split("|||")
-        if len(parts) >= 3:
-            lists.append({
-                "name": parts[0].strip(),
-                "id": parts[1].strip(),
-                "active_count": int(parts[2].strip()) if parts[2].strip().isdigit() else 0,
-            })
-    return lists
+    return json.loads(output)
 
 
 def main() -> None:

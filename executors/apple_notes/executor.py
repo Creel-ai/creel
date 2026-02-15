@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Apple Notes executor - interacts with Notes.app via AppleScript.
+"""Apple Notes executor - interacts with Notes.app via JXA.
 
-No authentication required. Uses local osascript commands.
+No authentication required. Uses osascript with JavaScript for Automation
+(JXA), which is significantly faster than AppleScript for bulk operations.
+
+NOTE: This executor is host-only — osascript cannot run inside Docker.
 Outputs JSON to stdout.
 """
 
@@ -13,133 +16,98 @@ import subprocess
 import sys
 
 
-def _run_applescript(script: str, timeout: int = 30) -> str:
-    """Execute an AppleScript and return its stdout."""
+def _run_jxa(script: str, timeout: int = 30) -> str:
+    """Execute a JXA script and return its stdout."""
     try:
         result = subprocess.run(
-            ["osascript", "-e", script],
+            ["osascript", "-l", "JavaScript", "-e", script],
             capture_output=True,
             text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"AppleScript timed out after {timeout}s")
+        raise RuntimeError(f"JXA script timed out after {timeout}s")
     if result.returncode != 0:
-        raise RuntimeError(f"AppleScript error: {result.stderr.strip()}")
+        raise RuntimeError(f"JXA error: {result.stderr.strip()}")
     return result.stdout.strip()
 
 
 def list_notes(folder: str = "Notes", limit: int = 25) -> list[dict]:
     """List note titles and IDs from a folder."""
     script = f'''
-        tell application "Notes"
-            set noteList to {{}}
-            set theFolder to folder "{folder}"
-            set noteCount to count of notes of theFolder
-            if noteCount > {limit} then set noteCount to {limit}
-            repeat with i from 1 to noteCount
-                set theNote to note i of theFolder
-                set noteInfo to (name of theNote) & "|||" & (id of theNote) & "|||" & (modification date of theNote as string)
-                set end of noteList to noteInfo
-            end repeat
-            set AppleScript's text item delimiters to "\\n"
-            return noteList as text
-        end tell
+        const app = Application("Notes");
+        const folder = app.folders.byName({json.dumps(folder)});
+        const notes = folder.notes();
+        const limit = Math.min(notes.length, {limit});
+        const results = [];
+        for (let i = 0; i < limit; i++) {{
+            results.push({{
+                name: notes[i].name(),
+                id: notes[i].id(),
+                modified: notes[i].modificationDate().toISOString()
+            }});
+        }}
+        JSON.stringify(results);
     '''
-    output = _run_applescript(script)
+    output = _run_jxa(script)
     if not output:
         return []
-
-    notes = []
-    for line in output.split("\n"):
-        parts = line.split("|||")
-        if len(parts) >= 3:
-            notes.append({
-                "name": parts[0].strip(),
-                "id": parts[1].strip(),
-                "modified": parts[2].strip(),
-            })
-    return notes
+    return json.loads(output)
 
 
 def search_notes(query: str) -> list[dict]:
     """Search notes by text content."""
-    safe_query = query.replace('"', '\\"')
     script = f'''
-        tell application "Notes"
-            set matchingNotes to {{}}
-            set allNotes to every note
-            repeat with theNote in allNotes
-                try
-                    if (plaintext of theNote) contains "{safe_query}" or (name of theNote) contains "{safe_query}" then
-                        set noteInfo to (name of theNote) & "|||" & (id of theNote)
-                        set end of matchingNotes to noteInfo
-                    end if
-                end try
-            end repeat
-            set AppleScript's text item delimiters to "\\n"
-            return matchingNotes as text
-        end tell
+        const app = Application("Notes");
+        const notes = app.notes();
+        const query = {json.dumps(query)}.toLowerCase();
+        const results = [];
+        for (let i = 0; i < notes.length && results.length < 25; i++) {{
+            try {{
+                const name = notes[i].name();
+                const body = notes[i].plaintext();
+                if (name.toLowerCase().includes(query) || body.toLowerCase().includes(query)) {{
+                    results.push({{name: name, id: notes[i].id()}});
+                }}
+            }} catch(e) {{}}
+        }}
+        JSON.stringify(results);
     '''
-    output = _run_applescript(script)
+    output = _run_jxa(script)
     if not output:
         return []
-
-    results = []
-    for line in output.split("\n"):
-        parts = line.split("|||")
-        if len(parts) >= 2:
-            results.append({
-                "name": parts[0].strip(),
-                "id": parts[1].strip(),
-            })
-    return results
+    return json.loads(output)
 
 
 def read_note(name: str) -> dict:
     """Read the full content of a note by title."""
-    safe_name = name.replace('"', '\\"')
     script = f'''
-        tell application "Notes"
-            set theNote to first note whose name is "{safe_name}"
-            set noteBody to plaintext of theNote
-            set noteName to name of theNote
-            set noteId to id of theNote
-            set noteModified to modification date of theNote as string
-            return noteName & "|||" & noteId & "|||" & noteModified & "|||" & noteBody
-        end tell
+        const app = Application("Notes");
+        const notes = app.notes.whose({{name: {json.dumps(name)}}})();
+        if (notes.length === 0) throw new Error("Note not found: " + {json.dumps(name)});
+        const n = notes[0];
+        JSON.stringify({{
+            name: n.name(),
+            id: n.id(),
+            modified: n.modificationDate().toISOString(),
+            body: n.plaintext()
+        }});
     '''
-    output = _run_applescript(script)
-    parts = output.split("|||", 3)
-    if len(parts) < 4:
-        return {"error": f"Note '{name}' not found or could not be read"}
-
-    return {
-        "name": parts[0].strip(),
-        "id": parts[1].strip(),
-        "modified": parts[2].strip(),
-        "body": parts[3].strip(),
-    }
+    output = _run_jxa(script)
+    return json.loads(output)
 
 
 def create_note(title: str, body: str, folder: str = "Notes") -> dict:
     """Create a new note in Apple Notes."""
-    safe_title = title.replace('"', '\\"')
-    safe_body = body.replace('"', '\\"').replace("\n", "\\n")
     script = f'''
-        tell application "Notes"
-            set theFolder to folder "{folder}"
-            set theNote to make new note at theFolder with properties {{name:"{safe_title}", body:"{safe_body}"}}
-            return (name of theNote) & "|||" & (id of theNote)
-        end tell
+        const app = Application("Notes");
+        const folder = app.folders.byName({json.dumps(folder)});
+        const n = app.Note({{name: {json.dumps(title)}, body: {json.dumps(body)}}});
+        folder.notes.push(n);
+        JSON.stringify({{name: n.name(), id: n.id(), status: "created"}});
     '''
-    output = _run_applescript(script)
-    parts = output.split("|||")
-    return {
-        "name": parts[0].strip() if parts else title,
-        "id": parts[1].strip() if len(parts) > 1 else "",
-        "status": "created",
-    }
+    output = _run_jxa(script)
+    return json.loads(output)
 
 
 def main() -> None:

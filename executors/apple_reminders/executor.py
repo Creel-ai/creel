@@ -13,14 +13,17 @@ import subprocess
 import sys
 
 
-def _run_applescript(script: str) -> str:
+def _run_applescript(script: str, timeout: int = 30) -> str:
     """Execute an AppleScript and return its stdout."""
-    result = subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"AppleScript timed out after {timeout}s")
     if result.returncode != 0:
         raise RuntimeError(f"AppleScript error: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -62,6 +65,39 @@ def list_reminders(list_name: str = "Reminders", show_completed: bool = False) -
     return reminders
 
 
+def _parse_due_date(due_date: str) -> str:
+    """Convert an ISO 8601 date string to AppleScript date-setting commands.
+
+    AppleScript's ``date`` coercion is locale-dependent, so we build the
+    date from components using ``current date`` as a template.
+    """
+    from datetime import datetime
+
+    # Strip trailing Z and handle common ISO formats
+    cleaned = due_date.replace("Z", "").replace("T", " ")
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(cleaned, fmt)
+            break
+        except ValueError:
+            continue
+    else:
+        # Fall back to letting AppleScript try to parse it
+        safe = due_date.replace('"', '\\"')
+        return f'set due date of theReminder to date "{safe}"'
+
+    return (
+        f"set dueDate to current date\n"
+        f"            set year of dueDate to {dt.year}\n"
+        f"            set month of dueDate to {dt.month}\n"
+        f"            set day of dueDate to {dt.day}\n"
+        f"            set hours of dueDate to {dt.hour}\n"
+        f"            set minutes of dueDate to {dt.minute}\n"
+        f"            set seconds of dueDate to {dt.second}\n"
+        f"            set due date of theReminder to dueDate"
+    )
+
+
 def create_reminder(
     title: str,
     due_date: str | None = None,
@@ -78,15 +114,13 @@ def create_reminder(
 
     due_clause = ""
     if due_date:
-        safe_due = due_date.replace('"', '\\"')
-        due_clause = f'''
-            set due date of theReminder to date "{safe_due}"
-        '''
+        due_clause = _parse_due_date(due_date)
 
     script = f'''
         tell application "Reminders"
-            set theList to list "{list_name}"
-            set theReminder to make new reminder at theList with properties {{{properties}}}
+            tell list "{list_name}"
+                set theReminder to make new reminder with properties {{{properties}}}
+            end tell
             {due_clause}
             return (name of theReminder) & "|||" & (id of theReminder)
         end tell

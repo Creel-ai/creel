@@ -91,6 +91,16 @@ class SessionConfig(BaseModel):
     ttl_hours: float = 0  # 0 = no expiry
 
 
+class QuietHoursConfig(BaseModel):
+    """Quiet hours configuration to suppress proactive notifications during specified times."""
+
+    enabled: bool = False
+    start: str = "23:00"  # 24h format
+    end: str = "08:00"
+    timezone: str = "UTC"
+    allow_urgent: bool = True  # still allow messages marked urgent
+
+
 class WorkspaceConfig(BaseModel):
     """Workspace directory settings for personality/memory files."""
 
@@ -157,6 +167,7 @@ class AgentDefinition(BaseModel):
     session: SessionConfig = Field(default_factory=SessionConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
+    quiet_hours: QuietHoursConfig = Field(default_factory=QuietHoursConfig)
     guardian: GuardianConfig | None = None
 
 

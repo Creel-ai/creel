@@ -80,12 +80,15 @@ def test_create_reminder_basic(mock_run):
 
 @patch("executors.apple_reminders.executor.subprocess.run")
 def test_create_reminder_with_due_date(mock_run):
-    """create_reminder should include due date in script when provided."""
+    """create_reminder should build date from components when ISO provided."""
     mock_run.return_value = _mock_subprocess(stdout="Task|||id")
     create_reminder("Task", due_date="2024-03-15T09:00:00")
     script = mock_run.call_args[0][0][2]
-    assert "due date" in script
-    assert "2024-03-15T09:00:00" in script
+    assert "due date of theReminder to dueDate" in script
+    assert "set year of dueDate to 2024" in script
+    assert "set month of dueDate to 3" in script
+    assert "set day of dueDate to 15" in script
+    assert "set hours of dueDate to 9" in script
 
 
 @patch("executors.apple_reminders.executor.subprocess.run")
@@ -99,7 +102,7 @@ def test_create_reminder_with_notes(mock_run):
 
 @patch("executors.apple_reminders.executor.subprocess.run")
 def test_create_reminder_custom_list(mock_run):
-    """create_reminder should use the specified list."""
+    """create_reminder should use the specified list via tell block."""
     mock_run.return_value = _mock_subprocess(stdout="Task|||id")
     create_reminder("Task", list_name="Shopping")
     script = mock_run.call_args[0][0][2]

@@ -489,21 +489,17 @@ def cmd_bridge(args: argparse.Namespace) -> int:
     """Start the bridge server for macOS-native tools."""
     import os
     
-    # Get token from args or environment
-    token = args.token or os.environ.get("BRIDGE_TOKEN")
-    if not token:
-        print("Error: Bridge token required. Use --token or set BRIDGE_TOKEN env var", file=sys.stderr)
-        return 1
-    
     try:
-        from bridge.server import run_server
+        import uvicorn
+        from bridge.server import app
         
         print(f"Starting bridge server on {args.host}:{args.port}")
-        run_server(host=args.host, port=args.port, token=token)
+        print("Scoped tokens will be auto-generated (set BRIDGE_TOKEN_NOTES, BRIDGE_TOKEN_REMINDERS, etc. to persist)")
+        uvicorn.run(app, host=args.host, port=args.port)
     except KeyboardInterrupt:
         print("\nBridge server stopped.")
     except ImportError:
-        print("Error: Bridge server dependencies not found", file=sys.stderr)
+        print("Error: Bridge server dependencies not found (pip install fastapi uvicorn)", file=sys.stderr)
         return 1
     
     return 0
@@ -590,13 +586,10 @@ def main() -> int:
     # bridge command
     bridge_parser = subparsers.add_parser("bridge", help="Start the host bridge server")
     bridge_parser.add_argument(
-        "--host", default="localhost", help="Bind to host (default: localhost)"
+        "--host", default="127.0.0.1", help="Bind to host (default: 127.0.0.1)"
     )
     bridge_parser.add_argument(
-        "--port", type=int, default=8766, help="Port to listen on (default: 8766)"
-    )
-    bridge_parser.add_argument(
-        "--token", help="Authentication token (or set BRIDGE_TOKEN env var)"
+        "--port", type=int, default=8099, help="Port to listen on (default: 8099)"
     )
 
     args = parser.parse_args()

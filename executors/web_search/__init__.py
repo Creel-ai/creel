@@ -1,1 +1,0 @@
-"""Web search executor for Brave Search API."""

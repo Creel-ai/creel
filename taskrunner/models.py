@@ -159,6 +159,14 @@ class BlueBubblesChannelConfig(BaseModel):
         return [os.path.expandvars(s) for s in v]
 
 
+class BridgeConfig(BaseModel):
+    """Bridge server configuration for host-side macOS tools."""
+    
+    url: str = "http://localhost:8766"
+    token: str | None = None
+    enabled: bool = False
+
+
 class ChannelsConfig(BaseModel):
     """All channel configurations."""
 
@@ -178,6 +186,7 @@ class AgentDefinition(BaseModel):
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     quiet_hours: QuietHoursConfig = Field(default_factory=QuietHoursConfig)
+    bridge: BridgeConfig = Field(default_factory=BridgeConfig)
     guardian: GuardianConfig | None = None
 
 

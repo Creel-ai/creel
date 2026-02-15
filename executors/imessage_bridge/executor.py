@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Apple Reminders executor - bridge-calling executor for macOS Reminders app.
+"""iMessage Bridge executor - bridge-calling executor for iMessage via imsg CLI.
 
-Instead of running AppleScript directly, this executor makes HTTP calls
-to the bridge server which executes remindctl CLI commands on the host.
+Instead of running the imsg CLI directly, this executor makes HTTP calls
+to the bridge server which executes imsg CLI commands on the host.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int 
     """Make an HTTP call to the bridge server.
     
     Args:
-        endpoint: Bridge endpoint path (e.g., '/reminders/list')
+        endpoint: Bridge endpoint path (e.g., '/imessage/recent')
         data: Request body data (optional)
         timeout: Request timeout in seconds
     
@@ -61,52 +61,43 @@ def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int 
         raise RuntimeError(f"Bridge request failed: {e}") from e
 
 
-def list_reminders(filter_type: str = "all") -> dict[str, Any]:
-    """List reminders via bridge."""
-    return call_bridge("/reminders/list", {"filter": filter_type})
+def get_recent(limit: int = 20) -> dict[str, Any]:
+    """Get recent iMessages via bridge."""
+    return call_bridge("/imessage/recent", {"limit": limit})
 
 
-def add_reminder(title: str, list_name: str | None = None, due: str | None = None) -> dict[str, Any]:
-    """Add a reminder via bridge."""
-    data = {"title": title}
-    if list_name:
-        data["list"] = list_name
-    if due:
-        data["due"] = due
-    
-    return call_bridge("/reminders/add", data)
+def send_message(to: str, text: str) -> dict[str, Any]:
+    """Send iMessage via bridge."""
+    return call_bridge("/imessage/send", {"to": to, "text": text})
 
 
-def complete_reminder(reminder_id: str) -> dict[str, Any]:
-    """Complete a reminder via bridge."""
-    return call_bridge("/reminders/complete", {"id": reminder_id})
+def get_chats() -> dict[str, Any]:
+    """Get iMessage chats via bridge."""
+    return call_bridge("/imessage/chats")
 
 
 def main() -> None:
     """Main executor entry point."""
-    action = os.environ.get("ACTION", "list")
+    action = os.environ.get("ACTION", "recent")
     
     try:
-        if action == "list":
-            filter_type = os.environ.get("FILTER", "all")
-            result = list_reminders(filter_type)
+        if action == "recent":
+            limit = int(os.environ.get("LIMIT", "20"))
+            result = get_recent(limit)
         
-        elif action == "add":
-            title = os.environ.get("TITLE")
-            list_name = os.environ.get("LIST")
-            due = os.environ.get("DUE")
+        elif action == "send":
+            to = os.environ.get("TO")
+            text = os.environ.get("TEXT")
             
-            if not title:
-                raise ValueError("TITLE environment variable required for add action")
+            if not to:
+                raise ValueError("TO environment variable required for send action")
+            if not text:
+                raise ValueError("TEXT environment variable required for send action")
             
-            result = add_reminder(title, list_name, due)
+            result = send_message(to, text)
         
-        elif action == "complete":
-            reminder_id = os.environ.get("ID")
-            if not reminder_id:
-                raise ValueError("ID environment variable required for complete action")
-            
-            result = complete_reminder(reminder_id)
+        elif action == "chats":
+            result = get_chats()
         
         else:
             raise ValueError(f"Unknown action: {action}")

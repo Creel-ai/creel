@@ -10,6 +10,7 @@ Usage:
     ./runner.py chat                     Interactive CLI chat with agent
     ./runner.py listen                   Listen for iMessages and respond
     ./runner.py serve                    Listen for iMessages + run scheduler
+    ./runner.py bridge                   Start the host bridge server
 """
 
 from __future__ import annotations
@@ -484,6 +485,30 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bridge(args: argparse.Namespace) -> int:
+    """Start the bridge server for macOS-native tools."""
+    import os
+    
+    # Get token from args or environment
+    token = args.token or os.environ.get("BRIDGE_TOKEN")
+    if not token:
+        print("Error: Bridge token required. Use --token or set BRIDGE_TOKEN env var", file=sys.stderr)
+        return 1
+    
+    try:
+        from bridge.server import run_server
+        
+        print(f"Starting bridge server on {args.host}:{args.port}")
+        run_server(host=args.host, port=args.port, token=token)
+    except KeyboardInterrupt:
+        print("\nBridge server stopped.")
+    except ImportError:
+        print("Error: Bridge server dependencies not found", file=sys.stderr)
+        return 1
+    
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="LLM Task Runner - secure, scheduled LLM task execution",
@@ -562,6 +587,18 @@ def main() -> int:
         help="Channel to listen on (default: imessage)",
     )
 
+    # bridge command
+    bridge_parser = subparsers.add_parser("bridge", help="Start the host bridge server")
+    bridge_parser.add_argument(
+        "--host", default="localhost", help="Bind to host (default: localhost)"
+    )
+    bridge_parser.add_argument(
+        "--port", type=int, default=8766, help="Port to listen on (default: 8766)"
+    )
+    bridge_parser.add_argument(
+        "--token", help="Authentication token (or set BRIDGE_TOKEN env var)"
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -615,6 +652,7 @@ def main() -> int:
         "chat": cmd_chat,
         "listen": cmd_listen,
         "serve": cmd_serve,
+        "bridge": cmd_bridge,
         "audit": cmd_audit,
     }
 

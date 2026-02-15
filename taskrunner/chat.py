@@ -123,18 +123,33 @@ class ChatServer:
             from taskrunner.orchestrator import _load_secrets_to_env
             _load_secrets_to_env(self._agent_def.llm.secrets)
 
-        # Run the agent loop
-        result = run_agent_loop(
-            messages=session.messages,
-            llm_config=self._agent_def.llm,
-            tools_config=self._agent_def.tools,
-            agent_config=self._agent_def.agent,
-            system_prompt=system_prompt,
-            use_containers=self._use_containers,
-            guardian=self._guardian,
-            confirm_action=self._confirm_fn,
-            memory_manager=self._memory,
-        )
+        # Run the agent loop (containerized or direct)
+        if self._use_containers:
+            from taskrunner.container_agent import run_agent_loop_container
+
+            result = run_agent_loop_container(
+                messages=session.messages,
+                llm_config=self._agent_def.llm,
+                tools_config=self._agent_def.tools,
+                agent_config=self._agent_def.agent,
+                system_prompt=system_prompt,
+                use_containers=self._use_containers,
+                guardian=self._guardian,
+                confirm_action=self._confirm_fn,
+                memory_manager=self._memory,
+            )
+        else:
+            result = run_agent_loop(
+                messages=session.messages,
+                llm_config=self._agent_def.llm,
+                tools_config=self._agent_def.tools,
+                agent_config=self._agent_def.agent,
+                system_prompt=system_prompt,
+                use_containers=self._use_containers,
+                guardian=self._guardian,
+                confirm_action=self._confirm_fn,
+                memory_manager=self._memory,
+            )
 
         logger.info(
             "Agent response for %s: %d chars, %d turns, %d tool calls (%s)",

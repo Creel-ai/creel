@@ -270,13 +270,6 @@ class ChatServer:
         """
         ws_cfg = self._agent_def.workspace
 
-        # Load base prompt from file if configured, else use inline
-        base_prompt = self._agent_def.system_prompt
-        if self._agent_def.system_prompt_file:
-            prompt_path = Path(self._agent_def.system_prompt_file)
-            if prompt_path.exists():
-                base_prompt = prompt_path.read_text().strip()
-
         # Get memory context
         memory_context = None
         if self._memory:
@@ -286,7 +279,8 @@ class ChatServer:
             )
 
         return build_system_prompt(
-            base_prompt=base_prompt,
+            base_prompt=self._agent_def.system_prompt,
+            system_prompt_file=self._agent_def.system_prompt_file,
             workspace_dir=ws_cfg.path,
             timezone_name=ws_cfg.timezone,
             tools_config=self._agent_def.tools,

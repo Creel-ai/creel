@@ -19,6 +19,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "pyrage>=1.2.0",
     "textual>=1.0.0",
+    "requests>=2.32.5",
+    "markdownify>=1.2.2",
 ]
 
 [project.optional-dependencies]

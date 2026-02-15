@@ -30,6 +30,7 @@ WORKSPACE_FILES = [
 def build_system_prompt(
     *,
     base_prompt: str | None = None,
+    system_prompt_file: str | None = None,
     workspace_dir: str | None = None,
     timezone_name: str = "UTC",
     tools_config: dict | None = None,
@@ -39,7 +40,7 @@ def build_system_prompt(
     """Build a complete system prompt from multiple sources.
 
     Assemble the system prompt from:
-    - A base prompt template
+    - A base prompt template (from file or inline)
     - Workspace personality/context files (SOUL.md, USER.md, etc.)
     - Current date/time with timezone
     - Memory context (daily + long-term)
@@ -47,6 +48,7 @@ def build_system_prompt(
 
     Args:
         base_prompt: Core system prompt text. If None, uses a sensible default.
+        system_prompt_file: Path to file containing the system prompt. Takes precedence over base_prompt.
         workspace_dir: Path to workspace directory containing .md files.
         timezone_name: IANA timezone name (e.g. "America/Denver").
         tools_config: Tool configurations (for generating usage guidance).
@@ -58,9 +60,22 @@ def build_system_prompt(
     """
     sections: list[str] = []
 
-    # 1. Base prompt
-    if base_prompt:
-        sections.append(base_prompt)
+    # 1. Base prompt (from file or inline)
+    effective_base_prompt = base_prompt
+    if system_prompt_file:
+        prompt_path = Path(system_prompt_file)
+        if prompt_path.exists():
+            try:
+                effective_base_prompt = prompt_path.read_text().strip()
+            except OSError as e:
+                logger.warning("Failed to read system prompt file %s: %s", prompt_path, e)
+                effective_base_prompt = base_prompt
+        else:
+            logger.warning("System prompt file not found: %s, falling back to default prompt", prompt_path)
+            effective_base_prompt = base_prompt
+    
+    if effective_base_prompt:
+        sections.append(effective_base_prompt)
     else:
         sections.append("You are a personal assistant. Be concise and helpful.")
 

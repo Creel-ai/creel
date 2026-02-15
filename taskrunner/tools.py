@@ -162,5 +162,5 @@ def execute_tool_call(
     logger.info("Executing tool %s (executor: %s)", tool_name, cfg.executor)
 
     if use_containers:
-        return _run_executor_container(executor_config)
+        return _run_executor_container(executor_config, cfg)
     return _run_executor_inline(cfg.executor, executor_config)

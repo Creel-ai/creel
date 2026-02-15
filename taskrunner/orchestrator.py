@@ -156,6 +156,14 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
             return _exec_bluebubbles_inline(config, "send_reaction")
         elif name == "bluebubbles_chats":
             return _exec_bluebubbles_inline(config, "get_chats")
+        elif name == "apple_notes":
+            return _exec_apple_notes_inline(config)
+        elif name == "apple_reminders":
+            return _exec_apple_reminders_inline(config)
+        elif name == "brave_search":
+            return _exec_brave_search_inline(config)
+        elif name == "fetch_url":
+            return _exec_fetch_url_inline(config)
         elif name == "exec":
             return _exec_exec_inline(config)
         else:
@@ -346,16 +354,102 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     return json.dumps(result, indent=2)
 
 
+def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
+    """Run Apple Notes executor inline."""
+    action = config.args.get("action", "list_notes")
+
+    if action == "list_notes":
+        from executors.apple_notes.executor import list_notes
+
+        folder = config.args.get("folder", "Notes")
+        limit = int(config.args.get("limit", "25"))
+        result = list_notes(folder, limit)
+    elif action == "search_notes":
+        from executors.apple_notes.executor import search_notes
+
+        query = config.args.get("query", "")
+        result = search_notes(query)
+    elif action == "read_note":
+        from executors.apple_notes.executor import read_note
+
+        name = config.args.get("name", "")
+        result = read_note(name)
+    elif action == "create_note":
+        from executors.apple_notes.executor import create_note
+
+        title = config.args.get("title", "")
+        body = config.args.get("body", "")
+        folder = config.args.get("folder", "Notes")
+        result = create_note(title, body, folder)
+    else:
+        raise ValueError(f"Unknown apple_notes action: {action}")
+
+    return json.dumps(result, indent=2)
+
+
+def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
+    """Run Apple Reminders executor inline."""
+    action = config.args.get("action", "list_reminders")
+
+    if action == "list_reminders":
+        from executors.apple_reminders.executor import list_reminders
+
+        list_name = config.args.get("list_name", "Reminders")
+        result = list_reminders(list_name)
+    elif action == "create_reminder":
+        from executors.apple_reminders.executor import create_reminder
+
+        title = config.args.get("title", "")
+        due_date = config.args.get("due_date") or None
+        list_name = config.args.get("list_name", "Reminders")
+        notes = config.args.get("notes") or None
+        result = create_reminder(title, due_date, list_name, notes)
+    elif action == "complete_reminder":
+        from executors.apple_reminders.executor import complete_reminder
+
+        name = config.args.get("name", "")
+        list_name = config.args.get("list_name", "Reminders")
+        result = complete_reminder(name, list_name)
+    elif action == "get_lists":
+        from executors.apple_reminders.executor import get_lists
+
+        result = get_lists()
+    else:
+        raise ValueError(f"Unknown apple_reminders action: {action}")
+
+    return json.dumps(result, indent=2)
+
+
+def _exec_brave_search_inline(config: ExecutorConfig) -> str:
+    """Run Brave Search executor inline."""
+    from executors.brave_search.executor import search
+
+    query = config.args.get("query", "")
+    count = int(config.args.get("count", "5"))
+    result = search(query, count)
+    return json.dumps(result, indent=2)
+
+
+def _exec_fetch_url_inline(config: ExecutorConfig) -> str:
+    """Run URL fetcher executor inline."""
+    from executors.fetch_url.executor import fetch_url
+
+    url = config.args.get("url", "")
+    max_chars = int(config.args.get("max_chars", "10000"))
+    result = fetch_url(url, max_chars)
+    return json.dumps(result, indent=2)
+
+
 def _exec_exec_inline(config: ExecutorConfig) -> str:
     """Run exec executor inline."""
     from executors.exec.executor import run_command
 
     command = config.args.get("command", "")
     workdir = config.args.get("workdir")
-    
+
     if not command:
         raise ValueError("exec executor requires a 'command' argument")
-    
+
     result = run_command(command, workdir)
     return json.dumps(result, indent=2)
 

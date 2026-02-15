@@ -12,11 +12,16 @@ Agentic LLM systems give the model access to tools, credentials, and untrusted i
 |-----------|--------------|---------------|
 | Executor (gcal) | Google OAuth token (read-only) | LLM, other credentials |
 | Executor (gcal_write) | Google OAuth token (calendar.events) | LLM, other credentials |
-| Executor (gmail) | Google OAuth token (read-only) | LLM, other credentials |
+| Executor (gmail_readonly) | Google OAuth token (read-only) | LLM, other credentials |
 | Executor (gmail_send) | Google OAuth token (gmail.send) | LLM, other credentials |
 | Executor (gmail_modify) | Google OAuth token (gmail.modify) | LLM, other credentials |
 | Executor (drive) | Google OAuth token (read-only) | LLM, other credentials |
 | Executor (drive_write) | Google OAuth token (drive.file) | LLM, other credentials |
+| Executor (bluebubbles) | BlueBubbles API password | LLM, other credentials |
+| Executor (brave_search) | Brave API key | LLM, other credentials |
+| Executor (apple_notes) | Local AppleScript access | LLM, other credentials |
+| Executor (apple_reminders) | Local AppleScript access | LLM, other credentials |
+| Executor (fetch_url) | Nothing sensitive | LLM, other credentials |
 | Executor (weather) | Nothing sensitive | LLM, other credentials |
 | LLM Runner | Anthropic API key | Any other credentials |
 | Orchestrator | All secrets, LLM output | Untrusted external input |
@@ -38,11 +43,16 @@ flowchart TD
         direction TB
         gcal["Executor: gcal\n🔑 Google OAuth token\n(calendar.readonly)"]
         gcal_w["Executor: gcal_write\n🔑 Google OAuth token\n(calendar.events)"]
-        gmail["Executor: gmail\n🔑 Google OAuth token\n(gmail.readonly)"]
+        gmail["Executor: gmail_readonly\n🔑 Google OAuth token\n(gmail.readonly)"]
         gmail_s["Executor: gmail_send\n🔑 Google OAuth token\n(gmail.send)"]
         gmail_m["Executor: gmail_modify\n🔑 Google OAuth token\n(gmail.modify)"]
         drive["Executor: drive\n🔑 Google OAuth token\n(drive.readonly)"]
         drive_w["Executor: drive_write\n🔑 Google OAuth token\n(drive.file)"]
+        bb["Executor: bluebubbles\n🔑 BlueBubbles API password"]
+        brave["Executor: brave_search\n🔑 Brave API key"]
+        notes["Executor: apple_notes\n🔑 None (local)"]
+        reminders["Executor: apple_reminders\n🔑 None (local)"]
+        fetch["Executor: fetch_url\n🔑 None"]
         weather["Executor: weather\n🔑 None"]
     end
 
@@ -63,6 +73,11 @@ flowchart TD
     schedule -- "triggers" --> gmail_m
     schedule -- "triggers" --> drive
     schedule -- "triggers" --> drive_w
+    schedule -- "triggers" --> bb
+    schedule -- "triggers" --> brave
+    schedule -- "triggers" --> notes
+    schedule -- "triggers" --> reminders
+    schedule -- "triggers" --> fetch
     schedule -- "triggers" --> weather
     gcal -- "JSON" --> template
     gcal_w -- "JSON" --> template
@@ -71,6 +86,11 @@ flowchart TD
     gmail_m -- "JSON" --> template
     drive -- "JSON" --> template
     drive_w -- "JSON" --> template
+    bb -- "JSON" --> template
+    brave -- "JSON" --> template
+    notes -- "JSON" --> template
+    reminders -- "JSON" --> template
+    fetch -- "JSON" --> template
     weather -- "JSON" --> template
     template -- "rendered prompt\n(no secrets)" --> llm
     llm -- "text response" --> output
@@ -91,10 +111,10 @@ flowchart TD
 In agent mode, the same security boundary applies — the LLM requests tool calls, but the orchestrator handles secrets injection and executor execution:
 
 ```
-                    ┌─────────────┐
-                    │   Channels  │
-                    │ stdin | iMsg│
-                    └──────┬──────┘
+                    ┌──────────────────┐
+                    │     Channels     │
+                    │stdin | iMsg | BB │
+                    └────────┬─────────┘
                            │ incoming message
                            ▼
                     ┌──────────────┐
@@ -139,10 +159,14 @@ Agent loop → LLM returns tool_use
     │
     ▼
 validate_action(tool, args)            ← before execute_tool_call
-    └── PolicyEngine    (YAML rules, <1ms)
-           allow  → execute
-           review → log warning, execute
-           deny   → return error to LLM
+    ├── PolicyEngine    (YAML rules, <1ms)
+    │      allow  → execute
+    │      review → human approval or auto_approve
+    │      deny   → return error to LLM
+    │
+    └── CoherenceCheck  (Haiku, ~300ms)
+           coherent   → execute
+           incoherent → return error to LLM
 ```
 
 **Stages:**
@@ -152,16 +176,24 @@ validate_action(tool, args)            ← before execute_tool_call
 | 1 | Fast classifier | Local DeBERTa model scores prompt-injection likelihood against a confidence threshold |
 | 2 | LLM judge | Secondary Haiku-based check (disabled by default) |
 | 3 | Policy engine | `fnmatch` rules in `policies/default.yaml` map tool names to allow/review/deny |
+| 4 | Coherence check | LLM-based check that tool calls match the user's original intent (catches prompt injection causing unrelated actions) |
 
 **Policy rules** (`policies/default.yaml`):
 
 ```yaml
-allow:  [check_weather, check_calendar, check_email, read_email, check_drive]
-review: [send_*, upload_*, create_*, mark_*]
-deny:   [trash_*, delete_*]
+allow:  [check_weather, check_calendar, check_email, read_email, check_drive, check_messages, get_chats, react_imessage]
+review: [send_*, upload_*, create_*, mark_*, trash_*]
+deny:   [delete_*]
+
+# Tools that match 'review' rules but can skip human approval
+auto_approve:
+  - mark_read
+  - react_imessage
 ```
 
-Deny wins over review, review wins over allow. Unknown tools default to review.
+Deny wins over review, review wins over allow. Unknown tools default to review. Tools listed in `auto_approve` skip the human confirmation prompt even when matched by a review rule.
+
+**Human-in-the-loop review:** Tools matching `review` rules prompt the user for approval before executing. In the TUI, this appears as an inline confirmation dialog. A configurable timeout (default 60s) denies the action if no response is received.
 
 **Audit logging** writes to `guardian_audit.jsonl` with hashed inputs (never raw text), tool names, arg keys (not values), verdicts, and confidence scores.
 
@@ -170,12 +202,19 @@ Deny wins over review, review wins over allow. Unknown tools default to review.
 ```yaml
 guardian:
   enabled: true
+  review:
+    timeout_seconds: 60
+    default_on_timeout: deny
   fast_classifier:
     enabled: true
-    threshold: 0.85
+    threshold: 0.95
     model_name: protectai/deberta-v3-base-prompt-injection-v2
   llm_judge:
     enabled: false
+  coherence:
+    enabled: true
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256
   policy:
     enabled: true
     policy_file: policies/default.yaml
@@ -213,14 +252,29 @@ age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 # Start the cron scheduler
 ./runner.py schedule
 
-# Interactive CLI chat (agent mode)
+# Interactive CLI chat (agent mode — launches TUI by default)
 ./runner.py chat
+
+# Simple stdin/stdout chat (no TUI)
+./runner.py chat --simple
+
+# Session management
+./runner.py chat --list-sessions
+./runner.py chat --new           # start fresh session
+./runner.py chat --resume <ID>   # resume a specific session
 
 # Listen for iMessages and respond
 ./runner.py listen
 
+# Listen via BlueBubbles instead of local chat.db
+./runner.py listen --channel bluebubbles
+
 # Listen + scheduler (daemon mode)
 ./runner.py serve
+
+# Query the guardian audit log
+./runner.py audit
+./runner.py audit --blocked --tail 50
 ```
 
 ## Authentication
@@ -409,7 +463,7 @@ Agent mode task fields (in addition to standard fields):
 
 ## Agent Configuration
 
-The global agent config (`agent.yaml`) defines tools, LLM settings, session behavior, and channels for interactive chat mode:
+The global agent config (`agent.yaml`) defines tools, LLM settings, session behavior, channels, workspace memory, and guardian settings for interactive chat mode:
 
 ```yaml
 system_prompt: |
@@ -427,7 +481,7 @@ tools:
         required: true
 
   check_email:
-    executor: gmail
+    executor: gmail_readonly
     secrets: secrets/gmail.env.enc
     description: "Search Gmail for emails"
     parameters:
@@ -435,6 +489,8 @@ tools:
         type: string
         description: "Gmail search query"
         required: true
+
+  # ... see agent.yaml for all tools (calendar, drive, iMessage, etc.)
 
 llm:
   model: claude-sonnet-4-20250514
@@ -447,14 +503,34 @@ agent:
 session:
   sessions_dir: sessions
   max_history: 50
+  summarize_on_trim: true
+
+workspace:
+  path: workspace
+  timezone: "America/Denver"
+  memory_days: 2
+  memory_max_chars: 5000
+  max_chars_per_file: 20000
 
 channels:
   imessage:
     listen_to: "$PHONE"
     poll_interval: 3
+  bluebubbles:
+    server_url: "$BLUEBUBBLES_URL"
+    password: "$BLUEBUBBLES_PASSWORD"
+    listen_to:
+      - "$PHONE"
+    poll_interval: 3
 ```
 
-Sessions are stored as JSON files in `sessions/` (gitignored) and persist conversation history across interactions.
+Sessions are stored as JSON files in `sessions/` (gitignored) and persist conversation history across interactions. When `summarize_on_trim` is enabled, old messages are summarized before being trimmed.
+
+**Workspace memory** provides file-based memory across sessions:
+- `workspace/memory/YYYY-MM-DD.md` — daily append-only logs written by the agent's `remember` tool
+- `workspace/MEMORY.md` — curated long-term memory
+
+Recent daily logs and long-term memory are injected into the system prompt automatically.
 
 ## Executors
 
@@ -481,9 +557,9 @@ python scripts/setup-google-oauth.py gcal --encrypt
 
 The executor uses a read-only scope (`calendar.readonly`) and authenticates with a refresh token.
 
-### Gmail
+### Gmail (Read)
 
-Reads emails matching a Gmail search query. Requires a one-time OAuth setup:
+Reads emails matching a Gmail search query. Supports both listing emails and reading individual messages by ID. Requires a one-time OAuth setup:
 
 ```bash
 # Same GCP project — enable the Gmail API
@@ -493,16 +569,16 @@ python scripts/setup-google-oauth.py gmail --encrypt
 The executor uses a read-only scope (`gmail.readonly`). Configuration:
 
 ```yaml
-gmail:
-  image: executor-gmail:latest
+gmail_readonly:
+  image: executor-gmail-readonly:latest
   secrets: secrets/gmail.env.enc
   args:
     query: "is:unread newer_than:1d"   # Gmail search syntax
-    max_results: "25"                   # max messages to fetch
-    full_body: "false"                  # set "true" to include decoded body text
+    max_results: "20"                   # max messages to fetch
+    message_id: ""                      # set to read a specific email by ID
 ```
 
-When `full_body` is enabled, the executor decodes MIME parts (prefers `text/plain`, falls back to HTML stripping via BeautifulSoup).
+When reading a single message by ID, the full decoded body is returned (prefers `text/plain`, falls back to HTML stripping via BeautifulSoup).
 
 ### Google Calendar (Write)
 
@@ -607,6 +683,72 @@ drive_write:
     folder_id: ""                # optional Drive folder ID
 ```
 
+### BlueBubbles (iMessage)
+
+Sends and reads iMessages via a [BlueBubbles](https://bluebubbles.app/) server. Requires a running BlueBubbles instance.
+
+```yaml
+bluebubbles:
+  image: executor-bluebubbles:latest
+  secrets: secrets/bluebubbles.env.enc
+  args:
+    action: "get_recent_messages"  # get_recent_messages, send_message, send_reaction, get_chats
+    chat_id: "chat123"
+    limit: "25"
+```
+
+Built-in safety: hard caps on message count (50), message length (2000 chars), send rate limiting (10/min), and allowlist enforcement for recipients.
+
+### Brave Search
+
+Web search via the [Brave Search API](https://brave.com/search/api/).
+
+```yaml
+brave_search:
+  image: executor-brave-search:latest
+  secrets: secrets/brave_search.env.enc
+  args:
+    query: "latest news on AI safety"
+    count: "5"   # max 20
+```
+
+### Fetch URL
+
+Extracts text content from web pages using BeautifulSoup. Strips scripts, nav, and boilerplate.
+
+```yaml
+fetch_url:
+  image: executor-fetch-url:latest
+  args:
+    url: "https://example.com/article"
+    max_chars: "10000"
+```
+
+No API key required.
+
+### Apple Notes
+
+Reads and creates notes in Notes.app via AppleScript. macOS only, no credentials needed.
+
+```yaml
+apple_notes:
+  args:
+    action: "list_notes"   # list_notes, search_notes, read_note, create_note
+    folder: "Notes"
+    limit: "25"
+```
+
+### Apple Reminders
+
+Reads and creates reminders in Reminders.app via AppleScript. macOS only, no credentials needed.
+
+```yaml
+apple_reminders:
+  args:
+    action: "list_reminders"  # list_reminders, create_reminder, complete_reminder, get_lists
+    list_name: "Reminders"
+```
+
 ## Google Services Setup
 
 All Google services use the same OAuth2 client credentials (client ID + client secret from a single GCP project) but obtain **separate refresh tokens** with different scopes. This means:
@@ -665,11 +807,14 @@ For production use, executors and the LLM runner execute in isolated Docker cont
 docker build -t executor-weather:latest executors/weather/
 docker build -t executor-gcal:latest executors/gcal/
 docker build -t executor-gcal-write:latest executors/gcal_write/
-docker build -t executor-gmail:latest executors/gmail/
+docker build -t executor-gmail-readonly:latest executors/gmail_readonly/
 docker build -t executor-gmail-send:latest executors/gmail_send/
 docker build -t executor-gmail-modify:latest executors/gmail_modify/
 docker build -t executor-drive:latest executors/drive/
 docker build -t executor-drive-write:latest executors/drive_write/
+docker build -t executor-bluebubbles:latest executors/bluebubbles/
+docker build -t executor-brave-search:latest executors/brave_search/
+docker build -t executor-fetch-url:latest executors/fetch_url/
 docker build -t llm-runner:latest llm/
 
 # Run a task with containers
@@ -705,17 +850,38 @@ Commands:
   list              List available tasks
   validate <task>   Validate a task YAML file
   chat              Interactive CLI chat with agent
-  listen            Listen for iMessages and respond
-  serve             Listen for iMessages + run scheduler
+  listen            Listen for messages and respond
+  serve             Listen for messages + run scheduler
+  audit             Query the guardian audit log
 
 Global options:
   -v, --verbose       Enable verbose/debug output
   --containers        Run executors/LLM in Docker containers (all commands)
   --tasks-dir PATH    Tasks directory (default: tasks/)
   --agent-config PATH Path to agent.yaml (default: agent.yaml)
+  --simple            Use simple stdin/stdout mode instead of TUI
+  --json-logs         Output structured JSON log lines (for production)
+  --no-judge          Disable the LLM judge to save API calls during development
 
 Run options:
   --dry             Render prompt only, skip LLM and output
+
+Chat options:
+  --new             Start a new session (don't resume the active one)
+  --resume ID       Resume a specific session by ID
+  --list-sessions   List sessions and exit
+
+Listen/Serve options:
+  --channel TYPE    Channel to listen on: imessage (default) or bluebubbles
+
+Audit options:
+  --tail N          Show last N entries (default: 20)
+  --all             Show all entries
+  --blocked         Show only blocked input events
+  --denied          Show only denied action events
+  --event TYPE      Filter by event type (screen_input, validate_action, tool_result)
+  --tool NAME       Filter by tool name
+  --since DATE      Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
 ```
 
 ## Project Structure
@@ -723,7 +889,7 @@ Run options:
 ```
 creel/
 ├── runner.py              # CLI entry point
-├── agent.yaml             # Global agent config (tools, channels, sessions)
+├── agent.yaml             # Global agent config (tools, channels, sessions, guardian)
 ├── pyproject.toml
 ├── .python-version        # pyenv Python version pin (3.12)
 ├── taskrunner/
@@ -733,35 +899,49 @@ creel/
 │   ├── tools.py           # Tool definitions + executor execution bridge
 │   ├── session.py         # JSON file-backed conversation sessions
 │   ├── chat.py            # Chat server (channels + sessions + agent)
+│   ├── tui.py             # Textual TUI for interactive chat
+│   ├── memory.py          # File-based workspace memory (daily logs + long-term)
+│   ├── prompt_builder.py  # System prompt assembly (memory, date, etc.)
+│   ├── approvals.py       # Human-in-the-loop tool approval logic
+│   ├── startup.py         # Secrets validation on startup
+│   ├── log.py             # Logging setup (console + JSON modes)
 │   ├── channels/
-│   │   ├── __init__.py    # Channel ABC
+│   │   ├── base.py        # Channel ABC
 │   │   ├── stdin.py       # Interactive CLI channel
-│   │   └── imessage.py    # iMessage channel (polls chat.db)
+│   │   ├── imessage.py    # iMessage channel (polls chat.db)
+│   │   └── bluebubbles.py # BlueBubbles iMessage channel (REST API)
 │   ├── scheduler.py       # APScheduler cron integration
 │   ├── llm.py             # Anthropic API calls (direct + container + tools)
 │   ├── outputs.py         # Output routing (iMessage, stdout, file)
 │   └── secrets.py         # age encryption/decryption
 ├── executors/
-│   ├── weather/           # wttr.in executor + Dockerfile
-│   ├── gcal/              # Google Calendar (read) executor + Dockerfile
-│   ├── gcal_write/        # Google Calendar (write) executor + Dockerfile
-│   ├── gmail/             # Gmail (read) executor + Dockerfile
-│   ├── gmail_send/        # Gmail (send) executor + Dockerfile
-│   ├── gmail_modify/      # Gmail (modify) executor + Dockerfile
-│   ├── drive/             # Google Drive (read) executor + Dockerfile
-│   └── drive_write/       # Google Drive (write) executor + Dockerfile
+│   ├── weather/           # wttr.in executor
+│   ├── gcal/              # Google Calendar (read) executor
+│   ├── gcal_write/        # Google Calendar (write) executor
+│   ├── gmail_readonly/    # Gmail (read) executor
+│   ├── gmail_send/        # Gmail (send) executor
+│   ├── gmail_modify/      # Gmail (modify) executor
+│   ├── drive/             # Google Drive (read) executor
+│   ├── drive_write/       # Google Drive (write) executor
+│   ├── bluebubbles/       # BlueBubbles iMessage executor
+│   ├── brave_search/      # Brave web search executor
+│   ├── fetch_url/         # URL content extractor
+│   ├── apple_notes/       # Apple Notes executor (AppleScript)
+│   └── apple_reminders/   # Apple Reminders executor (AppleScript)
 ├── guardian/
-│   ├── __init__.py        # Guardian class (screen_input, validate_action)
+│   ├── core.py            # Guardian class (screen_input, validate_action)
 │   ├── types.py           # Data models and config
 │   ├── fast_classifier.py # DeBERTa/ONNX prompt-injection detector
 │   ├── llm_judge.py       # Haiku-based secondary judge
-│   ├── policy.py          # YAML policy engine (allow/review/deny)
+│   ├── coherence.py       # LLM-based action coherence checker
+│   ├── policy.py          # YAML policy engine (allow/review/deny/auto_approve)
 │   └── audit.py           # Privacy-preserving JSONL audit logger
 ├── policies/
 │   └── default.yaml       # Default tool action policies
 ├── llm/                   # Containerized LLM runner + Dockerfile
 ├── tasks/                 # Task definitions (YAML)
 ├── sessions/              # Conversation sessions (gitignored)
+├── workspace/             # Agent workspace memory (gitignored)
 ├── secrets/               # Encrypted .env files (gitignored)
 ├── scripts/
 │   ├── encrypt-secret.sh    # age encryption helper

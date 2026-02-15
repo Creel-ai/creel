@@ -23,8 +23,11 @@ Agentic LLM systems give the model access to tools, credentials, and untrusted i
 | Executor (drive_write) | Google OAuth token (drive.file) | LLM, other credentials |
 | Executor (bluebubbles) | BlueBubbles API password | LLM, other credentials |
 | Executor (brave_search) | Brave API key | LLM, other credentials |
-| Executor (apple_notes) | Local AppleScript access | LLM, other credentials |
-| Executor (apple_reminders) | Local AppleScript access | LLM, other credentials |
+| Executor (apple_notes) | Bridge HTTP access (scoped token) | LLM, other credentials |
+| Executor (apple_reminders) | Bridge HTTP access (scoped token) | LLM, other credentials |
+| Executor (things) | Bridge HTTP access (scoped token) | LLM, other credentials |
+| Executor (imessage_bridge) | Bridge HTTP access (scoped token) | LLM, other credentials |
+| Executor (exec) | Host filesystem (mounted paths only) | LLM, other credentials |
 | Executor (fetch_url) | Nothing sensitive | LLM, other credentials |
 | Executor (weather) | Nothing sensitive | LLM, other credentials |
 | LLM Runner | Anthropic API key | Any other credentials |
@@ -43,7 +46,7 @@ flowchart TD
         output["Output Router"]
     end
 
-    subgraph executors["Isolated Executor Containers"]
+    subgraph container_execs["Containerized Executors"]
         direction TB
         gcal["Executor: gcal\n🔑 Google OAuth token\n(calendar.readonly)"]
         gcal_w["Executor: gcal_write\n🔑 Google OAuth token\n(calendar.events)"]
@@ -54,10 +57,26 @@ flowchart TD
         drive_w["Executor: drive_write\n🔑 Google OAuth token\n(drive.file)"]
         bb["Executor: bluebubbles\n🔑 BlueBubbles API password"]
         brave["Executor: brave_search\n🔑 Brave API key"]
-        notes["Executor: apple_notes\n🔑 None (local)"]
-        reminders["Executor: apple_reminders\n🔑 None (local)"]
         fetch["Executor: fetch_url\n🔑 None"]
         weather["Executor: weather\n🔑 None"]
+        exec["Executor: exec\n🔑 None (mounted paths)"]
+    end
+
+    subgraph bridge_execs["Bridge-Proxied Executors"]
+        direction TB
+        notes["Executor: apple_notes\n🔑 Bridge token"]
+        reminders["Executor: apple_reminders\n🔑 Bridge token"]
+        things["Executor: things\n🔑 Bridge token"]
+        imsg_bridge["Executor: imessage_bridge\n🔑 Bridge token"]
+    end
+
+    subgraph bridge["Host Bridge Server"]
+        direction TB
+        bridge_api["FastAPI Server\n(Host Process)"]
+        memo_cli["memo CLI"]
+        remindctl_cli["remindctl CLI"]
+        things_cli["things CLI"]
+        imsg_cli["imsg CLI"]
     end
 
     subgraph llm_container["Isolated LLM Container"]
@@ -79,10 +98,14 @@ flowchart TD
     schedule -- "triggers" --> drive_w
     schedule -- "triggers" --> bb
     schedule -- "triggers" --> brave
-    schedule -- "triggers" --> notes
-    schedule -- "triggers" --> reminders
     schedule -- "triggers" --> fetch
     schedule -- "triggers" --> weather
+    schedule -- "triggers" --> exec
+    schedule -- "triggers" --> notes
+    schedule -- "triggers" --> reminders
+    schedule -- "triggers" --> things
+    schedule -- "triggers" --> imsg_bridge
+
     gcal -- "JSON" --> template
     gcal_w -- "JSON" --> template
     gmail -- "JSON" --> template
@@ -92,17 +115,34 @@ flowchart TD
     drive_w -- "JSON" --> template
     bb -- "JSON" --> template
     brave -- "JSON" --> template
-    notes -- "JSON" --> template
-    reminders -- "JSON" --> template
     fetch -- "JSON" --> template
     weather -- "JSON" --> template
+    exec -- "JSON" --> template
+
+    notes -- "HTTP" --> bridge_api
+    reminders -- "HTTP" --> bridge_api
+    things -- "HTTP" --> bridge_api
+    imsg_bridge -- "HTTP" --> bridge_api
+
+    bridge_api --> memo_cli
+    bridge_api --> remindctl_cli
+    bridge_api --> things_cli
+    bridge_api --> imsg_cli
+
+    notes -- "JSON" --> template
+    reminders -- "JSON" --> template
+    things -- "JSON" --> template
+    imsg_bridge -- "JSON" --> template
+
     template -- "rendered prompt\n(no secrets)" --> llm
     llm -- "text response" --> output
     output --> imsg
     output --> stdout
     output --> file
 
-    style executors fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
+    style container_execs fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
+    style bridge_execs fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
+    style bridge fill:#2d333b,stroke:#fd7e14,stroke-width:2px,color:#f0f0f0
     style llm_container fill:#2d333b,stroke:#f47067,stroke-width:2px,color:#f0f0f0
     style orch fill:#2d333b,stroke:#58a6ff,stroke-width:2px,color:#f0f0f0
     style outputs fill:#2d333b,stroke:#3fb950,stroke-width:2px,color:#f0f0f0
@@ -226,6 +266,44 @@ guardian:
     enabled: true
     log_file: guardian_audit.jsonl
 ```
+
+## Host Bridge
+
+For macOS-specific tools (Apple Notes, Apple Reminders, Things 3, iMessage), Docker containers can't directly execute AppleScript or access macOS applications. The host bridge solves this by running a FastAPI server on the host system that provides authenticated HTTP endpoints for containerized executors.
+
+**Why**: Docker containers are sandboxed and can't access the macOS scripting bridge or application APIs that tools like Notes, Reminders, and Things 3 require.
+
+**How**: A FastAPI server (`./runner.py bridge`) runs as a host process and exposes REST endpoints at `/notes/*`, `/reminders/*`, `/things/*`, and `/imessage/*`. Containerized executors make HTTP requests to these endpoints with scoped authentication tokens.
+
+**Security**: Each executor receives a scoped token that only grants access to its specific tool endpoints. For example, the `apple_notes` executor can only call `/notes/*` endpoints, not `/reminders/*` or `/things/*`.
+
+**CLI Integration**: The bridge server delegates to command-line tools:
+- **Apple Notes**: `memo` CLI for reading/writing notes
+- **Apple Reminders**: `remindctl` CLI for managing reminders  
+- **Things 3**: `things` CLI for task management
+- **iMessage**: `imsg` CLI for sending/receiving messages
+
+**Starting the bridge**: `./runner.py bridge` starts the FastAPI server on `localhost:8765` with authentication middleware and scoped endpoint routing.
+
+## Exec Tool
+
+The exec executor provides sandboxed shell command execution within isolated Docker containers. It's designed for running system commands, scripts, and CLI tools while maintaining security through filesystem isolation and network restrictions.
+
+**Sandboxing**: Commands execute in a minimal Alpine Linux container (`alpine:latest`) with:
+- **Network isolation**: `--network=none` by default (no internet access)
+- **Filesystem isolation**: Only configured mount points are accessible
+- **Minimal base**: Just `bash`, `grep`, `sed`, `awk`, `curl`, `jq` installed
+- **Read-only root**: Container filesystem is read-only except for mounted paths
+
+**Mount Configuration**: Mount points specify host paths and access modes:
+- **Path mapping**: Host directory → container directory  
+- **Access modes**: `ro` (read-only) or `rw` (read-write)
+- **Scope limitation**: Only explicitly mounted paths are accessible
+
+**Future Enhancement**: Specialized container images for different use cases:
+- `exec-dev`: Development tools (git, make, compilers)
+- `exec-python`: Python runtime and common packages
+- `exec-node`: Node.js runtime and npm
 
 ## Quick Start
 
@@ -536,6 +614,18 @@ Sessions are stored as JSON files in `sessions/` (gitignored) and persist conver
 
 Recent daily logs and long-term memory are injected into the system prompt automatically.
 
+### Quiet Hours
+
+Creel supports quiet hours to suppress proactive notifications during configured time periods (e.g., nighttime, work hours). Quiet hours are configured in `agent.yaml` and only suppress outbound notifications — direct replies to user messages are never suppressed.
+
+```yaml
+quiet_hours:
+  enabled: true
+  start: "22:00"  # 10 PM
+  end: "08:00"    # 8 AM
+  timezone: "America/Denver"
+```
+
 ## Executors
 
 ### Weather
@@ -732,7 +822,7 @@ No API key required.
 
 ### Apple Notes
 
-Reads and creates notes in Notes.app via AppleScript. macOS only, no credentials needed.
+Reads and creates notes in Notes.app via the host bridge. Uses the `memo` CLI tool for macOS integration.
 
 ```yaml
 apple_notes:
@@ -744,13 +834,52 @@ apple_notes:
 
 ### Apple Reminders
 
-Reads and creates reminders in Reminders.app via AppleScript. macOS only, no credentials needed.
+Reads and creates reminders in Reminders.app via the host bridge. Uses the `remindctl` CLI tool for macOS integration.
 
 ```yaml
 apple_reminders:
   args:
     action: "list_reminders"  # list_reminders, create_reminder, complete_reminder, get_lists
     list_name: "Reminders"
+```
+
+### Things 3
+
+Manages tasks in Things 3 via the host bridge. Uses the `things` CLI tool for macOS integration.
+
+```yaml
+things:
+  args:
+    action: "list_tasks"     # list_tasks, create_task, complete_task, search_tasks
+    area: "Personal"
+    limit: "25"
+```
+
+### iMessage Bridge
+
+Sends and reads iMessages via the host bridge. Uses the `imsg` CLI tool for macOS integration, providing an alternative to the BlueBubbles executor.
+
+```yaml
+imessage_bridge:
+  args:
+    action: "get_recent"     # get_recent, send_message, get_chats
+    limit: "25"
+    chat_id: "chat123"
+```
+
+### Exec
+
+Executes shell commands in sandboxed Docker containers with configurable mount points and network isolation.
+
+```yaml
+exec:
+  args:
+    command: "ls -la /workspace"
+    workdir: "/workspace"
+    mounts:
+      - path: "/Users/user/docs"
+        target: "/workspace"
+        mode: "ro"
 ```
 
 ## Google Services Setup
@@ -896,6 +1025,8 @@ creel/
 ├── agent.yaml             # Global agent config (tools, channels, sessions, guardian)
 ├── pyproject.toml
 ├── .python-version        # pyenv Python version pin (3.12)
+├── TESTING.md             # Testing guidelines and procedures
+├── bridge/                # Host bridge server for macOS tool integration
 ├── taskrunner/
 │   ├── models.py          # Pydantic models (tasks, tools, agent config)
 │   ├── orchestrator.py    # Core loop: fetch -> LLM -> output (simple + agent)
@@ -909,6 +1040,7 @@ creel/
 │   ├── approvals.py       # Human-in-the-loop tool approval logic
 │   ├── startup.py         # Secrets validation on startup
 │   ├── log.py             # Logging setup (console + JSON modes)
+│   ├── quiet_hours.py     # Quiet hours configuration and enforcement
 │   ├── channels/
 │   │   ├── base.py        # Channel ABC
 │   │   ├── stdin.py       # Interactive CLI channel
@@ -930,8 +1062,11 @@ creel/
 │   ├── bluebubbles/       # BlueBubbles iMessage executor
 │   ├── brave_search/      # Brave web search executor
 │   ├── fetch_url/         # URL content extractor
-│   ├── apple_notes/       # Apple Notes executor (AppleScript)
-│   └── apple_reminders/   # Apple Reminders executor (AppleScript)
+│   ├── apple_notes/       # Apple Notes executor (bridge)
+│   ├── apple_reminders/   # Apple Reminders executor (bridge)
+│   ├── things/            # Things 3 executor (bridge)
+│   ├── imessage_bridge/   # iMessage executor (bridge)
+│   └── exec/              # Sandboxed shell command executor
 ├── guardian/
 │   ├── core.py            # Guardian class (screen_input, validate_action)
 │   ├── types.py           # Data models and config

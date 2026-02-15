@@ -12,6 +12,7 @@ from taskrunner.log import generate_request_id, request_id_var
 from taskrunner.memory import MemoryManager
 from taskrunner.models import AgentDefinition
 from taskrunner.prompt_builder import build_system_prompt
+from taskrunner.quiet_hours import should_suppress
 from taskrunner.session import SessionManager
 from taskrunner.tools import execute_tool_call
 
@@ -166,6 +167,11 @@ class ChatServer:
 
     def _send_approval_request(self, sender_id: str, action) -> None:
         """Send an approval request message via iMessage (or log it)."""
+        # Check quiet hours before sending proactive approval request
+        if should_suppress(self._agent_def.quiet_hours, urgent=False):
+            logger.info("Approval request suppressed due to quiet hours")
+            return
+
         # Format args summary
         args_lines = []
         for k, v in action.tool_input.items():
@@ -200,7 +206,7 @@ class ChatServer:
 
         if not approved:
             result_msg = f"❌ Action denied: {pending.tool_name}"
-            self._send_imessage(sender_id, result_msg)
+            self._send_imessage(sender_id, result_msg, proactive=False)  # Direct reply to approval
             return result_msg
 
         # Execute the tool
@@ -216,11 +222,23 @@ class ChatServer:
             logger.exception("Tool execution failed after approval")
             result_msg = f"✅ Approved but execution failed: {e}"
 
-        self._send_imessage(sender_id, result_msg)
+        self._send_imessage(sender_id, result_msg, proactive=False)  # Direct reply to approval
         return result_msg
 
-    def _send_imessage(self, sender_id: str, msg: str) -> None:
-        """Send a message via iMessage if available."""
+    def _send_imessage(self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False) -> None:
+        """Send a message via iMessage if available.
+        
+        Args:
+            sender_id: The sender ID
+            msg: Message content
+            proactive: True if this is a proactive notification, False for direct replies
+            urgent: True if message is marked urgent
+        """
+        # Check quiet hours for proactive messages only
+        if proactive and should_suppress(self._agent_def.quiet_hours, urgent=urgent):
+            logger.info("iMessage suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent)
+            return
+
         if self._imessage_channel and self._agent_def.channels.imessage:
             recipient = self._agent_def.channels.imessage.listen_to
             try:

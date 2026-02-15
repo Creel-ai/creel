@@ -95,17 +95,28 @@ def _run_agent_mode(
     use_containers: bool,
 ) -> str:
     """Run a task in agent mode using the agent loop."""
-    from taskrunner.agent import run_agent_loop
-
     messages = [{"role": "user", "content": prompt}]
 
-    agent_result = run_agent_loop(
-        messages=messages,
-        llm_config=task.llm,
-        tools_config=task.tools,
-        agent_config=task.agent,
-        use_containers=use_containers,
-    )
+    if use_containers:
+        from taskrunner.container_agent import run_agent_loop_container
+
+        agent_result = run_agent_loop_container(
+            messages=messages,
+            llm_config=task.llm,
+            tools_config=task.tools,
+            agent_config=task.agent,
+            use_containers=use_containers,
+        )
+    else:
+        from taskrunner.agent import run_agent_loop
+
+        agent_result = run_agent_loop(
+            messages=messages,
+            llm_config=task.llm,
+            tools_config=task.tools,
+            agent_config=task.agent,
+            use_containers=use_containers,
+        )
 
     logger.info(
         "Agent completed: %d turns, %d tool calls, stop=%s",

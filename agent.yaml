@@ -115,6 +115,33 @@ tools:
         description: "City name or coordinates"
         required: true
 
+  web_fetch:
+    executor: web_fetch
+    description: "Fetch and read a web page, converting to clean text"
+    parameters:
+      url:
+        type: string
+        description: "URL to fetch"
+        required: true
+      max_chars:
+        type: string
+        description: "Maximum characters to return (default 10000)"
+    classify_output: true
+
+  web_search:
+    executor: web_search
+    secrets: secrets/brave.env
+    description: "Search the web for current information"
+    parameters:
+      query:
+        type: string
+        description: "Search query"
+        required: true
+      count:
+        type: string
+        description: "Number of results (default 5)"
+    classify_output: true
+
   check_drive:
     executor: drive
     secrets: secrets/drive.env.enc

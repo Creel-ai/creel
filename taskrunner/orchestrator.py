@@ -156,6 +156,10 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
             return _exec_bluebubbles_inline(config, "send_reaction")
         elif name == "bluebubbles_chats":
             return _exec_bluebubbles_inline(config, "get_chats")
+        elif name == "web_fetch":
+            return _exec_web_fetch_inline(config)
+        elif name == "web_search":
+            return _exec_web_search_inline(config)
         else:
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
@@ -341,6 +345,34 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     else:
         raise ValueError(f"Unknown bluebubbles action: {action}")
 
+    return json.dumps(result, indent=2)
+
+
+def _exec_web_fetch_inline(config: ExecutorConfig) -> str:
+    """Run web fetch executor inline."""
+    from executors.web_fetch.executor import fetch_url
+
+    url = config.args.get("url", "")
+    max_chars = int(config.args.get("max_chars", "10000"))
+    
+    if not url:
+        raise ValueError("Web fetch requires a url parameter")
+    
+    result = fetch_url(url, max_chars)
+    return json.dumps(result, indent=2)
+
+
+def _exec_web_search_inline(config: ExecutorConfig) -> str:
+    """Run web search executor inline."""
+    from executors.web_search.executor import search_web
+
+    query = config.args.get("query", "")
+    count = int(config.args.get("count", "5"))
+    
+    if not query:
+        raise ValueError("Web search requires a query parameter")
+    
+    result = search_web(query, count)
     return json.dumps(result, indent=2)
 
 

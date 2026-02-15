@@ -16,9 +16,8 @@ class TestMemoryManager:
             mm = self._make_manager(td)
             result = mm.remember("User likes coffee", "preference")
             assert "Remembered" in result
-            # Check file exists
-            today = date.today()
-            path = Path(td) / "memory" / f"{today.isoformat()}.md"
+            # Check file exists — use the manager's own daily_path to avoid timezone mismatch
+            path = mm.daily_path()
             assert path.exists()
             content = path.read_text()
             assert "coffee" in content
@@ -29,8 +28,7 @@ class TestMemoryManager:
             mm = self._make_manager(td)
             mm.remember("First note")
             mm.remember("Second note")
-            today = date.today()
-            path = Path(td) / "memory" / f"{today.isoformat()}.md"
+            path = mm.daily_path()
             content = path.read_text()
             assert "First note" in content
             assert "Second note" in content

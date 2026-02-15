@@ -1,0 +1,1 @@
+"""iMessage Bridge executor - bridge-calling executor for iMessage via imsg CLI."""

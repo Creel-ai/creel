@@ -1,5 +1,9 @@
 # Creel
 
+<p align="center">
+  <img src="assets/creel-logo.jpg" alt="Creel" width="400">
+</p>
+
 A secure LLM task runner and personal AI assistant that separates credential-bearing data fetching from LLM processing. Supports both scheduled tasks (morning briefings, weather summaries) and interactive agent mode (chat via CLI or iMessage with tool calling).
 
 A creel is a wicker basket usually used for carrying fish or blocks of peat. It is also the fish trap used to catch lobsters and other crustaceans.

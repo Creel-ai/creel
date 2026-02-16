@@ -359,12 +359,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
         from taskrunner.orchestrator import _load_secrets_to_env
         _load_secrets_to_env(agent_def.llm.secrets)
 
+    shutdown_event = threading.Event()
+
     # Start scheduler in a background thread
     tasks_dir = _tasks_dir(args)
     if tasks_dir.is_dir():
         def run_scheduler():
             try:
-                start_scheduler(tasks_dir=tasks_dir, use_containers=args.containers)
+                start_scheduler(
+                    tasks_dir=tasks_dir,
+                    use_containers=args.containers,
+                    shutdown_event=shutdown_event,
+                )
             except Exception:
                 logging.getLogger(__name__).exception("Scheduler crashed")
 
@@ -405,8 +411,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
     server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
 
     # Set up graceful shutdown on SIGTERM/SIGINT
-    shutdown_event = threading.Event()
-
     def _handle_shutdown(signum, frame):
         sig_name = signal.Signals(signum).name
         logger.info("Received %s, initiating graceful shutdown...", sig_name)
@@ -599,20 +603,6 @@ def main() -> int:
         "--port", type=int, default=8099, help="Port to listen on (default: 8099)"
     )
 
-    args = parser.parse_args()
-
-    # Set up logging
-    from taskrunner.log import setup_logging
-
-    log_level = "DEBUG" if args.verbose else "INFO"
-    setup_logging(json_mode=args.json_logs, level=log_level)
-
-    # Load root .env if present (for PHONE, etc.)
-    root_env = Path(".env")
-    if root_env.exists():
-        for key, value in parse_env_file(root_env).items():
-            os.environ.setdefault(key, value)
-
     # audit command
     audit_parser = subparsers.add_parser("audit", help="Query the guardian audit log")
     audit_parser.add_argument(
@@ -639,6 +629,20 @@ def main() -> int:
         "--since", type=str, default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
     )
+
+    args = parser.parse_args()
+
+    # Set up logging
+    from taskrunner.log import setup_logging
+
+    log_level = "DEBUG" if args.verbose else "INFO"
+    setup_logging(json_mode=args.json_logs, level=log_level)
+
+    # Load root .env if present (for PHONE, etc.)
+    root_env = Path(".env")
+    if root_env.exists():
+        for key, value in parse_env_file(root_env).items():
+            os.environ.setdefault(key, value)
 
     if args.command is None:
         parser.print_help()

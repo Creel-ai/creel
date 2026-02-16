@@ -314,6 +314,9 @@ uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 
+# Optional: required for live ONNX export + classifier smoke tests
+uv pip install -e ".[guardian]"
+
 # Install age for secrets encryption (one-time)
 brew install age
 mkdir -p ~/.age
@@ -1098,6 +1101,9 @@ pyenv install 3.12.12   # .python-version pins this
 uv venv                 # creates .venv using pyenv's Python
 source .venv/bin/activate
 uv pip install -e ".[dev]"
+
+# Optional: required for live ONNX export + classifier smoke tests
+uv pip install -e ".[guardian]"
 
 # Run tests
 pytest

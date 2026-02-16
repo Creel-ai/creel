@@ -15,6 +15,13 @@ Usage:
 
 from __future__ import annotations
 
+# Use OS certificate store for HTTPS (fixes uv-managed Python SSL issues)
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 import argparse
 import logging
 import os

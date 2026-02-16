@@ -51,6 +51,85 @@ BUILTIN_MEMORY_TOOLS = [
             "required": ["text"],
         },
     },
+    {
+        "name": "search_memory",
+        "description": (
+            "Search across all memory files (daily logs and long-term) for entries "
+            "matching a query. Returns results with date and line references you can "
+            "use with edit_memory or delete_memory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term (case-insensitive substring match).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results to return (default: 20).",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "delete_memory",
+        "description": (
+            "Delete a specific memory entry by date and line number. "
+            "Use search_memory first to find the entry reference."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Date of the memory file (YYYY-MM-DD) or 'long_term' for MEMORY.md.",
+                },
+                "line_number": {
+                    "type": "integer",
+                    "description": "1-based line number within the file.",
+                },
+            },
+            "required": ["date", "line_number"],
+        },
+    },
+    {
+        "name": "edit_memory",
+        "description": (
+            "Edit a specific memory entry by date and line number. "
+            "Use search_memory first to find the entry reference."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Date of the memory file (YYYY-MM-DD) or 'long_term' for MEMORY.md.",
+                },
+                "line_number": {
+                    "type": "integer",
+                    "description": "1-based line number within the file.",
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "Replacement text for the line.",
+                },
+            },
+            "required": ["date", "line_number", "new_text"],
+        },
+    },
+    {
+        "name": "list_memory_files",
+        "description": (
+            "List all memory files with entry counts and sizes. "
+            "Shows daily files (newest first) and long-term memory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 
@@ -141,6 +220,25 @@ def execute_tool_call(
 
         text = tool_input.get("text", "")
         return memory_manager.update_long_term(text)
+
+    if tool_name == "search_memory" and memory_manager is not None:
+        query = tool_input.get("query", "")
+        max_results = tool_input.get("max_results", 20)
+        return memory_manager.search_memory(query, max_results=int(max_results))
+
+    if tool_name == "delete_memory" and memory_manager is not None:
+        date_str = tool_input.get("date", "")
+        line_number = int(tool_input.get("line_number", 0))
+        return memory_manager.delete_memory(date_str, line_number)
+
+    if tool_name == "edit_memory" and memory_manager is not None:
+        date_str = tool_input.get("date", "")
+        line_number = int(tool_input.get("line_number", 0))
+        new_text = tool_input.get("new_text", "")
+        return memory_manager.edit_memory(date_str, line_number, new_text)
+
+    if tool_name == "list_memory_files" and memory_manager is not None:
+        return memory_manager.list_memory_files()
 
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")

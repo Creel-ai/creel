@@ -72,6 +72,11 @@ class ChatServer:
             self._memory = MemoryManager(
                 workspace_dir=agent_def.workspace.path,
                 timezone_name=agent_def.workspace.timezone,
+                max_daily_entries=agent_def.workspace.max_daily_entries,
+                max_long_term_lines=agent_def.workspace.max_long_term_lines,
+            )
+            self._memory.compact_daily_files(
+                days_to_keep=agent_def.workspace.compact_after_days,
             )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
@@ -341,6 +346,18 @@ class ChatServer:
                 days=ws_cfg.memory_days,
                 max_chars=ws_cfg.memory_max_chars,
             )
+            # Screen memory context for stored injection payloads
+            if memory_context and self._guardian:
+                screen_result = self._guardian.screen_input(memory_context)
+                if screen_result.blocked:
+                    logger.warning(
+                        "Guardian blocked memory context from system prompt "
+                        "(confidence=%.3f)",
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
+                    )
+                    memory_context = None
 
         return build_system_prompt(
             base_prompt=base_prompt,

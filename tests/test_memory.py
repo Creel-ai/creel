@@ -258,3 +258,41 @@ class TestMemoryManager:
             assert not old_path.exists()
             # No summary appended for empty files
             assert not mm.long_term_path.exists()
+
+    # --- Rate limiting ---
+
+    def test_daily_limit_rejects_when_full(self):
+        with tempfile.TemporaryDirectory() as td:
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_daily_entries=3)
+            mm.remember("Entry 1")
+            mm.remember("Entry 2")
+            mm.remember("Entry 3")
+            result = mm.remember("Entry 4 should fail")
+            assert "limit reached" in result
+            # Verify only 3 entries in the file
+            content = mm.daily_path().read_text()
+            assert content.count("- [") == 3
+
+    def test_daily_limit_allows_under_limit(self):
+        with tempfile.TemporaryDirectory() as td:
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_daily_entries=5)
+            result = mm.remember("Entry 1")
+            assert "Remembered" in result
+            result = mm.remember("Entry 2")
+            assert "Remembered" in result
+
+    def test_long_term_limit_rejects_when_full(self):
+        with tempfile.TemporaryDirectory() as td:
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_long_term_lines=5)
+            # Header takes 2 lines ("# Long-Term Memory\n\n"), then content lines
+            mm.update_long_term("Line 1")
+            mm.update_long_term("Line 2")
+            # After header (2 lines) + blank + "Line 1" + blank + "Line 2" = 6 lines
+            result = mm.update_long_term("Line 3 should fail")
+            assert "limit reached" in result
+
+    def test_long_term_limit_allows_under_limit(self):
+        with tempfile.TemporaryDirectory() as td:
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_long_term_lines=200)
+            result = mm.update_long_term("Some fact")
+            assert "updated" in result.lower()

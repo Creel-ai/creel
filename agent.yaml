@@ -433,6 +433,8 @@ workspace:
   memory_max_chars: 5000
   max_chars_per_file: 20000
   compact_after_days: 7
+  max_daily_entries: 50
+  max_long_term_lines: 200
 
 channels:
   imessage:

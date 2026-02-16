@@ -84,3 +84,28 @@ def test_session_endpoints(client: TestClient) -> None:
     )
     assert history.status_code == 200
     assert len(history.json()["messages"]) >= 2
+
+
+def test_stream_message_endpoint(client: TestClient) -> None:
+    with client.stream(
+        "POST",
+        "/v1/messages/stream",
+        json={"sender_id": "cli", "text": "hello"},
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+
+        events: list[dict] = []
+        for line in resp.iter_lines():
+            if not line or not line.startswith("data:"):
+                continue
+            payload = line.split(":", 1)[1].strip()
+            if payload:
+                import json
+
+                events.append(json.loads(payload))
+
+    assert events
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "final"
+    assert events[-1]["payload"]["text"] == "echo:hello"

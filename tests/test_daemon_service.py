@@ -68,6 +68,19 @@ def test_send_message_and_history(daemon_service: DaemonService) -> None:
     assert history[1]["role"] == "assistant"
 
 
+def test_stream_message_events(daemon_service: DaemonService) -> None:
+    events = list(daemon_service.stream_message("cli", "hello", chunk_size=4))
+
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "final"
+    assert events[-1]["payload"]["text"] == "echo:hello"
+
+    token_text = "".join(
+        e["payload"]["text"] for e in events if e["type"] == "token"
+    )
+    assert token_text == "echo:hello"
+
+
 def test_new_resume_and_list_sessions(daemon_service: DaemonService) -> None:
     first = daemon_service.new_session("cli")
     daemon_service.send_message("cli", "first")

@@ -340,17 +340,26 @@ creel schedule
 # Start background daemon (agent loop + scheduler + channel plugins)
 creel daemon start
 
+# Install daemon as persistent launchd service (macOS)
+creel daemon install
+
 # Attach rich TUI to running daemon
 creel attach
 
 # Send one message without opening TUI
 creel send "What's on my calendar today?"
 
+# Stream response events for one-shot send
+creel send "Draft a status update" --stream
+
 # Query daemon status
 creel daemon status
 
 # Stop daemon
 creel daemon stop
+
+# Uninstall launchd service
+creel daemon uninstall
 
 # Query the guardian audit log
 creel audit
@@ -978,7 +987,7 @@ Commands:
   schedule          Start cron scheduler for all tasks
   list              List available tasks
   validate <task>   Validate a task YAML file
-  daemon ...        Manage daemon lifecycle (start|stop|status)
+  daemon ...        Manage daemon lifecycle (start|stop|status|install|uninstall)
   attach            Attach TUI client to running daemon
   send <message>    Send one message via daemon API
   audit             Query the guardian audit log
@@ -1000,12 +1009,20 @@ Daemon start options:
   --log-file PATH      Daemon log file (default: /tmp/creel-daemon.log)
   --channel TYPE       Channel plugin: none, imessage, bluebubbles
   --no-scheduler       Disable scheduler in daemon runtime
+  --label NAME         launchd label (default: com.creel.daemon)
+  --plist-path PATH    launchd plist path
 
 Attach options:
   --sender-id ID       Sender ID/session namespace (default: cli)
   --new                Start and attach to a new session
   --resume ID          Attach and resume a specific session
   --socket-path PATH   Unix socket path (default: /tmp/creel-daemon.sock)
+
+Send options:
+  --sender-id ID       Sender ID/session namespace (default: cli)
+  --session-id ID      Resume and send into a specific session
+  --socket-path PATH   Unix socket path (default: /tmp/creel-daemon.sock)
+  --stream             Stream response events from daemon SSE endpoint
 
 Audit options:
   --tail N          Show last N entries (default: 20)

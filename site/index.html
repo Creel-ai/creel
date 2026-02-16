@@ -129,16 +129,18 @@
           <span class="code-dot green"></span>
           <span class="code-title">Terminal</span>
         </div>
-        <pre><code><span class="c-comment"># Clone and enter</span>
+        <pre><code><span class="c-comment"># Install prerequisites</span>
+<span class="c-prompt">$</span> brew install pyenv uv age
+
+<span class="c-comment"># Clone and set up</span>
 <span class="c-prompt">$</span> git clone https://github.com/creel-ai/creel.git
 <span class="c-prompt">$</span> cd creel
+<span class="c-prompt">$</span> pyenv install 3.12.12
+<span class="c-prompt">$</span> uv venv && source .venv/bin/activate
+<span class="c-prompt">$</span> uv pip install -e ".[dev]"
 
-<span class="c-comment"># Configure your LLM provider</span>
-<span class="c-prompt">$</span> cp .env.example .env
-<span class="c-prompt">$</span> nano .env  <span class="c-comment"># add your API key</span>
-
-<span class="c-comment"># Launch</span>
-<span class="c-prompt">$</span> docker compose up -d
+<span class="c-comment"># Configure and run</span>
+<span class="c-prompt">$</span> export ANTHROPIC_API_KEY=sk-ant-...
 <span class="c-prompt">$</span> creel chat
 
 <span class="c-output">🦀 Creel agent ready. Tools loaded: 12. Guardian: active.</span></code></pre>

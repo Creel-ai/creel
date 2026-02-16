@@ -299,6 +299,30 @@ def _handle_tool_request(
                     })
                     continue
 
+        # Screen memory write content through Guardian before execution
+        _MEMORY_WRITE_TOOLS = {"remember", "update_long_term_memory", "edit_memory"}
+        if guardian is not None and tool_name in _MEMORY_WRITE_TOOLS:
+            write_text = tool_input.get("text") or tool_input.get("new_text") or ""
+            if write_text:
+                screen_result = guardian.screen_input(write_text)
+                if screen_result.blocked:
+                    logger.warning(
+                        "Guardian blocked memory write for %s (confidence=%.3f)",
+                        tool_name,
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
+                    )
+                    results.append({
+                        "tool_use_id": tool_id,
+                        "content": (
+                            "[Guardian] Memory write blocked — content may contain "
+                            "prompt injection."
+                        ),
+                        "is_error": True,
+                    })
+                    continue
+
         # Execute the tool
         t0 = time.perf_counter()
         try:

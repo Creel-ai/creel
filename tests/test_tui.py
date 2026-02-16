@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from taskrunner.session import Session, SessionManager
-from taskrunner.tui import SENDER_ID, ChatApp
+from taskrunner.tui import SENDER_ID, ChatApp, ChatInput, StatusBar
 
 
 def _make_mock_server(tmp_path, handle_response="Mock response"):
@@ -31,8 +31,8 @@ async def test_message_send(tmp_path):
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
-        inp = app.query_one("#chat-input")
-        inp.value = "What's the weather?"
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("What's the weather?")
         await pilot.press("enter")
 
         # Give the worker thread time to complete
@@ -68,8 +68,8 @@ async def test_input_disabled_during_processing(tmp_path):
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
-        inp = app.query_one("#chat-input")
-        inp.value = "Hello"
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("Hello")
         await pilot.press("enter")
         await pilot.pause()
         await pilot.pause()
@@ -95,8 +95,7 @@ async def test_empty_input_ignored(tmp_path):
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
-        inp = app.query_one("#chat-input")
-        inp.value = ""
+        # ChatInput starts empty, just press enter
         await pilot.press("enter")
         await pilot.pause()
 
@@ -171,8 +170,8 @@ async def test_help_command(tmp_path):
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
-        inp = app.query_one("#chat-input")
-        inp.value = "/help"
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("/help")
         await pilot.press("enter")
         await pilot.pause()
 
@@ -200,8 +199,8 @@ async def test_compact_command(tmp_path):
         lines_text = "\n".join(str(line) for line in log.lines)
         assert "Hello there" in lines_text
 
-        inp = app.query_one("#chat-input")
-        inp.value = "/compact"
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("/compact")
         await pilot.press("enter")
         await pilot.pause()
 
@@ -222,11 +221,165 @@ async def test_server_command_no_thinking(tmp_path):
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
-        inp = app.query_one("#chat-input")
-        inp.value = "/sessions"
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("/sessions")
         await pilot.press("enter")
         await pilot.pause()
 
         # Input should NOT be disabled (no worker launched)
         assert inp.disabled is False
         server.handle_message.assert_called_once_with(SENDER_ID, "/sessions")
+
+
+# --- New tests for TUI polish ---
+
+
+@pytest.mark.asyncio
+async def test_status_bar_shows_model(tmp_path):
+    """StatusBar should display the model name passed to ChatApp."""
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server, model_name="claude-sonnet-4-20250514")
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        bar = app.query_one("#status-bar", StatusBar)
+        assert bar.model_name == "claude-sonnet-4-20250514"
+
+
+@pytest.mark.asyncio
+async def test_status_bar_thinking_state(tmp_path):
+    """StatusBar.is_thinking should be True during LLM call, False after."""
+    event = asyncio.Event()
+
+    def slow_handle(sender_id, text):
+        import time
+        for _ in range(50):
+            if event.is_set():
+                break
+            time.sleep(0.05)
+        return "Done"
+
+    server = _make_mock_server(tmp_path)
+    server.handle_message = slow_handle
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        bar = app.query_one("#status-bar", StatusBar)
+
+        inp.load_text("Hello")
+        await pilot.press("enter")
+
+        # Wait for thinking state to activate
+        for _ in range(20):
+            await pilot.pause()
+            if bar.is_thinking:
+                break
+        assert bar.is_thinking is True
+
+        # Release
+        event.set()
+
+        for _ in range(20):
+            await pilot.pause()
+            if not bar.is_thinking:
+                break
+        assert bar.is_thinking is False
+
+
+@pytest.mark.asyncio
+async def test_input_history(tmp_path):
+    """Up arrow should recall previous messages in order."""
+    server = _make_mock_server(tmp_path, "ok")
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+
+        # Send two messages — load text, then press enter to submit
+        inp.load_text("first message")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause()
+            if not inp.disabled:
+                break
+
+        inp.load_text("second message")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause()
+            if not inp.disabled:
+                break
+
+        # Verify history was recorded
+        assert len(inp._history) == 2
+        assert inp._history[0] == "first message"
+        assert inp._history[1] == "second message"
+
+        # Up arrow should recall most recent first
+        inp.focus()
+        await pilot.press("up")
+        await pilot.pause()
+        assert "second message" in inp.text
+
+        await pilot.press("up")
+        await pilot.pause()
+        assert "first message" in inp.text
+
+        # Down arrow should go forward
+        await pilot.press("down")
+        await pilot.pause()
+        assert "second message" in inp.text
+
+
+@pytest.mark.asyncio
+async def test_multiline_input(tmp_path):
+    """Shift+Enter should insert newline, Enter should submit full text."""
+    server = _make_mock_server(tmp_path, "ok")
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.focus()
+        await pilot.pause()
+
+        # Load text with a newline in the middle (simulating multi-line editing)
+        inp.load_text("line one\nline two")
+        await pilot.pause()
+        assert "\n" in inp.text
+
+        # Submit with Enter — the text includes the newline
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause()
+            if not inp.disabled:
+                break
+
+        server.handle_message.assert_called_once()
+        call_text = server.handle_message.call_args[0][1]
+        assert "line one" in call_text
+        assert "line two" in call_text
+
+
+@pytest.mark.asyncio
+async def test_message_count(tmp_path):
+    """StatusBar message count should increment on send and receive."""
+    server = _make_mock_server(tmp_path, "response")
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        bar = app.query_one("#status-bar", StatusBar)
+        assert bar.message_count == 0
+
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("hello")
+        await pilot.press("enter")
+
+        for _ in range(20):
+            await pilot.pause()
+            if not inp.disabled:
+                break
+
+        # 1 for user message + 1 for assistant response
+        assert bar.message_count == 2

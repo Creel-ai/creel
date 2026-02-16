@@ -21,17 +21,26 @@ class _StubChatServer:
         self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
         self.calls: list[tuple[str, str]] = []
 
-    def handle_message(self, sender_id: str, text: str) -> str:
+    def handle_message(
+        self,
+        sender_id: str,
+        text: str,
+        on_text_delta=None,
+    ) -> str:
         self.calls.append((sender_id, text))
         session = self._session_mgr.add_user_message(sender_id, text)
+        response = f"echo:{text}"
+        if on_text_delta is not None:
+            on_text_delta("echo:")
+            on_text_delta(text)
         session.messages.append(
             {
                 "role": "assistant",
-                "content": [{"type": "text", "text": f"echo:{text}"}],
+                "content": [{"type": "text", "text": response}],
             }
         )
         self._session_mgr.save_session(session)
-        return f"echo:{text}"
+        return response
 
 
 class _StubChannel(Channel):
@@ -69,15 +78,15 @@ def test_send_message_and_history(daemon_service: DaemonService) -> None:
 
 
 def test_stream_message_events(daemon_service: DaemonService) -> None:
-    events = list(daemon_service.stream_message("cli", "hello", chunk_size=4))
+    events = list(daemon_service.stream_message("cli", "hello"))
 
     assert events[0]["type"] == "start"
     assert events[-1]["type"] == "final"
     assert events[-1]["payload"]["text"] == "echo:hello"
 
-    token_text = "".join(
-        e["payload"]["text"] for e in events if e["type"] == "token"
-    )
+    token_chunks = [e["payload"]["text"] for e in events if e["type"] == "token"]
+    token_text = "".join(token_chunks)
+    assert token_chunks == ["echo:", "hello"]
     assert token_text == "echo:hello"
 
 

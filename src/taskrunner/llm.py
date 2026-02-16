@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 
 import anthropic
 
@@ -88,6 +89,7 @@ def call_llm(
     config: LLMConfig,
     tools: list[dict] | None = None,
     system: str | None = None,
+    on_text_delta: Callable[[str], None] | None = None,
 ) -> anthropic.types.Message:
     """Call the Anthropic API with multi-turn messages and optional tools.
 
@@ -96,6 +98,10 @@ def call_llm(
         config: LLM configuration (model, max_tokens).
         tools: Anthropic tool definitions, or None.
         system: System prompt, or None.
+        on_text_delta: Optional callback invoked with each text chunk during
+            streaming.  When provided, uses the streaming API instead of the
+            blocking ``messages.create`` call.  Note: retry logic is not applied
+            in streaming mode since a partial stream cannot be retried.
 
     Returns:
         The raw Anthropic Message object.
@@ -118,7 +124,38 @@ def call_llm(
     if tools:
         create_kwargs["tools"] = tools
 
+    if on_text_delta is not None:
+        return _call_llm_streaming(client, create_kwargs, on_text_delta)
+
     return _retry_on_transient(client.messages.create, **create_kwargs)
+
+
+def _call_llm_streaming(
+    client: anthropic.Anthropic,
+    create_kwargs: dict,
+    on_text_delta: Callable[[str], None],
+) -> anthropic.types.Message:
+    """Stream an LLM response, calling *on_text_delta* for each text chunk.
+
+    Returns the complete ``Message`` once the stream finishes — callers get
+    the same type as the non-streaming path.
+
+    Falls back to the non-streaming path on transient API errors so the
+    caller still gets a result (at the cost of losing incremental output).
+    """
+    try:
+        with client.messages.stream(**create_kwargs) as stream:
+            for text in stream.text_stream:
+                on_text_delta(text)
+            return stream.get_final_message()
+    except anthropic.APIStatusError as exc:
+        if exc.status_code not in RETRYABLE_STATUS_CODES:
+            raise
+        logger.warning(
+            "Streaming failed with %d, falling back to non-streaming",
+            exc.status_code,
+        )
+        return _retry_on_transient(client.messages.create, **create_kwargs)
 
 
 def summarize_messages(

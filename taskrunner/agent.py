@@ -301,6 +301,27 @@ def run_agent_loop(
                     )
                     is_error = True
 
+            # Screen search_memory results for stored injection payloads
+            if (
+                not is_error
+                and guardian is not None
+                and tool_name == "search_memory"
+            ):
+                screen_result = guardian.screen_tool_result(tool_name, result)
+                if screen_result.blocked:
+                    logger.warning(
+                        "Guardian blocked search_memory output (confidence=%.3f)",
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
+                    )
+                    result = (
+                        "[Guardian] Memory search results were blocked by the "
+                        "security classifier. The stored content may contain "
+                        "prompt injection."
+                    )
+                    is_error = True
+
             tool_history.append({
                 "tool": tool_name,
                 "input": tool_input,

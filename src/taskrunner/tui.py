@@ -6,7 +6,8 @@ import logging
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import Any, Protocol, runtime_checkable
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
@@ -19,16 +20,29 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Button, Footer, Header, RichLog, Static, TextArea
 
-if TYPE_CHECKING:
-    from taskrunner.chat import ChatServer
+
+@runtime_checkable
+class TuiBackend(Protocol):
+    """Protocol for TUI chat backends (ChatServer or DaemonTuiAdapter)."""
+
+    def handle_message(
+        self,
+        sender_id: str,
+        text: str,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> str: ...
+
+    def get_or_create_session(self, sender_id: str) -> Any: ...
+
+    def new_session(self, sender_id: str) -> Any: ...
 
 SENDER_ID = "cli"
 
 _LOG_POLL_INTERVAL = 0.25
 
-# Commands handled locally in the TUI (not sent to ChatServer)
+# Commands handled locally in the TUI (not sent to backend)
 _TUI_COMMANDS = {"/compact", "/exit", "/quit", "/help"}
-# Commands handled by ChatServer that return instantly (no LLM call)
+# Commands handled by backend that return instantly (no LLM call)
 _SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions"}
 # /resume is a prefix match, handled separately
 
@@ -276,9 +290,15 @@ class ChatApp(App):
     }
     """
 
-    def __init__(self, server: ChatServer, model_name: str = "") -> None:
+    def __init__(
+        self,
+        server: TuiBackend,
+        sender_id: str = SENDER_ID,
+        model_name: str = "",
+    ) -> None:
         super().__init__()
         self._server = server
+        self._sender_id = sender_id
         self._model_name = model_name
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
@@ -339,7 +359,7 @@ class ChatApp(App):
 
         # Server commands that return instantly (no LLM call)
         if cmd in _SERVER_COMMANDS or cmd == "/resume":
-            response = self._server.handle_message(SENDER_ID, text)
+            response = self._server.handle_message(self._sender_id, text)
             self._append_response(response)
             self._update_subtitle()
             return
@@ -374,7 +394,7 @@ class ChatApp(App):
 
         try:
             response = self._server.handle_message(
-                SENDER_ID, text, on_text_delta=on_delta,
+                self._sender_id, text, on_text_delta=on_delta,
             )
         except Exception as exc:
             response = f"Error: {exc}"
@@ -431,12 +451,12 @@ class ChatApp(App):
 
     def _replay_history(self) -> None:
         """Render recent messages from the active session into the RichLog."""
-        session = self._server._session_mgr.get_or_create(SENDER_ID)
+        session = self._get_or_create_session()
         log = self.query_one("#chat-log", RichLog)
         bar = self.query_one("#status-bar", StatusBar)
 
         count = 0
-        messages = session.messages[-20:]
+        messages = (session.messages or [])[-20:]
         for msg in messages:
             role = msg.get("role")
             content = msg.get("content", "")
@@ -461,18 +481,24 @@ class ChatApp(App):
         bar.message_count = count
 
     def _update_subtitle(self) -> None:
-        session = self._server._session_mgr.get_or_create(SENDER_ID)
+        session = self._get_or_create_session()
         title = session.title or "(new session)"
         self.sub_title = f"Session {session.session_id}: {title}"
 
     def action_new_session(self) -> None:
-        session = self._server._session_mgr.new_session(SENDER_ID)
+        session = self._new_session()
         log = self.query_one("#chat-log", RichLog)
         log.clear()
         log.write(f"[dim]Started new session {session.session_id}.[/dim]")
         bar = self.query_one("#status-bar", StatusBar)
         bar.message_count = 0
         self._update_subtitle()
+
+    def _get_or_create_session(self):
+        return self._server.get_or_create_session(self._sender_id)
+
+    def _new_session(self):
+        return self._server.new_session(self._sender_id)
 
     def action_quit(self) -> None:
         if self._log_handler:

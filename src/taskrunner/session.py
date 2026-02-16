@@ -381,6 +381,22 @@ class SessionManager:
             logger.warning("Corrupt session file %s, ignoring: %s", session_id, e)
             return None
 
+    def load_session(self, session_id: str) -> Session | None:
+        """Load a session by its session_id (returns None if not found)."""
+        return self._load(session_id)
+
+    def get_active_session_id(self, sender_id: str) -> str | None:
+        """Get the active session ID for a sender, or None."""
+        return self._load_active_index().get(sender_id)
+
+    def session_stats(self) -> dict[str, int]:
+        """Return stored session count and active sender count."""
+        session_files = [
+            p for p in self._dir.glob("*.json") if p.name != _ACTIVE_INDEX_FILE
+        ]
+        active_senders = len(self._load_active_index())
+        return {"stored": len(session_files), "active_senders": active_senders}
+
     def _session_path(self, session_id: str) -> Path:
         """Get the filesystem path for a session file."""
         return self._dir / f"{session_id}.json"

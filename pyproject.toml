@@ -38,18 +38,18 @@ guardian = [
 ]
 
 [project.scripts]
-taskrunner = "runner:main"
+taskrunner = "taskrunner.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["taskrunner*", "fetchers*", "guardian*"]
+where = ["src"]
+include = ["taskrunner*", "guardian*", "bridge*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
-addopts = "--cov=taskrunner --cov=guardian --cov-report=term-missing"
+addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing"
 
 [tool.coverage.run]
-source = ["taskrunner", "guardian"]
+source = ["taskrunner", "guardian", "bridge"]
 
 [tool.coverage.report]
 show_missing = true

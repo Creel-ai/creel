@@ -43,5 +43,11 @@ guardian_audit.jsonl
 client_secret.json
 .claude/settings.local.json
 
+# Approvals (runtime data)
+approvals/
+
+# Workspace memory (runtime data, but workspace/ root stays for SOUL.md etc.)
+workspace/memory/
+
 # Coverage
 .coverage

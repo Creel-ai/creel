@@ -232,8 +232,21 @@ The exec executor provides sandboxed shell command execution within isolated Doc
 
 ## Quick Start
 
+### Prerequisites
+
 ```bash
-# Set up Python and virtualenv (requires pyenv and uv)
+# macOS
+brew install pyenv uv age
+
+# Linux
+curl https://pyenv.run | bash      # then follow shell setup instructions
+curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo apt install age               # or: brew install age
+```
+
+### Install
+
+```bash
 pyenv install 3.12.12   # if not already installed
 uv venv
 source .venv/bin/activate
@@ -242,8 +255,7 @@ uv pip install -e ".[dev]"
 # Optional: required for live ONNX export + classifier smoke tests
 uv pip install -e ".[guardian]"
 
-# Install age for secrets encryption (one-time)
-brew install age
+# Set up age for secrets encryption (one-time)
 mkdir -p ~/.age
 age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 

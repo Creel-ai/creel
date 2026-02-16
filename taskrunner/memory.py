@@ -26,7 +26,7 @@ class MemoryManager:
         workspace_dir: str,
         timezone_name: str = "UTC",
         max_daily_entries: int = 50,
-        max_long_term_lines: int = 200,
+        max_long_term_lines: int = 500,
     ):
         self._workspace = Path(workspace_dir)
         self._memory_dir = self._workspace / "memory"

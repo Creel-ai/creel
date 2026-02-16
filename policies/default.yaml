@@ -14,6 +14,10 @@ allow:
   - get_reminder_lists
   - web_search
   - fetch_url
+  # Browser tools (read-only)
+  - browser_get_content
+  - browser_links
+  - browser_close
   # Memory tools (writes are gated by Guardian content screening)
   - remember
   - search_memory
@@ -28,9 +32,26 @@ review:
   - mark_*
   - trash_*
   - edit_memory
+  # Browser tools (state-changing)
+  - browser_open
+  - browser_navigate
+  - browser_click
+  - browser_type
+  - browser_screenshot
 
 deny:
   - delete_*
+
+deny_when:
+  - tool: browser_navigate
+    arg: url
+    pattern: "file://*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "javascript:*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "data:*"
 
 # Tools that match 'review' rules but can skip human approval
 auto_approve:

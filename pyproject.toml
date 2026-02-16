@@ -36,6 +36,9 @@ guardian = [
     "onnxruntime>=1.16.0",
     "optimum[onnxruntime]>=1.14.0",
 ]
+browser = [
+    "playwright>=1.40.0",
+]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",

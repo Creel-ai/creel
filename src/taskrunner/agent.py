@@ -46,6 +46,7 @@ def run_agent_loop(
     guardian: object | None = None,
     confirm_action: Callable[[str, dict, str], bool] | None = None,
     memory_manager: object | None = None,
+    on_text_delta: Callable[[str], None] | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -57,6 +58,7 @@ def run_agent_loop(
         system_prompt: Optional system prompt.
         use_containers: If True, run executors in Docker containers.
         guardian: Optional Guardian instance for action validation.
+        on_text_delta: Optional streaming callback passed to call_llm().
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -78,6 +80,7 @@ def run_agent_loop(
                 config=llm_config,
                 tools=tool_defs if tool_defs else None,
                 system=system_prompt,
+                on_text_delta=on_text_delta,
             )
         except Exception as e:
             logger.exception("LLM call failed on turn %d", turns_used)
@@ -347,7 +350,9 @@ def run_agent_loop(
         # Append tool results as a user message
         messages.append({"role": "user", "content": tool_results})
 
-    # Max turns reached - do a final call without tools to force a summary
+    # Max turns reached - do a final call without tools to force a summary.
+    # Don't stream the forced summary — it's an internal wrap-up, not a direct
+    # response, and streaming it would concatenate with the prior streamed output.
     logger.warning("Max turns (%d) reached, forcing final response", agent_config.max_turns)
     try:
         response = call_llm(

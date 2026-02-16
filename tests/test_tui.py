@@ -274,6 +274,43 @@ async def test_tui_supports_backend_session_methods(tmp_path):
         await pilot.pause()
         assert backend.new_calls == 1
 
+
+@pytest.mark.asyncio
+async def test_tui_prefers_backend_stream_events(tmp_path):
+    """If backend provides stream_message, TUI should consume stream events."""
+    class _StreamingBackend:
+        def handle_message(self, sender_id, text, on_text_delta=None):
+            raise AssertionError("handle_message should not be called for streamed sends")
+
+        def stream_message(self, sender_id, text):
+            del sender_id, text
+            yield {"type": "start", "payload": {}}
+            yield {"type": "token", "payload": {"text": "streamed "}}
+            yield {"type": "token", "payload": {"text": "response"}}
+            yield {"type": "final", "payload": {"text": "streamed response"}}
+
+        def get_or_create_session(self, sender_id):
+            return SimpleNamespace(session_id="abc123", title="Remote", messages=[])
+
+        def new_session(self, sender_id):
+            return SimpleNamespace(session_id="def456", title="", messages=[])
+
+    app = ChatApp(_StreamingBackend())
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("hello")
+        await pilot.press("enter")
+
+        for _ in range(30):
+            await pilot.pause()
+            if not inp.disabled:
+                break
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "streamed response" in lines_text
+
 # --- New tests for TUI polish ---
 
 

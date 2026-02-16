@@ -617,20 +617,6 @@ def main() -> int:
         "--port", type=int, default=8099, help="Port to listen on (default: 8099)"
     )
 
-    args = parser.parse_args()
-
-    # Set up logging
-    from taskrunner.log import setup_logging
-
-    log_level = "DEBUG" if args.verbose else "INFO"
-    setup_logging(json_mode=args.json_logs, level=log_level)
-
-    # Load root .env if present (for PHONE, etc.)
-    root_env = Path(".env")
-    if root_env.exists():
-        for key, value in parse_env_file(root_env).items():
-            os.environ.setdefault(key, value)
-
     # audit command
     audit_parser = subparsers.add_parser("audit", help="Query the guardian audit log")
     audit_parser.add_argument(
@@ -657,6 +643,20 @@ def main() -> int:
         "--since", type=str, default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
     )
+
+    args = parser.parse_args()
+
+    # Set up logging
+    from taskrunner.log import setup_logging
+
+    log_level = "DEBUG" if args.verbose else "INFO"
+    setup_logging(json_mode=args.json_logs, level=log_level)
+
+    # Load root .env if present (for PHONE, etc.)
+    root_env = Path(".env")
+    if root_env.exists():
+        for key, value in parse_env_file(root_env).items():
+            os.environ.setdefault(key, value)
 
     if args.command is None:
         parser.print_help()

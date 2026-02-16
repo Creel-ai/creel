@@ -40,10 +40,29 @@ class ChatServer:
         self._use_containers = use_containers
         self._imessage_channel = imessage_channel
         self._confirm_fn = confirm_fn
+        # Build summarize_fn if summarization is enabled
+        summarize_fn = None
+        if agent_def.session.summarize_on_trim:
+            def _do_summarize(messages: list[dict]) -> str:
+                from taskrunner.llm import summarize_messages
+                if agent_def.llm.secrets:
+                    from taskrunner.orchestrator import _load_secrets_to_env
+                    _load_secrets_to_env(agent_def.llm.secrets)
+                return summarize_messages(
+                    messages,
+                    model=agent_def.session.summary_model,
+                    max_tokens=agent_def.session.summary_max_tokens,
+                    use_container=use_containers,
+                )
+            summarize_fn = _do_summarize
+
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
             ttl_hours=agent_def.session.ttl_hours,
+            summarize_on_trim=agent_def.session.summarize_on_trim,
+            summarize_fn=summarize_fn,
+            max_context_tokens=agent_def.session.max_context_tokens,
         )
 
         # Initialize memory manager if workspace is configured
@@ -160,6 +179,11 @@ class ChatServer:
             result.tool_calls_made,
             result.stop_reason,
         )
+
+        # Update token count for session compaction
+        last_tokens = getattr(result, "last_input_tokens", 0)
+        if isinstance(last_tokens, int) and last_tokens > 0:
+            self._session_mgr.update_token_count(sender_id, last_tokens)
 
         # Handle approval_required — queue the action and notify
         if result.stop_reason == "approval_required" and result.pending_approval:

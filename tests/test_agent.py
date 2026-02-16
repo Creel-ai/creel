@@ -28,7 +28,7 @@ def _make_tools() -> dict[str, ToolConfig]:
     }
 
 
-def _text_message(text: str) -> MagicMock:
+def _text_message(text: str, input_tokens: int = 100) -> MagicMock:
     """Create a mock Anthropic Message with text-only content."""
     block = MagicMock()
     block.type = "text"
@@ -36,10 +36,12 @@ def _text_message(text: str) -> MagicMock:
     msg = MagicMock()
     msg.content = [block]
     msg.stop_reason = "end_turn"
+    msg.usage = MagicMock()
+    msg.usage.input_tokens = input_tokens
     return msg
 
 
-def _tool_use_message(tool_name: str, tool_input: dict, tool_id: str = "toolu_1") -> MagicMock:
+def _tool_use_message(tool_name: str, tool_input: dict, tool_id: str = "toolu_1", input_tokens: int = 100) -> MagicMock:
     """Create a mock Anthropic Message with a tool_use block."""
     tool_block = MagicMock()
     tool_block.type = "tool_use"
@@ -49,6 +51,8 @@ def _tool_use_message(tool_name: str, tool_input: dict, tool_id: str = "toolu_1"
     msg = MagicMock()
     msg.content = [tool_block]
     msg.stop_reason = "tool_use"
+    msg.usage = MagicMock()
+    msg.usage.input_tokens = input_tokens
     return msg
 
 
@@ -307,3 +311,38 @@ def test_classify_output_passes_clean_result(mock_call_llm, mock_execute):
     guardian.screen_tool_result.assert_called_once()
     assert result.tool_history[0]["is_error"] is False
     assert result.tool_history[0]["output"] == "Hi, meeting at 3pm."
+
+
+@patch("taskrunner.agent.call_llm")
+def test_last_input_tokens_populated(mock_call_llm):
+    """AgentResult.last_input_tokens should reflect the final LLM response usage."""
+    mock_call_llm.return_value = _text_message("Hello!", input_tokens=4567)
+
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "Hi"}],
+        llm_config=_make_llm_config(),
+        tools_config={},
+        agent_config=AgentConfig(max_turns=5),
+    )
+
+    assert result.last_input_tokens == 4567
+
+
+@patch("taskrunner.agent.execute_tool_call")
+@patch("taskrunner.agent.call_llm")
+def test_last_input_tokens_from_final_call(mock_call_llm, mock_execute):
+    """last_input_tokens should be from the last LLM call, not the first."""
+    mock_call_llm.side_effect = [
+        _tool_use_message("check_weather", {"location": "Denver"}, input_tokens=1000),
+        _text_message("It's sunny!", input_tokens=2500),
+    ]
+    mock_execute.return_value = '{"temp": "72"}'
+
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "Weather?"}],
+        llm_config=_make_llm_config(),
+        tools_config=_make_tools(),
+        agent_config=AgentConfig(max_turns=5),
+    )
+
+    assert result.last_input_tokens == 2500

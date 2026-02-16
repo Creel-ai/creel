@@ -8,12 +8,15 @@ from taskrunner.daemon.client import DaemonTuiAdapter
 class _FakeClient:
     def __init__(self) -> None:
         self.active = "sess-1"
+        self.send_calls = 0
+        self.stream_calls = 0
         self.messages = [
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": [{"type": "text", "text": "hi"}]},
         ]
 
     def send_message(self, sender_id: str, text: str, session_id: str | None = None):
+        self.send_calls += 1
         return {
             "sender_id": sender_id,
             "text": f"echo:{text}",
@@ -21,6 +24,7 @@ class _FakeClient:
         }
 
     def stream_message(self, sender_id: str, text: str, session_id: str | None = None):
+        self.stream_calls += 1
         del session_id
         yield {
             "type": "start",
@@ -106,6 +110,21 @@ def test_adapter_send_updates_active_session_id() -> None:
 
     result = adapter.handle_message("cli", "hello")
     assert result == "echo:hello"
+    assert client.send_calls == 1
+    assert client.stream_calls == 0
+
+
+def test_adapter_handle_message_streams_when_callback_provided() -> None:
+    client = _FakeClient()
+    adapter = DaemonTuiAdapter(client, sender_id="cli")
+
+    chunks: list[str] = []
+    result = adapter.handle_message("cli", "hello", on_text_delta=chunks.append)
+
+    assert result == "echo:hello"
+    assert chunks == ["echo:", "hello"]
+    assert client.stream_calls == 1
+    assert client.send_calls == 0
 
 
 def test_adapter_new_and_resume_session() -> None:

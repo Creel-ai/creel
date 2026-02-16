@@ -386,6 +386,49 @@ class ChatApp(App):
         self.call_from_thread(self._show_status)
         self._streaming_chunks = []
 
+        try:
+            response = self._send_message_with_stream_events(text)
+        except Exception as exc:
+            response = f"Error: {exc}"
+
+        self.call_from_thread(self._hide_status)
+        self.call_from_thread(self._finish_streaming, response)
+        self.call_from_thread(self._enable_input)
+        self.call_from_thread(self._update_subtitle)
+
+    def _send_message_with_stream_events(self, text: str) -> str:
+        stream_fn = getattr(type(self._server), "stream_message", None)
+        if not callable(stream_fn):
+            return self._send_message_with_callback(text)
+
+        final_text = ""
+        for event in self._server.stream_message(self._sender_id, text):
+            event_type = str(event.get("type", ""))
+            payload = event.get("payload", {})
+            if not isinstance(payload, dict):
+                payload = {}
+
+            if event_type == "token":
+                chunk = str(payload.get("text", ""))
+                if chunk:
+                    if not self._streaming_chunks:
+                        self.call_from_thread(self._hide_status)
+                        self.call_from_thread(self._start_streaming)
+                    self._streaming_chunks.append(chunk)
+                    self.call_from_thread(
+                        self._update_streaming, "".join(self._streaming_chunks),
+                    )
+            elif event_type == "final":
+                final_text = str(payload.get("text", ""))
+            elif event_type == "error":
+                err = payload.get("error", "streaming request failed")
+                raise RuntimeError(str(err))
+
+        if final_text:
+            return final_text
+        return "".join(self._streaming_chunks)
+
+    def _send_message_with_callback(self, text: str) -> str:
         def on_delta(chunk: str) -> None:
             if not self._streaming_chunks:
                 # First chunk — swap status bar for streaming buffer
@@ -394,17 +437,9 @@ class ChatApp(App):
             self._streaming_chunks.append(chunk)
             self.call_from_thread(self._update_streaming, "".join(self._streaming_chunks))
 
-        try:
-            response = self._server.handle_message(
-                self._sender_id, text, on_text_delta=on_delta,
-            )
-        except Exception as exc:
-            response = f"Error: {exc}"
-
-        self.call_from_thread(self._hide_status)
-        self.call_from_thread(self._finish_streaming, response)
-        self.call_from_thread(self._enable_input)
-        self.call_from_thread(self._update_subtitle)
+        return self._server.handle_message(
+            self._sender_id, text, on_text_delta=on_delta,
+        )
 
     def _show_status(self) -> None:
         self.query_one("#status-bar", StatusBar).start_thinking()

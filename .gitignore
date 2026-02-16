@@ -51,3 +51,6 @@ workspace/memory/
 
 # Coverage
 .coverage
+
+# MkDocs build output
+site/

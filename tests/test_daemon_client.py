@@ -20,6 +20,33 @@ class _FakeClient:
             "session_id": self.active,
         }
 
+    def stream_message(self, sender_id: str, text: str, session_id: str | None = None):
+        del session_id
+        yield {
+            "type": "start",
+            "sender_id": sender_id,
+            "session_id": self.active,
+            "payload": {},
+        }
+        yield {
+            "type": "token",
+            "sender_id": sender_id,
+            "session_id": self.active,
+            "payload": {"text": "echo:"},
+        }
+        yield {
+            "type": "token",
+            "sender_id": sender_id,
+            "session_id": self.active,
+            "payload": {"text": text},
+        }
+        yield {
+            "type": "final",
+            "sender_id": sender_id,
+            "session_id": self.active,
+            "payload": {"text": f"echo:{text}"},
+        }
+
     def get_active_session(self, sender_id: str):
         return {
             "sender_id": sender_id,
@@ -90,3 +117,12 @@ def test_adapter_new_and_resume_session() -> None:
 
     resumed = adapter.resume_session("cli", "sess-9")
     assert resumed.session_id == "sess-9"
+
+
+def test_adapter_stream_updates_active_session_id() -> None:
+    client = _FakeClient()
+    adapter = DaemonTuiAdapter(client, sender_id="cli")
+
+    events = list(adapter.stream_message("cli", "hello"))
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "final"

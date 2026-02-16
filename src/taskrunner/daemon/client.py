@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,65 @@ class DaemonApiClient:
         if session_id:
             payload["session_id"] = session_id
         return self._request("POST", "/v1/messages", json_body=payload)
+
+    def stream_message(
+        self,
+        sender_id: str,
+        text: str,
+        session_id: str | None = None,
+    ):
+        payload: dict[str, Any] = {
+            "sender_id": sender_id,
+            "text": text,
+        }
+        if session_id:
+            payload["session_id"] = session_id
+
+        transport = httpx.HTTPTransport(uds=str(self._socket_path))
+        with httpx.Client(
+            transport=transport,
+            base_url="http://daemon",
+            timeout=self._timeout,
+        ) as client:
+            with client.stream("POST", "/v1/messages/stream", json=payload) as resp:
+                if resp.status_code >= 400:
+                    detail = ""
+                    try:
+                        detail = resp.json().get("detail", "")
+                    except Exception:
+                        detail = resp.text
+                    raise RuntimeError(
+                        f"Daemon API POST /v1/messages/stream failed ({resp.status_code}): {detail}"
+                    )
+
+                event_type = ""
+                data_lines: list[str] = []
+                for raw_line in resp.iter_lines():
+                    line = raw_line.decode() if isinstance(raw_line, bytes) else str(raw_line)
+                    if line == "":
+                        if not data_lines:
+                            event_type = ""
+                            continue
+                        payload_text = "\n".join(data_lines)
+                        parsed = json.loads(payload_text)
+                        if event_type and "type" not in parsed:
+                            parsed["type"] = event_type
+                        yield parsed
+                        event_type = ""
+                        data_lines = []
+                        continue
+
+                    if line.startswith("event:"):
+                        event_type = line.split(":", 1)[1].strip()
+                    elif line.startswith("data:"):
+                        data_lines.append(line.split(":", 1)[1].strip())
+
+                if data_lines:
+                    payload_text = "\n".join(data_lines)
+                    parsed = json.loads(payload_text)
+                    if event_type and "type" not in parsed:
+                        parsed["type"] = event_type
+                    yield parsed
 
     def get_active_session(self, sender_id: str) -> dict[str, Any]:
         return self._request(
@@ -136,6 +196,17 @@ class DaemonTuiAdapter:
         if isinstance(session_id, str) and session_id:
             self._active_session_id = session_id
         return str(response.get("text", ""))
+
+    def stream_message(self, sender_id: str, text: str):
+        for event in self._client.stream_message(
+            sender_id=sender_id,
+            text=text,
+            session_id=self._active_session_id,
+        ):
+            session_id = event.get("session_id")
+            if isinstance(session_id, str) and session_id:
+                self._active_session_id = session_id
+            yield event
 
     def get_or_create_session(self, sender_id: str) -> RemoteSession:
         summary = self._client.get_active_session(sender_id)

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from taskrunner.daemon.contracts import (
     DaemonStatusResponse,
@@ -13,6 +15,7 @@ from taskrunner.daemon.contracts import (
     SessionHistoryResponse,
     SessionRequest,
     SessionSummary,
+    StreamEvent,
 )
 from taskrunner.daemon.service import DaemonService
 
@@ -53,6 +56,29 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/v1/messages/stream")
+    async def stream_message(request: SendMessageRequest) -> StreamingResponse:
+        def _iter_sse():
+            for raw_event in service.stream_message(
+                sender_id=request.sender_id,
+                text=request.text,
+                session_id=request.session_id,
+            ):
+                event = StreamEvent(**raw_event).model_dump()
+                event_type = event["type"]
+                payload = json.dumps(event, ensure_ascii=False)
+                yield f"event: {event_type}\n"
+                yield f"data: {payload}\n\n"
+
+        return StreamingResponse(
+            _iter_sse(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
 
     @app.get("/v1/sessions", response_model=list[SessionSummary])
     async def list_sessions(sender_id: str = Query(..., min_length=1)) -> list[SessionSummary]:

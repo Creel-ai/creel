@@ -337,7 +337,22 @@ def cmd_attach(args: argparse.Namespace) -> int:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    app = ChatApp(backend, sender_id=sender_id)
+    # Fetch daemon status for startup banner
+    tool_count = 0
+    guardian_active = False
+    try:
+        daemon_status = client.status()
+        tool_count = daemon_status.get("tool_count", 0)
+        guardian_active = daemon_status.get("guardian_active", False)
+    except Exception:
+        pass  # non-critical, banner will show defaults
+
+    app = ChatApp(
+        backend,
+        sender_id=sender_id,
+        tool_count=tool_count,
+        guardian_active=guardian_active,
+    )
     app.run()
     return 0
 
@@ -433,6 +448,10 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     socket_path.unlink(missing_ok=True)
     pid_path.write_text(f"{os.getpid()}\n")
+
+    guardian_status = "active" if server._guardian else "inactive"
+    tool_count = len(agent_def.tools)
+    print(f"🦀 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
 
     app = create_daemon_app(service)
 

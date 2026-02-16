@@ -21,10 +21,18 @@ logger = logging.getLogger(__name__)
 class MemoryManager:
     """Manages file-based memory in a workspace directory."""
 
-    def __init__(self, workspace_dir: str, timezone_name: str = "UTC"):
+    def __init__(
+        self,
+        workspace_dir: str,
+        timezone_name: str = "UTC",
+        max_daily_entries: int = 50,
+        max_long_term_lines: int = 200,
+    ):
         self._workspace = Path(workspace_dir)
         self._memory_dir = self._workspace / "memory"
         self._memory_dir.mkdir(parents=True, exist_ok=True)
+        self._max_daily_entries = max_daily_entries
+        self._max_long_term_lines = max_long_term_lines
         try:
             self._tz = ZoneInfo(timezone_name)
         except (KeyError, ValueError):
@@ -54,6 +62,16 @@ class MemoryManager:
         today = datetime.now(self._tz)
         path = self.daily_path(today.date())
 
+        # Rate limit: count existing entries in today's file
+        if path.exists():
+            entry_count = sum(
+                1 for line in path.read_text().splitlines()
+                if line.startswith("- [")
+            )
+            if entry_count >= self._max_daily_entries:
+                logger.warning("Daily memory limit reached (%d entries)", self._max_daily_entries)
+                return f"Daily memory limit reached ({self._max_daily_entries} entries). Try again tomorrow."
+
         timestamp = today.strftime("%H:%M")
         entry = f"- [{timestamp}] **{category}**: {text}\n"
 
@@ -79,6 +97,12 @@ class MemoryManager:
         path = self.long_term_path
         if not path.exists():
             path.write_text("# Long-Term Memory\n\n")
+
+        # Rate limit: check line count
+        line_count = len(path.read_text().splitlines())
+        if line_count >= self._max_long_term_lines:
+            logger.warning("Long-term memory limit reached (%d lines)", self._max_long_term_lines)
+            return f"Long-term memory limit reached ({self._max_long_term_lines} lines). Consider editing existing entries."
 
         with open(path, "a") as f:
             f.write(f"\n{text}\n")

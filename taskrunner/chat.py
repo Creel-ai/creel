@@ -53,6 +53,8 @@ class ChatServer:
             self._memory = MemoryManager(
                 workspace_dir=agent_def.workspace.path,
                 timezone_name=agent_def.workspace.timezone,
+                max_daily_entries=agent_def.workspace.max_daily_entries,
+                max_long_term_lines=agent_def.workspace.max_long_term_lines,
             )
             self._memory.compact_daily_files(
                 days_to_keep=agent_def.workspace.compact_after_days,

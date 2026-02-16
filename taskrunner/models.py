@@ -117,11 +117,11 @@ class WorkspaceConfig(BaseModel):
     path: str = "workspace"
     timezone: str = "UTC"
     memory_days: int = 2
-    memory_max_chars: int = 5000
+    memory_max_chars: int = 20_000
     max_chars_per_file: int = 20_000
     compact_after_days: int = 7
     max_daily_entries: int = 50
-    max_long_term_lines: int = 200
+    max_long_term_lines: int = 500
 
 
 class IMessageChannelConfig(BaseModel):

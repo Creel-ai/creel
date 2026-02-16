@@ -132,3 +132,32 @@ class TestFullPipeline:
 
         assert "result" in result.lower() or "Here is" in result
         assert mock_call_llm.call_count == 2
+
+
+class TestSlashCommands:
+    """Tests for /status and /model slash commands."""
+
+    def test_status_command(self, minimal_agent_def: AgentDefinition, monkeypatch):
+        """/status should return server status info without calling the LLM."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        server = ChatServer(minimal_agent_def, use_containers=False)
+        result = server.handle_message("test-user", "/status")
+
+        assert "Status:" in result
+        assert "Model:" in result
+        assert "Session ID:" in result
+        assert "Messages:" in result
+        assert "Uptime:" in result
+        assert "Guardian: disabled" in result
+
+    def test_model_command(self, minimal_agent_def: AgentDefinition, monkeypatch):
+        """/model should return model configuration without calling the LLM."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        server = ChatServer(minimal_agent_def, use_containers=False)
+        result = server.handle_message("test-user", "/model")
+
+        assert "Model:" in result
+        assert "Name:" in result
+        assert minimal_agent_def.llm.model in result
+        assert "Max tokens:" in result
+        assert "Max turns:" in result

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 
@@ -27,7 +28,8 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.service = service
         yield
-        service.shutdown()
+        # Shutdown is handled by the CLI finally block; service.shutdown()
+        # is idempotent so calling it here is safe but not required.
 
     app = FastAPI(
         title="Creel Daemon API",
@@ -47,25 +49,53 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
     async def send_message(request: SendMessageRequest) -> SendMessageResponse:
         try:
             if request.session_id:
-                service.resume_session(request.sender_id, request.session_id)
-            text = service.send_message(request.sender_id, request.text)
+                await asyncio.to_thread(
+                    service.resume_session, request.sender_id, request.session_id
+                )
+            text = await asyncio.to_thread(
+                service.send_message, request.sender_id, request.text
+            )
+            session_id = await asyncio.to_thread(
+                service.get_active_session_id, request.sender_id
+            )
             return SendMessageResponse(
                 sender_id=request.sender_id,
                 text=text,
-                session_id=service.get_active_session_id(request.sender_id),
+                session_id=session_id,
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/v1/messages/stream")
     async def stream_message(request: SendMessageRequest) -> StreamingResponse:
-        def _iter_sse():
-            for raw_event in service.stream_message(
-                sender_id=request.sender_id,
-                text=request.text,
-                session_id=request.session_id,
-            ):
-                event = StreamEvent(**raw_event).model_dump()
+        async def _iter_sse():
+            # Run the blocking generator in a thread and yield events
+            q: asyncio.Queue = asyncio.Queue()
+            sentinel = object()
+
+            def _produce():
+                try:
+                    for raw_event in service.stream_message(
+                        sender_id=request.sender_id,
+                        text=request.text,
+                        session_id=request.session_id,
+                    ):
+                        asyncio.run_coroutine_threadsafe(
+                            q.put(raw_event), loop
+                        ).result()
+                finally:
+                    asyncio.run_coroutine_threadsafe(
+                        q.put(sentinel), loop
+                    ).result()
+
+            loop = asyncio.get_event_loop()
+            asyncio.get_event_loop().run_in_executor(None, _produce)
+
+            while True:
+                item = await q.get()
+                if item is sentinel:
+                    break
+                event = StreamEvent(**item).model_dump()
                 event_type = event["type"]
                 payload = json.dumps(event, ensure_ascii=False)
                 yield f"event: {event_type}\n"
@@ -82,23 +112,25 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
 
     @app.get("/v1/sessions", response_model=list[SessionSummary])
     async def list_sessions(sender_id: str = Query(..., min_length=1)) -> list[SessionSummary]:
-        rows = service.list_sessions(sender_id)
+        rows = await asyncio.to_thread(service.list_sessions, sender_id)
         return [SessionSummary(sender_id=sender_id, **row) for row in rows]
 
     @app.get("/v1/sessions/active", response_model=SessionSummary)
     async def active_session(sender_id: str = Query(..., min_length=1)) -> SessionSummary:
-        row = service.get_active_session(sender_id)
+        row = await asyncio.to_thread(service.get_active_session, sender_id)
         return SessionSummary(**row)
 
     @app.post("/v1/sessions/new", response_model=SessionSummary)
     async def new_session(request: SessionRequest) -> SessionSummary:
-        row = service.new_session(request.sender_id)
+        row = await asyncio.to_thread(service.new_session, request.sender_id)
         return SessionSummary(**row)
 
     @app.post("/v1/sessions/{session_id}/resume", response_model=SessionSummary)
     async def resume_session(session_id: str, request: SessionRequest) -> SessionSummary:
         try:
-            row = service.resume_session(request.sender_id, session_id)
+            row = await asyncio.to_thread(
+                service.resume_session, request.sender_id, session_id
+            )
             return SessionSummary(**row)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -110,7 +142,8 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         limit: int = Query(100, ge=1, le=1000),
     ) -> SessionHistoryResponse:
         try:
-            messages = service.get_history(
+            messages = await asyncio.to_thread(
+                service.get_history,
                 sender_id=sender_id,
                 session_id=session_id,
                 limit=limit,

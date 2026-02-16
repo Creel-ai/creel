@@ -23,11 +23,37 @@ class RemoteSession:
 
 
 class DaemonApiClient:
-    """Thin HTTP-over-UDS client for daemon API."""
+    """Thin HTTP-over-UDS client for daemon API.
+
+    Reuses a single httpx.Client for the lifetime of the instance.
+    Call close() when done, or use as a context manager.
+    """
 
     def __init__(self, socket_path: str | Path, timeout: float = 300.0) -> None:
         self._socket_path = Path(socket_path)
         self._timeout = timeout
+        self._client: httpx.Client | None = None
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            transport = httpx.HTTPTransport(uds=str(self._socket_path))
+            self._client = httpx.Client(
+                transport=transport,
+                base_url="http://daemon",
+                timeout=self._timeout,
+            )
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
@@ -62,51 +88,45 @@ class DaemonApiClient:
         if session_id:
             payload["session_id"] = session_id
 
-        transport = httpx.HTTPTransport(uds=str(self._socket_path))
-        with httpx.Client(
-            transport=transport,
-            base_url="http://daemon",
-            timeout=self._timeout,
-        ) as client:
-            with client.stream("POST", "/v1/messages/stream", json=payload) as resp:
-                if resp.status_code >= 400:
-                    detail = ""
-                    try:
-                        detail = resp.json().get("detail", "")
-                    except Exception:
-                        detail = resp.text
-                    raise RuntimeError(
-                        f"Daemon API POST /v1/messages/stream failed ({resp.status_code}): {detail}"
-                    )
+        client = self._get_client()
+        with client.stream("POST", "/v1/messages/stream", json=payload) as resp:
+            if resp.status_code >= 400:
+                detail = ""
+                try:
+                    detail = resp.json().get("detail", "")
+                except Exception:
+                    detail = resp.text
+                raise RuntimeError(
+                    f"Daemon API POST /v1/messages/stream failed ({resp.status_code}): {detail}"
+                )
 
-                event_type = ""
-                data_lines: list[str] = []
-                for raw_line in resp.iter_lines():
-                    line = raw_line.decode() if isinstance(raw_line, bytes) else str(raw_line)
-                    if line == "":
-                        if not data_lines:
-                            event_type = ""
-                            continue
-                        payload_text = "\n".join(data_lines)
-                        parsed = json.loads(payload_text)
-                        if event_type and "type" not in parsed:
-                            parsed["type"] = event_type
-                        yield parsed
+            event_type = ""
+            data_lines: list[str] = []
+            for line in resp.iter_lines():
+                if line == "":
+                    if not data_lines:
                         event_type = ""
-                        data_lines = []
                         continue
-
-                    if line.startswith("event:"):
-                        event_type = line.split(":", 1)[1].strip()
-                    elif line.startswith("data:"):
-                        data_lines.append(line.split(":", 1)[1].strip())
-
-                if data_lines:
                     payload_text = "\n".join(data_lines)
                     parsed = json.loads(payload_text)
                     if event_type and "type" not in parsed:
                         parsed["type"] = event_type
                     yield parsed
+                    event_type = ""
+                    data_lines = []
+                    continue
+
+                if line.startswith("event:"):
+                    event_type = line.split(":", 1)[1].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line.split(":", 1)[1].strip())
+
+            if data_lines:
+                payload_text = "\n".join(data_lines)
+                parsed = json.loads(payload_text)
+                if event_type and "type" not in parsed:
+                    parsed["type"] = event_type
+                yield parsed
 
     def get_active_session(self, sender_id: str) -> dict[str, Any]:
         return self._request(
@@ -157,13 +177,8 @@ class DaemonApiClient:
         json_body: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
     ) -> Any:
-        transport = httpx.HTTPTransport(uds=str(self._socket_path))
-        with httpx.Client(
-            transport=transport,
-            base_url="http://daemon",
-            timeout=self._timeout,
-        ) as client:
-            resp = client.request(method, path, json=json_body, params=params)
+        client = self._get_client()
+        resp = client.request(method, path, json=json_body, params=params)
 
         if resp.status_code >= 400:
             detail = ""

@@ -38,9 +38,10 @@ from taskrunner.scheduler import start_scheduler
 
 DEFAULT_TASKS_DIR = Path("tasks")
 DEFAULT_AGENT_CONFIG = Path("agent.yaml")
-DEFAULT_DAEMON_SOCKET = Path("/tmp/creel-daemon.sock")
-DEFAULT_DAEMON_PID_FILE = Path("/tmp/creel-daemon.pid")
-DEFAULT_DAEMON_LOG_FILE = Path("/tmp/creel-daemon.log")
+_CREEL_STATE_DIR = Path.home() / ".creel"
+DEFAULT_DAEMON_SOCKET = _CREEL_STATE_DIR / "daemon.sock"
+DEFAULT_DAEMON_PID_FILE = _CREEL_STATE_DIR / "daemon.pid"
+DEFAULT_DAEMON_LOG_FILE = _CREEL_STATE_DIR / "daemon.log"
 DEFAULT_DAEMON_LABEL = "com.creel.daemon"
 DEFAULT_DAEMON_PLIST_FILE = (
     Path.home() / "Library" / "LaunchAgents" / f"{DEFAULT_DAEMON_LABEL}.plist"
@@ -732,7 +733,11 @@ def cmd_daemon_stop(args: argparse.Namespace) -> int:
             return 0
         time.sleep(0.1)
 
-    print(f"Timed out waiting for daemon {pid} to stop.", file=sys.stderr)
+    print(
+        f"Timed out waiting for daemon {pid} to stop. "
+        f"You can force-kill it with: kill -9 {pid}",
+        file=sys.stderr,
+    )
     return 1
 
 
@@ -1052,6 +1057,46 @@ def main() -> int:
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
     )
 
+    # --- Shared daemon parent parsers (to avoid option duplication) ---
+    _daemon_paths_parent = argparse.ArgumentParser(add_help=False)
+    _daemon_paths_parent.add_argument(
+        "--socket-path", type=Path, default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    )
+    _daemon_paths_parent.add_argument(
+        "--pid-file", type=Path, default=DEFAULT_DAEMON_PID_FILE,
+        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
+    )
+
+    _daemon_launchd_parent = argparse.ArgumentParser(add_help=False)
+    _daemon_launchd_parent.add_argument(
+        "--label", default=DEFAULT_DAEMON_LABEL,
+        help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
+    )
+    _daemon_launchd_parent.add_argument(
+        "--plist-path", type=Path, default=DEFAULT_DAEMON_PLIST_FILE,
+        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
+    )
+
+    _daemon_runtime_parent = argparse.ArgumentParser(add_help=False)
+    _daemon_runtime_parent.add_argument(
+        "--log-file", type=Path, default=DEFAULT_DAEMON_LOG_FILE,
+        help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
+    )
+    _daemon_runtime_parent.add_argument(
+        "--channel", dest="channel_type", default="imessage",
+        choices=["none", "imessage", "bluebubbles"],
+        help="Channel plugin to run inside daemon (default: imessage)",
+    )
+    _daemon_runtime_parent.add_argument(
+        "--no-scheduler", action="store_true",
+        help="Disable scheduler in daemon runtime",
+    )
+    _daemon_runtime_parent.add_argument(
+        "--wait-seconds", type=float, default=8.0,
+        help="Seconds to wait for daemon health check (default: 8)",
+    )
+
     # daemon command
     daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
     daemon_subparsers = daemon_parser.add_subparsers(
@@ -1059,213 +1104,45 @@ def main() -> int:
         metavar="{start,stop,status,install,uninstall}",
     )
 
-    daemon_start = daemon_subparsers.add_parser("start", help="Start the background daemon")
-    daemon_start.add_argument(
-        "--socket-path",
-        type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
-    )
-    daemon_start.add_argument(
-        "--pid-file",
-        type=Path,
-        default=DEFAULT_DAEMON_PID_FILE,
-        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
-    )
-    daemon_start.add_argument(
-        "--log-file",
-        type=Path,
-        default=DEFAULT_DAEMON_LOG_FILE,
-        help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
-    )
-    daemon_start.add_argument(
-        "--channel",
-        dest="channel_type",
-        default="imessage",
-        choices=["none", "imessage", "bluebubbles"],
-        help="Channel plugin to run inside daemon (default: imessage)",
-    )
-    daemon_start.add_argument(
-        "--no-scheduler",
-        action="store_true",
-        help="Disable scheduler in daemon runtime",
-    )
-    daemon_start.add_argument(
-        "--wait-seconds",
-        type=float,
-        default=8.0,
-        help="Seconds to wait for daemon health check (default: 8)",
-    )
-    daemon_start.add_argument(
-        "--label",
-        default=DEFAULT_DAEMON_LABEL,
-        help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
-    )
-    daemon_start.add_argument(
-        "--plist-path",
-        type=Path,
-        default=DEFAULT_DAEMON_PLIST_FILE,
-        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
+    daemon_subparsers.add_parser(
+        "start", help="Start the background daemon",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
     )
 
-    daemon_stop = daemon_subparsers.add_parser("stop", help="Stop the background daemon")
-    daemon_stop.add_argument(
-        "--socket-path",
-        type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    daemon_stop = daemon_subparsers.add_parser(
+        "stop", help="Stop the background daemon",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
     daemon_stop.add_argument(
-        "--pid-file",
-        type=Path,
-        default=DEFAULT_DAEMON_PID_FILE,
-        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
-    )
-    daemon_stop.add_argument(
-        "--timeout",
-        type=float,
-        default=10.0,
+        "--timeout", type=float, default=10.0,
         help="Stop timeout in seconds (default: 10)",
     )
-    daemon_stop.add_argument(
-        "--label",
-        default=DEFAULT_DAEMON_LABEL,
-        help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
-    )
-    daemon_stop.add_argument(
-        "--plist-path",
-        type=Path,
-        default=DEFAULT_DAEMON_PLIST_FILE,
-        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
+
+    daemon_subparsers.add_parser(
+        "status", help="Show daemon status",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
 
-    daemon_status = daemon_subparsers.add_parser("status", help="Show daemon status")
-    daemon_status.add_argument(
-        "--socket-path",
-        type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
-    )
-    daemon_status.add_argument(
-        "--pid-file",
-        type=Path,
-        default=DEFAULT_DAEMON_PID_FILE,
-        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
-    )
-    daemon_status.add_argument(
-        "--label",
-        default=DEFAULT_DAEMON_LABEL,
-        help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
-    )
-    daemon_status.add_argument(
-        "--plist-path",
-        type=Path,
-        default=DEFAULT_DAEMON_PLIST_FILE,
-        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
+    daemon_subparsers.add_parser(
+        "install", help="Install daemon as a launchd service",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
     )
 
-    daemon_install = daemon_subparsers.add_parser(
-        "install",
-        help="Install daemon as a launchd service",
-    )
-    daemon_install.add_argument(
-        "--socket-path",
-        type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
-    )
-    daemon_install.add_argument(
-        "--pid-file",
-        type=Path,
-        default=DEFAULT_DAEMON_PID_FILE,
-        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
-    )
-    daemon_install.add_argument(
-        "--log-file",
-        type=Path,
-        default=DEFAULT_DAEMON_LOG_FILE,
-        help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
-    )
-    daemon_install.add_argument(
-        "--channel",
-        dest="channel_type",
-        default="imessage",
-        choices=["none", "imessage", "bluebubbles"],
-        help="Channel plugin to run inside daemon (default: imessage)",
-    )
-    daemon_install.add_argument(
-        "--no-scheduler",
-        action="store_true",
-        help="Disable scheduler in daemon runtime",
-    )
-    daemon_install.add_argument(
-        "--wait-seconds",
-        type=float,
-        default=8.0,
-        help="Seconds to wait for daemon health check (default: 8)",
-    )
-    daemon_install.add_argument(
-        "--label",
-        default=DEFAULT_DAEMON_LABEL,
-        help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
-    )
-    daemon_install.add_argument(
-        "--plist-path",
-        type=Path,
-        default=DEFAULT_DAEMON_PLIST_FILE,
-        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
-    )
-
-    daemon_uninstall = daemon_subparsers.add_parser(
-        "uninstall",
-        help="Uninstall daemon launchd service",
-    )
-    daemon_uninstall.add_argument(
-        "--socket-path",
-        type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
-    )
-    daemon_uninstall.add_argument(
-        "--pid-file",
-        type=Path,
-        default=DEFAULT_DAEMON_PID_FILE,
-        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
-    )
-    daemon_uninstall.add_argument(
-        "--label",
-        default=DEFAULT_DAEMON_LABEL,
-        help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
-    )
-    daemon_uninstall.add_argument(
-        "--plist-path",
-        type=Path,
-        default=DEFAULT_DAEMON_PLIST_FILE,
-        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
+    daemon_subparsers.add_parser(
+        "uninstall", help="Uninstall daemon launchd service",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
 
     # Internal foreground command used by `daemon start`
-    daemon_run = daemon_subparsers.add_parser("run", help=argparse.SUPPRESS)
-    daemon_run.add_argument(
-        "--socket-path",
-        type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
+    daemon_run = daemon_subparsers.add_parser(
+        "run", help=argparse.SUPPRESS,
+        parents=[_daemon_paths_parent],
     )
     daemon_run.add_argument(
-        "--pid-file",
-        type=Path,
-        default=DEFAULT_DAEMON_PID_FILE,
-    )
-    daemon_run.add_argument(
-        "--channel",
-        dest="channel_type",
-        default="imessage",
+        "--channel", dest="channel_type", default="imessage",
         choices=["none", "imessage", "bluebubbles"],
     )
-    daemon_run.add_argument(
-        "--no-scheduler",
-        action="store_true",
-    )
+    daemon_run.add_argument("--no-scheduler", action="store_true")
     daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]
         action
         for action in daemon_subparsers._choices_actions  # type: ignore[attr-defined]

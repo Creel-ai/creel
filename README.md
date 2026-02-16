@@ -1004,9 +1004,9 @@ Run options:
   --dry             Render prompt only, skip LLM and output
 
 Daemon start options:
-  --socket-path PATH   Unix socket path (default: /tmp/creel-daemon.sock)
-  --pid-file PATH      PID file path (default: /tmp/creel-daemon.pid)
-  --log-file PATH      Daemon log file (default: /tmp/creel-daemon.log)
+  --socket-path PATH   Unix socket path (default: ~/.creel/daemon.sock)
+  --pid-file PATH      PID file path (default: ~/.creel/daemon.pid)
+  --log-file PATH      Daemon log file (default: ~/.creel/daemon.log)
   --channel TYPE       Channel plugin: none, imessage, bluebubbles
   --no-scheduler       Disable scheduler in daemon runtime
   --label NAME         launchd label (default: com.creel.daemon)
@@ -1016,12 +1016,12 @@ Attach options:
   --sender-id ID       Sender ID/session namespace (default: cli)
   --new                Start and attach to a new session
   --resume ID          Attach and resume a specific session
-  --socket-path PATH   Unix socket path (default: /tmp/creel-daemon.sock)
+  --socket-path PATH   Unix socket path (default: ~/.creel/daemon.sock)
 
 Send options:
   --sender-id ID       Sender ID/session namespace (default: cli)
   --session-id ID      Resume and send into a specific session
-  --socket-path PATH   Unix socket path (default: /tmp/creel-daemon.sock)
+  --socket-path PATH   Unix socket path (default: ~/.creel/daemon.sock)
   --stream             Stream response events from daemon SSE endpoint
 
 Audit options:
@@ -1036,7 +1036,7 @@ Audit options:
 
 ## Project Structure
 
-``` 
+```
 creel/
 ├── agent.yaml             # Global agent config (tools, channels, sessions, guardian)
 ├── pyproject.toml

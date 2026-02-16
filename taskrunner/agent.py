@@ -33,6 +33,7 @@ class AgentResult:
     stop_reason: str  # "end_turn" | "max_turns" | "error" | "approval_required"
     tool_history: list[dict] = field(default_factory=list)
     pending_approval: PendingApproval | None = None
+    last_input_tokens: int = 0
 
 
 def run_agent_loop(
@@ -65,6 +66,7 @@ def run_agent_loop(
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []
+    last_input_tokens = 0
 
     for turn in range(agent_config.max_turns):
         turns_used += 1
@@ -87,6 +89,10 @@ def run_agent_loop(
                 tool_history=tool_history,
             )
 
+        # Track token usage from response
+        if hasattr(response, "usage") and response.usage:
+            last_input_tokens = getattr(response.usage, "input_tokens", 0)
+
         # Check for tool_use blocks
         tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
 
@@ -101,6 +107,7 @@ def run_agent_loop(
                 tool_calls_made=tool_calls_made,
                 stop_reason="end_turn",
                 tool_history=tool_history,
+                last_input_tokens=last_input_tokens,
             )
 
         # Append the assistant message (with tool_use blocks) to history
@@ -178,6 +185,7 @@ def run_agent_loop(
                                 tool_input=tool_input,
                                 reason=decision.reason,
                             ),
+                            last_input_tokens=last_input_tokens,
                         )
 
             # Guardian coherence check — verify tool call matches user intent
@@ -296,6 +304,8 @@ def run_agent_loop(
         )
         text = extract_text(response)
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+        if hasattr(response, "usage") and response.usage:
+            last_input_tokens = getattr(response.usage, "input_tokens", 0)
     except Exception as e:
         logger.exception("Final LLM call failed")
         text = f"Error on final turn: {e}"
@@ -306,6 +316,7 @@ def run_agent_loop(
         tool_calls_made=tool_calls_made,
         stop_reason="max_turns",
         tool_history=tool_history,
+        last_input_tokens=last_input_tokens,
     )
 
 

@@ -2,15 +2,16 @@
 """LLM Task Runner - CLI entry point.
 
 Usage:
-    ./runner.py run <task_name>          Run a task immediately
-    ./runner.py run <task_name> --dry    Dry run (render prompt, skip LLM/output)
-    ./runner.py schedule                 Start scheduler for all tasks
-    ./runner.py list                     List available tasks
-    ./runner.py validate <task_name>     Validate a task definition
-    ./runner.py chat                     Interactive CLI chat with agent
-    ./runner.py listen                   Listen for iMessages and respond
-    ./runner.py serve                    Listen for iMessages + run scheduler
-    ./runner.py bridge                   Start the host bridge server
+    creel run <task_name>            Run a task immediately
+    creel run <task_name> --dry      Dry run (render prompt only)
+    creel attach                     Attach TUI to running daemon
+    creel schedule                   Start scheduler for all tasks
+    creel daemon start               Start daemon in background
+    creel daemon stop                Stop daemon
+    creel daemon status              Show daemon status
+    creel daemon install             Install daemon as launchd service
+    creel daemon uninstall           Remove daemon launchd service
+    creel send "message"             Send one message via daemon API
 """
 
 from __future__ import annotations
@@ -37,10 +38,167 @@ from taskrunner.scheduler import start_scheduler
 
 DEFAULT_TASKS_DIR = Path("tasks")
 DEFAULT_AGENT_CONFIG = Path("agent.yaml")
+_CREEL_STATE_DIR = Path.home() / ".creel"
+DEFAULT_DAEMON_SOCKET = _CREEL_STATE_DIR / "daemon.sock"
+DEFAULT_DAEMON_PID_FILE = _CREEL_STATE_DIR / "daemon.pid"
+DEFAULT_DAEMON_LOG_FILE = _CREEL_STATE_DIR / "daemon.log"
+DEFAULT_DAEMON_LABEL = "com.creel.daemon"
+DEFAULT_DAEMON_PLIST_FILE = (
+    Path.home() / "Library" / "LaunchAgents" / f"{DEFAULT_DAEMON_LABEL}.plist"
+)
 
 
 def _tasks_dir(args: argparse.Namespace) -> Path:
     return args.tasks_dir
+
+
+def _daemon_socket_path(args: argparse.Namespace) -> Path:
+    return Path(getattr(args, "socket_path", DEFAULT_DAEMON_SOCKET))
+
+
+def _daemon_pid_path(args: argparse.Namespace) -> Path:
+    return Path(getattr(args, "pid_file", DEFAULT_DAEMON_PID_FILE))
+
+
+def _daemon_log_path(args: argparse.Namespace) -> Path:
+    return Path(getattr(args, "log_file", DEFAULT_DAEMON_LOG_FILE))
+
+
+def _daemon_label(args: argparse.Namespace) -> str:
+    return str(getattr(args, "label", DEFAULT_DAEMON_LABEL))
+
+
+def _daemon_plist_path(args: argparse.Namespace) -> Path:
+    return Path(getattr(args, "plist_path", DEFAULT_DAEMON_PLIST_FILE))
+
+
+def _read_pid(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    try:
+        return int(path.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def _pid_is_running(pid: int) -> bool:
+    import errno
+
+    try:
+        os.kill(pid, 0)
+    except OSError as exc:
+        return exc.errno != errno.ESRCH
+    return True
+
+
+def _daemon_request(
+    socket_path: Path,
+    method: str,
+    url_path: str,
+    json_body: dict | None = None,
+    timeout: float = 5.0,
+):
+    import httpx
+
+    transport = httpx.HTTPTransport(uds=str(socket_path))
+    with httpx.Client(
+        transport=transport,
+        base_url="http://daemon",
+        timeout=timeout,
+    ) as client:
+        return client.request(method, url_path, json=json_body)
+
+
+def _cleanup_stale_daemon_files(pid_path: Path, socket_path: Path) -> None:
+    pid_path.unlink(missing_ok=True)
+    socket_path.unlink(missing_ok=True)
+
+
+def _daemon_launchd_target() -> str:
+    return f"gui/{os.getuid()}"
+
+
+def _allow_launchd_bootout_failure(output: str) -> bool:
+    lower = output.lower()
+    return any(
+        phrase in lower
+        for phrase in (
+            "could not find service",
+            "service not loaded",
+            "not found",
+            "no such process",
+        )
+    )
+
+
+def _allow_launchd_bootstrap_failure(output: str) -> bool:
+    return "already loaded" in output.lower()
+
+
+def _build_daemon_run_command(args: argparse.Namespace, socket_path: Path, pid_path: Path) -> list[str]:
+    cmd = [
+        sys.executable,
+        "-m",
+        "taskrunner",
+        "--tasks-dir",
+        str(Path(args.tasks_dir).resolve()),
+        "--agent-config",
+        str(Path(args.agent_config).resolve()),
+    ]
+    if args.containers:
+        cmd.append("--containers")
+    if args.no_judge:
+        cmd.append("--no-judge")
+    if args.verbose:
+        cmd.append("--verbose")
+    if args.json_logs:
+        cmd.append("--json-logs")
+
+    cmd.extend(
+        [
+            "daemon",
+            "run",
+            "--socket-path",
+            str(socket_path),
+            "--pid-file",
+            str(pid_path),
+            "--channel",
+            args.channel_type,
+        ]
+    )
+    if args.no_scheduler:
+        cmd.append("--no-scheduler")
+    return cmd
+
+
+def _build_daemon_env(repo_root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    src_path = repo_root / "src"
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    src_str = str(src_path)
+    if existing_pythonpath:
+        paths = existing_pythonpath.split(os.pathsep)
+        if src_str not in paths:
+            env["PYTHONPATH"] = src_str + os.pathsep + existing_pythonpath
+    else:
+        env["PYTHONPATH"] = src_str
+    return env
+
+
+def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
+    import time
+
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        if socket_path.exists():
+            try:
+                resp = _daemon_request(socket_path, "GET", "/health", timeout=0.5)
+                if resp.status_code == 200:
+                    return True
+            except Exception:
+                pass
+        time.sleep(0.1)
+    return False
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -146,120 +304,82 @@ def _load_agent_def(args: argparse.Namespace):
     return agent_def
 
 
-def cmd_chat(args: argparse.Namespace) -> int:
-    """Start interactive CLI chat."""
-    from taskrunner.chat import ChatServer
-    from taskrunner.session import SessionManager
+def cmd_attach(args: argparse.Namespace) -> int:
+    """Attach Textual TUI to a running daemon."""
+    from taskrunner.daemon.client import DaemonApiClient, DaemonTuiAdapter
+    from taskrunner.tui import ChatApp
 
+    socket_path = _daemon_socket_path(args)
+    sender_id = getattr(args, "sender_id", "cli")
+    timeout = max(1.0, getattr(args, "timeout", 300.0))
+
+    client = DaemonApiClient(socket_path=socket_path, timeout=timeout)
     try:
-        agent_def = _load_agent_def(args)
-    except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        client.health()
+    except Exception as e:
+        print(f"Error: daemon is unreachable at {socket_path}: {e}", file=sys.stderr)
         return 1
 
-    # Load LLM secrets early
-    if agent_def.llm.secrets:
-        from taskrunner.orchestrator import _load_secrets_to_env
-        _load_secrets_to_env(agent_def.llm.secrets)
+    # Suppress console log handlers — Textual owns the terminal
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        if isinstance(handler, logging.StreamHandler):
+            root.removeHandler(handler)
 
-    # Handle --list-sessions: print and exit
-    if args.list_sessions:
-        from datetime import datetime, timezone
-
-        mgr = SessionManager(
-            sessions_dir=agent_def.session.sessions_dir,
-            max_history=agent_def.session.max_history,
-        )
-        sessions = mgr.list_sessions("cli")
-        if not sessions:
-            print("No sessions found.")
-            return 0
-        active_id = mgr._get_active_session_id("cli")
-        print(f"{'ID':<12} {'Title':<40} {'Messages':>8}  {'Last Active'}")
-        print("-" * 80)
-        for s in sessions:
-            marker = " *" if s["session_id"] == active_id else ""
-            dt = datetime.fromtimestamp(s["last_active"], tz=timezone.utc)
-            date_str = dt.strftime("%Y-%m-%d %H:%M")
-            title = (s["title"] or "(untitled)")[:38]
-            print(f"{s['session_id']}{marker:<{12 - len(s['session_id'])}} {title:<40} {s['message_count']:>8}  {date_str}")
-        return 0
-
-    # -- TUI mode (default) --
-    if not args.simple:
-        try:
-            from taskrunner.tui import ChatApp, _make_tui_confirm_fn
-        except ImportError:
-            args.simple = True  # fall back if textual not installed
-
-    if not args.simple:
-        # Suppress console log handlers — Textual owns the terminal
-        root = logging.getLogger()
-        for handler in root.handlers[:]:
-            if isinstance(handler, logging.StreamHandler):
-                root.removeHandler(handler)
-
-        server = ChatServer(agent_def, use_containers=args.containers)
-        app = ChatApp(server, model_name=agent_def.llm.model)
-        server._confirm_fn = _make_tui_confirm_fn(app)
-
-        if args.new:
-            server._session_mgr.new_session("cli")
-        if args.resume:
-            try:
-                server._session_mgr.resume_session("cli", args.resume)
-            except ValueError as e:
-                print(f"Error: {e}", file=sys.stderr)
-                return 1
-
-        app.run()
-        return 0
-
-    # -- Simple stdin/stdout mode --
-    from taskrunner.channels.stdin import StdinChannel
-
-    def _confirm_action(tool_name: str, tool_input: dict, reason: str) -> bool:
-        subject = tool_input.get("subject")
-        if subject:
-            print(f'\n⚠ Guardian review: {tool_name} — "{subject}"')
-        else:
-            print(f"\n⚠ Guardian review: {tool_name}")
-        print(f"  Input: {tool_input}")
-        print(f"  Reason: {reason}")
-        try:
-            answer = input("  Allow? [y/N]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            return False
-        return answer in ("y", "yes")
-
-    server = ChatServer(agent_def, use_containers=args.containers, confirm_fn=_confirm_action)
+    backend = DaemonTuiAdapter(client, sender_id=sender_id)
 
     if args.new:
-        session = server._session_mgr.new_session("cli")
-        print(f"Started new session {session.session_id}.")
-
+        backend.new_session(sender_id)
     if args.resume:
         try:
-            session = server._session_mgr.resume_session("cli", args.resume)
-            title = session.title or "(untitled)"
-            print(f"Resumed session {args.resume}: {title}")
-        except ValueError as e:
+            backend.resume_session(sender_id, args.resume)
+        except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    channel = StdinChannel()
-
-    try:
-        channel.listen(server.handle_message)
-    except KeyboardInterrupt:
-        print("\nChat stopped.")
-
+    app = ChatApp(backend, sender_id=sender_id)
+    app.run()
     return 0
 
 
-def cmd_listen(args: argparse.Namespace) -> int:
-    """Start message listener (iMessage or BlueBubbles)."""
+def _build_daemon_channel(agent_def, channel_type: str):
+    """Build an optional channel plugin for daemon runtime."""
+    if channel_type == "none":
+        return None, None
+
+    if channel_type == "bluebubbles":
+        from taskrunner.channels.bluebubbles import BlueBubblesChannel
+
+        bb_cfg = agent_def.channels.bluebubbles
+        if not bb_cfg:
+            raise ValueError("No bluebubbles channel configured in agent.yaml")
+
+        channel = BlueBubblesChannel(
+            server_url=bb_cfg.server_url,
+            password=bb_cfg.password,
+            allowed_senders=bb_cfg.listen_to,
+            poll_interval=bb_cfg.poll_interval,
+        )
+        return channel, None
+
+    from taskrunner.channels.imessage import IMessageChannel
+
+    if not agent_def.channels.imessage:
+        raise ValueError("No imessage channel configured in agent.yaml")
+    channel = IMessageChannel(
+        allowed_senders=[agent_def.channels.imessage.listen_to],
+        poll_interval=agent_def.channels.imessage.poll_interval,
+    )
+    return channel, channel
+
+
+def cmd_daemon_run(args: argparse.Namespace) -> int:
+    """Run the daemon server in the foreground (internal command)."""
+    import uvicorn
+
     from taskrunner.chat import ChatServer
+    from taskrunner.daemon.api import create_daemon_app
+    from taskrunner.daemon.service import DaemonService
     from taskrunner.startup import SecretsValidationError, validate_secrets
 
     try:
@@ -268,179 +388,506 @@ def cmd_listen(args: argparse.Namespace) -> int:
         print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
         return 1
 
-    # Validate secrets before starting
     try:
         validate_secrets(agent_def)
     except SecretsValidationError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    # Load LLM secrets early
     if agent_def.llm.secrets:
         from taskrunner.orchestrator import _load_secrets_to_env
+
         _load_secrets_to_env(agent_def.llm.secrets)
 
-    channel_type = getattr(args, "channel_type", None) or "imessage"
-    imessage_channel = None
+    channel_type = getattr(args, "channel_type", "imessage")
+    try:
+        channel, imessage_channel = _build_daemon_channel(agent_def, channel_type)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
-    if channel_type == "bluebubbles":
-        from taskrunner.channels.bluebubbles import BlueBubblesChannel
+    server = ChatServer(
+        agent_def,
+        use_containers=args.containers,
+        imessage_channel=imessage_channel,
+    )
+    service = DaemonService(
+        agent_def,
+        use_containers=args.containers,
+        server=server,
+    )
 
-        bb_cfg = agent_def.channels.bluebubbles
-        if not bb_cfg:
-            print("Error: No bluebubbles channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = BlueBubblesChannel(
-            server_url=bb_cfg.server_url,
-            password=bb_cfg.password,
-            allowed_senders=bb_cfg.listen_to,
-            poll_interval=bb_cfg.poll_interval,
-        )
-        print(f"Listening for iMessages via BlueBubbles ({bb_cfg.server_url})...")
-    else:
-        from taskrunner.channels.imessage import IMessageChannel
+    if not getattr(args, "no_scheduler", False):
+        tasks_dir = _tasks_dir(args)
+        if tasks_dir.is_dir():
+            service.start_scheduler(tasks_dir)
 
-        if not agent_def.channels.imessage:
-            print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = IMessageChannel(
-            allowed_senders=[agent_def.channels.imessage.listen_to],
-            poll_interval=agent_def.channels.imessage.poll_interval,
-        )
-        imessage_channel = channel
-        print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+    if channel is not None:
+        service.register_channel(channel_type, channel)
+        service.start_channel(channel_type)
 
-    server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
+    socket_path = _daemon_socket_path(args)
+    pid_path = _daemon_pid_path(args)
 
-    # Set up graceful shutdown on SIGTERM/SIGINT
-    import signal
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    socket_path.unlink(missing_ok=True)
+    pid_path.write_text(f"{os.getpid()}\n")
 
-    def _handle_shutdown(signum, frame):
-        sig_name = signal.Signals(signum).name
-        logger.info("Received %s, initiating graceful shutdown...", sig_name)
-        print(f"\nReceived {sig_name}, shutting down...")
-        channel.stop()
-
-    signal.signal(signal.SIGTERM, _handle_shutdown)
-    signal.signal(signal.SIGINT, _handle_shutdown)
+    app = create_daemon_app(service)
 
     try:
-        channel.listen(server.handle_message)
+        uvicorn.run(
+            app,
+            uds=str(socket_path),
+            access_log=False,
+            log_level="debug" if args.verbose else "info",
+        )
     except KeyboardInterrupt:
         pass
+    finally:
+        service.shutdown()
+        pid_path.unlink(missing_ok=True)
+        socket_path.unlink(missing_ok=True)
 
-    print("Listener stopped.")
     return 0
 
 
-def cmd_serve(args: argparse.Namespace) -> int:
-    """Start message listener + scheduler (daemon mode)."""
-    import signal
-    import threading
+def cmd_daemon_start(args: argparse.Namespace) -> int:
+    """Start the daemon as a detached background process."""
+    import subprocess
 
-    from taskrunner.chat import ChatServer
-    from taskrunner.startup import SecretsValidationError, validate_secrets
+    pid_path = _daemon_pid_path(args)
+    socket_path = _daemon_socket_path(args)
+    log_path = _daemon_log_path(args)
+    plist_path = _daemon_plist_path(args)
+    label = _daemon_label(args)
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
 
-    try:
-        agent_def = _load_agent_def(args)
-    except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
-        return 1
-
-    # Validate secrets before starting
-    try:
-        validate_secrets(agent_def)
-    except SecretsValidationError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-
-    # Load LLM secrets early
-    if agent_def.llm.secrets:
-        from taskrunner.orchestrator import _load_secrets_to_env
-        _load_secrets_to_env(agent_def.llm.secrets)
-
-    # Set up graceful shutdown on SIGTERM/SIGINT
-    shutdown_event = threading.Event()
-    heartbeat_event = threading.Event()
-
-    # Start scheduler in a background thread
-    tasks_dir = _tasks_dir(args)
-    if tasks_dir.is_dir():
-        def run_scheduler():
-            try:
-                start_scheduler(
-                    tasks_dir=tasks_dir,
-                    use_containers=args.containers,
-                    shutdown_event=shutdown_event,
-                    heartbeat_event=heartbeat_event,
-                )
-            except Exception:
-                logging.getLogger(__name__).exception("Scheduler crashed")
-
-        sched_thread = threading.Thread(target=run_scheduler, daemon=True)
-        sched_thread.start()
-        print("Scheduler started in background.")
-
-        # Heartbeat monitor: warns if scheduler thread stops pulsing
-        def _monitor_heartbeat():
-            while not shutdown_event.is_set():
-                heartbeat_event.clear()
-                if shutdown_event.wait(60):
-                    break
-                if not heartbeat_event.is_set():
-                    logger.warning("Scheduler heartbeat missed — scheduler thread may be dead")
-
-        monitor_thread = threading.Thread(target=_monitor_heartbeat, daemon=True)
-        monitor_thread.start()
-
-    channel_type = getattr(args, "channel_type", None) or "imessage"
-    imessage_channel = None
-
-    if channel_type == "bluebubbles":
-        from taskrunner.channels.bluebubbles import BlueBubblesChannel
-
-        bb_cfg = agent_def.channels.bluebubbles
-        if not bb_cfg:
-            print("Error: No bluebubbles channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = BlueBubblesChannel(
-            server_url=bb_cfg.server_url,
-            password=bb_cfg.password,
-            allowed_senders=bb_cfg.listen_to,
-            poll_interval=bb_cfg.poll_interval,
+    # If a launchd service is installed, use it as the startup path.
+    if sys.platform == "darwin" and plist_path.exists():
+        launch_target = _daemon_launchd_target()
+        existing = subprocess.run(
+            ["launchctl", "bootstrap", launch_target, str(plist_path)],
+            capture_output=True,
+            text=True,
         )
-        print(f"Listening for iMessages via BlueBubbles ({bb_cfg.server_url})...")
+        existing_out = (existing.stdout or "") + "\n" + (existing.stderr or "")
+        if existing.returncode != 0 and not _allow_launchd_bootstrap_failure(existing_out):
+            print(
+                f"Error: failed to bootstrap launchd service {label}: {existing_out.strip()}",
+                file=sys.stderr,
+            )
+            return 1
+
+        kickstart = subprocess.run(
+            ["launchctl", "kickstart", "-k", f"{launch_target}/{label}"],
+            capture_output=True,
+            text=True,
+        )
+        if kickstart.returncode != 0:
+            output = (kickstart.stdout or "") + "\n" + (kickstart.stderr or "")
+            print(
+                f"Error: failed to start launchd service {label}: {output.strip()}",
+                file=sys.stderr,
+            )
+            return 1
+
+        if _wait_for_daemon_health(socket_path, wait_seconds):
+            daemon_pid = _read_pid(pid_path)
+            if daemon_pid:
+                print(f"Daemon started via launchd (pid {daemon_pid}).")
+            else:
+                print(f"Daemon started via launchd ({label}).")
+            print(f"Socket: {socket_path}")
+            print(f"Log: {log_path}")
+            return 0
+
+        print(
+            f"Launchd service {label} did not become healthy within {wait_seconds:.1f}s. See {log_path}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    pid = _read_pid(pid_path)
+    if pid and _pid_is_running(pid):
+        print(f"Daemon already running (pid {pid}).")
+        return 0
+
+    _cleanup_stale_daemon_files(pid_path, socket_path)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    cmd = _build_daemon_run_command(args, socket_path, pid_path)
+    env = _build_daemon_env(repo_root)
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log_file:
+        proc = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=log_file,
+            stderr=log_file,
+            start_new_session=True,
+        )
+
+    import time
+
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            print(f"Daemon failed to start. See log: {log_path}", file=sys.stderr)
+            return 1
+        if _wait_for_daemon_health(socket_path, 0.2):
+            daemon_pid = _read_pid(pid_path) or proc.pid
+            print(f"Daemon started (pid {daemon_pid}).")
+            print(f"Socket: {socket_path}")
+            print(f"Log: {log_path}")
+            return 0
+
+    print(f"Daemon did not become healthy within {wait_seconds:.1f}s. See {log_path}.", file=sys.stderr)
+    return 1
+
+
+def cmd_daemon_install(args: argparse.Namespace) -> int:
+    """Install daemon into launchd and start it."""
+    import plistlib
+    import subprocess
+
+    if sys.platform != "darwin":
+        print("Error: launchd install is only supported on macOS.", file=sys.stderr)
+        return 1
+
+    repo_root = Path(__file__).resolve().parents[2]
+    socket_path = _daemon_socket_path(args)
+    pid_path = _daemon_pid_path(args)
+    log_path = _daemon_log_path(args)
+    plist_path = _daemon_plist_path(args)
+    label = _daemon_label(args)
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+    launch_target = _daemon_launchd_target()
+
+    cmd = _build_daemon_run_command(args, socket_path, pid_path)
+    env = _build_daemon_env(repo_root)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+
+    plist_payload = {
+        "Label": label,
+        "ProgramArguments": cmd,
+        "WorkingDirectory": str(repo_root),
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "StandardOutPath": str(log_path),
+        "StandardErrorPath": str(log_path),
+        "EnvironmentVariables": {"PYTHONPATH": env.get("PYTHONPATH", "")},
+    }
+    with plist_path.open("wb") as f:
+        plistlib.dump(plist_payload, f)
+
+    # Remove a previously loaded service instance so bootstrap is deterministic.
+    bootout = subprocess.run(
+        ["launchctl", "bootout", f"{launch_target}/{label}"],
+        capture_output=True,
+        text=True,
+    )
+    bootout_out = (bootout.stdout or "") + "\n" + (bootout.stderr or "")
+    if bootout.returncode != 0 and not _allow_launchd_bootout_failure(bootout_out):
+        print(
+            f"Error: failed to unload existing launchd service {label}: {bootout_out.strip()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    bootstrap = subprocess.run(
+        ["launchctl", "bootstrap", launch_target, str(plist_path)],
+        capture_output=True,
+        text=True,
+    )
+    bootstrap_out = (bootstrap.stdout or "") + "\n" + (bootstrap.stderr or "")
+    if bootstrap.returncode != 0 and not _allow_launchd_bootstrap_failure(bootstrap_out):
+        print(
+            f"Error: failed to bootstrap launchd service {label}: {bootstrap_out.strip()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    kickstart = subprocess.run(
+        ["launchctl", "kickstart", "-k", f"{launch_target}/{label}"],
+        capture_output=True,
+        text=True,
+    )
+    if kickstart.returncode != 0:
+        out = (kickstart.stdout or "") + "\n" + (kickstart.stderr or "")
+        print(f"Error: failed to start launchd service {label}: {out.strip()}", file=sys.stderr)
+        return 1
+
+    if not _wait_for_daemon_health(socket_path, wait_seconds):
+        print(
+            f"Launchd service {label} installed but daemon did not become healthy "
+            f"within {wait_seconds:.1f}s. See {log_path}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    pid = _read_pid(pid_path)
+    if pid:
+        print(f"Daemon launchd service installed and running (pid {pid}).")
     else:
-        from taskrunner.channels.imessage import IMessageChannel
+        print("Daemon launchd service installed and running.")
+    print(f"Label: {label}")
+    print(f"Plist: {plist_path}")
+    print(f"Socket: {socket_path}")
+    print(f"Log: {log_path}")
+    return 0
 
-        if not agent_def.channels.imessage:
-            print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = IMessageChannel(
-            allowed_senders=[agent_def.channels.imessage.listen_to],
-            poll_interval=agent_def.channels.imessage.poll_interval,
+
+def cmd_daemon_uninstall(args: argparse.Namespace) -> int:
+    """Unload daemon from launchd and remove plist."""
+    import subprocess
+
+    if sys.platform != "darwin":
+        print("Error: launchd uninstall is only supported on macOS.", file=sys.stderr)
+        return 1
+
+    pid_path = _daemon_pid_path(args)
+    socket_path = _daemon_socket_path(args)
+    plist_path = _daemon_plist_path(args)
+    label = _daemon_label(args)
+    launch_target = _daemon_launchd_target()
+
+    bootout = subprocess.run(
+        ["launchctl", "bootout", f"{launch_target}/{label}"],
+        capture_output=True,
+        text=True,
+    )
+    bootout_out = (bootout.stdout or "") + "\n" + (bootout.stderr or "")
+    if bootout.returncode != 0 and not _allow_launchd_bootout_failure(bootout_out):
+        print(
+            f"Error: failed to unload launchd service {label}: {bootout_out.strip()}",
+            file=sys.stderr,
         )
-        imessage_channel = channel
-        print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
+        return 1
 
-    server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
+    if plist_path.exists():
+        plist_path.unlink()
+        print(f"Removed plist: {plist_path}")
+    else:
+        print(f"Plist not found (already removed): {plist_path}")
 
-    def _handle_shutdown(signum, frame):
-        sig_name = signal.Signals(signum).name
-        logger.info("Received %s, initiating graceful shutdown...", sig_name)
-        print(f"\nReceived {sig_name}, shutting down...")
-        shutdown_event.set()
-        channel.stop()
+    _cleanup_stale_daemon_files(pid_path, socket_path)
+    print(f"Daemon launchd service '{label}' uninstalled.")
+    return 0
 
-    signal.signal(signal.SIGTERM, _handle_shutdown)
-    signal.signal(signal.SIGINT, _handle_shutdown)
+
+def cmd_daemon_stop(args: argparse.Namespace) -> int:
+    """Stop the background daemon process."""
+    import signal
+    import subprocess
+    import time
+
+    pid_path = _daemon_pid_path(args)
+    socket_path = _daemon_socket_path(args)
+    plist_path = _daemon_plist_path(args)
+    label = _daemon_label(args)
+    timeout = max(1.0, getattr(args, "timeout", 10.0))
+
+    if sys.platform == "darwin" and plist_path.exists():
+        launch_target = _daemon_launchd_target()
+        bootout = subprocess.run(
+            ["launchctl", "bootout", f"{launch_target}/{label}"],
+            capture_output=True,
+            text=True,
+        )
+        bootout_out = (bootout.stdout or "") + "\n" + (bootout.stderr or "")
+        if bootout.returncode != 0 and not _allow_launchd_bootout_failure(bootout_out):
+            print(
+                f"Error: failed to stop launchd service {label}: {bootout_out.strip()}",
+                file=sys.stderr,
+            )
+            return 1
+
+        _cleanup_stale_daemon_files(pid_path, socket_path)
+        print(f"Daemon stopped (launchd service '{label}' unloaded).")
+        return 0
+
+    pid = _read_pid(pid_path)
+    if not pid:
+        print("Daemon is not running.")
+        _cleanup_stale_daemon_files(pid_path, socket_path)
+        return 0
+
+    if not _pid_is_running(pid):
+        print("Daemon pid file found, but process is not running. Cleaning up stale files.")
+        _cleanup_stale_daemon_files(pid_path, socket_path)
+        return 0
+
+    os.kill(pid, signal.SIGTERM)
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _pid_is_running(pid):
+            _cleanup_stale_daemon_files(pid_path, socket_path)
+            print("Daemon stopped.")
+            return 0
+        time.sleep(0.1)
+
+    print(
+        f"Timed out waiting for daemon {pid} to stop. "
+        f"You can force-kill it with: kill -9 {pid}",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def cmd_daemon_status(args: argparse.Namespace) -> int:
+    """Show daemon process and API health status."""
+    import subprocess
+
+    pid_path = _daemon_pid_path(args)
+    socket_path = _daemon_socket_path(args)
+    plist_path = _daemon_plist_path(args)
+    label = _daemon_label(args)
+
+    launchd_loaded = False
+    if sys.platform == "darwin" and plist_path.exists():
+        launch_target = _daemon_launchd_target()
+        launchd = subprocess.run(
+            ["launchctl", "print", f"{launch_target}/{label}"],
+            capture_output=True,
+            text=True,
+        )
+        launchd_loaded = launchd.returncode == 0
+
+    pid = _read_pid(pid_path)
+    if not pid or not _pid_is_running(pid):
+        if _wait_for_daemon_health(socket_path, 0.2):
+            print("Daemon running (pid unknown).")
+            print(f"Socket: {socket_path}")
+        else:
+            print("Daemon is not running.")
+            if pid and not _pid_is_running(pid):
+                _cleanup_stale_daemon_files(pid_path, socket_path)
+            if sys.platform == "darwin" and plist_path.exists():
+                state = "loaded" if launchd_loaded else "not loaded"
+                print(f"Launchd: {state} ({label})")
+                print(f"Plist: {plist_path}")
+            return 1
+
+    else:
+        print(f"Daemon running (pid {pid}).")
+        print(f"Socket: {socket_path}")
+
+    if sys.platform == "darwin" and plist_path.exists():
+        state = "loaded" if launchd_loaded else "not loaded"
+        print(f"Launchd: {state} ({label})")
+        print(f"Plist: {plist_path}")
 
     try:
-        channel.listen(server.handle_message)
-    except KeyboardInterrupt:
-        pass
+        resp = _daemon_request(socket_path, "GET", "/v1/status", timeout=2.0)
+        if resp.status_code != 200:
+            print(f"API unhealthy (HTTP {resp.status_code}).", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"API unreachable: {e}", file=sys.stderr)
+        return 1
 
-    print("Server stopped.")
+    data = resp.json()
+    print(f"Uptime: {data.get('uptime_seconds', 0)}s")
+    sessions = data.get("sessions", {})
+    print(
+        "Sessions: "
+        f"{sessions.get('stored', 0)} stored, {sessions.get('active_senders', 0)} active senders"
+    )
+    sched = data.get("scheduler", {})
+    print(f"Scheduler: {'running' if sched.get('running') else 'stopped'}")
+
+    channels = data.get("channels", [])
+    if channels:
+        print("Channels:")
+        for ch in channels:
+            state = "running" if ch.get("running") else "stopped"
+            detail = ch.get("detail") or ""
+            print(f"  - {ch.get('name')}: {state} ({detail})")
+    else:
+        print("Channels: none registered")
+
+    return 0
+
+
+def cmd_send(args: argparse.Namespace) -> int:
+    """Send one message to the running daemon and print the response."""
+    socket_path = _daemon_socket_path(args)
+
+    if getattr(args, "stream", False):
+        from taskrunner.daemon.client import DaemonApiClient
+
+        client = DaemonApiClient(
+            socket_path=socket_path,
+            timeout=max(1.0, args.timeout),
+        )
+        try:
+            saw_token = False
+            for event in client.stream_message(
+                sender_id=args.sender_id,
+                text=args.message,
+                session_id=args.session_id,
+            ):
+                event_type = str(event.get("type", ""))
+                payload = event.get("payload", {})
+                if not isinstance(payload, dict):
+                    payload = {}
+
+                if event_type == "token":
+                    chunk = str(payload.get("text", ""))
+                    if chunk:
+                        saw_token = True
+                        print(chunk, end="", flush=True)
+                elif event_type == "final":
+                    final_text = str(payload.get("text", ""))
+                    if final_text and not saw_token:
+                        print(final_text, end="", flush=True)
+                elif event_type == "error":
+                    err = payload.get("error", "streaming request failed")
+                    print(f"\nError: {err}", file=sys.stderr)
+                    return 1
+            print()
+            return 0
+        except Exception as e:
+            print(f"Error: Could not stream from daemon at {socket_path}: {e}", file=sys.stderr)
+            return 1
+
+    payload = {
+        "sender_id": args.sender_id,
+        "text": args.message,
+    }
+    if args.session_id:
+        payload["session_id"] = args.session_id
+
+    try:
+        resp = _daemon_request(
+            socket_path,
+            "POST",
+            "/v1/messages",
+            json_body=payload,
+            timeout=max(1.0, args.timeout),
+        )
+    except Exception as e:
+        print(f"Error: Could not reach daemon at {socket_path}: {e}", file=sys.stderr)
+        return 1
+
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.json().get("detail", "")
+        except Exception:
+            detail = resp.text
+        print(f"Error: daemon request failed ({resp.status_code}) {detail}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    print(data.get("text", ""))
     return 0
 
 
@@ -510,28 +957,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_bridge(args: argparse.Namespace) -> int:
-    """Start the bridge server for macOS-native tools."""
-    import os
-    
-    try:
-        import uvicorn
-        from bridge.server import app
-        
-        print(f"Starting bridge server on {args.host}:{args.port}")
-        print("Scoped tokens will be auto-generated (set BRIDGE_TOKEN_NOTES, BRIDGE_TOKEN_REMINDERS, etc. to persist)")
-        uvicorn.run(app, host=args.host, port=args.port)
-    except KeyboardInterrupt:
-        print("\nBridge server stopped.")
-    except ImportError:
-        print("Error: Bridge server dependencies not found (pip install fastapi uvicorn)", file=sys.stderr)
-        return 1
-    
-    return 0
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
+        prog="creel",
         description="LLM Task Runner - secure, scheduled LLM task execution",
     )
     parser.add_argument(
@@ -546,10 +974,6 @@ def main() -> int:
     parser.add_argument(
         "--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG,
         help="Path to agent.yaml config",
-    )
-    parser.add_argument(
-        "--simple", action="store_true",
-        help="Use simple stdin/stdout mode instead of TUI",
     )
     parser.add_argument(
         "--json-logs", action="store_true",
@@ -579,43 +1003,32 @@ def main() -> int:
     validate_parser = subparsers.add_parser("validate", help="Validate a task definition")
     validate_parser.add_argument("task_name", help="Name of the task to validate")
 
-    # chat command
-    chat_parser = subparsers.add_parser("chat", help="Interactive CLI chat with agent")
-    chat_parser.add_argument(
-        "--new", action="store_true", help="Start a new session (don't resume the active one)"
+    # attach command
+    attach_parser = subparsers.add_parser("attach", help="Attach TUI to running daemon")
+    attach_parser.add_argument(
+        "--sender-id",
+        default="cli",
+        help="Sender ID/session namespace (default: cli)",
     )
-    chat_parser.add_argument(
-        "--resume", metavar="ID", help="Resume a specific session by ID"
+    attach_parser.add_argument(
+        "--new", action="store_true", help="Start and attach to a new session"
     )
-    chat_parser.add_argument(
-        "--list-sessions", action="store_true", help="List sessions and exit"
+    attach_parser.add_argument(
+        "--resume", metavar="ID", help="Attach and resume a specific session"
     )
-
-
-    # listen command
-    listen_parser = subparsers.add_parser("listen", help="Listen for messages and respond")
-    listen_parser.add_argument(
-        "--channel", dest="channel_type", default="imessage",
-        choices=["imessage", "bluebubbles"],
-        help="Channel to listen on (default: imessage)",
+    attach_parser.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
     )
-
-    # serve command
-    serve_parser = subparsers.add_parser("serve", help="Listen for messages + run scheduler")
-    serve_parser.add_argument(
-        "--channel", dest="channel_type", default="imessage",
-        choices=["imessage", "bluebubbles"],
-        help="Channel to listen on (default: imessage)",
+    attach_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=300.0,
+        help="Request timeout in seconds (default: 300)",
     )
 
-    # bridge command
-    bridge_parser = subparsers.add_parser("bridge", help="Start the host bridge server")
-    bridge_parser.add_argument(
-        "--host", default="127.0.0.1", help="Bind to host (default: 127.0.0.1)"
-    )
-    bridge_parser.add_argument(
-        "--port", type=int, default=8099, help="Port to listen on (default: 8099)"
-    )
 
     # audit command
     audit_parser = subparsers.add_parser("audit", help="Query the guardian audit log")
@@ -644,6 +1057,129 @@ def main() -> int:
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
     )
 
+    # --- Shared daemon parent parsers (to avoid option duplication) ---
+    _daemon_paths_parent = argparse.ArgumentParser(add_help=False)
+    _daemon_paths_parent.add_argument(
+        "--socket-path", type=Path, default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    )
+    _daemon_paths_parent.add_argument(
+        "--pid-file", type=Path, default=DEFAULT_DAEMON_PID_FILE,
+        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
+    )
+
+    _daemon_launchd_parent = argparse.ArgumentParser(add_help=False)
+    _daemon_launchd_parent.add_argument(
+        "--label", default=DEFAULT_DAEMON_LABEL,
+        help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
+    )
+    _daemon_launchd_parent.add_argument(
+        "--plist-path", type=Path, default=DEFAULT_DAEMON_PLIST_FILE,
+        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
+    )
+
+    _daemon_runtime_parent = argparse.ArgumentParser(add_help=False)
+    _daemon_runtime_parent.add_argument(
+        "--log-file", type=Path, default=DEFAULT_DAEMON_LOG_FILE,
+        help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
+    )
+    _daemon_runtime_parent.add_argument(
+        "--channel", dest="channel_type", default="imessage",
+        choices=["none", "imessage", "bluebubbles"],
+        help="Channel plugin to run inside daemon (default: imessage)",
+    )
+    _daemon_runtime_parent.add_argument(
+        "--no-scheduler", action="store_true",
+        help="Disable scheduler in daemon runtime",
+    )
+    _daemon_runtime_parent.add_argument(
+        "--wait-seconds", type=float, default=8.0,
+        help="Seconds to wait for daemon health check (default: 8)",
+    )
+
+    # daemon command
+    daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
+    daemon_subparsers = daemon_parser.add_subparsers(
+        dest="daemon_command",
+        metavar="{start,stop,status,install,uninstall}",
+    )
+
+    daemon_subparsers.add_parser(
+        "start", help="Start the background daemon",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
+    )
+
+    daemon_stop = daemon_subparsers.add_parser(
+        "stop", help="Stop the background daemon",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent],
+    )
+    daemon_stop.add_argument(
+        "--timeout", type=float, default=10.0,
+        help="Stop timeout in seconds (default: 10)",
+    )
+
+    daemon_subparsers.add_parser(
+        "status", help="Show daemon status",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent],
+    )
+
+    daemon_subparsers.add_parser(
+        "install", help="Install daemon as a launchd service",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
+    )
+
+    daemon_subparsers.add_parser(
+        "uninstall", help="Uninstall daemon launchd service",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent],
+    )
+
+    # Internal foreground command used by `daemon start`
+    daemon_run = daemon_subparsers.add_parser(
+        "run", help=argparse.SUPPRESS,
+        parents=[_daemon_paths_parent],
+    )
+    daemon_run.add_argument(
+        "--channel", dest="channel_type", default="imessage",
+        choices=["none", "imessage", "bluebubbles"],
+    )
+    daemon_run.add_argument("--no-scheduler", action="store_true")
+    daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]
+        action
+        for action in daemon_subparsers._choices_actions  # type: ignore[attr-defined]
+        if action.dest != "run"
+    ]
+
+    # send command
+    send_parser = subparsers.add_parser("send", help="Send one message to the running daemon")
+    send_parser.add_argument("message", help="Message text")
+    send_parser.add_argument(
+        "--sender-id",
+        default="cli",
+        help="Sender ID/session namespace (default: cli)",
+    )
+    send_parser.add_argument(
+        "--session-id",
+        default=None,
+        help="Resume and send into this specific session",
+    )
+    send_parser.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    )
+    send_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=300.0,
+        help="Request timeout in seconds (default: 300)",
+    )
+    send_parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream response events from daemon (SSE)",
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -662,16 +1198,28 @@ def main() -> int:
         parser.print_help()
         return 1
 
+    if args.command == "daemon":
+        daemon_commands = {
+            "start": cmd_daemon_start,
+            "stop": cmd_daemon_stop,
+            "status": cmd_daemon_status,
+            "install": cmd_daemon_install,
+            "uninstall": cmd_daemon_uninstall,
+            "run": cmd_daemon_run,
+        }
+        if args.daemon_command not in daemon_commands:
+            daemon_parser.print_help()
+            return 1
+        return daemon_commands[args.daemon_command](args)
+
     commands = {
         "run": cmd_run,
         "schedule": cmd_schedule,
         "list": cmd_list,
         "validate": cmd_validate,
-        "chat": cmd_chat,
-        "listen": cmd_listen,
-        "serve": cmd_serve,
-        "bridge": cmd_bridge,
+        "attach": cmd_attach,
         "audit": cmd_audit,
+        "send": cmd_send,
     }
 
     return commands[args.command](args)

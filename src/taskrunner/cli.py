@@ -2,15 +2,13 @@
 """LLM Task Runner - CLI entry point.
 
 Usage:
-    ./runner.py run <task_name>          Run a task immediately
-    ./runner.py run <task_name> --dry    Dry run (render prompt, skip LLM/output)
-    ./runner.py schedule                 Start scheduler for all tasks
-    ./runner.py list                     List available tasks
-    ./runner.py validate <task_name>     Validate a task definition
-    ./runner.py chat                     Interactive CLI chat with agent
-    ./runner.py listen                   Listen for iMessages and respond
-    ./runner.py serve                    Listen for iMessages + run scheduler
-    ./runner.py bridge                   Start the host bridge server
+    creel run <task_name>            Run a task immediately
+    creel run <task_name> --dry      Dry run (render prompt only)
+    creel schedule                   Start scheduler for all tasks
+    creel daemon start               Start daemon in background
+    creel daemon stop                Stop daemon
+    creel daemon status              Show daemon status
+    creel send "message"             Send one message via daemon API
 """
 
 from __future__ import annotations
@@ -37,10 +35,67 @@ from taskrunner.scheduler import start_scheduler
 
 DEFAULT_TASKS_DIR = Path("tasks")
 DEFAULT_AGENT_CONFIG = Path("agent.yaml")
+DEFAULT_DAEMON_SOCKET = Path("/tmp/creel-daemon.sock")
+DEFAULT_DAEMON_PID_FILE = Path("/tmp/creel-daemon.pid")
+DEFAULT_DAEMON_LOG_FILE = Path("/tmp/creel-daemon.log")
 
 
 def _tasks_dir(args: argparse.Namespace) -> Path:
     return args.tasks_dir
+
+
+def _daemon_socket_path(args: argparse.Namespace) -> Path:
+    return Path(getattr(args, "socket_path", DEFAULT_DAEMON_SOCKET))
+
+
+def _daemon_pid_path(args: argparse.Namespace) -> Path:
+    return Path(getattr(args, "pid_file", DEFAULT_DAEMON_PID_FILE))
+
+
+def _daemon_log_path(args: argparse.Namespace) -> Path:
+    return Path(getattr(args, "log_file", DEFAULT_DAEMON_LOG_FILE))
+
+
+def _read_pid(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    try:
+        return int(path.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def _pid_is_running(pid: int) -> bool:
+    import errno
+
+    try:
+        os.kill(pid, 0)
+    except OSError as exc:
+        return exc.errno != errno.ESRCH
+    return True
+
+
+def _daemon_request(
+    socket_path: Path,
+    method: str,
+    url_path: str,
+    json_body: dict | None = None,
+    timeout: float = 5.0,
+):
+    import httpx
+
+    transport = httpx.HTTPTransport(uds=str(socket_path))
+    with httpx.Client(
+        transport=transport,
+        base_url="http://daemon",
+        timeout=timeout,
+    ) as client:
+        return client.request(method, url_path, json=json_body)
+
+
+def _cleanup_stale_daemon_files(pid_path: Path, socket_path: Path) -> None:
+    pid_path.unlink(missing_ok=True)
+    socket_path.unlink(missing_ok=True)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -444,6 +499,328 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_daemon_channel(agent_def, channel_type: str):
+    """Build an optional channel plugin for daemon runtime."""
+    if channel_type == "none":
+        return None, None
+
+    if channel_type == "bluebubbles":
+        from taskrunner.channels.bluebubbles import BlueBubblesChannel
+
+        bb_cfg = agent_def.channels.bluebubbles
+        if not bb_cfg:
+            raise ValueError("No bluebubbles channel configured in agent.yaml")
+
+        channel = BlueBubblesChannel(
+            server_url=bb_cfg.server_url,
+            password=bb_cfg.password,
+            allowed_senders=bb_cfg.listen_to,
+            poll_interval=bb_cfg.poll_interval,
+        )
+        return channel, None
+
+    from taskrunner.channels.imessage import IMessageChannel
+
+    if not agent_def.channels.imessage:
+        raise ValueError("No imessage channel configured in agent.yaml")
+    channel = IMessageChannel(
+        allowed_senders=[agent_def.channels.imessage.listen_to],
+        poll_interval=agent_def.channels.imessage.poll_interval,
+    )
+    return channel, channel
+
+
+def cmd_daemon_run(args: argparse.Namespace) -> int:
+    """Run the daemon server in the foreground (internal command)."""
+    import uvicorn
+
+    from taskrunner.chat import ChatServer
+    from taskrunner.daemon.api import create_daemon_app
+    from taskrunner.daemon.service import DaemonService
+    from taskrunner.startup import SecretsValidationError, validate_secrets
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        return 1
+
+    try:
+        validate_secrets(agent_def)
+    except SecretsValidationError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if agent_def.llm.secrets:
+        from taskrunner.orchestrator import _load_secrets_to_env
+
+        _load_secrets_to_env(agent_def.llm.secrets)
+
+    channel_type = getattr(args, "channel_type", "imessage")
+    try:
+        channel, imessage_channel = _build_daemon_channel(agent_def, channel_type)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    server = ChatServer(
+        agent_def,
+        use_containers=args.containers,
+        imessage_channel=imessage_channel,
+    )
+    service = DaemonService(
+        agent_def,
+        use_containers=args.containers,
+        server=server,
+    )
+
+    if not getattr(args, "no_scheduler", False):
+        tasks_dir = _tasks_dir(args)
+        if tasks_dir.is_dir():
+            service.start_scheduler(tasks_dir)
+
+    if channel is not None:
+        service.register_channel(channel_type, channel)
+        service.start_channel(channel_type)
+
+    socket_path = _daemon_socket_path(args)
+    pid_path = _daemon_pid_path(args)
+
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    socket_path.unlink(missing_ok=True)
+    pid_path.write_text(f"{os.getpid()}\n")
+
+    app = create_daemon_app(service)
+
+    try:
+        uvicorn.run(
+            app,
+            uds=str(socket_path),
+            access_log=False,
+            log_level="debug" if args.verbose else "info",
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        service.shutdown()
+        pid_path.unlink(missing_ok=True)
+        socket_path.unlink(missing_ok=True)
+
+    return 0
+
+
+def cmd_daemon_start(args: argparse.Namespace) -> int:
+    """Start the daemon as a detached background process."""
+    import subprocess
+    import time
+
+    pid_path = _daemon_pid_path(args)
+    socket_path = _daemon_socket_path(args)
+    log_path = _daemon_log_path(args)
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+
+    pid = _read_pid(pid_path)
+    if pid and _pid_is_running(pid):
+        print(f"Daemon already running (pid {pid}).")
+        return 0
+
+    _cleanup_stale_daemon_files(pid_path, socket_path)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    src_path = repo_root / "src"
+    cmd = [
+        sys.executable,
+        "-m",
+        "taskrunner",
+        "--tasks-dir",
+        str(args.tasks_dir),
+        "--agent-config",
+        str(args.agent_config),
+    ]
+    if args.containers:
+        cmd.append("--containers")
+    if args.no_judge:
+        cmd.append("--no-judge")
+    if args.verbose:
+        cmd.append("--verbose")
+    if args.json_logs:
+        cmd.append("--json-logs")
+
+    cmd.extend(
+        [
+            "daemon",
+            "run",
+            "--socket-path",
+            str(socket_path),
+            "--pid-file",
+            str(pid_path),
+            "--channel",
+            args.channel_type,
+        ]
+    )
+    if args.no_scheduler:
+        cmd.append("--no-scheduler")
+
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    src_str = str(src_path)
+    if existing_pythonpath:
+        paths = existing_pythonpath.split(os.pathsep)
+        if src_str not in paths:
+            env["PYTHONPATH"] = src_str + os.pathsep + existing_pythonpath
+    else:
+        env["PYTHONPATH"] = src_str
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log_file:
+        proc = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=log_file,
+            stderr=log_file,
+            start_new_session=True,
+        )
+
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            print(f"Daemon failed to start. See log: {log_path}", file=sys.stderr)
+            return 1
+        if socket_path.exists():
+            try:
+                resp = _daemon_request(socket_path, "GET", "/health", timeout=0.5)
+                if resp.status_code == 200:
+                    daemon_pid = _read_pid(pid_path) or proc.pid
+                    print(f"Daemon started (pid {daemon_pid}).")
+                    print(f"Socket: {socket_path}")
+                    print(f"Log: {log_path}")
+                    return 0
+            except Exception:
+                pass
+        time.sleep(0.1)
+
+    print(f"Daemon did not become healthy within {wait_seconds:.1f}s. See {log_path}.", file=sys.stderr)
+    return 1
+
+
+def cmd_daemon_stop(args: argparse.Namespace) -> int:
+    """Stop the background daemon process."""
+    import signal
+    import time
+
+    pid_path = _daemon_pid_path(args)
+    socket_path = _daemon_socket_path(args)
+    timeout = max(1.0, getattr(args, "timeout", 10.0))
+
+    pid = _read_pid(pid_path)
+    if not pid:
+        print("Daemon is not running.")
+        _cleanup_stale_daemon_files(pid_path, socket_path)
+        return 0
+
+    if not _pid_is_running(pid):
+        print("Daemon pid file found, but process is not running. Cleaning up stale files.")
+        _cleanup_stale_daemon_files(pid_path, socket_path)
+        return 0
+
+    os.kill(pid, signal.SIGTERM)
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _pid_is_running(pid):
+            _cleanup_stale_daemon_files(pid_path, socket_path)
+            print("Daemon stopped.")
+            return 0
+        time.sleep(0.1)
+
+    print(f"Timed out waiting for daemon {pid} to stop.", file=sys.stderr)
+    return 1
+
+
+def cmd_daemon_status(args: argparse.Namespace) -> int:
+    """Show daemon process and API health status."""
+    pid_path = _daemon_pid_path(args)
+    socket_path = _daemon_socket_path(args)
+
+    pid = _read_pid(pid_path)
+    if not pid or not _pid_is_running(pid):
+        print("Daemon is not running.")
+        if pid and not _pid_is_running(pid):
+            _cleanup_stale_daemon_files(pid_path, socket_path)
+        return 1
+
+    print(f"Daemon running (pid {pid}).")
+    print(f"Socket: {socket_path}")
+
+    try:
+        resp = _daemon_request(socket_path, "GET", "/v1/status", timeout=2.0)
+        if resp.status_code != 200:
+            print(f"API unhealthy (HTTP {resp.status_code}).", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"API unreachable: {e}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    print(f"Uptime: {data.get('uptime_seconds', 0)}s")
+    sessions = data.get("sessions", {})
+    print(
+        "Sessions: "
+        f"{sessions.get('stored', 0)} stored, {sessions.get('active_senders', 0)} active senders"
+    )
+    sched = data.get("scheduler", {})
+    print(f"Scheduler: {'running' if sched.get('running') else 'stopped'}")
+
+    channels = data.get("channels", [])
+    if channels:
+        print("Channels:")
+        for ch in channels:
+            state = "running" if ch.get("running") else "stopped"
+            detail = ch.get("detail") or ""
+            print(f"  - {ch.get('name')}: {state} ({detail})")
+    else:
+        print("Channels: none registered")
+
+    return 0
+
+
+def cmd_send(args: argparse.Namespace) -> int:
+    """Send one message to the running daemon and print the response."""
+    socket_path = _daemon_socket_path(args)
+    payload = {
+        "sender_id": args.sender_id,
+        "text": args.message,
+    }
+    if args.session_id:
+        payload["session_id"] = args.session_id
+
+    try:
+        resp = _daemon_request(
+            socket_path,
+            "POST",
+            "/v1/messages",
+            json_body=payload,
+            timeout=max(1.0, args.timeout),
+        )
+    except Exception as e:
+        print(f"Error: Could not reach daemon at {socket_path}: {e}", file=sys.stderr)
+        return 1
+
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.json().get("detail", "")
+        except Exception:
+            detail = resp.text
+        print(f"Error: daemon request failed ({resp.status_code}) {detail}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    print(data.get("text", ""))
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Query the guardian audit log."""
     from guardian.audit import read_audit_log
@@ -532,6 +909,7 @@ def cmd_bridge(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
+        prog="creel",
         description="LLM Task Runner - secure, scheduled LLM task execution",
     )
     parser.add_argument(
@@ -644,6 +1022,131 @@ def main() -> int:
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
     )
 
+    # daemon command
+    daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
+    daemon_subparsers = daemon_parser.add_subparsers(dest="daemon_command")
+
+    daemon_start = daemon_subparsers.add_parser("start", help="Start the background daemon")
+    daemon_start.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    )
+    daemon_start.add_argument(
+        "--pid-file",
+        type=Path,
+        default=DEFAULT_DAEMON_PID_FILE,
+        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
+    )
+    daemon_start.add_argument(
+        "--log-file",
+        type=Path,
+        default=DEFAULT_DAEMON_LOG_FILE,
+        help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
+    )
+    daemon_start.add_argument(
+        "--channel",
+        dest="channel_type",
+        default="imessage",
+        choices=["none", "imessage", "bluebubbles"],
+        help="Channel plugin to run inside daemon (default: imessage)",
+    )
+    daemon_start.add_argument(
+        "--no-scheduler",
+        action="store_true",
+        help="Disable scheduler in daemon runtime",
+    )
+    daemon_start.add_argument(
+        "--wait-seconds",
+        type=float,
+        default=8.0,
+        help="Seconds to wait for daemon health check (default: 8)",
+    )
+
+    daemon_stop = daemon_subparsers.add_parser("stop", help="Stop the background daemon")
+    daemon_stop.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    )
+    daemon_stop.add_argument(
+        "--pid-file",
+        type=Path,
+        default=DEFAULT_DAEMON_PID_FILE,
+        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
+    )
+    daemon_stop.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Stop timeout in seconds (default: 10)",
+    )
+
+    daemon_status = daemon_subparsers.add_parser("status", help="Show daemon status")
+    daemon_status.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    )
+    daemon_status.add_argument(
+        "--pid-file",
+        type=Path,
+        default=DEFAULT_DAEMON_PID_FILE,
+        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
+    )
+
+    # Internal foreground command used by `daemon start`
+    daemon_run = daemon_subparsers.add_parser("run", help=argparse.SUPPRESS)
+    daemon_run.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+    )
+    daemon_run.add_argument(
+        "--pid-file",
+        type=Path,
+        default=DEFAULT_DAEMON_PID_FILE,
+    )
+    daemon_run.add_argument(
+        "--channel",
+        dest="channel_type",
+        default="imessage",
+        choices=["none", "imessage", "bluebubbles"],
+    )
+    daemon_run.add_argument(
+        "--no-scheduler",
+        action="store_true",
+    )
+
+    # send command
+    send_parser = subparsers.add_parser("send", help="Send one message to the running daemon")
+    send_parser.add_argument("message", help="Message text")
+    send_parser.add_argument(
+        "--sender-id",
+        default="cli",
+        help="Sender ID/session namespace (default: cli)",
+    )
+    send_parser.add_argument(
+        "--session-id",
+        default=None,
+        help="Resume and send into this specific session",
+    )
+    send_parser.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+    )
+    send_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=300.0,
+        help="Request timeout in seconds (default: 300)",
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -662,6 +1165,18 @@ def main() -> int:
         parser.print_help()
         return 1
 
+    if args.command == "daemon":
+        daemon_commands = {
+            "start": cmd_daemon_start,
+            "stop": cmd_daemon_stop,
+            "status": cmd_daemon_status,
+            "run": cmd_daemon_run,
+        }
+        if args.daemon_command not in daemon_commands:
+            daemon_parser.print_help()
+            return 1
+        return daemon_commands[args.daemon_command](args)
+
     commands = {
         "run": cmd_run,
         "schedule": cmd_schedule,
@@ -672,6 +1187,7 @@ def main() -> int:
         "serve": cmd_serve,
         "bridge": cmd_bridge,
         "audit": cmd_audit,
+        "send": cmd_send,
     }
 
     return commands[args.command](args)

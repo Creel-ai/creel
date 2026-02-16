@@ -6,7 +6,7 @@ import logging
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import Any, Protocol, runtime_checkable
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
@@ -19,8 +19,16 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Button, Footer, Header, RichLog, Static, TextArea
 
-if TYPE_CHECKING:
-    from taskrunner.chat import ChatServer
+
+@runtime_checkable
+class TuiBackend(Protocol):
+    """Protocol for TUI chat backends (ChatServer or DaemonTuiAdapter)."""
+
+    def handle_message(self, sender_id: str, text: str) -> str: ...
+
+    def get_or_create_session(self, sender_id: str) -> Any: ...
+
+    def new_session(self, sender_id: str) -> Any: ...
 
 SENDER_ID = "cli"
 
@@ -275,7 +283,7 @@ class ChatApp(App):
 
     def __init__(
         self,
-        server: ChatServer | object,
+        server: TuiBackend,
         sender_id: str = SENDER_ID,
         model_name: str = "",
     ) -> None:
@@ -439,20 +447,10 @@ class ChatApp(App):
         self._update_subtitle()
 
     def _get_or_create_session(self):
-        if hasattr(self._server, "_session_mgr"):
-            return self._server._session_mgr.get_or_create(self._sender_id)
-        get_session = getattr(self._server, "get_or_create_session", None)
-        if callable(get_session):
-            return get_session(self._sender_id)
-        raise RuntimeError("TUI backend does not expose session access methods")
+        return self._server.get_or_create_session(self._sender_id)
 
     def _new_session(self):
-        if hasattr(self._server, "_session_mgr"):
-            return self._server._session_mgr.new_session(self._sender_id)
-        new_session = getattr(self._server, "new_session", None)
-        if callable(new_session):
-            return new_session(self._sender_id)
-        raise RuntimeError("TUI backend does not expose new_session()")
+        return self._server.new_session(self._sender_id)
 
     def action_quit(self) -> None:
         if self._log_handler:

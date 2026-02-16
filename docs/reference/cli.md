@@ -42,9 +42,9 @@ creel <command> [options]
 
 | Option | Description |
 |--------|-------------|
-| `--socket-path PATH` | Unix socket path (default: `/tmp/creel-daemon.sock`) |
-| `--pid-file PATH` | PID file path (default: `/tmp/creel-daemon.pid`) |
-| `--log-file PATH` | Daemon log file (default: `/tmp/creel-daemon.log`) |
+| `--socket-path PATH` | Unix socket path (default: `~/.creel/daemon.sock`) |
+| `--pid-file PATH` | PID file path (default: `~/.creel/daemon.pid`) |
+| `--log-file PATH` | Daemon log file (default: `~/.creel/daemon.log`) |
 | `--channel TYPE` | Channel plugin: `none`, `imessage`, `bluebubbles` |
 | `--no-scheduler` | Disable scheduler in daemon runtime |
 | `--wait-seconds N` | Seconds to wait for daemon health check |
@@ -58,7 +58,7 @@ creel <command> [options]
 | `--sender-id ID` | Sender ID/session namespace (default: `cli`) |
 | `--new` | Start and attach to a new session |
 | `--resume ID` | Attach and resume a specific session |
-| `--socket-path PATH` | Unix socket path (default: `/tmp/creel-daemon.sock`) |
+| `--socket-path PATH` | Unix socket path (default: `~/.creel/daemon.sock`) |
 | `--timeout N` | Request timeout in seconds |
 
 ## Send Options
@@ -67,7 +67,7 @@ creel <command> [options]
 |--------|-------------|
 | `--sender-id ID` | Sender ID/session namespace (default: `cli`) |
 | `--session-id ID` | Resume and send into a specific session |
-| `--socket-path PATH` | Unix socket path (default: `/tmp/creel-daemon.sock`) |
+| `--socket-path PATH` | Unix socket path (default: `~/.creel/daemon.sock`) |
 | `--timeout N` | Request timeout in seconds |
 | `--stream` | Stream response events from daemon SSE endpoint |
 

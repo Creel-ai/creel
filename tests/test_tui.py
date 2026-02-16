@@ -14,9 +14,12 @@ from taskrunner.tui import SENDER_ID, ChatApp, ChatInput, StatusBar
 
 def _make_mock_server(tmp_path, handle_response="Mock response"):
     """Create a mock ChatServer with a real SessionManager."""
+    mgr = SessionManager(sessions_dir=str(tmp_path))
     server = MagicMock()
-    server._session_mgr = SessionManager(sessions_dir=str(tmp_path))
+    server._session_mgr = mgr
     server.handle_message = MagicMock(return_value=handle_response)
+    server.get_or_create_session = mgr.get_or_create
+    server.new_session = mgr.new_session
     return server
 
 

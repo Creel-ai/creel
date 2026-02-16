@@ -43,6 +43,8 @@ class DaemonService:
         self._scheduler_thread: threading.Thread | None = None
         self._scheduler_shutdown_event: threading.Event | None = None
 
+        self._shutdown_done = False
+
         # Channel/plugin lifecycle state.
         self._channels: dict[str, Channel] = {}
         self._channel_threads: dict[str, threading.Thread] = {}
@@ -144,7 +146,7 @@ class DaemonService:
     def get_active_session_id(self, sender_id: str) -> str | None:
         """Return active session id for sender, if any."""
         with self._lock:
-            return self._server._session_mgr._get_active_session_id(sender_id)
+            return self._server._session_mgr.get_active_session_id(sender_id)
 
     def get_history(
         self,
@@ -159,7 +161,7 @@ class DaemonService:
         with self._lock:
             mgr = self._server._session_mgr
             if session_id:
-                session = mgr._load(session_id)
+                session = mgr.load_session(session_id)
                 if session is None or session.sender_id != sender_id:
                     raise ValueError(f"Session {session_id} not found")
             else:
@@ -285,7 +287,15 @@ class DaemonService:
         return stopped
 
     def shutdown(self, timeout: float = 5.0) -> None:
-        """Gracefully stop scheduler and all registered channels."""
+        """Gracefully stop scheduler and all registered channels.
+
+        Safe to call multiple times; subsequent calls are no-ops.
+        """
+        with self._lock:
+            if self._shutdown_done:
+                return
+            self._shutdown_done = True
+
         self.stop_scheduler(timeout=timeout)
 
         channel_names = []
@@ -304,8 +314,7 @@ class DaemonService:
         """Return daemon runtime status for status/health endpoints."""
         with self._lock:
             mgr = self._server._session_mgr
-            session_files = [p for p in mgr._dir.glob("*.json") if p.name != "_active.json"]
-            active_senders = len(mgr._load_active_index())
+            stats = mgr.session_stats()
 
             scheduler_running = bool(
                 self._scheduler_thread and self._scheduler_thread.is_alive()
@@ -327,10 +336,7 @@ class DaemonService:
         return {
             "started_at": self._started_at,
             "uptime_seconds": max(0, int(now - self._started_at)),
-            "sessions": {
-                "stored": len(session_files),
-                "active_senders": active_senders,
-            },
+            "sessions": stats,
             "scheduler": {
                 "running": scheduler_running,
             },

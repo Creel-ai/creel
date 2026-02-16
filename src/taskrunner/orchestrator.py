@@ -116,6 +116,7 @@ def _run_agent_mode(
             tools_config=task.tools,
             agent_config=task.agent,
             use_containers=use_containers,
+            allowed_tools=task.allowed_tools or None,
         )
 
     logger.info(

@@ -238,8 +238,31 @@ The exec executor provides sandboxed shell command execution within isolated Doc
 git clone https://github.com/creel-ai/creel.git
 cd creel
 
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
+```bash
+# macOS
+brew install pyenv uv age
+
+# Linux
+curl https://pyenv.run | bash      # then follow shell setup instructions
+curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo apt install age               # or: brew install age
+```
+
+```bash
+pyenv install 3.12.12   # if not already installed
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev, guardian]"
+
+# Set up age for secrets encryption (one-time)
+mkdir -p ~/.age
+age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
+
+# List available tasks
+creel list
+
+# Validate a task definition
+creel validate weather_check
 ```
 
 ### 2. Add your Anthropic key

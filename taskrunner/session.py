@@ -40,7 +40,7 @@ class SessionManager:
         ttl_hours: float = 0,
         summarize_on_trim: bool = False,
         summarize_fn: Callable[[list[dict]], str] | None = None,
-        max_context_tokens: int = 150_000,
+        max_context_tokens: int = 180_000,
     ):
         self._dir = Path(sessions_dir)
         self._dir.mkdir(parents=True, exist_ok=True)

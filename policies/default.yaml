@@ -14,6 +14,11 @@ allow:
   - get_reminder_lists
   - web_search
   - fetch_url
+  # Memory tools (writes are gated by Guardian content screening)
+  - remember
+  - search_memory
+  - list_memory_files
+  - update_long_term_memory
 
 review:
   - send_*
@@ -22,6 +27,7 @@ review:
   - complete_*
   - mark_*
   - trash_*
+  - edit_memory
 
 deny:
   - delete_*
@@ -30,3 +36,7 @@ deny:
 auto_approve:
   - mark_read
   - react_imessage
+  - remember
+  - search_memory
+  - list_memory_files
+  - update_long_term_memory

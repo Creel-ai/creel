@@ -119,3 +119,37 @@ class TestDefaultPolicy:
         # send_email should still require review
         decision = engine.evaluate("send_email")
         assert decision.verdict == ActionVerdict.REVIEW
+
+
+class TestMemoryToolPolicy:
+    """Verify memory tools have explicit policy entries."""
+
+    def test_remember_allowed(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("remember")
+        assert decision.verdict == ActionVerdict.ALLOW
+
+    def test_search_memory_allowed(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("search_memory")
+        assert decision.verdict == ActionVerdict.ALLOW
+
+    def test_list_memory_files_allowed(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("list_memory_files")
+        assert decision.verdict == ActionVerdict.ALLOW
+
+    def test_update_long_term_memory_allowed(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("update_long_term_memory")
+        assert decision.verdict == ActionVerdict.ALLOW
+
+    def test_edit_memory_requires_review(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("edit_memory")
+        assert decision.verdict == ActionVerdict.REVIEW
+
+    def test_delete_memory_denied(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("delete_memory")
+        assert decision.verdict == ActionVerdict.DENY

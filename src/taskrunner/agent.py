@@ -350,7 +350,9 @@ def run_agent_loop(
         # Append tool results as a user message
         messages.append({"role": "user", "content": tool_results})
 
-    # Max turns reached - do a final call without tools to force a summary
+    # Max turns reached - do a final call without tools to force a summary.
+    # Don't stream the forced summary — it's an internal wrap-up, not a direct
+    # response, and streaming it would concatenate with the prior streamed output.
     logger.warning("Max turns (%d) reached, forcing final response", agent_config.max_turns)
     try:
         response = call_llm(
@@ -358,7 +360,6 @@ def run_agent_loop(
             config=llm_config,
             tools=None,
             system=system_prompt,
-            on_text_delta=on_text_delta,
         )
         text = extract_text(response)
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})

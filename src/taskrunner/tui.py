@@ -146,7 +146,7 @@ class ChatApp(App):
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
         self._log_poller = None
-        self._streaming_text: str = ""
+        self._streaming_chunks: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -221,15 +221,15 @@ class ChatApp(App):
     @work(thread=True)
     def _send_message(self, text: str) -> None:
         self.call_from_thread(self._show_status, "Thinking...")
-        self._streaming_text = ""
+        self._streaming_chunks = []
 
         def on_delta(chunk: str) -> None:
-            if not self._streaming_text:
+            if not self._streaming_chunks:
                 # First chunk — swap status bar for streaming buffer
                 self.call_from_thread(self._hide_status)
                 self.call_from_thread(self._start_streaming)
-            self._streaming_text += chunk
-            self.call_from_thread(self._update_streaming, self._streaming_text)
+            self._streaming_chunks.append(chunk)
+            self.call_from_thread(self._update_streaming, "".join(self._streaming_chunks))
 
         try:
             response = self._server.handle_message(
@@ -262,17 +262,20 @@ class ChatApp(App):
         """Update the streaming buffer content in-place."""
         try:
             buf = self.query_one("#streaming-buffer", Static)
-            buf.update(f"[bold green]Assistant:[/bold green] {full_text}")
         except Exception:
-            pass  # widget may have been removed already
+            # Widget removed between delta and UI update — safe to ignore
+            return
+        buf.update(f"[bold green]Assistant:[/bold green] {full_text}")
 
     def _finish_streaming(self, final_text: str) -> None:
         """Remove streaming buffer and write final text to RichLog."""
         try:
             buf = self.query_one("#streaming-buffer", Static)
-            buf.remove()
         except Exception:
+            # Widget already removed — nothing to clean up
             pass
+        else:
+            buf.remove()
         self._append_response(final_text)
 
     def _append_response(self, text: str) -> None:

@@ -139,11 +139,23 @@ def _call_llm_streaming(
 
     Returns the complete ``Message`` once the stream finishes — callers get
     the same type as the non-streaming path.
+
+    Falls back to the non-streaming path on transient API errors so the
+    caller still gets a result (at the cost of losing incremental output).
     """
-    with client.messages.stream(**create_kwargs) as stream:
-        for text in stream.text_stream:
-            on_text_delta(text)
-        return stream.get_final_message()
+    try:
+        with client.messages.stream(**create_kwargs) as stream:
+            for text in stream.text_stream:
+                on_text_delta(text)
+            return stream.get_final_message()
+    except anthropic.APIStatusError as exc:
+        if exc.status_code not in RETRYABLE_STATUS_CODES:
+            raise
+        logger.warning(
+            "Streaming failed with %d, falling back to non-streaming",
+            exc.status_code,
+        )
+        return _retry_on_transient(client.messages.create, **create_kwargs)
 
 
 def summarize_messages(

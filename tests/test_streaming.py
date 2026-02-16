@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import anthropic
+
 from taskrunner.agent import run_agent_loop
 from taskrunner.llm import _call_llm_streaming, call_llm
 from taskrunner.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
@@ -66,6 +68,54 @@ def test_streaming_returns_final_message():
 
     assert result is final_msg
     stream.get_final_message.assert_called_once()
+
+
+# -- _call_llm_streaming fallback tests --
+
+
+def test_streaming_falls_back_on_transient_error():
+    """_call_llm_streaming should fall back to non-streaming on retryable errors."""
+    final_msg = _mock_message()
+
+    resp = MagicMock()
+    resp.status_code = 503
+    resp.headers = {}
+    stream = MagicMock()
+    stream.__enter__ = MagicMock(side_effect=anthropic.APIStatusError(
+        message="overloaded", response=resp, body=None,
+    ))
+    stream.__exit__ = MagicMock(return_value=False)
+
+    client = MagicMock()
+    client.messages.stream.return_value = stream
+    client.messages.create.return_value = final_msg
+
+    received: list[str] = []
+    result = _call_llm_streaming(client, {"model": "test"}, received.append)
+
+    client.messages.create.assert_called()
+    assert result is final_msg
+    assert received == []
+
+
+def test_streaming_reraises_non_retryable_error():
+    """_call_llm_streaming should reraise non-retryable API errors."""
+    import pytest
+
+    resp = MagicMock()
+    resp.status_code = 400
+    resp.headers = {}
+    stream = MagicMock()
+    stream.__enter__ = MagicMock(side_effect=anthropic.APIStatusError(
+        message="bad request", response=resp, body=None,
+    ))
+    stream.__exit__ = MagicMock(return_value=False)
+
+    client = MagicMock()
+    client.messages.stream.return_value = stream
+
+    with pytest.raises(anthropic.APIStatusError):
+        _call_llm_streaming(client, {"model": "test"}, lambda _: None)
 
 
 # -- call_llm streaming vs non-streaming dispatch --

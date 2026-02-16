@@ -451,7 +451,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
     guardian_status = "active" if server._guardian else "inactive"
     tool_count = len(agent_def.tools)
-    print(f"🦀 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
+    print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
 
     app = create_daemon_app(service)
 

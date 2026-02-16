@@ -333,7 +333,7 @@ class ChatApp(App):
         guardian_status = "active" if self._guardian_active else "inactive"
         log.write(
             Text.from_markup(
-                f"[bold bright_red]🦀 Creel agent ready.[/bold bright_red] "
+                f"[bold bright_red]🧺 Creel agent ready.[/bold bright_red] "
                 f"Tools loaded: {self._tool_count}. "
                 f"Guardian: {guardian_status}."
             )

@@ -168,7 +168,7 @@ cases:
     title: Docker Build llm-runner Image
     handler: command
     requires_live_docker: true
-    command: ["docker", "build", "-t", "llm-runner:latest", "llm/"]
+    command: ["docker", "build", "-t", "llm-runner:latest", "src/llm/"]
     timeout: 2400
 
   - id: containers-2-chat-simple

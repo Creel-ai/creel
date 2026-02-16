@@ -1,6 +1,6 @@
 site_name: Creel
 site_description: Secure LLM task runner and personal AI assistant
-site_url: https://rosskipp.github.io/creel/
+site_url: !ENV [MKDOCS_SITE_URL, "https://rosskipp.github.io/creel/"]
 repo_url: https://github.com/rosskipp/creel
 repo_name: rosskipp/creel
 

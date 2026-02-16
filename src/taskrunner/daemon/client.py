@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import httpx
 
@@ -219,6 +223,7 @@ class DaemonTuiAdapter:
             return str(response.get("text", ""))
 
         final_text = ""
+        got_final = False
         for event in self.stream_message(sender_id, text):
             event_type = str(event.get("type", ""))
             payload = event.get("payload", {})
@@ -231,9 +236,12 @@ class DaemonTuiAdapter:
                     on_text_delta(chunk)
             elif event_type == "final":
                 final_text = str(payload.get("text", ""))
+                got_final = True
             elif event_type == "error":
                 err = payload.get("error", "streaming request failed")
                 raise RuntimeError(str(err))
+        if not got_final:
+            logger.warning("stream ended without a final event")
         return final_text
 
     def stream_message(self, sender_id: str, text: str):

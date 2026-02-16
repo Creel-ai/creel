@@ -23,7 +23,12 @@ from textual.widgets import Button, Footer, Header, RichLog, Static, TextArea
 
 @runtime_checkable
 class TuiBackend(Protocol):
-    """Protocol for TUI chat backends (ChatServer or DaemonTuiAdapter)."""
+    """Protocol for TUI chat backends (ChatServer or DaemonTuiAdapter).
+
+    Backends may also implement ``stream_message(sender_id, text)`` to yield
+    streaming event dicts.  When present the TUI prefers it over the callback-
+    based ``on_text_delta`` path in ``handle_message``.
+    """
 
     def handle_message(
         self,
@@ -397,6 +402,7 @@ class ChatApp(App):
         self.call_from_thread(self._update_subtitle)
 
     def _send_message_with_stream_events(self, text: str) -> str:
+        # Check the class (not the instance) so MagicMock auto-attributes are ignored.
         stream_fn = getattr(type(self._server), "stream_message", None)
         if not callable(stream_fn):
             return self._send_message_with_callback(text)

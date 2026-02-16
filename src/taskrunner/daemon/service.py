@@ -121,7 +121,12 @@ class DaemonService:
         worker.start()
 
         while True:
-            item = token_queue.get()
+            try:
+                item = token_queue.get(timeout=1.0)
+            except queue.Empty:
+                if not worker.is_alive():
+                    break
+                continue
             if item is sentinel:
                 break
             yield {

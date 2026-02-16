@@ -280,7 +280,7 @@ async def test_tui_prefers_backend_stream_events(tmp_path):
     """If backend provides stream_message, TUI should consume stream events."""
     class _StreamingBackend:
         def handle_message(self, sender_id, text, on_text_delta=None):
-            raise AssertionError("handle_message should not be called for streamed sends")
+            raise AssertionError("TUI should use stream_message instead of handle_message")
 
         def stream_message(self, sender_id, text):
             del sender_id, text

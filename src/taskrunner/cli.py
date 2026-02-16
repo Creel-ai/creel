@@ -200,7 +200,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
                 root.removeHandler(handler)
 
         server = ChatServer(agent_def, use_containers=args.containers)
-        app = ChatApp(server)
+        app = ChatApp(server, model_name=agent_def.llm.model)
         server._confirm_fn = _make_tui_confirm_fn(app)
 
         if args.new:

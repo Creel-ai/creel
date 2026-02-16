@@ -4,6 +4,7 @@
 Usage:
     creel run <task_name>            Run a task immediately
     creel run <task_name> --dry      Dry run (render prompt only)
+    creel attach                     Attach TUI to running daemon
     creel schedule                   Start scheduler for all tasks
     creel daemon start               Start daemon in background
     creel daemon stop                Stop daemon
@@ -201,301 +202,41 @@ def _load_agent_def(args: argparse.Namespace):
     return agent_def
 
 
-def cmd_chat(args: argparse.Namespace) -> int:
-    """Start interactive CLI chat."""
-    from taskrunner.chat import ChatServer
-    from taskrunner.session import SessionManager
+def cmd_attach(args: argparse.Namespace) -> int:
+    """Attach Textual TUI to a running daemon."""
+    from taskrunner.daemon.client import DaemonApiClient, DaemonTuiAdapter
+    from taskrunner.tui import ChatApp
 
+    socket_path = _daemon_socket_path(args)
+    sender_id = getattr(args, "sender_id", "cli")
+    timeout = max(1.0, getattr(args, "timeout", 300.0))
+
+    client = DaemonApiClient(socket_path=socket_path, timeout=timeout)
     try:
-        agent_def = _load_agent_def(args)
-    except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        client.health()
+    except Exception as e:
+        print(f"Error: daemon is unreachable at {socket_path}: {e}", file=sys.stderr)
         return 1
 
-    # Load LLM secrets early
-    if agent_def.llm.secrets:
-        from taskrunner.orchestrator import _load_secrets_to_env
-        _load_secrets_to_env(agent_def.llm.secrets)
+    # Suppress console log handlers — Textual owns the terminal
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        if isinstance(handler, logging.StreamHandler):
+            root.removeHandler(handler)
 
-    # Handle --list-sessions: print and exit
-    if args.list_sessions:
-        from datetime import datetime, timezone
-
-        mgr = SessionManager(
-            sessions_dir=agent_def.session.sessions_dir,
-            max_history=agent_def.session.max_history,
-        )
-        sessions = mgr.list_sessions("cli")
-        if not sessions:
-            print("No sessions found.")
-            return 0
-        active_id = mgr._get_active_session_id("cli")
-        print(f"{'ID':<12} {'Title':<40} {'Messages':>8}  {'Last Active'}")
-        print("-" * 80)
-        for s in sessions:
-            marker = " *" if s["session_id"] == active_id else ""
-            dt = datetime.fromtimestamp(s["last_active"], tz=timezone.utc)
-            date_str = dt.strftime("%Y-%m-%d %H:%M")
-            title = (s["title"] or "(untitled)")[:38]
-            print(f"{s['session_id']}{marker:<{12 - len(s['session_id'])}} {title:<40} {s['message_count']:>8}  {date_str}")
-        return 0
-
-    # -- TUI mode (default) --
-    if not args.simple:
-        try:
-            from taskrunner.tui import ChatApp, _make_tui_confirm_fn
-        except ImportError:
-            args.simple = True  # fall back if textual not installed
-
-    if not args.simple:
-        # Suppress console log handlers — Textual owns the terminal
-        root = logging.getLogger()
-        for handler in root.handlers[:]:
-            if isinstance(handler, logging.StreamHandler):
-                root.removeHandler(handler)
-
-        server = ChatServer(agent_def, use_containers=args.containers)
-        app = ChatApp(server)
-        server._confirm_fn = _make_tui_confirm_fn(app)
-
-        if args.new:
-            server._session_mgr.new_session("cli")
-        if args.resume:
-            try:
-                server._session_mgr.resume_session("cli", args.resume)
-            except ValueError as e:
-                print(f"Error: {e}", file=sys.stderr)
-                return 1
-
-        app.run()
-        return 0
-
-    # -- Simple stdin/stdout mode --
-    from taskrunner.channels.stdin import StdinChannel
-
-    def _confirm_action(tool_name: str, tool_input: dict, reason: str) -> bool:
-        subject = tool_input.get("subject")
-        if subject:
-            print(f'\n⚠ Guardian review: {tool_name} — "{subject}"')
-        else:
-            print(f"\n⚠ Guardian review: {tool_name}")
-        print(f"  Input: {tool_input}")
-        print(f"  Reason: {reason}")
-        try:
-            answer = input("  Allow? [y/N]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            return False
-        return answer in ("y", "yes")
-
-    server = ChatServer(agent_def, use_containers=args.containers, confirm_fn=_confirm_action)
+    backend = DaemonTuiAdapter(client, sender_id=sender_id)
 
     if args.new:
-        session = server._session_mgr.new_session("cli")
-        print(f"Started new session {session.session_id}.")
-
+        backend.new_session(sender_id)
     if args.resume:
         try:
-            session = server._session_mgr.resume_session("cli", args.resume)
-            title = session.title or "(untitled)"
-            print(f"Resumed session {args.resume}: {title}")
-        except ValueError as e:
+            backend.resume_session(sender_id, args.resume)
+        except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-    channel = StdinChannel()
-
-    try:
-        channel.listen(server.handle_message)
-    except KeyboardInterrupt:
-        print("\nChat stopped.")
-
-    return 0
-
-
-def cmd_listen(args: argparse.Namespace) -> int:
-    """Start message listener (iMessage or BlueBubbles)."""
-    from taskrunner.chat import ChatServer
-    from taskrunner.startup import SecretsValidationError, validate_secrets
-
-    try:
-        agent_def = _load_agent_def(args)
-    except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
-        return 1
-
-    # Validate secrets before starting
-    try:
-        validate_secrets(agent_def)
-    except SecretsValidationError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-
-    # Load LLM secrets early
-    if agent_def.llm.secrets:
-        from taskrunner.orchestrator import _load_secrets_to_env
-        _load_secrets_to_env(agent_def.llm.secrets)
-
-    channel_type = getattr(args, "channel_type", None) or "imessage"
-    imessage_channel = None
-
-    if channel_type == "bluebubbles":
-        from taskrunner.channels.bluebubbles import BlueBubblesChannel
-
-        bb_cfg = agent_def.channels.bluebubbles
-        if not bb_cfg:
-            print("Error: No bluebubbles channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = BlueBubblesChannel(
-            server_url=bb_cfg.server_url,
-            password=bb_cfg.password,
-            allowed_senders=bb_cfg.listen_to,
-            poll_interval=bb_cfg.poll_interval,
-        )
-        print(f"Listening for iMessages via BlueBubbles ({bb_cfg.server_url})...")
-    else:
-        from taskrunner.channels.imessage import IMessageChannel
-
-        if not agent_def.channels.imessage:
-            print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = IMessageChannel(
-            allowed_senders=[agent_def.channels.imessage.listen_to],
-            poll_interval=agent_def.channels.imessage.poll_interval,
-        )
-        imessage_channel = channel
-        print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
-
-    server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
-
-    # Set up graceful shutdown on SIGTERM/SIGINT
-    import signal
-
-    def _handle_shutdown(signum, frame):
-        sig_name = signal.Signals(signum).name
-        logger.info("Received %s, initiating graceful shutdown...", sig_name)
-        print(f"\nReceived {sig_name}, shutting down...")
-        channel.stop()
-
-    signal.signal(signal.SIGTERM, _handle_shutdown)
-    signal.signal(signal.SIGINT, _handle_shutdown)
-
-    try:
-        channel.listen(server.handle_message)
-    except KeyboardInterrupt:
-        pass
-
-    print("Listener stopped.")
-    return 0
-
-
-def cmd_serve(args: argparse.Namespace) -> int:
-    """Start message listener + scheduler (daemon mode)."""
-    import signal
-    import threading
-
-    from taskrunner.chat import ChatServer
-    from taskrunner.startup import SecretsValidationError, validate_secrets
-
-    try:
-        agent_def = _load_agent_def(args)
-    except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
-        return 1
-
-    # Validate secrets before starting
-    try:
-        validate_secrets(agent_def)
-    except SecretsValidationError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-
-    # Load LLM secrets early
-    if agent_def.llm.secrets:
-        from taskrunner.orchestrator import _load_secrets_to_env
-        _load_secrets_to_env(agent_def.llm.secrets)
-
-    # Set up graceful shutdown on SIGTERM/SIGINT
-    shutdown_event = threading.Event()
-    heartbeat_event = threading.Event()
-
-    # Start scheduler in a background thread
-    tasks_dir = _tasks_dir(args)
-    if tasks_dir.is_dir():
-        def run_scheduler():
-            try:
-                start_scheduler(
-                    tasks_dir=tasks_dir,
-                    use_containers=args.containers,
-                    shutdown_event=shutdown_event,
-                    heartbeat_event=heartbeat_event,
-                )
-            except Exception:
-                logging.getLogger(__name__).exception("Scheduler crashed")
-
-        sched_thread = threading.Thread(target=run_scheduler, daemon=True)
-        sched_thread.start()
-        print("Scheduler started in background.")
-
-        # Heartbeat monitor: warns if scheduler thread stops pulsing
-        def _monitor_heartbeat():
-            while not shutdown_event.is_set():
-                heartbeat_event.clear()
-                if shutdown_event.wait(60):
-                    break
-                if not heartbeat_event.is_set():
-                    logger.warning("Scheduler heartbeat missed — scheduler thread may be dead")
-
-        monitor_thread = threading.Thread(target=_monitor_heartbeat, daemon=True)
-        monitor_thread.start()
-
-    channel_type = getattr(args, "channel_type", None) or "imessage"
-    imessage_channel = None
-
-    if channel_type == "bluebubbles":
-        from taskrunner.channels.bluebubbles import BlueBubblesChannel
-
-        bb_cfg = agent_def.channels.bluebubbles
-        if not bb_cfg:
-            print("Error: No bluebubbles channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = BlueBubblesChannel(
-            server_url=bb_cfg.server_url,
-            password=bb_cfg.password,
-            allowed_senders=bb_cfg.listen_to,
-            poll_interval=bb_cfg.poll_interval,
-        )
-        print(f"Listening for iMessages via BlueBubbles ({bb_cfg.server_url})...")
-    else:
-        from taskrunner.channels.imessage import IMessageChannel
-
-        if not agent_def.channels.imessage:
-            print("Error: No imessage channel configured in agent.yaml", file=sys.stderr)
-            return 1
-        channel = IMessageChannel(
-            allowed_senders=[agent_def.channels.imessage.listen_to],
-            poll_interval=agent_def.channels.imessage.poll_interval,
-        )
-        imessage_channel = channel
-        print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
-
-    server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
-
-    def _handle_shutdown(signum, frame):
-        sig_name = signal.Signals(signum).name
-        logger.info("Received %s, initiating graceful shutdown...", sig_name)
-        print(f"\nReceived {sig_name}, shutting down...")
-        shutdown_event.set()
-        channel.stop()
-
-    signal.signal(signal.SIGTERM, _handle_shutdown)
-    signal.signal(signal.SIGINT, _handle_shutdown)
-
-    try:
-        channel.listen(server.handle_message)
-    except KeyboardInterrupt:
-        pass
-
-    print("Server stopped.")
+    app = ChatApp(backend, sender_id=sender_id)
+    app.run()
     return 0
 
 
@@ -887,26 +628,6 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_bridge(args: argparse.Namespace) -> int:
-    """Start the bridge server for macOS-native tools."""
-    import os
-    
-    try:
-        import uvicorn
-        from bridge.server import app
-        
-        print(f"Starting bridge server on {args.host}:{args.port}")
-        print("Scoped tokens will be auto-generated (set BRIDGE_TOKEN_NOTES, BRIDGE_TOKEN_REMINDERS, etc. to persist)")
-        uvicorn.run(app, host=args.host, port=args.port)
-    except KeyboardInterrupt:
-        print("\nBridge server stopped.")
-    except ImportError:
-        print("Error: Bridge server dependencies not found (pip install fastapi uvicorn)", file=sys.stderr)
-        return 1
-    
-    return 0
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -924,10 +645,6 @@ def main() -> int:
     parser.add_argument(
         "--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG,
         help="Path to agent.yaml config",
-    )
-    parser.add_argument(
-        "--simple", action="store_true",
-        help="Use simple stdin/stdout mode instead of TUI",
     )
     parser.add_argument(
         "--json-logs", action="store_true",
@@ -957,43 +674,32 @@ def main() -> int:
     validate_parser = subparsers.add_parser("validate", help="Validate a task definition")
     validate_parser.add_argument("task_name", help="Name of the task to validate")
 
-    # chat command
-    chat_parser = subparsers.add_parser("chat", help="Interactive CLI chat with agent")
-    chat_parser.add_argument(
-        "--new", action="store_true", help="Start a new session (don't resume the active one)"
+    # attach command
+    attach_parser = subparsers.add_parser("attach", help="Attach TUI to running daemon")
+    attach_parser.add_argument(
+        "--sender-id",
+        default="cli",
+        help="Sender ID/session namespace (default: cli)",
     )
-    chat_parser.add_argument(
-        "--resume", metavar="ID", help="Resume a specific session by ID"
+    attach_parser.add_argument(
+        "--new", action="store_true", help="Start and attach to a new session"
     )
-    chat_parser.add_argument(
-        "--list-sessions", action="store_true", help="List sessions and exit"
+    attach_parser.add_argument(
+        "--resume", metavar="ID", help="Attach and resume a specific session"
     )
-
-
-    # listen command
-    listen_parser = subparsers.add_parser("listen", help="Listen for messages and respond")
-    listen_parser.add_argument(
-        "--channel", dest="channel_type", default="imessage",
-        choices=["imessage", "bluebubbles"],
-        help="Channel to listen on (default: imessage)",
+    attach_parser.add_argument(
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
+        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
     )
-
-    # serve command
-    serve_parser = subparsers.add_parser("serve", help="Listen for messages + run scheduler")
-    serve_parser.add_argument(
-        "--channel", dest="channel_type", default="imessage",
-        choices=["imessage", "bluebubbles"],
-        help="Channel to listen on (default: imessage)",
+    attach_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=300.0,
+        help="Request timeout in seconds (default: 300)",
     )
 
-    # bridge command
-    bridge_parser = subparsers.add_parser("bridge", help="Start the host bridge server")
-    bridge_parser.add_argument(
-        "--host", default="127.0.0.1", help="Bind to host (default: 127.0.0.1)"
-    )
-    bridge_parser.add_argument(
-        "--port", type=int, default=8099, help="Port to listen on (default: 8099)"
-    )
 
     # audit command
     audit_parser = subparsers.add_parser("audit", help="Query the guardian audit log")
@@ -1182,10 +888,7 @@ def main() -> int:
         "schedule": cmd_schedule,
         "list": cmd_list,
         "validate": cmd_validate,
-        "chat": cmd_chat,
-        "listen": cmd_listen,
-        "serve": cmd_serve,
-        "bridge": cmd_bridge,
+        "attach": cmd_attach,
         "audit": cmd_audit,
         "send": cmd_send,
     }

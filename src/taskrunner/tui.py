@@ -21,9 +21,9 @@ SENDER_ID = "cli"
 
 _LOG_POLL_INTERVAL = 0.25
 
-# Commands handled locally in the TUI (not sent to ChatServer)
+# Commands handled locally in the TUI (not sent to backend)
 _TUI_COMMANDS = {"/compact", "/exit", "/quit", "/help"}
-# Commands handled by ChatServer that return instantly (no LLM call)
+# Commands handled by backend that return instantly (no LLM call)
 _SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions"}
 # /resume is a prefix match, handled separately
 
@@ -137,9 +137,10 @@ class ChatApp(App):
     }
     """
 
-    def __init__(self, server: ChatServer) -> None:
+    def __init__(self, server: ChatServer | object, sender_id: str = SENDER_ID) -> None:
         super().__init__()
         self._server = server
+        self._sender_id = sender_id
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
         self._log_poller = None
@@ -195,7 +196,7 @@ class ChatApp(App):
 
         # Server commands that return instantly (no LLM call)
         if cmd in _SERVER_COMMANDS or cmd == "/resume":
-            response = self._server.handle_message(SENDER_ID, text)
+            response = self._server.handle_message(self._sender_id, text)
             self._append_response(response)
             self._update_subtitle()
             return
@@ -218,7 +219,7 @@ class ChatApp(App):
     def _send_message(self, text: str) -> None:
         self.call_from_thread(self._show_status, "Thinking...")
         try:
-            response = self._server.handle_message(SENDER_ID, text)
+            response = self._server.handle_message(self._sender_id, text)
         except Exception as exc:
             response = f"[red]Error: {exc}[/red]"
 
@@ -248,10 +249,10 @@ class ChatApp(App):
 
     def _replay_history(self) -> None:
         """Render recent messages from the active session into the RichLog."""
-        session = self._server._session_mgr.get_or_create(SENDER_ID)
+        session = self._get_or_create_session()
         log = self.query_one("#chat-log", RichLog)
 
-        messages = session.messages[-20:]
+        messages = (session.messages or [])[-20:]
         for msg in messages:
             role = msg.get("role")
             content = msg.get("content", "")
@@ -271,16 +272,32 @@ class ChatApp(App):
                     log.write("")
 
     def _update_subtitle(self) -> None:
-        session = self._server._session_mgr.get_or_create(SENDER_ID)
+        session = self._get_or_create_session()
         title = session.title or "(new session)"
         self.sub_title = f"Session {session.session_id}: {title}"
 
     def action_new_session(self) -> None:
-        session = self._server._session_mgr.new_session(SENDER_ID)
+        session = self._new_session()
         log = self.query_one("#chat-log", RichLog)
         log.clear()
         log.write(f"[dim]Started new session {session.session_id}.[/dim]")
         self._update_subtitle()
+
+    def _get_or_create_session(self):
+        if hasattr(self._server, "_session_mgr"):
+            return self._server._session_mgr.get_or_create(self._sender_id)
+        get_session = getattr(self._server, "get_or_create_session", None)
+        if callable(get_session):
+            return get_session(self._sender_id)
+        raise RuntimeError("TUI backend does not expose session access methods")
+
+    def _new_session(self):
+        if hasattr(self._server, "_session_mgr"):
+            return self._server._session_mgr.new_session(self._sender_id)
+        new_session = getattr(self._server, "new_session", None)
+        if callable(new_session):
+            return new_session(self._sender_id)
+        raise RuntimeError("TUI backend does not expose new_session()")
 
     def action_quit(self) -> None:
         if self._log_handler:

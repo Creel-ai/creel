@@ -10,7 +10,7 @@ Phase 0/1 introduces:
 
 - a transport-agnostic daemon service layer (`taskrunner.daemon.service.DaemonService`)
 - draft API/event contracts (`taskrunner.daemon.contracts`)
-- initial CLI wiring for `daemon start|stop|status|run` and `send`
+- initial CLI wiring for `daemon start|stop|status|run`, `attach`, and `send`
 
 ## Runtime Boundaries
 

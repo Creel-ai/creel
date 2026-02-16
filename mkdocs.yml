@@ -1,0 +1,81 @@
+site_name: Creel
+site_description: Secure LLM task runner and personal AI assistant
+site_url: https://rosskipp.github.io/creel/
+repo_url: https://github.com/rosskipp/creel
+repo_name: rosskipp/creel
+
+theme:
+  name: material
+  logo: assets/creel-logo.jpg
+  favicon: assets/creel-logo.jpg
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started/quickstart.md
+    - Authentication: getting-started/authentication.md
+    - Google Services Setup: getting-started/google-services.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Agent Mode: architecture/agent-mode.md
+    - Guardian Security: architecture/guardian.md
+  - Configuration:
+    - Task Definitions: configuration/tasks.md
+    - Agent Configuration: configuration/agent-config.md
+    - Secrets Management: configuration/secrets.md
+  - Executors:
+    - Overview: executors/index.md
+    - Weather: executors/weather.md
+    - Google Calendar: executors/google-calendar.md
+    - Gmail: executors/gmail.md
+    - Google Drive: executors/google-drive.md
+    - iMessage: executors/imessage.md
+    - Apple Apps: executors/apple-apps.md
+    - Web Search & Fetch: executors/web.md
+    - Shell Exec: executors/exec.md
+  - Deployment:
+    - Container Mode: deployment/containers.md
+    - Host Bridge: deployment/host-bridge.md
+  - Reference:
+    - CLI Reference: reference/cli.md
+    - Project Structure: reference/project-structure.md
+  - Development:
+    - Setup: development/setup.md
+    - Testing: development/testing.md
+
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - tables
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true

@@ -321,8 +321,8 @@ For `docs/`:
 
 - Framework Preset: `Other`
 - Install Command: *(empty)*
-- Build Command: `python3 -m venv .vercel-venv && .vercel-venv/bin/pip install --disable-pip-version-check --no-cache-dir "mkdocs>=1.6.0" "mkdocs-material>=9.5.0" && .vercel-venv/bin/mkdocs build -f ../mkdocs.yml -d docs/site`
-- Output Directory: `site`
+- Build Command: `rm -rf .vercel-static ../.mkdocs-site && python3 -m venv .vercel-venv && .vercel-venv/bin/pip install --disable-pip-version-check --no-cache-dir "mkdocs>=1.6.0" "mkdocs-material>=9.5.0" && .vercel-venv/bin/mkdocs build -f ../mkdocs.yml -d ../.mkdocs-site && mkdir -p .vercel-static && cp -a ../.mkdocs-site/. .vercel-static/`
+- Output Directory: `.vercel-static`
 
 ### Deployment behavior
 

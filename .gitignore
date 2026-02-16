@@ -8,9 +8,14 @@ build/
 
 # Secrets - never commit plaintext or encrypted secrets
 .env
+*.env
+*.env.enc
 secrets/*.env
 secrets/*.json
 secrets/*.enc
+
+# Local smoke test artifacts
+.smoke-runs/
 
 # Virtual environments
 .venv/

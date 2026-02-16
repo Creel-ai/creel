@@ -15,6 +15,7 @@ from taskrunner.session import SessionManager
 class _StubChatServer:
     def __init__(self, sessions_dir: Path) -> None:
         self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._guardian = None
 
     def handle_message(self, sender_id: str, text: str) -> str:
         session = self._session_mgr.add_user_message(sender_id, text)

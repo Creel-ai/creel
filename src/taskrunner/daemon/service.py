@@ -333,9 +333,12 @@ class DaemonService:
                 )
 
         now = self._now_fn()
+        guardian_active = self._server._guardian is not None
         return {
             "started_at": self._started_at,
             "uptime_seconds": max(0, int(now - self._started_at)),
+            "tool_count": len(self._agent_def.tools),
+            "guardian_active": guardian_active,
             "sessions": stats,
             "scheduler": {
                 "running": scheduler_running,

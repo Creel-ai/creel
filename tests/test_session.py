@@ -260,7 +260,21 @@ def test_resume_session_bad_id(tmp_path: Path) -> None:
     mgr.add_user_message("cli", "Hello")
 
     with pytest.raises(ValueError, match="not found"):
-        mgr.resume_session("cli", "nonexistent")
+        mgr.resume_session("cli", "deadbeef00")
+
+
+def test_session_id_path_traversal_rejected(tmp_path: Path) -> None:
+    """session_id containing path traversal characters should be rejected."""
+    mgr = SessionManager(sessions_dir=str(tmp_path))
+
+    with pytest.raises(ValueError, match="Invalid session_id"):
+        mgr.resume_session("cli", "../../etc/passwd")
+
+    with pytest.raises(ValueError, match="Invalid session_id"):
+        mgr.resume_session("cli", "../secret")
+
+    with pytest.raises(ValueError, match="Invalid session_id"):
+        mgr.load_session("foo/bar")
 
 
 def test_resume_session_wrong_sender(tmp_path: Path) -> None:
@@ -313,7 +327,7 @@ def test_backward_compat_old_session_file(tmp_path: Path) -> None:
         "last_active": 1000001.0,
         "messages": [{"role": "user", "content": "Old message"}],
     }
-    session_id = "oldfile01"
+    session_id = "01df11e0"
     (tmp_path / f"{session_id}.json").write_text(json.dumps(old_data))
 
     # Point the active index at it
@@ -532,14 +546,14 @@ def test_backward_compat_no_new_fields(tmp_path: Path) -> None:
     """Old session JSON without summary/token_count should load with defaults."""
     old_data = {
         "sender_id": "cli",
-        "session_id": "oldsess01",
+        "session_id": "01d5e550",
         "title": "Old session",
         "created_at": 1000000.0,
         "last_active": 1000001.0,
         "messages": [{"role": "user", "content": "Hello"}],
     }
-    (tmp_path / "oldsess01.json").write_text(json.dumps(old_data))
-    (tmp_path / "_active.json").write_text(json.dumps({"cli": "oldsess01"}))
+    (tmp_path / "01d5e550.json").write_text(json.dumps(old_data))
+    (tmp_path / "_active.json").write_text(json.dumps({"cli": "01d5e550"}))
 
     mgr = SessionManager(sessions_dir=str(tmp_path))
     session = mgr.get_or_create("cli")

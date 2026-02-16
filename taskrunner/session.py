@@ -7,6 +7,7 @@ import logging
 import re
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,16 +26,29 @@ class Session:
     messages: list[dict] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
+    summary: str = ""
+    token_count: int = 0
 
 
 class SessionManager:
     """Manages conversation sessions persisted as JSON files."""
 
-    def __init__(self, sessions_dir: str = "sessions", max_history: int = 50, ttl_hours: float = 0):
+    def __init__(
+        self,
+        sessions_dir: str = "sessions",
+        max_history: int = 50,
+        ttl_hours: float = 0,
+        summarize_on_trim: bool = False,
+        summarize_fn: Callable[[list[dict]], str] | None = None,
+        max_context_tokens: int = 150_000,
+    ):
         self._dir = Path(sessions_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._max_history = max_history
         self._ttl_seconds = ttl_hours * 3600 if ttl_hours > 0 else 0
+        self._summarize_on_trim = summarize_on_trim
+        self._summarize_fn = summarize_fn
+        self._max_context_tokens = max_context_tokens
 
     # -- public API --
 
@@ -185,6 +199,83 @@ class SessionManager:
                 return
         logger.info("No active session to clear for %s", sender_id)
 
+    # -- compaction --
+
+    def update_token_count(self, sender_id: str, input_tokens: int) -> None:
+        """Update the session's token count and trigger compaction if needed.
+
+        Called after each LLM response with the input_tokens from usage data.
+        """
+        session = self.get_or_create(sender_id)
+        session.token_count = input_tokens
+
+        if (
+            self._summarize_on_trim
+            and session.token_count >= self._max_context_tokens
+            and len(session.messages) > 2
+        ):
+            self._compact_with_summary(session)
+            self._save(session)
+
+    def _compact_with_summary(self, session: Session) -> None:
+        """Compact older messages into a summary, keeping recent messages."""
+        if not self._summarize_fn:
+            logger.warning("Compaction requested but no summarize_fn configured, falling back to trim")
+            session.messages = self._trim_preserving_tool_pairs(
+                session.messages, self._max_history,
+            )
+            return
+
+        keep_count = len(session.messages) // 2
+        split_idx = self._find_safe_split(session.messages, len(session.messages) - keep_count)
+        older = session.messages[:split_idx]
+        recent = session.messages[split_idx:]
+
+        if not older:
+            return
+
+        try:
+            summary_text = self._summarize_fn(older)
+        except Exception:
+            logger.warning("Summarization failed, falling back to trim", exc_info=True)
+            session.messages = self._trim_preserving_tool_pairs(
+                session.messages, self._max_history,
+            )
+            return
+
+        summary_msg = {
+            "role": "user",
+            "content": (
+                "[CONVERSATION SUMMARY]\n"
+                f"<summary>\n{summary_text}\n</summary>"
+            ),
+        }
+
+        session.messages = [summary_msg] + recent
+        session.summary = summary_text
+        session.token_count = 0
+        logger.info(
+            "Compacted session %s: %d messages -> 1 summary + %d recent",
+            session.session_id, len(older) + len(recent), len(recent),
+        )
+
+    @staticmethod
+    def _find_safe_split(messages: list[dict], target_idx: int) -> int:
+        """Find a safe split point at or after target_idx (a user text message boundary).
+
+        Avoids splitting in the middle of a tool-call pair.
+        """
+        for i in range(target_idx, len(messages)):
+            msg = messages[i]
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                return i
+        # If no safe point found after target, search before
+        for i in range(target_idx - 1, 0, -1):
+            msg = messages[i]
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                return i
+        return target_idx
+
     # -- persistence --
 
     @staticmethod
@@ -243,7 +334,7 @@ class SessionManager:
         return trimmed[i:]
 
     def _save(self, session: Session) -> None:
-        """Write session to disk, trimming to max_history."""
+        """Write session to disk, trimming to max_history as safety net."""
         if len(session.messages) > self._max_history:
             session.messages = self._trim_preserving_tool_pairs(
                 session.messages, self._max_history,
@@ -256,6 +347,8 @@ class SessionManager:
             "created_at": session.created_at,
             "last_active": session.last_active,
             "messages": session.messages,
+            "summary": session.summary,
+            "token_count": session.token_count,
         }
 
         path = self._session_path(session.session_id)
@@ -276,6 +369,8 @@ class SessionManager:
                 messages=data.get("messages", []),
                 created_at=data.get("created_at", time.time()),
                 last_active=data.get("last_active", time.time()),
+                summary=data.get("summary", ""),
+                token_count=data.get("token_count", 0),
             )
             if len(session.messages) > self._max_history:
                 session.messages = self._trim_preserving_tool_pairs(

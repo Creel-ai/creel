@@ -121,6 +121,64 @@ def call_llm(
     return _retry_on_transient(client.messages.create, **create_kwargs)
 
 
+def summarize_messages(
+    messages: list[dict],
+    model: str = "claude-haiku-4-5-20251001",
+    max_tokens: int = 1024,
+) -> str:
+    """Summarize a list of conversation messages into a compact context string.
+
+    Args:
+        messages: Conversation messages in Anthropic format.
+        model: Model to use for summarization.
+        max_tokens: Max output tokens for the summary.
+
+    Returns:
+        A summary string covering key topics, decisions, tool outcomes, and pending items.
+    """
+    # Format messages into human-readable text
+    lines: list[str] = []
+    for msg in messages:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            lines.append(f"{role}: {content}")
+        elif isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        parts.append(block.get("text", ""))
+                    elif block.get("type") == "tool_use":
+                        parts.append(f"[tool_use: {block.get('name', '?')}({block.get('input', {})})]")
+                    elif block.get("type") == "tool_result":
+                        result_text = str(block.get("content", ""))
+                        if len(result_text) > 200:
+                            result_text = result_text[:200] + "..."
+                        parts.append(f"[tool_result: {result_text}]")
+            lines.append(f"{role}: {' '.join(parts)}")
+
+    conversation_text = "\n".join(lines)
+
+    prompt = (
+        "Summarize the following conversation concisely. Focus on:\n"
+        "- Key topics discussed\n"
+        "- Decisions made\n"
+        "- Tool call outcomes and important results\n"
+        "- Any pending items or unresolved questions\n\n"
+        "Keep the summary compact but preserve all important context needed "
+        "to continue the conversation.\n\n"
+        f"Conversation:\n{conversation_text}"
+    )
+
+    config = LLMConfig(model=model, max_tokens=max_tokens)
+    response = call_llm(
+        messages=[{"role": "user", "content": prompt}],
+        config=config,
+    )
+    return extract_text(response)
+
+
 def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:
     """Send a prompt to the LLM and return the response text.
 

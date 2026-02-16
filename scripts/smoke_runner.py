@@ -632,7 +632,7 @@ def handle_broken_secret_validation(case: dict[str, Any], ctx: SmokeContext) -> 
 
 def handle_no_judge_flag(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
-    import runner
+    from taskrunner import cli as runner
 
     with open(ctx.agent_config) as f:
         config = yaml.safe_load(f) or {}

@@ -1,6 +1,6 @@
 # Authentication
 
-The runner supports two ways to authenticate with the Anthropic API:
+Creel needs Anthropic API credentials to call Claude. Two methods are supported:
 
 | Method | Env var | How to get it |
 |--------|---------|---------------|
@@ -13,7 +13,7 @@ If both are set, `ANTHROPIC_AUTH_TOKEN` takes precedence.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-./runner.py run weather_check
+creel run weather_check
 ```
 
 ## Using a Claude Code Setup Token
@@ -26,27 +26,37 @@ claude setup-token
 # Copy the sk-ant-oat01-... value
 
 export ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-...
-./runner.py run weather_check
+creel run weather_check
 ```
 
-## Storing Credentials in a Secrets File
+## Encrypting Credentials with age
 
-Either variable can go in an age-encrypted secrets file:
+For persistent, secure storage:
 
 ```bash
-# Create the plaintext .env
-echo 'ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-...' > secrets/anthropic.env
+# One-time setup
+brew install age
+mkdir -p ~/.age
+age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 
-# Encrypt and delete plaintext
+# Encrypt your credentials
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > secrets/anthropic.env
 ./scripts/encrypt-secret.sh secrets/anthropic.env
-rm secrets/anthropic.env
+rm secrets/anthropic.env   # always delete the plaintext
 ```
 
-Then reference it in your task YAML under `llm.secrets`. See [Secrets Management](../configuration/secrets.md) for details.
+Reference the encrypted file in your task YAML:
+
+```yaml
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 4096
+  secrets: secrets/anthropic.env.enc
+```
 
 ## Root `.env` File
 
-The runner loads a root `.env` file (gitignored) at startup for non-secret configuration like phone numbers:
+Creel loads a root `.env` file (gitignored) at startup for non-secret configuration:
 
 ```bash
 # .env (project root — gitignored, never committed)

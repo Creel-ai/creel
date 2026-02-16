@@ -232,64 +232,51 @@ The exec executor provides sandboxed shell command execution within isolated Doc
 
 ## Quick Start
 
+### 1. Install
+
 ```bash
-# Set up Python and virtualenv (requires pyenv and uv)
-pyenv install 3.12.12   # if not already installed
-uv venv
-source .venv/bin/activate
+git clone https://github.com/creel-ai/creel.git
+cd creel
+
+uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
+```
 
-# Optional: required for live ONNX export + classifier smoke tests
-uv pip install -e ".[guardian]"
+### 2. Add your Anthropic key
 
-# Install age for secrets encryption (one-time)
-brew install age
-mkdir -p ~/.age
-age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # or use ANTHROPIC_AUTH_TOKEN
+```
 
-# List available tasks
-creel list
+### 3. Start the daemon and chat
 
-# Validate a task definition
-creel validate weather_check
+```bash
+creel daemon start          # start the background agent
+creel attach                # open the rich TUI
+```
 
-# Dry run (renders prompt, skips LLM and output)
-creel run weather_check --dry
+That's it — you're chatting with your agent. Type `/help` in the TUI to see commands.
 
-# Full run (requires Anthropic credentials — see Authentication below)
+### More ways to use it
+
+```bash
+# One-shot message (no TUI)
+creel send "What's the weather today?"
+
+# Stream a response
+creel send "Summarize my calendar" --stream
+
+# Run a scheduled task
 creel run weather_check
 
-# Start the cron scheduler
-creel schedule
-
-# Start background daemon (agent loop + scheduler + channel plugins)
-creel daemon start
-
-# Install daemon as persistent launchd service (macOS)
+# Run on startup (macOS)
 creel daemon install
 
-# Attach rich TUI to running daemon
-creel attach
-
-# Send one message without opening TUI
-creel send "What's on my calendar today?"
-
-# Stream response events for one-shot send
-creel send "Draft a status update" --stream
-
-# Query daemon status
-creel daemon status
-
-# Stop daemon
-creel daemon stop
-
-# Uninstall launchd service
-creel daemon uninstall
-
-# Query the guardian audit log
-creel audit
+# Query the security audit log
 creel audit --blocked --tail 50
 ```
+
+> 📖 **Full setup guide** including secrets encryption, Google OAuth, and container mode: [Getting Started docs](https://creel-ai.com/getting-started/quickstart/)
 
 ## Authentication
 

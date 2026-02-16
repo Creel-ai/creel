@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -95,7 +96,12 @@ class ChatServer:
             self._guardian.warm_up()
             logger.info("Guardian enabled")
 
-    def handle_message(self, sender_id: str, text: str) -> str:
+    def handle_message(
+        self,
+        sender_id: str,
+        text: str,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> str:
         """Process an incoming message and return a response."""
         # Set request ID for this message
         rid = generate_request_id()
@@ -174,6 +180,7 @@ class ChatServer:
                 guardian=self._guardian,
                 confirm_action=self._confirm_fn,
                 memory_manager=self._memory,
+                on_text_delta=on_text_delta,
             )
 
         logger.info(

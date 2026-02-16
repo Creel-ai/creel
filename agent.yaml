@@ -430,8 +430,11 @@ workspace:
   path: workspace
   timezone: "America/Denver"
   memory_days: 2
-  memory_max_chars: 5000
+  memory_max_chars: 20000
   max_chars_per_file: 20000
+  compact_after_days: 7
+  max_daily_entries: 50
+  max_long_term_lines: 500
 
 channels:
   imessage:

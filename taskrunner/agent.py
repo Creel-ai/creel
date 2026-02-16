@@ -226,6 +226,39 @@ def run_agent_loop(
                         })
                         continue
 
+            # Screen memory write content through Guardian before execution
+            _MEMORY_WRITE_TOOLS = {"remember", "update_long_term_memory", "edit_memory"}
+            if guardian is not None and tool_name in _MEMORY_WRITE_TOOLS:
+                write_text = tool_input.get("text") or tool_input.get("new_text") or ""
+                if write_text:
+                    screen_result = guardian.screen_input(write_text)
+                    if screen_result.blocked:
+                        logger.warning(
+                            "Guardian blocked memory write for %s (confidence=%.3f)",
+                            tool_name,
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0,
+                        )
+                        result = (
+                            f"[Guardian] Memory write blocked — content may contain "
+                            f"prompt injection."
+                        )
+                        is_error = True
+                        tool_history.append({
+                            "tool": tool_name,
+                            "input": tool_input,
+                            "output": result,
+                            "is_error": is_error,
+                        })
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                            "is_error": is_error,
+                        })
+                        continue
+
             t0 = time.perf_counter()
             try:
                 result = execute_tool_call(
@@ -273,6 +306,27 @@ def run_agent_loop(
                     result = (
                         f"[Guardian] Output from '{tool_name}' was blocked by the "
                         f"security classifier. The content may contain prompt injection."
+                    )
+                    is_error = True
+
+            # Screen search_memory results for stored injection payloads
+            if (
+                not is_error
+                and guardian is not None
+                and tool_name == "search_memory"
+            ):
+                screen_result = guardian.screen_tool_result(tool_name, result)
+                if screen_result.blocked:
+                    logger.warning(
+                        "Guardian blocked search_memory output (confidence=%.3f)",
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
+                    )
+                    result = (
+                        "[Guardian] Memory search results were blocked by the "
+                        "security classifier. The stored content may contain "
+                        "prompt injection."
                     )
                     is_error = True
 

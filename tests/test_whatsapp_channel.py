@@ -83,6 +83,7 @@ class TestPollingMode:
         t = threading.Thread(target=channel.listen, args=(callback,))
         t.start()
         t.join(timeout=5)
+        assert not t.is_alive()
 
         assert len(responses) == 1
         assert responses[0] == ("+1234", "hi there")
@@ -114,6 +115,7 @@ class TestPollingMode:
         t = threading.Thread(target=channel.listen, args=(callback,))
         t.start()
         t.join(timeout=5)
+        assert not t.is_alive()
 
         assert "+allowed" in processed
         assert "+blocked" not in processed
@@ -180,6 +182,145 @@ class TestSend:
         )
         channel.send("+1234", "test message")
         assert bridge.sent == [("+1234", "test message")]
+
+
+class TestWebhookHMAC:
+    @pytest.mark.asyncio
+    async def test_valid_hmac_signature_passes(self):
+        import hashlib
+        import hmac as hmac_mod
+        import json
+
+        bridge = MockBridge()
+        channel = WhatsAppChannel(
+            bridge=bridge,
+            phone_number="+9999",
+            mode="webhook",
+            webhook_verify_token="tok",
+            webhook_secret="test-secret",
+        )
+        channel.set_webhook_callback(lambda s, t: "ok")
+
+        payload = {"entry": []}
+        raw = json.dumps(payload).encode()
+        sig = hmac_mod.new(b"test-secret", raw, hashlib.sha256).hexdigest()
+
+        request = MagicMock()
+        request.body = MagicMock(return_value=raw)
+        request.body.return_value = raw
+        # Make request.body() an awaitable
+        async def _body():
+            return raw
+        request.body = _body
+        request.json = MagicMock(return_value=payload)
+        request.headers = {"X-Hub-Signature-256": f"sha256={sig}"}
+
+        result = await channel._handle_webhook(request)
+        assert result == {"status": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_invalid_hmac_signature_returns_403(self):
+        import json
+
+        bridge = MockBridge()
+        channel = WhatsAppChannel(
+            bridge=bridge,
+            phone_number="+9999",
+            mode="webhook",
+            webhook_verify_token="tok",
+            webhook_secret="test-secret",
+        )
+
+        payload = {"entry": []}
+        raw = json.dumps(payload).encode()
+
+        request = MagicMock()
+        async def _body():
+            return raw
+        request.body = _body
+        request.headers = {"X-Hub-Signature-256": "sha256=badsignature"}
+
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc_info:
+            await channel._handle_webhook(request)
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_missing_signature_returns_403(self):
+        import json
+
+        bridge = MockBridge()
+        channel = WhatsAppChannel(
+            bridge=bridge,
+            phone_number="+9999",
+            mode="webhook",
+            webhook_verify_token="tok",
+            webhook_secret="test-secret",
+        )
+
+        payload = {"entry": []}
+        raw = json.dumps(payload).encode()
+
+        request = MagicMock()
+        async def _body():
+            return raw
+        request.body = _body
+        request.headers = {}
+
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc_info:
+            await channel._handle_webhook(request)
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_no_secret_skips_verification(self):
+        """When webhook_secret is empty, HMAC check is skipped (dev mode)."""
+        import json
+
+        bridge = MockBridge()
+        channel = WhatsAppChannel(
+            bridge=bridge,
+            phone_number="+9999",
+            mode="webhook",
+            webhook_verify_token="tok",
+            webhook_secret="",
+        )
+        channel.set_webhook_callback(lambda s, t: "ok")
+
+        payload = {"entry": []}
+        raw = json.dumps(payload).encode()
+
+        request = MagicMock()
+        async def _body():
+            return raw
+        request.body = _body
+        request.headers = {}
+
+        result = await channel._handle_webhook(request)
+        assert result == {"status": "ok"}
+
+
+class TestWebhookVerifyTokenRequired:
+    def test_webhook_mode_requires_verify_token(self):
+        from taskrunner.models import WhatsAppChannelConfig
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="webhook_verify_token"):
+            WhatsAppChannelConfig(
+                phone_number="+1234",
+                mode="webhook",
+                webhook_verify_token="",
+            )
+
+    def test_polling_mode_allows_empty_verify_token(self):
+        from taskrunner.models import WhatsAppChannelConfig
+
+        cfg = WhatsAppChannelConfig(
+            phone_number="+1234",
+            mode="polling",
+            webhook_verify_token="",
+        )
+        assert cfg.mode == "polling"
 
 
 class TestRegisterPlugin:

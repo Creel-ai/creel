@@ -196,7 +196,7 @@ class IMessageChannel(Channel):
             conn.close()
 
 
-def register_plugin() -> tuple:
+def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:
     """Return plugin metadata and factory for the iMessage channel."""
     from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
     from taskrunner.models import IMessageChannelConfig

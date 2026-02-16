@@ -132,7 +132,7 @@ class BlueBubblesChannel(Channel):
         return messages
 
 
-def register_plugin() -> tuple:
+def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:
     """Return plugin metadata and factory for the BlueBubbles channel."""
     from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
     from taskrunner.models import BlueBubblesChannelConfig

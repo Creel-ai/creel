@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from guardian.types import GuardianConfig
 
@@ -173,9 +173,18 @@ class WhatsAppChannelConfig(BaseModel):
     auth_state_dir: str = "whatsapp_auth"
     webhook_path: str = "/webhooks/whatsapp"
     webhook_verify_token: str = ""
+    webhook_secret: str = ""
     bridge_url: str | None = None
     poll_interval: int = 5
     allowed_senders: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_webhook_verify_token(self) -> WhatsAppChannelConfig:
+        if self.mode == "webhook" and not self.webhook_verify_token:
+            raise ValueError(
+                "webhook_verify_token must be set when mode is 'webhook'"
+            )
+        return self
 
     @field_validator("mode")
     @classmethod
@@ -218,12 +227,10 @@ class ChannelsConfig(BaseModel):
     def configured_channels(self) -> list[str]:
         """Return IDs of channels that have configuration present."""
         result = []
-        if self.imessage is not None:
-            result.append("imessage")
-        if self.bluebubbles is not None:
-            result.append("bluebubbles")
-        if self.whatsapp is not None:
-            result.append("whatsapp")
+        for name, field_info in self.model_fields.items():
+            val = getattr(self, name, None)
+            if val is not None and isinstance(val, BaseModel):
+                result.append(name)
         # Check extra fields for plugin-provided channels
         if self.model_extra:
             for key, val in self.model_extra.items():

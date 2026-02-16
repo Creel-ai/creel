@@ -302,11 +302,15 @@ class ChatApp(App):
         server: TuiBackend,
         sender_id: str = SENDER_ID,
         model_name: str = "",
+        tool_count: int = 0,
+        guardian_active: bool = False,
     ) -> None:
         super().__init__()
         self._server = server
         self._sender_id = sender_id
         self._model_name = model_name
+        self._tool_count = tool_count
+        self._guardian_active = guardian_active
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
         self._log_poller = None
@@ -324,8 +328,22 @@ class ChatApp(App):
         bar.model_name = self._model_name
         self.query_one("#chat-input", ChatInput).focus()
         self._update_subtitle()
+        self._show_startup_banner()
         self._replay_history()
         self._install_log_handler()
+
+    def _show_startup_banner(self) -> None:
+        """Display a startup banner in the chat log."""
+        log = self.query_one("#chat-log", RichLog)
+        guardian_status = "active" if self._guardian_active else "inactive"
+        log.write(
+            Text.from_markup(
+                f"[bold bright_red]🧺 Creel agent ready.[/bold bright_red] "
+                f"Tools loaded: {self._tool_count}. "
+                f"Guardian: {guardian_status}."
+            )
+        )
+        log.write("")  # blank line after banner
 
     def _install_log_handler(self) -> None:
         """Route Python logging into a queue, polled by a timer."""

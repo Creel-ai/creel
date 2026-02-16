@@ -119,6 +119,7 @@ class WorkspaceConfig(BaseModel):
     memory_days: int = 2
     memory_max_chars: int = 5000
     max_chars_per_file: int = 20_000
+    compact_after_days: int = 7
 
 
 class IMessageChannelConfig(BaseModel):

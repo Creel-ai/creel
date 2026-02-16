@@ -36,13 +36,15 @@ class ChatServer:
         self,
         agent_def: AgentDefinition,
         use_containers: bool = False,
-        imessage_channel: object | None = None,
+        reply_channel: object | None = None,
         confirm_fn: object | None = None,
+        # Backward compat alias
+        imessage_channel: object | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._start_time = datetime.now(timezone.utc)
-        self._imessage_channel = imessage_channel
+        self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
         # Build summarize_fn if summarization is enabled
         summarize_fn = None
@@ -251,14 +253,13 @@ class ChatServer:
             f"Reply **Y** to approve or **N** to deny."
         )
 
-        if self._imessage_channel and self._agent_def.channels.imessage:
-            recipient = self._agent_def.channels.imessage.listen_to
+        if self._reply_channel:
             try:
-                self._imessage_channel.send(recipient, msg)
+                self._reply_channel.send(sender_id, msg)
             except Exception:
-                logger.exception("Failed to send approval request via iMessage")
+                logger.exception("Failed to send approval request via channel")
         else:
-            logger.info("Approval request (no iMessage channel): %s", msg)
+            logger.info("Approval request (no reply channel): %s", msg)
 
     def _handle_approval_response(
         self, sender_id: str, pending, approved: bool,
@@ -288,8 +289,8 @@ class ChatServer:
         return result_msg
 
     def _send_imessage(self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False) -> None:
-        """Send a message via iMessage if available.
-        
+        """Send a message via the reply channel if available.
+
         Args:
             sender_id: The sender ID
             msg: Message content
@@ -298,15 +299,14 @@ class ChatServer:
         """
         # Check quiet hours for proactive messages only
         if proactive and should_suppress(self._agent_def.quiet_hours, urgent=urgent):
-            logger.info("iMessage suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent)
+            logger.info("Message suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent)
             return
 
-        if self._imessage_channel and self._agent_def.channels.imessage:
-            recipient = self._agent_def.channels.imessage.listen_to
+        if self._reply_channel:
             try:
-                self._imessage_channel.send(recipient, msg)
+                self._reply_channel.send(sender_id, msg)
             except Exception:
-                logger.exception("Failed to send iMessage")
+                logger.exception("Failed to send message via reply channel")
 
     def get_or_create_session(self, sender_id: str):
         """Get the active session for a sender, creating one if needed."""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Callable
+from typing import Any, Callable
 
 import requests
 
@@ -130,3 +130,27 @@ class BlueBubblesChannel(Channel):
         # Return oldest first
         messages.sort(key=lambda m: m["timestamp"])
         return messages
+
+
+def register_plugin() -> tuple:
+    """Return plugin metadata and factory for the BlueBubbles channel."""
+    from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
+    from taskrunner.models import BlueBubblesChannelConfig
+
+    meta = ChannelPluginMeta(
+        id="bluebubbles",
+        label="BlueBubbles",
+        capabilities=ChannelCapability.POLLING | ChannelCapability.SEND,
+        config_schema=BlueBubblesChannelConfig,
+    )
+
+    def factory(config: dict[str, Any]) -> BlueBubblesChannel:
+        cfg = BlueBubblesChannelConfig(**config)
+        return BlueBubblesChannel(
+            server_url=cfg.server_url,
+            password=cfg.password,
+            allowed_senders=cfg.listen_to,
+            poll_interval=cfg.poll_interval,
+        )
+
+    return meta, factory

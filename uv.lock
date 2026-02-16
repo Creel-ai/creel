@@ -818,6 +818,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "apscheduler" },
     { name = "beautifulsoup4" },
+    { name = "certifi" },
     { name = "fastapi" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
@@ -827,6 +828,7 @@ dependencies = [
     { name = "pyrage" },
     { name = "pyyaml" },
     { name = "textual" },
+    { name = "truststore" },
     { name = "uvicorn" },
 ]
 
@@ -852,6 +854,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.39.0" },
     { name = "apscheduler", specifier = ">=3.10.0,<4.0.0" },
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
+    { name = "certifi", specifier = ">=2024.0.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "google-api-python-client", specifier = ">=2.0.0" },
     { name = "google-auth", specifier = ">=2.0.0" },
@@ -867,6 +870,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "textual", specifier = ">=1.0.0" },
     { name = "transformers", marker = "extra == 'guardian'", specifier = ">=4.36.0" },
+    { name = "truststore", specifier = ">=0.10.0" },
     { name = "uvicorn", specifier = ">=0.34.0" },
 ]
 provides-extras = ["dev", "guardian"]
@@ -2128,6 +2132,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/35/f8/9c66bfc55361ec6d0e4040a0337fb5924ceb23de4648b8a81ae9d33b2b38/triton-3.6.0-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d002e07d7180fd65e622134fbd980c9a3d4211fb85224b56a0a0efbd422ab72f", size = 188400296, upload-time = "2026-01-20T16:00:56.042Z" },
     { url = "https://files.pythonhosted.org/packages/df/3d/9e7eee57b37c80cec63322c0231bb6da3cfe535a91d7a4d64896fcb89357/triton-3.6.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a17a5d5985f0ac494ed8a8e54568f092f7057ef60e1b0fa09d3fd1512064e803", size = 188273063, upload-time = "2026-01-20T16:01:07.278Z" },
     { url = "https://files.pythonhosted.org/packages/f6/56/6113c23ff46c00aae423333eb58b3e60bdfe9179d542781955a5e1514cb3/triton-3.6.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:46bd1c1af4b6704e554cad2eeb3b0a6513a980d470ccfa63189737340c7746a7", size = 188397994, upload-time = "2026-01-20T16:01:14.236Z" },
+]
+
+[[package]]
+name = "truststore"
+version = "0.10.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/a3/1585216310e344e8102c22482f6060c7a6ea0322b63e026372e6dcefcfd6/truststore-0.10.4.tar.gz", hash = "sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301", size = 26169, upload-time = "2025-08-12T18:49:02.73Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/97/56608b2249fe206a67cd573bc93cd9896e1efb9e98bce9c163bcdc704b88/truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981", size = 18660, upload-time = "2025-08-12T18:49:01.46Z" },
 ]
 
 [[package]]

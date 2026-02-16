@@ -52,6 +52,7 @@ class ChatServer:
                     messages,
                     model=agent_def.session.summary_model,
                     max_tokens=agent_def.session.summary_max_tokens,
+                    use_container=use_containers,
                 )
             summarize_fn = _do_summarize
 

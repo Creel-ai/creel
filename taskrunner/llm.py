@@ -125,6 +125,7 @@ def summarize_messages(
     messages: list[dict],
     model: str = "claude-haiku-4-5-20251001",
     max_tokens: int = 1024,
+    use_container: bool = False,
 ) -> str:
     """Summarize a list of conversation messages into a compact context string.
 
@@ -132,6 +133,7 @@ def summarize_messages(
         messages: Conversation messages in Anthropic format.
         model: Model to use for summarization.
         max_tokens: Max output tokens for the summary.
+        use_container: If True, run the summarization inside a Docker container.
 
     Returns:
         A summary string covering key topics, decisions, tool outcomes, and pending items.
@@ -172,11 +174,7 @@ def summarize_messages(
     )
 
     config = LLMConfig(model=model, max_tokens=max_tokens)
-    response = call_llm(
-        messages=[{"role": "user", "content": prompt}],
-        config=config,
-    )
-    return extract_text(response)
+    return run_llm(prompt, config, use_container=use_container)
 
 
 def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:

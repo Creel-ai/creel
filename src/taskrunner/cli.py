@@ -730,7 +730,10 @@ def main() -> int:
 
     # daemon command
     daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
-    daemon_subparsers = daemon_parser.add_subparsers(dest="daemon_command")
+    daemon_subparsers = daemon_parser.add_subparsers(
+        dest="daemon_command",
+        metavar="{start,stop,status}",
+    )
 
     daemon_start = daemon_subparsers.add_parser("start", help="Start the background daemon")
     daemon_start.add_argument(
@@ -826,6 +829,11 @@ def main() -> int:
         "--no-scheduler",
         action="store_true",
     )
+    daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]
+        action
+        for action in daemon_subparsers._choices_actions  # type: ignore[attr-defined]
+        if action.dest != "run"
+    ]
 
     # send command
     send_parser = subparsers.add_parser("send", help="Send one message to the running daemon")

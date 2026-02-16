@@ -102,6 +102,7 @@ def main() -> None:
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []
+    last_input_tokens = 0
 
     for _turn in range(max_turns):
         turns_used += 1
@@ -123,6 +124,9 @@ def main() -> None:
             _send({"type": "error", "message": f"LLM call failed: {e}"})
             return
 
+        if hasattr(response, "usage") and response.usage:
+            last_input_tokens = getattr(response.usage, "input_tokens", 0)
+
         tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
 
         if not tool_use_blocks:
@@ -136,6 +140,7 @@ def main() -> None:
                 "tool_calls_made": tool_calls_made,
                 "stop_reason": "end_turn",
                 "tool_history": tool_history,
+                "last_input_tokens": last_input_tokens,
             })
             return
 
@@ -195,6 +200,8 @@ def main() -> None:
     try:
         response = client.messages.create(**create_kwargs)
         text = _extract_text(response)
+        if hasattr(response, "usage") and response.usage:
+            last_input_tokens = getattr(response.usage, "input_tokens", 0)
     except Exception as e:
         text = f"Error on final turn: {e}"
 
@@ -205,6 +212,7 @@ def main() -> None:
         "tool_calls_made": tool_calls_made,
         "stop_reason": "max_turns",
         "tool_history": tool_history,
+        "last_input_tokens": last_input_tokens,
     })
 
 

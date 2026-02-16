@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pyrage
 import pytest
+import yaml
 
 from taskrunner.models import (
     AgentConfig,
@@ -48,3 +51,73 @@ def mock_llm_response() -> MagicMock:
     msg.content = [block]
     msg.stop_reason = "end_turn"
     return msg
+
+
+@pytest.fixture
+def cli_args(tmp_path: Path):
+    """Factory fixture returning argparse.Namespace with common CLI attributes."""
+
+    def _make(**overrides) -> argparse.Namespace:
+        defaults = dict(
+            tasks_dir=tmp_path / "tasks",
+            agent_config=tmp_path / "agent.yaml",
+            containers=False,
+            no_judge=False,
+            verbose=False,
+            json_logs=False,
+            channel_type="imessage",
+            no_scheduler=False,
+            socket_path=tmp_path / "daemon.sock",
+            pid_file=tmp_path / "daemon.pid",
+            log_file=tmp_path / "daemon.log",
+            wait_seconds=1.0,
+            timeout=1.0,
+            label="com.creel.daemon.test",
+            plist_path=tmp_path / "LaunchAgents" / "com.creel.daemon.test.plist",
+        )
+        defaults.update(overrides)
+        return argparse.Namespace(**defaults)
+
+    return _make
+
+
+@pytest.fixture
+def age_keypair(tmp_path: Path) -> tuple[Path, Path]:
+    """Generate a fresh age keypair for encrypt/decrypt round-trip tests."""
+    identity = pyrage.x25519.Identity.generate()
+    recipient = identity.to_public()
+
+    key_file = tmp_path / "key.txt"
+    key_file.write_text(
+        f"# created: test\n# public key: {str(recipient)}\n{str(identity)}\n"
+    )
+
+    pub_file = tmp_path / "key.pub"
+    pub_file.write_text(str(recipient) + "\n")
+
+    return key_file, pub_file
+
+
+@pytest.fixture
+def sample_task_yaml(tmp_path: Path):
+    """Factory fixture that writes a minimal valid task YAML and returns its path."""
+
+    def _make(name: str = "test_task", **overrides) -> Path:
+        task = {
+            "name": name,
+            "schedule": "0 7 * * *",
+            "executors": {
+                "weather": {"args": {"location": "denver"}},
+            },
+            "prompt": "Date: {date}\nWeather: {weather}",
+            "output": {"type": "stdout", "to": ""},
+            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        }
+        task.update(overrides)
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir(exist_ok=True)
+        path = tasks_dir / f"{name}.yaml"
+        path.write_text(yaml.dump(task))
+        return path
+
+    return _make

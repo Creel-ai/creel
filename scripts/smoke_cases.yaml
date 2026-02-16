@@ -171,33 +171,32 @@ cases:
     command: ["docker", "build", "-t", "llm-runner:latest", "llm/"]
     timeout: 2400
 
-  - id: containers-2-chat-simple
+  - id: containers-2-agent-tool-call
     order: 210
     phase: containers
     tags: [containers, quick]
-    title: Containerized Chat --simple
-    handler: quick_chat
-    container_mode: true
+    title: Containerized Agent Tool Call
+    handler: container_agent_tool_call
     requires_live_docker: true
     requires_live_llm: true
-    messages:
-      - "what's the weather?"
-      - "/clear"
+    verify_token: AGENT_TOOL_CONTAINER_OK
+    attempts: 2
+    message: "Call the check_weather tool with location Denver. You must call the tool before answering. End your final response with AGENT_TOOL_CONTAINER_OK."
     line_delay_s: 2.0
     wait_before_sigint_s: 3.0
     final_timeout_s: 90
-    min_assistant_lines: 1
 
   - id: containers-3-run-task
     order: 220
     phase: containers
     tags: [containers]
-    title: Containerized Task Run (morning_briefing)
-    handler: command
+    title: Containerized Simple Task (Executor + LLM)
+    handler: container_simple_task
     requires_live_docker: true
     requires_live_llm: true
-    command: ["{python}", "runner.py", "--containers", "run", "morning_briefing"]
-    timeout: 1800
+    task_name: container_weather_smoke
+    verify_token: SIMPLE_CONTAINER_OK
+    timeout: 900
 
   - id: extras-1-session-commands
     order: 300

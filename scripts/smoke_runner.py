@@ -866,6 +866,185 @@ def handle_quick_chat(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     )
 
 
+def handle_container_simple_task(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
+    started = time.perf_counter()
+    tasks_dir = ctx.run_dir / "runtime" / "container_simple_task" / "tasks"
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+
+    task_name = str(case.get("task_name", "container_weather_smoke"))
+    verify_token = str(case.get("verify_token", "SIMPLE_CONTAINER_OK"))
+    location = str(case.get("location", "denver"))
+
+    task_path = tasks_dir / f"{task_name}.yaml"
+    task_path.write_text(
+        yaml.safe_dump(
+            {
+                "name": task_name,
+                "schedule": "* * * * *",
+                "executors": {
+                    "weather": {
+                        "args": {
+                            "location": location,
+                        },
+                    },
+                },
+                "prompt": (
+                    "Weather data:\n\n"
+                    "{weather}\n\n"
+                    f"Reply in one concise sentence and include token {verify_token}."
+                ),
+                "output": {
+                    "type": "stdout",
+                    "to": "",
+                },
+                "llm": {
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 180,
+                },
+            },
+            sort_keys=False,
+        )
+    )
+
+    command = [
+        ctx.python_bin,
+        "runner.py",
+        "-v",
+        "--containers",
+        "--tasks-dir",
+        str(tasks_dir),
+        "run",
+        task_name,
+    ]
+    result = _run_command(
+        command,
+        cwd=ctx.repo_root,
+        timeout=int(case.get("timeout", 900)),
+        env=os.environ.copy(),
+    )
+    output = result.output
+    ok = (
+        result.returncode == 0
+        and f"Task '{task_name}' completed." in output
+        and verify_token in output
+    )
+    detail = (
+        f"container simple task succeeded with token {verify_token}"
+        if ok
+        else "container simple task did not produce expected completion/token output"
+    )
+    log_path = _write_case_log(ctx, case["id"], _command_log_blob(result))
+    return _result(
+        case,
+        "pass" if ok else "fail",
+        time.perf_counter() - started,
+        detail,
+        log_file=log_path,
+        exit_code=result.returncode,
+    )
+
+
+def handle_container_agent_tool_call(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
+    started = time.perf_counter()
+    token = str(case.get("verify_token", "AGENT_TOOL_CONTAINER_OK"))
+    attempts = int(case.get("attempts", 2))
+    message_template = str(
+        case.get(
+            "message",
+            (
+                "Call the check_weather tool with location Denver. "
+                "You must call the tool before answering. "
+                f"End your final response with {token}."
+            ),
+        )
+    )
+
+    config_path = _build_minimal_agent_config(
+        ctx,
+        "container_agent_tool_call",
+        updates={
+            "tools": {
+                "check_weather": {
+                    "executor": "weather",
+                    "description": "Get current weather and forecast",
+                    "parameters": {
+                        "location": {
+                            "type": "string",
+                            "description": "City name or coordinates",
+                            "required": True,
+                        },
+                    },
+                },
+            },
+            "llm": {
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 220,
+            },
+            "guardian": {
+                "enabled": False,
+            },
+        },
+    )
+
+    logs: list[str] = []
+    last_rc = 1
+    for attempt in range(1, attempts + 1):
+        command = [
+            ctx.python_bin,
+            "runner.py",
+            "-v",
+            "--containers",
+            "--agent-config",
+            str(config_path),
+            "chat",
+            "--simple",
+            "--new",
+        ]
+        lines = [message_template, "/clear"]
+        result = _spawn_with_sigint(
+            command,
+            cwd=ctx.repo_root,
+            wait_before_sigint_s=float(case.get("wait_before_sigint_s", 3.0)),
+            final_timeout_s=int(case.get("final_timeout_s", 90)),
+            stdin_lines=lines,
+            line_delay_s=float(case.get("line_delay_s", 2.0)),
+            env=os.environ.copy(),
+        )
+        last_rc = result.returncode
+        output = result.output
+        tool_marker_seen = bool(re.search(r"Executing tool check_weather", output))
+        token_seen = token in output
+        logs.append(
+            (
+                f"=== Attempt {attempt} ===\n"
+                f"tool_marker_seen={tool_marker_seen}\n"
+                f"token_seen={token_seen}\n"
+                f"{_command_log_blob(result)}\n"
+            )
+        )
+
+        if result.returncode in {0, 130} and tool_marker_seen and token_seen:
+            log_path = _write_case_log(ctx, case["id"], "\n".join(logs))
+            return _result(
+                case,
+                "pass",
+                time.perf_counter() - started,
+                f"agent container path exercised with tool call (attempt {attempt})",
+                log_file=log_path,
+                exit_code=result.returncode,
+            )
+
+    log_path = _write_case_log(ctx, case["id"], "\n".join(logs))
+    return _result(
+        case,
+        "fail",
+        time.perf_counter() - started,
+        "did not observe both tool execution marker and response token in container chat",
+        log_file=log_path,
+        exit_code=last_rc,
+    )
+
+
 def handle_cli_help(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     commands = [
@@ -922,6 +1101,8 @@ HANDLERS: dict[str, Any] = {
     "audit_cli_runtime": handle_audit_cli_runtime,
     "onnx_export": handle_onnx_export,
     "quick_chat": handle_quick_chat,
+    "container_simple_task": handle_container_simple_task,
+    "container_agent_tool_call": handle_container_agent_tool_call,
     "cli_help": handle_cli_help,
 }
 

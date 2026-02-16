@@ -5,14 +5,19 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from typing import TYPE_CHECKING
 
-from textual import work
+from rich.markdown import Markdown as RichMarkdown
+from rich.text import Text
+from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
+from textual.message import Message
+from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Button, Footer, Header, Input, RichLog, Static
+from textual.widgets import Button, Footer, Header, RichLog, Static, TextArea
 
 if TYPE_CHECKING:
     from taskrunner.chat import ChatServer
@@ -40,9 +45,12 @@ _HELP_TEXT = """\
 [bold]Shortcuts:[/bold]
   [cyan]ctrl+n[/cyan]        New session
   [cyan]ctrl+c[/cyan]        Quit
+  [cyan]enter[/cyan]         Send message
+  [cyan]shift+enter[/cyan]   New line
 
 [bold]Tips:[/bold]
-  Hold [cyan]shift[/cyan] and drag to select/copy text\
+  Hold [cyan]shift[/cyan] and drag to select/copy text
+  Use [cyan]↑[/cyan]/[cyan]↓[/cyan] to recall previous messages\
 """
 
 
@@ -94,6 +102,146 @@ class ConfirmBar(Widget):
         self.remove()
 
 
+class StatusBar(Static):
+    """Always-visible status bar showing model, thinking state, and message count."""
+
+    DEFAULT_CSS = """
+    StatusBar {
+        dock: bottom;
+        height: 1;
+        background: $surface;
+        color: $text-muted;
+        padding: 0 2;
+    }
+    """
+
+    model_name: reactive[str] = reactive("", init=False)
+    is_thinking: reactive[bool] = reactive(False, init=False)
+    message_count: reactive[int] = reactive(0, init=False)
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__("", **kwargs)
+        self._think_start: float = 0.0
+        self._refresh_timer = None
+
+    def on_mount(self) -> None:
+        self._refresh_timer = self.set_interval(0.5, self._tick)
+        self._render_bar()
+
+    def _tick(self) -> None:
+        if self.is_thinking:
+            self._render_bar()
+
+    def start_thinking(self) -> None:
+        self._think_start = time.monotonic()
+        self.is_thinking = True
+        self._render_bar()
+
+    def stop_thinking(self) -> None:
+        self.is_thinking = False
+        self._render_bar()
+
+    def watch_model_name(self) -> None:
+        self._render_bar()
+
+    def watch_message_count(self) -> None:
+        self._render_bar()
+
+    def _render_bar(self) -> None:
+        parts: list[str] = []
+        if self.model_name:
+            parts.append(self.model_name)
+
+        if self.is_thinking:
+            elapsed = int(time.monotonic() - self._think_start)
+            parts.append(f"● Thinking... ({elapsed}s)")
+        else:
+            parts.append("● Ready")
+
+        parts.append(f"{self.message_count} msgs")
+        self.update("  ".join(parts))
+
+
+class ChatInput(TextArea):
+    """Multi-line input with Enter-to-submit and input history."""
+
+    DEFAULT_CSS = """
+    ChatInput {
+        dock: bottom;
+        height: auto;
+        min-height: 3;
+        max-height: 8;
+        margin: 1 2;
+        border: tall $accent;
+    }
+    """
+
+    class Submitted(Message):
+        """Posted when user submits input."""
+
+        def __init__(self, text: str) -> None:
+            super().__init__()
+            self.text = text
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(
+            show_line_numbers=False,
+            soft_wrap=True,
+            **kwargs,
+        )
+        self._history: list[str] = []
+        self._history_index: int = -1
+        self._draft: str = ""
+
+    def _on_key(self, event) -> None:
+        """Handle enter, shift+enter, and arrow keys."""
+        if event.key == "enter":
+            text = self.text.strip()
+            if text:
+                self._history.append(text)
+                self._history_index = -1
+                self._draft = ""
+                self.post_message(self.Submitted(text))
+                self.clear()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "shift+enter":
+            self.insert("\n")
+            event.prevent_default()
+            event.stop()
+        elif event.key == "up" and self.cursor_location[0] == 0:
+            self._navigate_history(1)
+            event.prevent_default()
+            event.stop()
+        elif event.key == "down" and self.cursor_location[0] == self.document.line_count - 1:
+            self._navigate_history(-1)
+            event.prevent_default()
+            event.stop()
+
+    def _navigate_history(self, direction: int) -> None:
+        if not self._history:
+            return
+
+        if self._history_index == -1:
+            self._draft = self.text
+
+        new_index = self._history_index + direction
+
+        if new_index < -1:
+            return
+        if new_index >= len(self._history):
+            return
+
+        self._history_index = new_index
+
+        if new_index == -1:
+            self.load_text(self._draft)
+        else:
+            # History is stored oldest-first; navigate from newest
+            idx = len(self._history) - 1 - new_index
+            self.load_text(self._history[idx])
+
+
 class ChatApp(App):
     """Textual TUI for agent chat."""
 
@@ -107,18 +255,6 @@ class ChatApp(App):
     CSS = """
     #chat-log {
         padding: 1 2;
-    }
-    #status {
-        dock: bottom;
-        height: 1;
-        background: $surface;
-        color: $text-muted;
-        padding: 0 2;
-        display: none;
-    }
-    #chat-input {
-        dock: bottom;
-        margin: 2 2;
     }
     ConfirmBar {
         dock: bottom;
@@ -137,9 +273,10 @@ class ChatApp(App):
     }
     """
 
-    def __init__(self, server: ChatServer) -> None:
+    def __init__(self, server: ChatServer, model_name: str = "") -> None:
         super().__init__()
         self._server = server
+        self._model_name = model_name
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
         self._log_poller = None
@@ -147,12 +284,14 @@ class ChatApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield RichLog(id="chat-log", markup=True, wrap=True, auto_scroll=True)
-        yield Static("", id="status")
-        yield Input(placeholder="Type a message...", id="chat-input")
+        yield StatusBar(id="status-bar")
+        yield ChatInput(id="chat-input")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#chat-input", Input).focus()
+        bar = self.query_one("#status-bar", StatusBar)
+        bar.model_name = self._model_name
+        self.query_one("#chat-input", ChatInput).focus()
         self._update_subtitle()
         self._replay_history()
         self._install_log_handler()
@@ -175,13 +314,11 @@ class ChatApp(App):
         if latest is not None:
             self.notify(latest, timeout=4)
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
+    @on(ChatInput.Submitted)
+    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
+        text = event.text.strip()
         if not text:
             return
-
-        inp = self.query_one("#chat-input", Input)
-        inp.value = ""
 
         cmd = text.split()[0].lower()
 
@@ -193,6 +330,9 @@ class ChatApp(App):
         log = self.query_one("#chat-log", RichLog)
         log.write(f"[bold cyan]You:[/bold cyan] {text}")
 
+        bar = self.query_one("#status-bar", StatusBar)
+        bar.message_count += 1
+
         # Server commands that return instantly (no LLM call)
         if cmd in _SERVER_COMMANDS or cmd == "/resume":
             response = self._server.handle_message(SENDER_ID, text)
@@ -201,6 +341,7 @@ class ChatApp(App):
             return
 
         # Normal message — send to agent
+        inp = self.query_one("#chat-input", ChatInput)
         inp.disabled = True
         self._send_message(text)
 
@@ -216,33 +357,33 @@ class ChatApp(App):
 
     @work(thread=True)
     def _send_message(self, text: str) -> None:
-        self.call_from_thread(self._show_status, "Thinking...")
+        self.call_from_thread(self._show_status)
         try:
             response = self._server.handle_message(SENDER_ID, text)
         except Exception as exc:
-            response = f"[red]Error: {exc}[/red]"
+            response = f"Error: {exc}"
 
         self.call_from_thread(self._hide_status)
         self.call_from_thread(self._append_response, response)
         self.call_from_thread(self._enable_input)
         self.call_from_thread(self._update_subtitle)
 
-    def _show_status(self, text: str) -> None:
-        status = self.query_one("#status", Static)
-        status.update(f"  ⏳ {text}")
-        status.display = True
+    def _show_status(self) -> None:
+        self.query_one("#status-bar", StatusBar).start_thinking()
 
     def _hide_status(self) -> None:
-        status = self.query_one("#status", Static)
-        status.display = False
+        self.query_one("#status-bar", StatusBar).stop_thinking()
 
     def _append_response(self, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)
-        log.write(f"[bold green]Assistant:[/bold green] {text}")
+        log.write(Text("Assistant:", style="bold green"))
+        log.write(RichMarkdown(text))
         log.write("")
+        bar = self.query_one("#status-bar", StatusBar)
+        bar.message_count += 1
 
     def _enable_input(self) -> None:
-        inp = self.query_one("#chat-input", Input)
+        inp = self.query_one("#chat-input", ChatInput)
         inp.disabled = False
         inp.focus()
 
@@ -250,13 +391,16 @@ class ChatApp(App):
         """Render recent messages from the active session into the RichLog."""
         session = self._server._session_mgr.get_or_create(SENDER_ID)
         log = self.query_one("#chat-log", RichLog)
+        bar = self.query_one("#status-bar", StatusBar)
 
+        count = 0
         messages = session.messages[-20:]
         for msg in messages:
             role = msg.get("role")
             content = msg.get("content", "")
             if role == "user" and isinstance(content, str):
                 log.write(f"[bold cyan]You:[/bold cyan] {content}")
+                count += 1
             elif role == "assistant":
                 if isinstance(content, str):
                     text = content
@@ -267,8 +411,12 @@ class ChatApp(App):
                 else:
                     continue
                 if text:
-                    log.write(f"[bold green]Assistant:[/bold green] {text}")
+                    log.write(Text("Assistant:", style="bold green"))
+                    log.write(RichMarkdown(text))
                     log.write("")
+                    count += 1
+
+        bar.message_count = count
 
     def _update_subtitle(self) -> None:
         session = self._server._session_mgr.get_or_create(SENDER_ID)
@@ -280,6 +428,8 @@ class ChatApp(App):
         log = self.query_one("#chat-log", RichLog)
         log.clear()
         log.write(f"[dim]Started new session {session.session_id}.[/dim]")
+        bar = self.query_one("#status-bar", StatusBar)
+        bar.message_count = 0
         self._update_subtitle()
 
     def action_quit(self) -> None:

@@ -366,6 +366,56 @@ async def test_multiline_input(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_status_command(tmp_path):
+    """/status should route to server and display status info."""
+    server = _make_mock_server(tmp_path, "Status:\n  Model: claude-sonnet-4-20250514\n  Session ID: abc123")
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("/status")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert inp.disabled is False
+        server.handle_message.assert_called_once_with(SENDER_ID, "/status")
+
+
+@pytest.mark.asyncio
+async def test_model_command(tmp_path):
+    """/model should route to server and display model info."""
+    server = _make_mock_server(tmp_path, "Model:\n  Name: claude-sonnet-4-20250514")
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("/model")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert inp.disabled is False
+        server.handle_message.assert_called_once_with(SENDER_ID, "/model")
+
+
+@pytest.mark.asyncio
+async def test_help_includes_new_commands(tmp_path):
+    """/help should mention /status and /model."""
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("/help")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "/status" in lines_text
+        assert "/model" in lines_text
+
+
+@pytest.mark.asyncio
 async def test_message_count(tmp_path):
     """StatusBar message count should increment on send and receive."""
     server = _make_mock_server(tmp_path, "response")

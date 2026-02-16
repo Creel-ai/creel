@@ -29,7 +29,7 @@ _LOG_POLL_INTERVAL = 0.25
 # Commands handled locally in the TUI (not sent to ChatServer)
 _TUI_COMMANDS = {"/compact", "/exit", "/quit", "/help"}
 # Commands handled by ChatServer that return instantly (no LLM call)
-_SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions"}
+_SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions", "/status", "/model"}
 # /resume is a prefix match, handled separately
 
 _HELP_TEXT = """\
@@ -39,6 +39,8 @@ _HELP_TEXT = """\
   [cyan]/new[/cyan]          Start a new session
   [cyan]/sessions[/cyan]     List all sessions
   [cyan]/resume <id>[/cyan]  Resume a session by ID
+  [cyan]/status[/cyan]       Show server status info
+  [cyan]/model[/cyan]        Show current model config
   [cyan]/clear[/cyan]        Clear session history
   [cyan]/exit[/cyan]         Quit
 

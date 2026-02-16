@@ -432,6 +432,7 @@ workspace:
   memory_days: 2
   memory_max_chars: 5000
   max_chars_per_file: 20000
+  compact_after_days: 7
 
 channels:
   imessage:

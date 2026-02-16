@@ -54,6 +54,9 @@ class ChatServer:
                 workspace_dir=agent_def.workspace.path,
                 timezone_name=agent_def.workspace.timezone,
             )
+            self._memory.compact_daily_files(
+                days_to_keep=agent_def.workspace.compact_after_days,
+            )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
         # Initialize approval queue

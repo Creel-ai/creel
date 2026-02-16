@@ -398,7 +398,12 @@ class SessionManager:
         return {"stored": len(session_files), "active_senders": active_senders}
 
     def _session_path(self, session_id: str) -> Path:
-        """Get the filesystem path for a session file."""
+        """Get the filesystem path for a session file.
+
+        Raises ValueError if the session_id contains path traversal characters.
+        """
+        if not re.fullmatch(r"[a-f0-9]+", session_id):
+            raise ValueError(f"Invalid session_id: {session_id}")
         return self._dir / f"{session_id}.json"
 
     # -- active index --

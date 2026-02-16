@@ -308,6 +308,14 @@ class ChatServer:
             except Exception:
                 logger.exception("Failed to send iMessage")
 
+    def get_or_create_session(self, sender_id: str):
+        """Get the active session for a sender, creating one if needed."""
+        return self._session_mgr.get_or_create(sender_id)
+
+    def new_session(self, sender_id: str):
+        """Create and activate a new session for the sender."""
+        return self._session_mgr.new_session(sender_id)
+
     def _format_sessions_list(self, sender_id: str) -> str:
         """Format the sessions list for display."""
         sessions = self._session_mgr.list_sessions(sender_id)

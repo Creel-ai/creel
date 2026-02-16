@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,9 +14,12 @@ from taskrunner.tui import SENDER_ID, ChatApp, ChatInput, StatusBar
 
 def _make_mock_server(tmp_path, handle_response="Mock response"):
     """Create a mock ChatServer with a real SessionManager."""
+    mgr = SessionManager(sessions_dir=str(tmp_path))
     server = MagicMock()
-    server._session_mgr = SessionManager(sessions_dir=str(tmp_path))
+    server._session_mgr = mgr
     server.handle_message = MagicMock(return_value=handle_response)
+    server.get_or_create_session = mgr.get_or_create
+    server.new_session = mgr.new_session
     return server
 
 
@@ -233,6 +237,42 @@ async def test_server_command_no_thinking(tmp_path):
         assert inp.disabled is False
         server.handle_message.assert_called_once_with(SENDER_ID, "/sessions")
 
+
+@pytest.mark.asyncio
+async def test_tui_supports_backend_session_methods(tmp_path):
+    """ChatApp should use get_or_create_session/new_session if backend exposes them."""
+    class _Backend:
+        def __init__(self) -> None:
+            self.new_calls = 0
+
+        def handle_message(self, sender_id, text):
+            return "ok"
+
+        def get_or_create_session(self, sender_id):
+            return SimpleNamespace(
+                session_id="abc123",
+                title="Remote",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        def new_session(self, sender_id):
+            self.new_calls += 1
+            return SimpleNamespace(
+                session_id="def456",
+                title="",
+                messages=[],
+            )
+
+    backend = _Backend()
+    app = ChatApp(backend)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert "abc123" in app.sub_title
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        assert backend.new_calls == 1
 
 # --- New tests for TUI polish ---
 

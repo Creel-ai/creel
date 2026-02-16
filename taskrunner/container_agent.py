@@ -166,6 +166,7 @@ def _run_protocol(
                 tool_calls_made=msg["tool_calls_made"],
                 stop_reason=msg["stop_reason"],
                 tool_history=msg.get("tool_history", []),
+                last_input_tokens=msg.get("last_input_tokens", 0),
             )
 
         elif msg_type == "error":

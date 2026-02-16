@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import logging
 import time
 from datetime import datetime, timezone
@@ -38,6 +40,7 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
         allowed_senders: list[str] | None = None,
         webhook_path: str = "/webhooks/whatsapp",
         webhook_verify_token: str = "",
+        webhook_secret: str = "",
     ) -> None:
         self._bridge = bridge
         self._phone_number = phone_number
@@ -46,6 +49,7 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
         self._allowed_senders = set(allowed_senders or [])
         self._webhook_path = webhook_path
         self._webhook_verify_token = webhook_verify_token
+        self._webhook_secret = webhook_secret
         self._callback: Callable[[str, str], str] | None = None
 
     # --- Channel interface ---
@@ -142,7 +146,24 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
 
     async def _handle_webhook(self, request) -> dict:
         """Handle incoming WhatsApp webhook payload."""
-        body = await request.json()
+        from fastapi import HTTPException
+
+        raw_body = await request.body()
+
+        # HMAC-SHA256 signature verification
+        if self._webhook_secret:
+            signature_header = request.headers.get("X-Hub-Signature-256", "")
+            if not signature_header.startswith("sha256="):
+                raise HTTPException(status_code=403, detail="Missing signature")
+            expected = hmac.new(
+                self._webhook_secret.encode(), raw_body, hashlib.sha256,
+            ).hexdigest()
+            received = signature_header[len("sha256="):]
+            if not hmac.compare_digest(expected, received):
+                raise HTTPException(status_code=403, detail="Invalid signature")
+
+        import json
+        body = json.loads(raw_body)
 
         # Extract messages from the webhook payload (Meta/Cloud API format)
         entries = body.get("entry", [])
@@ -153,6 +174,7 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
                 messages = value.get("messages", [])
                 for msg in messages:
                     if msg.get("type") != "text":
+                        logger.debug("Skipping non-text message type=%s", msg.get("type"))
                         continue
                     sender = msg.get("from", "")
                     text = msg.get("text", {}).get("body", "")
@@ -181,7 +203,7 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
         }
 
 
-def register_plugin() -> tuple:
+def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:
     """Return plugin metadata and factory for the WhatsApp channel."""
     from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
     from taskrunner.models import WhatsAppChannelConfig
@@ -216,6 +238,7 @@ def register_plugin() -> tuple:
             allowed_senders=cfg.allowed_senders,
             webhook_path=cfg.webhook_path,
             webhook_verify_token=cfg.webhook_verify_token,
+            webhook_secret=cfg.webhook_secret,
         )
 
     return meta, factory

@@ -36,6 +36,9 @@ guardian = [
     "onnxruntime>=1.16.0",
     "optimum[onnxruntime]>=1.14.0",
 ]
+whatsapp = [
+    "neonize>=1.0.0",
+]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
@@ -43,6 +46,11 @@ docs = [
 
 [project.scripts]
 creel = "taskrunner.cli:main"
+
+[project.entry-points."creel.channels"]
+imessage = "taskrunner.channels.imessage:register_plugin"
+bluebubbles = "taskrunner.channels.bluebubbles:register_plugin"
+whatsapp = "taskrunner.channels.whatsapp:register_plugin"
 
 [tool.setuptools.packages.find]
 where = ["src"]

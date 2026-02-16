@@ -50,7 +50,10 @@ async def test_message_send(tmp_path):
         assert "You:" in lines_text
         assert "weather" in lines_text
         assert "sunny" in lines_text or "Mock" in lines_text
-        server.handle_message.assert_called_once_with(SENDER_ID, "What's the weather?")
+        server.handle_message.assert_called_once()
+        call_args = server.handle_message.call_args
+        assert call_args[0] == (SENDER_ID, "What's the weather?")
+        assert "on_text_delta" in call_args[1]
 
 
 @pytest.mark.asyncio
@@ -58,7 +61,7 @@ async def test_input_disabled_during_processing(tmp_path):
     """Input should be disabled while the agent is processing."""
     event = asyncio.Event()
 
-    def slow_handle(sender_id, text):
+    def slow_handle(sender_id, text, **kwargs):
         # Block until we release
         import time
         for _ in range(50):
@@ -292,7 +295,7 @@ async def test_status_bar_thinking_state(tmp_path):
     """StatusBar.is_thinking should be True during LLM call, False after."""
     event = asyncio.Event()
 
-    def slow_handle(sender_id, text):
+    def slow_handle(sender_id, text, **kwargs):
         import time
         for _ in range(50):
             if event.is_set():

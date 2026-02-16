@@ -101,7 +101,7 @@ class SessionConfig(BaseModel):
     ttl_hours: float = 0  # 0 = no expiry
     summary_model: str = "claude-haiku-4-5-20251001"
     summary_max_tokens: int = 1024
-    max_context_tokens: int = 150_000
+    max_context_tokens: int = 180_000
 
 
 class QuietHoursConfig(BaseModel):

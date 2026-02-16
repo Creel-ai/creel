@@ -301,6 +301,38 @@ creel audit --blocked --tail 50
 
 > 📖 **Full setup guide** including secrets encryption, Google OAuth, and container mode: [Getting Started docs](https://creel-ai.com/getting-started/quickstart/)
 
+## Vercel Deployment
+
+The repository deploys two separate Vercel projects:
+
+- `site/` (marketing site)
+- `docs/` (MkDocs documentation built from `../mkdocs.yml`)
+
+### Build settings
+
+For `site/`:
+
+- Framework Preset: `Other`
+- Install Command: *(empty)*
+- Build Command: *(empty)*
+- Output Directory: `.` (or leave empty)
+
+For `docs/`:
+
+- Framework Preset: `Other`
+- Install Command: *(empty)*
+- Build Command: `bash build-vercel.sh`
+- Output Directory: `.vercel-static`
+
+### Deployment behavior
+
+- Enable Git integration in Vercel for preview deploys on pull requests and production deploys from `main`.
+- No GitHub Actions deploy workflow is required.
+
+### Docs canonical URL
+
+Set `MKDOCS_SITE_URL` in the docs Vercel project environment to your docs domain (for example `https://docs.creel-ai.com/`).
+
 ## Authentication
 
 The runner supports two ways to authenticate with the Anthropic API:

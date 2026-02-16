@@ -488,8 +488,8 @@ def _ensure_image(image: str) -> None:
     """Build the Docker image if it doesn't already exist.
 
     Derives the build context from the image name:
-      executor-gmail-modify:latest -> executors/gmail_modify/
-      llm-runner:latest           -> llm/
+      executor-gmail-modify:latest -> src/executors/gmail_modify/
+      llm-runner:latest           -> src/llm/
     """
     result = subprocess.run(
         ["docker", "image", "inspect", image],
@@ -500,15 +500,15 @@ def _ensure_image(image: str) -> None:
 
     tag = image.split(":")[0]
     if tag.startswith("executor-"):
-        # executor-gmail-modify -> executors/gmail_modify/
+        # executor-gmail-modify -> src/executors/gmail_modify/
         name = tag.removeprefix("executor-").replace("-", "_")
-        context = Path("executors") / name
+        context = Path("src/executors") / name
     else:
-        # llm-runner -> llm/
-        context = Path(tag.replace("-", "_"))
-        # Try hyphenated too: llm/ exists as-is
+        # llm-runner -> src/llm/
+        context = Path("src") / tag.replace("-", "_")
+        # Try hyphenated too: src/llm/ exists as-is
         if not context.exists():
-            context = Path(tag)
+            context = Path("src") / tag
 
     if not (context / "Dockerfile").exists():
         raise FileNotFoundError(f"No Dockerfile at {context} for image {image}")

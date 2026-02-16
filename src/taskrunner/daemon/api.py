@@ -59,6 +59,11 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         rows = service.list_sessions(sender_id)
         return [SessionSummary(sender_id=sender_id, **row) for row in rows]
 
+    @app.get("/v1/sessions/active", response_model=SessionSummary)
+    async def active_session(sender_id: str = Query(..., min_length=1)) -> SessionSummary:
+        row = service.get_active_session(sender_id)
+        return SessionSummary(**row)
+
     @app.post("/v1/sessions/new", response_model=SessionSummary)
     async def new_session(request: SessionRequest) -> SessionSummary:
         row = service.new_session(request.sender_id)

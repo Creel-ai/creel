@@ -70,6 +70,10 @@ def test_session_endpoints(client: TestClient) -> None:
     assert sessions.status_code == 200
     assert any(s["session_id"] == session_id for s in sessions.json())
 
+    active = client.get("/v1/sessions/active", params={"sender_id": "cli"})
+    assert active.status_code == 200
+    assert active.json()["session_id"] == session_id
+
     resumed = client.post(f"/v1/sessions/{session_id}/resume", json={"sender_id": "cli"})
     assert resumed.status_code == 200
     assert resumed.json()["session_id"] == session_id

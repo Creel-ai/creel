@@ -77,6 +77,12 @@ class DaemonService:
         with self._lock:
             self._server._session_mgr.clear(sender_id)
 
+    def get_active_session(self, sender_id: str) -> dict:
+        """Get the active session summary for a sender, creating one if needed."""
+        with self._lock:
+            session = self._server._session_mgr.get_or_create(sender_id)
+            return self._session_summary(session)
+
     def get_active_session_id(self, sender_id: str) -> str | None:
         """Return active session id for sender, if any."""
         with self._lock:

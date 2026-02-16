@@ -273,7 +273,7 @@ For macOS-specific tools (Apple Notes, Apple Reminders, Things 3, iMessage), Doc
 
 **Why**: Docker containers are sandboxed and can't access the macOS scripting bridge or application APIs that tools like Notes, Reminders, and Things 3 require.
 
-**How**: A FastAPI server (`./runner.py bridge`) runs as a host process and exposes REST endpoints at `/notes/*`, `/reminders/*`, `/things/*`, and `/imessage/*`. Containerized executors make HTTP requests to these endpoints with scoped authentication tokens.
+**How**: A FastAPI server (`python -m bridge.server`) runs as a host process and exposes REST endpoints at `/notes/*`, `/reminders/*`, `/things/*`, and `/imessage/*`. Containerized executors make HTTP requests to these endpoints with scoped authentication tokens.
 
 **Security**: Each executor receives a scoped token that only grants access to its specific tool endpoints. For example, the `apple_notes` executor can only call `/notes/*` endpoints, not `/reminders/*` or `/things/*`.
 
@@ -283,7 +283,7 @@ For macOS-specific tools (Apple Notes, Apple Reminders, Things 3, iMessage), Doc
 - **Things 3**: `things` CLI for task management
 - **iMessage**: `imsg` CLI for sending/receiving messages
 
-**Starting the bridge**: `./runner.py bridge` starts the FastAPI server on `localhost:8765` with authentication middleware and scoped endpoint routing.
+**Starting the bridge**: `python -m bridge.server --host 127.0.0.1 --port 8099` starts the FastAPI server with authentication middleware and scoped endpoint routing.
 
 ## Exec Tool
 
@@ -323,43 +323,38 @@ mkdir -p ~/.age
 age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 
 # List available tasks
-./runner.py list
+creel list
 
 # Validate a task definition
-./runner.py validate weather_check
+creel validate weather_check
 
 # Dry run (renders prompt, skips LLM and output)
-./runner.py run weather_check --dry
+creel run weather_check --dry
 
 # Full run (requires Anthropic credentials — see Authentication below)
-./runner.py run weather_check
+creel run weather_check
 
 # Start the cron scheduler
-./runner.py schedule
+creel schedule
 
-# Interactive CLI chat (agent mode — launches TUI by default)
-./runner.py chat
+# Start background daemon (agent loop + scheduler + channel plugins)
+creel daemon start
 
-# Simple stdin/stdout chat (no TUI)
-./runner.py chat --simple
+# Attach rich TUI to running daemon
+creel attach
 
-# Session management
-./runner.py chat --list-sessions
-./runner.py chat --new           # start fresh session
-./runner.py chat --resume <ID>   # resume a specific session
+# Send one message without opening TUI
+creel send "What's on my calendar today?"
 
-# Listen for iMessages and respond
-./runner.py listen
+# Query daemon status
+creel daemon status
 
-# Listen via BlueBubbles instead of local chat.db
-./runner.py listen --channel bluebubbles
-
-# Listen + scheduler (daemon mode)
-./runner.py serve
+# Stop daemon
+creel daemon stop
 
 # Query the guardian audit log
-./runner.py audit
-./runner.py audit --blocked --tail 50
+creel audit
+creel audit --blocked --tail 50
 ```
 
 ## Authentication
@@ -377,7 +372,7 @@ If both are set, `ANTHROPIC_AUTH_TOKEN` takes precedence.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-./runner.py run weather_check
+creel run weather_check
 ```
 
 ### Using a Claude Code setup token
@@ -390,7 +385,7 @@ claude setup-token
 # Copy the sk-ant-oat01-... value
 
 export ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-...
-./runner.py run weather_check
+creel run weather_check
 ```
 
 ### Storing credentials in a secrets file
@@ -936,7 +931,7 @@ GOOGLE_CREDENTIALS_JSON='{"refresh_token": "...", "client_id": "...", "client_se
 
 ## Container Mode
 
-For production use, executors and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with all commands — scheduled tasks, one-off runs, and agent mode (chat, listen, serve):
+For production use, executors and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with task runs, scheduler jobs, and daemon runtime:
 
 ```bash
 # Build container images
@@ -954,15 +949,13 @@ docker build -t executor-fetch-url:latest executors/fetch_url/
 docker build -t llm-runner:latest llm/
 
 # Run a task with containers
-./runner.py --containers run morning_briefing
-
-# Agent mode with containerized executors
-./runner.py --containers chat
-./runner.py --containers listen
-./runner.py --containers serve
+creel --containers run morning_briefing
 
 # Scheduler with containers
-./runner.py --containers schedule
+creel --containers schedule
+
+# Daemon runtime with containerized executors
+creel --containers daemon start
 ```
 
 Containers run with:
@@ -973,21 +966,21 @@ Containers run with:
 - 60-second timeout
 - Only the secrets each container needs
 
-In agent mode, the agent loop runs on the host while each tool call (executor) executes in its own isolated container. This preserves the trust boundary — the LLM never sees credentials, and executor code runs sandboxed.
+In daemon mode, the agent loop runs on the host while each tool call (executor) executes in its own isolated container. This preserves the trust boundary: the LLM never sees credentials, and executor code runs sandboxed.
 
 ## CLI Reference
 
 ```
-./runner.py <command> [options]
+creel <command> [options]
 
 Commands:
   run <task>        Run a task immediately
   schedule          Start cron scheduler for all tasks
   list              List available tasks
   validate <task>   Validate a task YAML file
-  chat              Interactive CLI chat with agent
-  listen            Listen for messages and respond
-  serve             Listen for messages + run scheduler
+  daemon ...        Manage daemon lifecycle (start|stop|status)
+  attach            Attach TUI client to running daemon
+  send <message>    Send one message via daemon API
   audit             Query the guardian audit log
 
 Global options:
@@ -995,20 +988,24 @@ Global options:
   --containers        Run executors/LLM in Docker containers (all commands)
   --tasks-dir PATH    Tasks directory (default: tasks/)
   --agent-config PATH Path to agent.yaml (default: agent.yaml)
-  --simple            Use simple stdin/stdout mode instead of TUI
   --json-logs         Output structured JSON log lines (for production)
   --no-judge          Disable the LLM judge to save API calls during development
 
 Run options:
   --dry             Render prompt only, skip LLM and output
 
-Chat options:
-  --new             Start a new session (don't resume the active one)
-  --resume ID       Resume a specific session by ID
-  --list-sessions   List sessions and exit
+Daemon start options:
+  --socket-path PATH   Unix socket path (default: /tmp/creel-daemon.sock)
+  --pid-file PATH      PID file path (default: /tmp/creel-daemon.pid)
+  --log-file PATH      Daemon log file (default: /tmp/creel-daemon.log)
+  --channel TYPE       Channel plugin: none, imessage, bluebubbles
+  --no-scheduler       Disable scheduler in daemon runtime
 
-Listen/Serve options:
-  --channel TYPE    Channel to listen on: imessage (default) or bluebubbles
+Attach options:
+  --sender-id ID       Sender ID/session namespace (default: cli)
+  --new                Start and attach to a new session
+  --resume ID          Attach and resume a specific session
+  --socket-path PATH   Unix socket path (default: /tmp/creel-daemon.sock)
 
 Audit options:
   --tail N          Show last N entries (default: 20)
@@ -1022,73 +1019,31 @@ Audit options:
 
 ## Project Structure
 
-```
+``` 
 creel/
-├── runner.py              # CLI entry point
 ├── agent.yaml             # Global agent config (tools, channels, sessions, guardian)
 ├── pyproject.toml
-├── .python-version        # pyenv Python version pin (3.12)
-├── TESTING.md             # Testing guidelines and procedures
-├── bridge/                # Host bridge server for macOS tool integration
-├── taskrunner/
-│   ├── models.py          # Pydantic models (tasks, tools, agent config)
-│   ├── orchestrator.py    # Core loop: fetch -> LLM -> output (simple + agent)
-│   ├── agent.py           # Agent loop: LLM -> tool_use -> execute -> loop
-│   ├── tools.py           # Tool definitions + executor execution bridge
-│   ├── session.py         # JSON file-backed conversation sessions
-│   ├── chat.py            # Chat server (channels + sessions + agent)
-│   ├── tui.py             # Textual TUI for interactive chat
-│   ├── memory.py          # File-based workspace memory (daily logs + long-term)
-│   ├── prompt_builder.py  # System prompt assembly (memory, date, etc.)
-│   ├── approvals.py       # Human-in-the-loop tool approval logic
-│   ├── startup.py         # Secrets validation on startup
-│   ├── log.py             # Logging setup (console + JSON modes)
-│   ├── quiet_hours.py     # Quiet hours configuration and enforcement
-│   ├── channels/
-│   │   ├── base.py        # Channel ABC
-│   │   ├── stdin.py       # Interactive CLI channel
-│   │   ├── imessage.py    # iMessage channel (polls chat.db)
-│   │   └── bluebubbles.py # BlueBubbles iMessage channel (REST API)
-│   ├── scheduler.py       # APScheduler cron integration
-│   ├── llm.py             # Anthropic API calls (direct + container + tools)
-│   ├── outputs.py         # Output routing (iMessage, stdout, file)
-│   └── secrets.py         # age encryption/decryption
-├── executors/
-│   ├── weather/           # wttr.in executor
-│   ├── gcal/              # Google Calendar (read) executor
-│   ├── gcal_write/        # Google Calendar (write) executor
-│   ├── gmail_readonly/    # Gmail (read) executor
-│   ├── gmail_send/        # Gmail (send) executor
-│   ├── gmail_modify/      # Gmail (modify) executor
-│   ├── drive/             # Google Drive (read) executor
-│   ├── drive_write/       # Google Drive (write) executor
-│   ├── bluebubbles/       # BlueBubbles iMessage executor
-│   ├── brave_search/      # Brave web search executor
-│   ├── fetch_url/         # URL content extractor
-│   ├── apple_notes/       # Apple Notes executor (bridge)
-│   ├── apple_reminders/   # Apple Reminders executor (bridge)
-│   ├── things/            # Things 3 executor (bridge)
-│   ├── imessage_bridge/   # iMessage executor (bridge)
-│   └── exec/              # Sandboxed shell command executor
-├── guardian/
-│   ├── core.py            # Guardian class (screen_input, validate_action)
-│   ├── types.py           # Data models and config
-│   ├── fast_classifier.py # DeBERTa/ONNX prompt-injection detector
-│   ├── llm_judge.py       # Haiku-based secondary judge
-│   ├── coherence.py       # LLM-based action coherence checker
-│   ├── policy.py          # YAML policy engine (allow/review/deny/auto_approve)
-│   └── audit.py           # Privacy-preserving JSONL audit logger
-├── policies/
-│   └── default.yaml       # Default tool action policies
-├── llm/                   # Containerized LLM runner + Dockerfile
 ├── tasks/                 # Task definitions (YAML)
-├── sessions/              # Conversation sessions (gitignored)
-├── workspace/             # Agent workspace memory (gitignored)
+├── policies/              # Guardian policy rules
 ├── secrets/               # Encrypted .env files (gitignored)
-├── scripts/
-│   ├── encrypt-secret.sh    # age encryption helper
-│   └── setup-google-oauth.py# Google OAuth setup (gcal, gmail)
-└── tests/
+├── scripts/               # Utility scripts (encryption, OAuth setup)
+├── src/
+│   ├── taskrunner/
+│   │   ├── cli.py         # creel CLI entrypoint
+│   │   ├── daemon/        # Daemon service, API, client contracts
+│   │   ├── chat.py        # Agent/session router
+│   │   ├── tui.py         # Textual TUI client
+│   │   ├── scheduler.py   # APScheduler integration
+│   │   ├── session.py     # JSON file-backed conversation sessions
+│   │   └── channels/      # iMessage + BlueBubbles channel plugins
+│   ├── bridge/
+│   │   └── server.py      # Host bridge HTTP API for macOS-native tools
+│   ├── executors/         # Tool executors (weather, Google, Notes, etc.)
+│   ├── guardian/          # Prompt-injection + policy protection pipeline
+│   └── llm/               # Containerized LLM runner
+├── tests/
+├── approvals/             # Pending approval queue (gitignored)
+└── workspace/             # Agent workspace memory (gitignored)
 ```
 
 ## Development

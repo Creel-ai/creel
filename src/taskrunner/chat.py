@@ -30,6 +30,8 @@ _DENY_WORDS = {"n", "no"}
 class ChatServer:
     """Connects a channel to the agent loop via session management."""
 
+    _start_time: datetime  # server start time for uptime tracking
+
     def __init__(
         self,
         agent_def: AgentDefinition,
@@ -39,6 +41,7 @@ class ChatServer:
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
+        self._start_time = datetime.now(timezone.utc)
         self._imessage_channel = imessage_channel
         self._confirm_fn = confirm_fn
         # Build summarize_fn if summarization is enabled
@@ -123,6 +126,14 @@ class ChatServer:
         # Handle /sessions — list all sessions
         if stripped.lower() == "/sessions":
             return self._format_sessions_list(sender_id)
+
+        # Handle /status — show server status info
+        if stripped.lower() == "/status":
+            return self._format_status(sender_id)
+
+        # Handle /model — show current model config
+        if stripped.lower() == "/model":
+            return self._format_model()
 
         # Handle /resume <id> — resume a session
         if stripped.lower().startswith("/resume"):
@@ -338,6 +349,39 @@ class ChatServer:
             return f"Resumed session {session_id}: {title}"
         except ValueError as e:
             return str(e)
+
+    def _format_status(self, sender_id: str) -> str:
+        """Format server status information."""
+        session = self._session_mgr.get_or_create(sender_id)
+        uptime = datetime.now(timezone.utc) - self._start_time
+        hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        guardian_status = "disabled"
+        if self._guardian:
+            guardian_status = "enabled"
+
+        lines = [
+            "Status:",
+            f"  Model: {self._agent_def.llm.model}",
+            f"  Session ID: {session.session_id}",
+            f"  Messages: {len(session.messages)}",
+            f"  Uptime: {hours}h {minutes}m {seconds}s",
+            f"  Guardian: {guardian_status}",
+        ]
+        return "\n".join(lines)
+
+    def _format_model(self) -> str:
+        """Format current model configuration."""
+        llm = self._agent_def.llm
+        agent = self._agent_def.agent
+        lines = [
+            "Model:",
+            f"  Name: {llm.model}",
+            f"  Max tokens: {llm.max_tokens}",
+            f"  Max turns: {agent.max_turns}",
+        ]
+        return "\n".join(lines)
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt from workspace files, memory, and config.

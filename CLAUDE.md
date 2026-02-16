@@ -30,13 +30,14 @@ Coverage is configured automatically via `pyproject.toml` (`--cov=taskrunner --c
 
 ## Project Structure
 
-- `taskrunner/` — Core orchestration, agent loop, LLM calls, session management, tool execution, output routing, channels (stdin, iMessage)
-- `guardian/` — Security pipeline: fast classifier (DeBERTa/ONNX), LLM judge (Haiku), YAML policy engine, audit logging
-- `executors/ — Isolated data executors (weather, gcal, gmail, drive), each with minimal OAuth scopes
+- `src/taskrunner/` — Core orchestration, agent loop, LLM calls, session management, tool execution, output routing, channels (stdin, iMessage), CLI entry point
+- `src/guardian/` — Security pipeline: fast classifier (DeBERTa/ONNX), LLM judge (Haiku), YAML policy engine, audit logging
+- `src/bridge/` — Host bridge server for macOS-native tools (FastAPI)
+- `src/executors/` — Isolated data executors (weather, gcal, gmail, drive), each with minimal OAuth scopes
+- `src/llm/` — Containerized LLM runner with own Dockerfile
 - `tasks/` — Task definitions in YAML (morning briefing, weather, email digest/triage)
 - `policies/` — Tool access policy rules (allow/review/deny via fnmatch)
 - `tests/` — Pytest suite covering all modules
-- `runner.py` — CLI entry point (subcommands: run, schedule, chat, listen, serve, validate, list)
 - `agent.yaml` — Global agent configuration (tools, channels, sessions, guardian)
 
 ## Key Conventions

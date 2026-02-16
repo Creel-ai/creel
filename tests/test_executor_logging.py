@@ -176,7 +176,7 @@ class TestEnsureImage:
             MagicMock(returncode=1, stderr="Step 3/5 : RUN pip install\nERROR: Could not find", stdout=""),  # build
         ]
 
-        dockerfile = tmp_path / "executors" / "test" / "Dockerfile"
+        dockerfile = tmp_path / "src" / "executors" / "test" / "Dockerfile"
         dockerfile.parent.mkdir(parents=True)
         dockerfile.write_text("FROM python:3.11")
 

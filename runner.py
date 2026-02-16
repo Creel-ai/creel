@@ -359,18 +359,39 @@ def cmd_serve(args: argparse.Namespace) -> int:
         from taskrunner.orchestrator import _load_secrets_to_env
         _load_secrets_to_env(agent_def.llm.secrets)
 
+    # Set up graceful shutdown on SIGTERM/SIGINT
+    shutdown_event = threading.Event()
+    heartbeat_event = threading.Event()
+
     # Start scheduler in a background thread
     tasks_dir = _tasks_dir(args)
     if tasks_dir.is_dir():
         def run_scheduler():
             try:
-                start_scheduler(tasks_dir=tasks_dir, use_containers=args.containers)
+                start_scheduler(
+                    tasks_dir=tasks_dir,
+                    use_containers=args.containers,
+                    shutdown_event=shutdown_event,
+                    heartbeat_event=heartbeat_event,
+                )
             except Exception:
                 logging.getLogger(__name__).exception("Scheduler crashed")
 
         sched_thread = threading.Thread(target=run_scheduler, daemon=True)
         sched_thread.start()
         print("Scheduler started in background.")
+
+        # Heartbeat monitor: warns if scheduler thread stops pulsing
+        def _monitor_heartbeat():
+            while not shutdown_event.is_set():
+                heartbeat_event.clear()
+                if shutdown_event.wait(60):
+                    break
+                if not heartbeat_event.is_set():
+                    logger.warning("Scheduler heartbeat missed — scheduler thread may be dead")
+
+        monitor_thread = threading.Thread(target=_monitor_heartbeat, daemon=True)
+        monitor_thread.start()
 
     channel_type = getattr(args, "channel_type", None) or "imessage"
     imessage_channel = None
@@ -403,9 +424,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print(f"Listening for iMessages from {agent_def.channels.imessage.listen_to}...")
 
     server = ChatServer(agent_def, use_containers=args.containers, imessage_channel=imessage_channel)
-
-    # Set up graceful shutdown on SIGTERM/SIGINT
-    shutdown_event = threading.Event()
 
     def _handle_shutdown(signum, frame):
         sig_name = signal.Signals(signum).name

@@ -256,6 +256,9 @@ class ChatApp(App):
     #chat-log {
         padding: 1 2;
     }
+    #streaming-buffer {
+        padding: 0 2;
+    }
     ConfirmBar {
         dock: bottom;
         height: auto;
@@ -280,6 +283,7 @@ class ChatApp(App):
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
         self._log_poller = None
+        self._streaming_chunks: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -358,13 +362,25 @@ class ChatApp(App):
     @work(thread=True)
     def _send_message(self, text: str) -> None:
         self.call_from_thread(self._show_status)
+        self._streaming_chunks = []
+
+        def on_delta(chunk: str) -> None:
+            if not self._streaming_chunks:
+                # First chunk — swap status bar for streaming buffer
+                self.call_from_thread(self._hide_status)
+                self.call_from_thread(self._start_streaming)
+            self._streaming_chunks.append(chunk)
+            self.call_from_thread(self._update_streaming, "".join(self._streaming_chunks))
+
         try:
-            response = self._server.handle_message(SENDER_ID, text)
+            response = self._server.handle_message(
+                SENDER_ID, text, on_text_delta=on_delta,
+            )
         except Exception as exc:
             response = f"Error: {exc}"
 
         self.call_from_thread(self._hide_status)
-        self.call_from_thread(self._append_response, response)
+        self.call_from_thread(self._finish_streaming, response)
         self.call_from_thread(self._enable_input)
         self.call_from_thread(self._update_subtitle)
 
@@ -373,6 +389,32 @@ class ChatApp(App):
 
     def _hide_status(self) -> None:
         self.query_one("#status-bar", StatusBar).stop_thinking()
+
+    def _start_streaming(self) -> None:
+        """Mount a temporary Static widget as a streaming buffer."""
+        buf = Static("", id="streaming-buffer", markup=True)
+        log = self.query_one("#chat-log", RichLog)
+        self.mount(buf, after=log)
+
+    def _update_streaming(self, full_text: str) -> None:
+        """Update the streaming buffer content in-place."""
+        try:
+            buf = self.query_one("#streaming-buffer", Static)
+        except Exception:
+            # Widget removed between delta and UI update — safe to ignore
+            return
+        buf.update(f"[bold green]Assistant:[/bold green] {full_text}")
+
+    def _finish_streaming(self, final_text: str) -> None:
+        """Remove streaming buffer and write final text to RichLog."""
+        try:
+            buf = self.query_one("#streaming-buffer", Static)
+        except Exception:
+            # Widget already removed — nothing to clean up
+            pass
+        else:
+            buf.remove()
+        self._append_response(final_text)
 
     def _append_response(self, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)

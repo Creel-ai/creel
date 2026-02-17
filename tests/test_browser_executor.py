@@ -76,6 +76,42 @@ class TestCallBridge:
             with pytest.raises(RuntimeError, match="Bridge request failed"):
                 executor.call_bridge("/browser/connect", {})
 
+    @patch("executors.browser.executor.requests.get")
+    def test_get_method(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"ok": True, "sessions": []}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        with patch.dict(
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8766", "BRIDGE_TOKEN": "test-token"},
+        ):
+            result = executor.call_bridge("/browser/sessions", method="GET")
+
+        assert result["ok"] is True
+        mock_get.assert_called_once()
+        args, kwargs = mock_get.call_args
+        assert args[0] == "http://localhost:8766/browser/sessions"
+
+    @patch("executors.browser.executor.requests.post")
+    def test_post_no_body(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"ok": True}
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        with patch.dict(
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8766", "BRIDGE_TOKEN": "test-token"},
+        ):
+            result = executor.call_bridge("/browser/connect")
+
+        assert result["ok"] is True
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        assert "json" not in kwargs
+
 
 class TestWrapperFunctions:
     """Test the individual wrapper functions."""
@@ -163,6 +199,15 @@ class TestWrapperFunctions:
         executor.close_session("s1")
         mock_bridge.assert_called_once_with(
             "/browser/close", {"session_id": "s1"}
+        )
+
+    @patch("executors.browser.executor.call_bridge")
+    def test_sessions(self, mock_bridge):
+        mock_bridge.return_value = {"ok": True, "sessions": []}
+        result = executor.sessions()
+        assert result["ok"] is True
+        mock_bridge.assert_called_once_with(
+            "/browser/sessions", method="GET", timeout=10
         )
 
 

@@ -503,8 +503,8 @@ tools:
         description: "Browser session ID"
         required: true
       full_page:
-        type: string
-        description: "Capture full scrollable page (true/false, default: false)"
+        type: boolean
+        description: "Capture full scrollable page (default: false)"
     fixed_args:
       action: "screenshot"
 

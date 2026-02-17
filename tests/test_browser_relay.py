@@ -364,7 +364,6 @@ class TestPostNavigationValidation:
 
         page.go_back.assert_called_once()
 
-
 class TestNavigate:
     """Test the navigate method."""
 

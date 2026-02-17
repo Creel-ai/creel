@@ -79,32 +79,15 @@ flowchart TD
 
 In agent mode, the same security boundary applies — the LLM requests tool calls, but the orchestrator handles secrets injection and executor execution:
 
-```
-                    ┌──────────────────┐
-                    │     Channels     │
-                    │stdin | iMsg | BB │
-                    └────────┬─────────┘
-                           │ incoming message
-                           ▼
-                    ┌──────────────┐
-                    │   Session    │
-                    │   Manager   │
-                    │ (JSON files) │
-                    └──────┬──────┘
-                           │ message + history
-                           ▼
-              ┌────────────────────────┐
-              │      Agent Loop        │
-              │                        │
-              │  messages ──→ LLM call │
-              │               ↓        │
-              │          tool_use? ─no─→ response
-              │               ↓ yes    │
-              │     execute via executor │
-              │     (secrets injected)  │
-              │               ↓        │
-              │     tool_result → loop  │
-              └────────────────────────┘
+```mermaid
+flowchart TD
+    CH["Channels\nstdin | iMsg | BB"] -- "incoming message" --> SM["Session Manager\n(JSON files)"]
+    SM -- "message + history" --> AL["Agent Loop"]
+    AL --> LLM["LLM call"]
+    LLM --> TU{"tool_use?"}
+    TU -- no --> resp["Response"]
+    TU -- yes --> EX["Execute via executor\n(secrets injected)"]
+    EX --> TR["tool_result"] --> AL
 ```
 
 Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAML.
@@ -113,29 +96,23 @@ Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAM
 
 The guardian layer screens inputs and validates tool calls before they execute. All stages are optional and independently configurable in `agent.yaml`:
 
-```
-Incoming message
-    │
-    ▼
-screen_input(text)                     ← before session history
-    ├── FastClassifier  (DeBERTa/ONNX, ~10ms)
-    └── LLMJudge        (Haiku, ~300ms, off by default)
-    │
-    │  blocked → return rejection, skip agent loop
-    │
-    ▼
-Agent loop → LLM returns tool_use
-    │
-    ▼
-validate_action(tool, args)            ← before execute_tool_call
-    ├── PolicyEngine    (YAML rules, <1ms)
-    │      allow  → execute
-    │      review → human approval or auto_approve
-    │      deny   → return error to LLM
-    │
-    └── CoherenceCheck  (Haiku, ~300ms)
-           coherent   → execute
-           incoherent → return error to LLM
+```mermaid
+flowchart TD
+    A["Incoming message"] --> B["screen_input(text)\n← before session history"]
+    B --> FC["FastClassifier\nDeBERTa/ONNX, ~10ms"]
+    B --> LJ["LLMJudge\nHaiku, ~300ms, off by default"]
+    FC --> blocked{"blocked?"}
+    LJ --> blocked
+    blocked -- yes --> reject["Return rejection,\nskip agent loop"]
+    blocked -- no --> agent["Agent loop → LLM returns tool_use"]
+    agent --> VA["validate_action(tool, args)\n← before execute_tool_call"]
+    VA --> PE["PolicyEngine\nYAML rules, <1ms"]
+    VA --> CC["CoherenceCheck\nHaiku, ~300ms"]
+    PE -- allow --> execute["Execute"]
+    PE -- review --> approval["Human approval\nor auto_approve"]
+    PE -- deny --> err1["Return error to LLM"]
+    CC -- coherent --> execute
+    CC -- incoherent --> err2["Return error to LLM"]
 ```
 
 **Stages:**

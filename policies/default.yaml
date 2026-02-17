@@ -12,6 +12,7 @@ allow:
   - read_note
   - list_reminders
   - get_reminder_lists
+  - list_things
   - web_search
   - fetch_url
   # Browser tools (read-only)
@@ -196,6 +197,15 @@ auto_approve:
   - search_memory
   - list_memory_files
   - update_long_term_memory
+  - edit_memory
+  # Things 3 task management
+  - create_things_task
+  - complete_things_task
+  # Notes
+  - create_note
+  # Reminders
+  - create_reminder
+  - complete_reminder
   # Browser tools — auto-approve; risky URLs are blocked by deny_when rules
   - browser_open
   - browser_navigate

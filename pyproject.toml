@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "llm-taskrunner"
@@ -52,9 +52,8 @@ imessage = "taskrunner.channels.imessage:register_plugin"
 bluebubbles = "taskrunner.channels.bluebubbles:register_plugin"
 whatsapp = "taskrunner.channels.whatsapp:register_plugin"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["taskrunner*", "guardian*", "bridge*"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/taskrunner", "src/guardian", "src/bridge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -873,6 +873,23 @@ def cmd_daemon_status(args: argparse.Namespace) -> int:
     else:
         print("Channels: none registered")
 
+    # Check bridge server health
+    try:
+        agent_def = _load_agent_def(args)
+        if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
+            import httpx
+            bridge_url = agent_def.bridge.url.rstrip("/")
+            try:
+                br = httpx.get(f"{bridge_url}/health", timeout=1.0)
+                if br.status_code == 200:
+                    print(f"Bridge: running ({bridge_url})")
+                else:
+                    print(f"Bridge: unhealthy (HTTP {br.status_code})")
+            except Exception:
+                print(f"Bridge: not reachable ({bridge_url})")
+    except Exception:
+        pass  # No agent config or bridge not configured
+
     return 0
 
 

@@ -69,6 +69,11 @@ class CoherenceChecker:
         if not self._config.enabled:
             return CoherenceResult(coherent=True, confidence=1.0, reasoning="Coherence check disabled")
 
+        # Skip coherence check for cleanup/housekeeping tools
+        _SKIP_COHERENCE = {"browser_close", "browser_sessions", "mark_read"}
+        if tool_name in _SKIP_COHERENCE:
+            return CoherenceResult(coherent=True, confidence=1.0, reasoning=f"Skipped: {tool_name} is a cleanup tool")
+
         t0 = time.perf_counter()
         try:
             from taskrunner.llm import _get_client

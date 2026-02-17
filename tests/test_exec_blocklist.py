@@ -44,13 +44,13 @@ def engine_with_blocklist(tmp_path: Path) -> PolicyEngine:
             pattern: "*| bash*"
           - tool: exec
             arg: command
-            pattern: "*| sh*"
+            pattern: "*| sh *"
           - tool: exec
             arg: command
             pattern: "*|bash*"
           - tool: exec
             arg: command
-            pattern: "*|sh*"
+            pattern: "*|sh *"
           - tool: exec
             arg: command
             pattern: "*curl*|*sh*"

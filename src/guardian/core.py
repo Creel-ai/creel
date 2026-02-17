@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from guardian.audit import AuditLogger, _hash_text
 from guardian.coherence import CoherenceChecker
@@ -222,15 +223,11 @@ class Guardian:
             )
 
         if self._audit:
-            self._audit._write({
-                "event": "coherence_check",
-                "ts": __import__("datetime").datetime.now(
-                    __import__("datetime").timezone.utc
-                ).isoformat(),
-                "tool_name": tool_name,
-                "coherent": result.coherent,
-                "confidence": result.confidence,
-            })
+            self._audit.log_coherence_check(
+                tool_name=tool_name,
+                coherent=result.coherent,
+                confidence=result.confidence,
+            )
 
         return result
 
@@ -248,22 +245,16 @@ class Guardian:
         if not self._drift:
             return []
 
-        from guardian.drift import DriftAlert
-
         alerts = self._drift.check_all(tool_name, output_length, success)
 
         for alert in alerts:
             if self._audit:
-                self._audit._write({
-                    "event": "drift_alert",
-                    "ts": __import__("datetime").datetime.now(
-                        __import__("datetime").timezone.utc
-                    ).isoformat(),
-                    "alert_type": alert.alert_type,
-                    "tool_name": alert.tool_name,
-                    "detail": alert.detail,
-                    "severity": alert.severity,
-                })
+                self._audit.log_drift_alert(
+                    alert_type=alert.alert_type,
+                    tool_name=alert.tool_name,
+                    detail=alert.detail,
+                    severity=alert.severity,
+                )
 
         return alerts
 
@@ -276,18 +267,14 @@ class Guardian:
         matches = scan_for_credentials(output)
 
         if matches and self._audit:
-            self._audit._write({
-                "event": "credential_leak",
-                "ts": __import__("datetime").datetime.now(
-                    __import__("datetime").timezone.utc
-                ).isoformat(),
-                "tool_name": tool_name,
-                "patterns_found": [
+            self._audit.log_credential_leak(
+                tool_name=tool_name,
+                patterns_found=[
                     {"pattern": m.pattern_name, "redacted": m.matched_text}
                     for m in matches
                 ],
-                "count": len(matches),
-            })
+                count=len(matches),
+            )
 
         return matches
 

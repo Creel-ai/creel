@@ -243,7 +243,7 @@ tools:
         type: string
         description: "Notes folder (default: Notes)"
     fixed_args:
-      action: "list_notes"
+      action: "list"
 
   search_notes:
     executor: apple_notes
@@ -256,7 +256,7 @@ tools:
         description: "Search query"
         required: true
     fixed_args:
-      action: "search_notes"
+      action: "search"
 
   read_note:
     executor: apple_notes
@@ -269,12 +269,11 @@ tools:
         description: "Note title"
         required: true
     fixed_args:
-      action: "read_note"
+      action: "read"
 
   create_note:
     executor: apple_notes
     network: true
-    bridge: true
     bridge: true
     description: "Create a new note in Apple Notes"
     parameters:
@@ -290,7 +289,7 @@ tools:
         type: string
         description: "Target folder (default: Notes)"
     fixed_args:
-      action: "create_note"
+      action: "create"
 
   # Apple Reminders
   list_reminders:
@@ -302,7 +301,7 @@ tools:
         type: string
         description: "Reminder list name (default: Reminders)"
     fixed_args:
-      action: "list_reminders"
+      action: "list"
 
   create_reminder:
     executor: apple_reminders
@@ -323,7 +322,7 @@ tools:
         type: string
         description: "Reminder list (default: Reminders)"
     fixed_args:
-      action: "create_reminder"
+      action: "add"
 
   complete_reminder:
     executor: apple_reminders
@@ -337,14 +336,14 @@ tools:
         type: string
         description: "Reminder list (default: Reminders)"
     fixed_args:
-      action: "complete_reminder"
+      action: "complete"
 
   get_reminder_lists:
     executor: apple_reminders
     description: "List available reminder lists"
     parameters: {}
     fixed_args:
-      action: "get_lists"
+      action: "list"
 
   # Web Search
   web_search:

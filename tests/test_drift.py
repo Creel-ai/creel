@@ -190,7 +190,7 @@ class TestDriftDetectorBaseline:
         """Missing audit log should result in empty baseline."""
         detector = DriftDetector(audit_log_path=tmp_path / "nonexistent.jsonl")
         assert detector._baseline.known_tools == set()
-        assert detector._baseline.output_lengths == []
+        assert len(detector._baseline.output_lengths) == 0
 
     def test_build_baseline_empty_file(self, tmp_path: Path) -> None:
         """Empty audit log should result in empty baseline."""

@@ -16,12 +16,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 
 logger = logging.getLogger(__name__)
 
-# Module-level tracking of token refresh timestamps
+# Module-level tracking of token refresh timestamps (guarded by _lock)
 _token_refresh_log: dict[str, float] = {}
+_lock = threading.Lock()
 
 # Default max token age: 1 hour (Google's default access token lifetime)
 DEFAULT_MAX_TOKEN_AGE = 3600
@@ -77,13 +79,15 @@ def get_google_credentials(
     )
 
     # Check if an existing token is still fresh (not expired)
-    last_refresh = _token_refresh_log.get(env_var, 0)
+    with _lock:
+        last_refresh = _token_refresh_log.get(env_var, 0)
     token_age = time.time() - last_refresh if last_refresh else float("inf")
 
     if force_refresh or token_age > max_token_age_seconds:
         try:
             creds.refresh(Request())
-            _token_refresh_log[env_var] = time.time()
+            with _lock:
+                _token_refresh_log[env_var] = time.time()
             logger.debug(
                 "OAuth token refreshed for %s (age was %.0fs, max=%ds)",
                 env_var, token_age, max_token_age_seconds,
@@ -112,7 +116,8 @@ def check_credential_freshness(
         - age_seconds: float — seconds since last refresh
         - max_age_seconds: int — configured maximum age
     """
-    last_refresh = _token_refresh_log.get(env_var, 0)
+    with _lock:
+        last_refresh = _token_refresh_log.get(env_var, 0)
     age = time.time() - last_refresh if last_refresh else float("inf")
 
     return {
@@ -128,5 +133,6 @@ def clear_token_cache() -> None:
 
     Call this when rotating credentials or during cleanup.
     """
-    _token_refresh_log.clear()
+    with _lock:
+        _token_refresh_log.clear()
     logger.info("OAuth token cache cleared")

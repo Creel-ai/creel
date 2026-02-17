@@ -220,7 +220,7 @@ def run_agent_loop(
                         )
 
             # Guardian coherence check — verify tool call matches user intent
-            if guardian is not None and hasattr(guardian, "check_coherence"):
+            if guardian is not None:
                 # Extract the user's last message for coherence comparison
                 user_request = ""
                 for msg in reversed(messages):
@@ -318,7 +318,7 @@ def run_agent_loop(
                 )
 
             # Drift detection — check for behavioral anomalies
-            if guardian is not None and hasattr(guardian, "check_drift"):
+            if guardian is not None:
                 drift_alerts = guardian.check_drift(
                     tool_name=tool_name,
                     output_length=len(result) if result else 0,
@@ -374,11 +374,7 @@ def run_agent_loop(
                     is_error = True
 
             # Post-execution credential scanning — redact leaked secrets
-            if (
-                not is_error
-                and guardian is not None
-                and hasattr(guardian, "scan_tool_output_credentials")
-            ):
+            if not is_error and guardian is not None:
                 from guardian.credential_scanner import redact_credentials
 
                 redacted_result, cred_matches = redact_credentials(result)
@@ -387,7 +383,16 @@ def run_agent_loop(
                         "Credential leak detected in %s output: %d pattern(s)",
                         tool_name, len(cred_matches),
                     )
-                    guardian.scan_tool_output_credentials(tool_name, result)
+                    # Log to audit using already-detected matches (no re-scan)
+                    if hasattr(guardian, "_audit") and guardian._audit:
+                        guardian._audit.log_credential_leak(
+                            tool_name=tool_name,
+                            patterns_found=[
+                                {"pattern": m.pattern_name, "redacted": m.matched_text}
+                                for m in cred_matches
+                            ],
+                            count=len(cred_matches),
+                        )
                     result = redacted_result
 
             tool_history.append({

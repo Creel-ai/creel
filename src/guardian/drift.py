@@ -11,18 +11,31 @@ from __future__ import annotations
 import json
 import logging
 import math
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import StrEnum
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Maximum number of output length samples retained for stats
+_MAX_OUTPUT_SAMPLES = 10_000
+
+
+class DriftAlertType(StrEnum):
+    """Types of drift detection alerts."""
+
+    NEW_TOOL = "new_tool"
+    RESPONSE_LENGTH_ANOMALY = "response_length_anomaly"
+    ERROR_RATE_SPIKE = "error_rate_spike"
 
 
 @dataclass
 class DriftAlert:
     """A single drift detection alert."""
 
-    alert_type: str  # "new_tool" | "response_length_anomaly" | "error_rate_spike"
+    alert_type: DriftAlertType
     tool_name: str = ""
     detail: str = ""
     severity: str = "warning"  # "warning" | "critical"
@@ -34,7 +47,7 @@ class DriftBaseline:
     """Behavioral baseline computed from audit history."""
 
     known_tools: set[str] = field(default_factory=set)
-    output_lengths: list[int] = field(default_factory=list)
+    output_lengths: deque[int] = field(default_factory=lambda: deque(maxlen=_MAX_OUTPUT_SAMPLES))
     output_length_mean: float = 0.0
     output_length_std: float = 0.0
     recent_results: list[bool] = field(default_factory=list)  # True=success, False=error
@@ -117,14 +130,14 @@ class DriftDetector:
             return
 
         self._baseline.known_tools = known_tools
-        self._baseline.output_lengths = output_lengths
+        self._baseline.output_lengths = deque(output_lengths[-_MAX_OUTPUT_SAMPLES:], maxlen=_MAX_OUTPUT_SAMPLES)
         self._baseline.recent_results = recent_results[-self.error_window_size:]
         self._tool_call_counts = tool_counts
 
-        # Compute output length statistics
+        # Compute output length statistics (sample variance)
         if len(output_lengths) >= 2:
             mean = sum(output_lengths) / len(output_lengths)
-            variance = sum((x - mean) ** 2 for x in output_lengths) / len(output_lengths)
+            variance = sum((x - mean) ** 2 for x in output_lengths) / (len(output_lengths) - 1)
             self._baseline.output_length_mean = mean
             self._baseline.output_length_std = math.sqrt(variance)
         elif output_lengths:
@@ -154,7 +167,7 @@ class DriftDetector:
         if tool_name not in self._baseline.known_tools:
             if count <= self.new_tool_grace_count:
                 alert = DriftAlert(
-                    alert_type="new_tool",
+                    alert_type=DriftAlertType.NEW_TOOL,
                     tool_name=tool_name,
                     detail=f"Tool '{tool_name}' has never been used before "
                     f"(call #{count + 1}, grace={self.new_tool_grace_count})",
@@ -201,7 +214,7 @@ class DriftDetector:
 
         if z_score > self.z_threshold:
             alert = DriftAlert(
-                alert_type="response_length_anomaly",
+                alert_type=DriftAlertType.RESPONSE_LENGTH_ANOMALY,
                 tool_name=tool_name,
                 detail=f"Output length {output_length} for '{tool_name}' has "
                 f"z-score {z_score:.2f} (threshold={self.z_threshold}, "
@@ -238,7 +251,7 @@ class DriftDetector:
 
         if error_rate > self.error_threshold:
             alert = DriftAlert(
-                alert_type="error_rate_spike",
+                alert_type=DriftAlertType.ERROR_RATE_SPIKE,
                 detail=f"Error rate {error_rate:.1%} exceeds threshold "
                 f"{self.error_threshold:.1%} "
                 f"({error_count}/{len(self._baseline.recent_results)} "
@@ -279,7 +292,7 @@ class DriftDetector:
         return alerts
 
     def _recompute_stats(self) -> None:
-        """Recompute output length statistics from current data."""
+        """Recompute output length statistics from current data (sample variance)."""
         lengths = self._baseline.output_lengths
         if len(lengths) < 2:
             if lengths:
@@ -288,6 +301,6 @@ class DriftDetector:
             return
 
         mean = sum(lengths) / len(lengths)
-        variance = sum((x - mean) ** 2 for x in lengths) / len(lengths)
+        variance = sum((x - mean) ** 2 for x in lengths) / (len(lengths) - 1)
         self._baseline.output_length_mean = mean
         self._baseline.output_length_std = math.sqrt(variance)

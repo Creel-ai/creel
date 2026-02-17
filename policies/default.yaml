@@ -65,18 +65,20 @@ deny_when:
     arg: command
     pattern: "*ncat -e*"
   # Pipe to shell (command injection via download)
+  # NOTE: fnmatch glob matching may false-positive on args containing "| sh"
+  # as a substring in non-pipe context. Acceptable trade-off for security.
   - tool: exec
     arg: command
     pattern: "*| bash*"
   - tool: exec
     arg: command
-    pattern: "*| sh*"
+    pattern: "*| sh *"
   - tool: exec
     arg: command
     pattern: "*|bash*"
   - tool: exec
     arg: command
-    pattern: "*|sh*"
+    pattern: "*|sh *"
   - tool: exec
     arg: command
     pattern: "*curl*|*sh*"
@@ -110,7 +112,8 @@ deny_when:
 # Tier 5-6 (Warn): Credential exposure, dangerous git ops
 # Tier 7-9 (Log): System modification, network access, exfiltration patterns
 review_when:
-  # Credential/env exposure
+  # Credential/env exposure — broad patterns, may flag benign commands
+  # containing "env" + "KEY"/"SECRET" etc. Prefer false positives for safety.
   - tool: exec
     arg: command
     pattern: "*env*KEY*"

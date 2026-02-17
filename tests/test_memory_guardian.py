@@ -43,8 +43,11 @@ def _make_guardian(block_input: bool = False, block_output: bool = False):
         tool_name="",
         matched_rule="allow",
     )
-    # check_coherence not present by default (hasattr guard)
-    del guardian.check_coherence
+    # check_coherence returns coherent by default
+    from guardian.types import CoherenceResult
+    guardian.check_coherence.return_value = CoherenceResult(coherent=True, confidence=0.95)
+    # check_drift returns no alerts by default
+    guardian.check_drift.return_value = []
     return guardian
 
 

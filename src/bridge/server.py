@@ -112,7 +112,6 @@ class ThingsUpdateRequest(BaseModel):
     tags: str | None = None
 
 
-# iMessage request models
 # Browser request models
 class BrowserConnectRequest(BaseModel):
     """Request for creating a browser session."""
@@ -170,6 +169,7 @@ class BrowserCloseRequest(BaseModel):
     session_id: str
 
 
+# iMessage request models
 class IMessageRecentRequest(BaseModel):
     """Request for recent iMessages."""
 

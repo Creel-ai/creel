@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import queue
 import threading
 import time
 from collections.abc import Callable
@@ -62,50 +63,23 @@ class DaemonService:
         sender_id: str,
         text: str,
         session_id: str | None = None,
-        chunk_size: int = 24,
     ):
-        """Yield a stream of daemon events for a single request.
-
-        This currently chunks the final assistant response into token-like pieces
-        so clients can render incremental output over SSE.
-        """
-        if chunk_size < 1:
-            chunk_size = 1
-
+        """Yield daemon streaming events for a single request."""
         active_session_id: str | None = None
         try:
             if session_id:
                 resumed = self.resume_session(sender_id, session_id)
                 active_session_id = resumed["session_id"]
             else:
-                active_session_id = self.get_active_session_id(sender_id)
+                # Ensure we have a stable active session id before streaming.
+                active = self.get_active_session(sender_id)
+                active_session_id = active["session_id"]
 
             yield {
                 "type": "start",
                 "sender_id": sender_id,
                 "session_id": active_session_id,
                 "payload": {},
-            }
-
-            response_text = self.send_message(sender_id, text)
-            active_session_id = self.get_active_session_id(sender_id)
-
-            for i in range(0, len(response_text), chunk_size):
-                chunk = response_text[i : i + chunk_size]
-                if not chunk:
-                    continue
-                yield {
-                    "type": "token",
-                    "sender_id": sender_id,
-                    "session_id": active_session_id,
-                    "payload": {"text": chunk},
-                }
-
-            yield {
-                "type": "final",
-                "sender_id": sender_id,
-                "session_id": active_session_id,
-                "payload": {"text": response_text},
             }
         except Exception as exc:
             yield {
@@ -114,6 +88,71 @@ class DaemonService:
                 "session_id": active_session_id,
                 "payload": {"error": str(exc)},
             }
+            return
+
+        token_queue: queue.Queue[str | object] = queue.Queue()
+        sentinel = object()
+        response_text = ""
+        error: Exception | None = None
+
+        def on_delta(chunk: str) -> None:
+            if chunk:
+                token_queue.put(chunk)
+
+        def _run_agent() -> None:
+            nonlocal response_text, error
+            try:
+                with self._lock:
+                    response_text = self._server.handle_message(
+                        sender_id,
+                        text,
+                        on_text_delta=on_delta,
+                    )
+            except Exception as exc:
+                error = exc
+            finally:
+                token_queue.put(sentinel)
+
+        worker = threading.Thread(
+            target=_run_agent,
+            name="creel-daemon-stream",
+            daemon=True,
+        )
+        worker.start()
+
+        while True:
+            try:
+                item = token_queue.get(timeout=1.0)
+            except queue.Empty:
+                if not worker.is_alive():
+                    break
+                continue
+            if item is sentinel:
+                break
+            yield {
+                "type": "token",
+                "sender_id": sender_id,
+                "session_id": active_session_id,
+                "payload": {"text": str(item)},
+            }
+
+        worker.join()
+        active_session_id = self.get_active_session_id(sender_id) or active_session_id
+        if error is not None:
+            yield {
+                "type": "error",
+                "sender_id": sender_id,
+                "session_id": active_session_id,
+                "payload": {"error": str(error)},
+            }
+            return
+
+        yield {
+            "type": "final",
+            "sender_id": sender_id,
+            "session_id": active_session_id,
+            "payload": {"text": response_text},
+        }
 
     def list_sessions(self, sender_id: str) -> list[dict]:
         """List persisted sessions for a sender."""
@@ -333,9 +372,12 @@ class DaemonService:
                 )
 
         now = self._now_fn()
+        guardian_active = self._server._guardian is not None
         return {
             "started_at": self._started_at,
             "uptime_seconds": max(0, int(now - self._started_at)),
+            "tool_count": len(self._agent_def.tools),
+            "guardian_active": guardian_active,
             "sessions": stats,
             "scheduler": {
                 "running": scheduler_running,

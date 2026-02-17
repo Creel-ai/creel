@@ -36,6 +36,9 @@ guardian = [
     "onnxruntime>=1.16.0",
     "optimum[onnxruntime]>=1.14.0",
 ]
+browser = [
+    "playwright>=1.40.0",
+]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
@@ -50,7 +53,10 @@ include = ["taskrunner*", "guardian*", "bridge*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing"
+addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing -m 'not smoke'"
+markers = [
+    "smoke: end-to-end tests requiring Docker and network access",
+]
 
 [tool.coverage.run]
 source = ["taskrunner", "guardian", "bridge"]

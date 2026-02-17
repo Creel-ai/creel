@@ -175,6 +175,8 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
             return _exec_brave_search_inline(config)
         elif name == "fetch_url":
             return _exec_fetch_url_inline(config)
+        elif name == "browser":
+            return _exec_browser_inline(config)
         elif name == "exec":
             return _exec_exec_inline(config)
         else:
@@ -468,6 +470,53 @@ def _exec_fetch_url_inline(config: ExecutorConfig) -> str:
     max_chars = int(config.args.get("max_chars", "10000"))
     result = fetch_url(url, max_chars)
     return json.dumps(result, indent=2)
+
+
+def _exec_browser_inline(config: ExecutorConfig) -> str:
+    """Run browser executor inline via bridge."""
+    import os
+    from executors.browser.executor import main as browser_main
+
+    # Set environment variables for the bridge-calling executor
+    old_env = {}
+    env_vars = {
+        "ACTION": config.args.get("action", "connect"),
+        "SESSION_ID": config.args.get("session_id", ""),
+        "URL": config.args.get("url", ""),
+        "SELECTOR": config.args.get("selector", ""),
+        "TEXT": config.args.get("text", ""),
+        "MODE": config.args.get("mode", "managed"),
+        "CDP_URL": config.args.get("cdp_url", ""),
+        "HEADLESS": config.args.get("headless", "true"),
+        "FULL_PAGE": config.args.get("full_page", "false"),
+    }
+
+    for key, value in env_vars.items():
+        if value:  # Only set non-empty values
+            old_env[key] = os.environ.get(key)
+            os.environ[key] = str(value)
+
+    try:
+        # Capture stdout from the bridge executor
+        import sys
+        from io import StringIO
+
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = StringIO()
+
+        browser_main()
+
+        result = captured_output.getvalue()
+        return result.strip() or "{}"
+
+    finally:
+        # Restore environment
+        sys.stdout = old_stdout
+        for key in env_vars:
+            if old_env.get(key) is not None:
+                os.environ[key] = old_env[key]
+            else:
+                os.environ.pop(key, None)
 
 
 def _exec_exec_inline(config: ExecutorConfig) -> str:

@@ -624,7 +624,11 @@ def _run_executor_container(
     
     # Add bridge configuration if enabled
     if bridge_config and bridge_config.enabled:
-        env_vars["BRIDGE_URL"] = bridge_config.url
+        # Rewrite localhost to host.docker.internal for container access
+        bridge_url = bridge_config.url
+        bridge_url = bridge_url.replace("://localhost", "://host.docker.internal")
+        bridge_url = bridge_url.replace("://127.0.0.1", "://host.docker.internal")
+        env_vars["BRIDGE_URL"] = bridge_url
         if bridge_config.token:
             env_vars["BRIDGE_TOKEN"] = bridge_config.token
 

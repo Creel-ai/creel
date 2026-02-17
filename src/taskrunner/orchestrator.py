@@ -562,10 +562,10 @@ def _ensure_image(image: str) -> None:
         # executor-gmail-modify -> src/executors/gmail_modify/
         name = tag.removeprefix("executor-").replace("-", "_")
         context = Path("src/executors") / name
+    elif tag == "llm-runner":
+        context = Path("src/llm")
     else:
-        # llm-runner -> src/llm/
         context = Path("src") / tag.replace("-", "_")
-        # Try hyphenated too: src/llm/ exists as-is
         if not context.exists():
             context = Path("src") / tag
 

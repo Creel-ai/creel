@@ -299,7 +299,7 @@ def _handle_tool_request(
 
             if user_request:
                 coherence = guardian.check_coherence(user_request, tool_name, tool_input)
-                if not coherence.is_coherent:
+                if not coherence.coherent:
                     logger.warning(
                         "Guardian coherence check failed for %s: %s",
                         tool_name, coherence.reasoning,

@@ -176,7 +176,23 @@ def run_agent_loop(
                         # User approved — fall through to execute
                         guardian.log_action_outcome(tool_name, "review", "approved_by_user")
                     else:
-                        # No callback — return for async approval queue
+                        # No callback — inject synthetic tool_results for ALL
+                        # tool_use blocks so the session history stays valid,
+                        # then return for async approval queue.
+                        synthetic_results = []
+                        for b in tool_use_blocks:
+                            if b.id == block.id:
+                                msg = f"Action requires approval: {decision.reason}"
+                            else:
+                                msg = "Action skipped — another tool in this batch requires approval."
+                            synthetic_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": b.id,
+                                "content": msg,
+                                "is_error": True,
+                            })
+                        messages.append({"role": "user", "content": synthetic_results})
+
                         return AgentResult(
                             text="This action requires approval before proceeding.",
                             turns_used=turns_used,

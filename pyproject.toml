@@ -53,7 +53,10 @@ include = ["taskrunner*", "guardian*", "bridge*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing"
+addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing -m 'not smoke'"
+markers = [
+    "smoke: end-to-end tests requiring Docker and network access",
+]
 
 [tool.coverage.run]
 source = ["taskrunner", "guardian", "bridge"]

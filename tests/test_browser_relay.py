@@ -151,56 +151,106 @@ class TestSessionManagement:
 class TestAccessibilityTree:
     """Test accessibility tree extraction."""
 
+    @staticmethod
+    def _make_page_mock(snapshot_text: str | None) -> MagicMock:
+        """Create a page mock with locator().aria_snapshot() returning the given text."""
+        page = MagicMock()
+        locator = MagicMock()
+        locator.aria_snapshot = AsyncMock(return_value=snapshot_text)
+        page.locator.return_value = locator
+        return page
+
     @pytest.mark.asyncio
     async def test_empty_snapshot(self, relay):
-        page = AsyncMock()
-        page.accessibility.snapshot.return_value = None
+        page = self._make_page_mock(None)
+        result = await relay._get_accessibility_tree(page)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_empty_string_snapshot(self, relay):
+        page = self._make_page_mock("")
         result = await relay._get_accessibility_tree(page)
         assert result == []
 
     @pytest.mark.asyncio
     async def test_basic_tree(self, relay):
-        page = AsyncMock()
-        page.accessibility.snapshot.return_value = {
-            "role": "WebArea",
-            "name": "Test Page",
-            "children": [
-                {"role": "heading", "name": "Hello World", "children": []},
-                {"role": "link", "name": "Click me", "children": []},
-                {
-                    "role": "textbox",
-                    "name": "Search",
-                    "value": "query",
-                    "children": [],
-                },
-            ],
-        }
+        snapshot = (
+            '- heading "Hello World" [level=1]\n'
+            '- link "Click me"\n'
+            '- textbox "Search": query'
+        )
+        page = self._make_page_mock(snapshot)
         result = await relay._get_accessibility_tree(page)
 
-        assert len(result) >= 3
+        assert len(result) == 3
         roles = [n["role"] for n in result]
         assert "heading" in roles
         assert "link" in roles
         assert "textbox" in roles
 
+        # Check heading attributes
+        heading = next(n for n in result if n["role"] == "heading")
+        assert heading["name"] == "Hello World"
+        assert heading["level"] == 1
+
+        # Check textbox value
+        textbox = next(n for n in result if n["role"] == "textbox")
+        assert textbox["name"] == "Search"
+        assert textbox["value"] == "query"
+
+    @pytest.mark.asyncio
+    async def test_nested_indentation(self, relay):
+        """Test that indentation is parsed as depth levels."""
+        snapshot = (
+            '- navigation "Main":\n'
+            '  - link "Home"\n'
+            '  - link "About"'
+        )
+        page = self._make_page_mock(snapshot)
+        result = await relay._get_accessibility_tree(page)
+
+        links = [n for n in result if n["role"] == "link"]
+        assert len(links) == 2
+        assert all(n.get("level") == 1 for n in links)
+
     @pytest.mark.asyncio
     async def test_truncation(self):
         """Test that content is truncated at max_content_chars."""
         relay = BrowserRelay(max_content_chars=50)
-        page = AsyncMock()
-        page.accessibility.snapshot.return_value = {
-            "role": "WebArea",
-            "name": "Page",
-            "children": [
-                {"role": "heading", "name": "A" * 30, "children": []},
-                {"role": "heading", "name": "B" * 30, "children": []},
-                {"role": "heading", "name": "C" * 30, "children": []},
-            ],
-        }
+        snapshot = (
+            '- heading "' + "A" * 30 + '" [level=1]\n'
+            '- heading "' + "B" * 30 + '" [level=2]\n'
+            '- heading "' + "C" * 30 + '" [level=3]'
+        )
+        page = self._make_page_mock(snapshot)
         result = await relay._get_accessibility_tree(page)
         # Should have stopped before including all nodes
         total_chars = sum(len(n.get("name", "")) for n in result)
-        assert total_chars <= 80  # Some overshoot is OK due to walking
+        assert total_chars <= 80  # Some overshoot is OK due to per-line check
+
+    @pytest.mark.asyncio
+    async def test_selector_passed_to_locator(self, relay):
+        """Test that a CSS selector is forwarded to page.locator()."""
+        page = self._make_page_mock('- heading "Scoped" [level=2]')
+        await relay._get_accessibility_tree(page, selector="#main")
+        page.locator.assert_called_with("#main")
+
+    @pytest.mark.asyncio
+    async def test_no_selector_uses_body(self, relay):
+        """Test that no selector defaults to body."""
+        page = self._make_page_mock('- heading "All" [level=1]')
+        await relay._get_accessibility_tree(page)
+        page.locator.assert_called_with("body")
+
+    @pytest.mark.asyncio
+    async def test_aria_snapshot_exception_returns_empty(self, relay):
+        """Test that an exception from aria_snapshot returns empty list."""
+        page = MagicMock()
+        locator = MagicMock()
+        locator.aria_snapshot = AsyncMock(side_effect=Exception("timeout"))
+        page.locator.return_value = locator
+        result = await relay._get_accessibility_tree(page)
+        assert result == []
 
 
 class TestNavigate:
@@ -213,13 +263,10 @@ class TestNavigate:
         page = AsyncMock()
         page.title.return_value = "Example"
         page.url = "https://example.com"
-        page.accessibility.snapshot.return_value = {
-            "role": "WebArea",
-            "name": "Example",
-            "children": [
-                {"role": "heading", "name": "Hello", "children": []},
-            ],
-        }
+        # page.locator() is sync, so use MagicMock to avoid returning a coroutine
+        locator = MagicMock()
+        locator.aria_snapshot = AsyncMock(return_value='- heading "Hello" [level=1]')
+        page.locator = MagicMock(return_value=locator)
 
         session = BrowserSession(session_id="s1", mode="managed", page=page)
         relay._sessions["s1"] = session

@@ -393,33 +393,70 @@ class BrowserRelay:
 
         Returns a list of node dicts with role, name, value, level.
         Truncated at max_content_chars.
+
+        Uses Playwright's locator.aria_snapshot() which returns a YAML-like
+        text representation of the accessibility tree.
         """
-        snapshot = await page.accessibility.snapshot()
-        if not snapshot:
+        import re
+
+        locator = page.locator(selector) if selector else page.locator("body")
+        try:
+            snapshot = await locator.aria_snapshot()
+        except Exception:
+            return []
+
+        if not snapshot or not snapshot.strip():
             return []
 
         nodes: list[dict[str, Any]] = []
         total_chars = 0
 
-        def walk(node: dict, depth: int = 0) -> None:
-            nonlocal total_chars
-            if total_chars >= self._max_content_chars:
-                return
+        # Pattern: "- role \"name\" [attr=value]: text_value"
+        # Indentation (number of leading spaces) determines depth.
+        line_re = re.compile(
+            r'^(?P<indent>\s*)-\s+'
+            r'(?P<role>\w+)'
+            r'(?:\s+"(?P<name>[^"]*)")?'
+            r'(?:\s+\[(?P<attrs>[^\]]*)\])?'
+            r'(?::\s*(?P<value>.+))?$'
+        )
 
-            entry: dict[str, Any] = {"role": node.get("role", "")}
-            name = node.get("name", "")
+        for line in snapshot.splitlines():
+            if total_chars >= self._max_content_chars:
+                break
+
+            m = line_re.match(line)
+            if not m:
+                continue
+
+            indent = len(m.group("indent"))
+            depth = indent // 2  # aria_snapshot uses 2-space indent
+            role = m.group("role")
+            name = m.group("name") or ""
+            value = m.group("value") or ""
+
+            # Parse level from attributes like [level=1]
+            attrs_str = m.group("attrs") or ""
+            level_from_attrs = None
+            if attrs_str:
+                level_match = re.search(r'level=(\d+)', attrs_str)
+                if level_match:
+                    level_from_attrs = int(level_match.group(1))
+
+            entry: dict[str, Any] = {"role": role}
             if name:
                 entry["name"] = name
                 total_chars += len(name)
-            value = node.get("value", "")
             if value:
                 entry["value"] = value
-                total_chars += len(str(value))
-            if depth > 0:
+                total_chars += len(value)
+            if level_from_attrs is not None:
+                entry["level"] = level_from_attrs
+            elif depth > 0:
                 entry["level"] = depth
 
             # Only include nodes that have meaningful content
-            if entry.get("name") or entry.get("value") or entry["role"] in (
+            if entry.get("name") or entry.get("value") or role in (
                 "heading",
                 "link",
                 "button",
@@ -428,12 +465,6 @@ class BrowserRelay:
             ):
                 nodes.append(entry)
 
-            for child in node.get("children", []):
-                if total_chars >= self._max_content_chars:
-                    break
-                walk(child, depth + 1)
-
-        walk(snapshot)
         return nodes
 
     async def _wait_for_cdp(self, cdp_url: str, timeout: float = 15.0) -> None:

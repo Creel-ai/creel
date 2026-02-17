@@ -294,6 +294,7 @@ tools:
   # Apple Reminders
   list_reminders:
     executor: apple_reminders
+    bridge: true
     network: true
     description: "List reminders from Apple Reminders"
     parameters:
@@ -305,6 +306,7 @@ tools:
 
   create_reminder:
     executor: apple_reminders
+    bridge: true
     network: true
     description: "Create a new reminder"
     parameters:
@@ -326,6 +328,8 @@ tools:
 
   complete_reminder:
     executor: apple_reminders
+    network: true
+    bridge: true
     description: "Mark a reminder as completed"
     parameters:
       name:
@@ -340,6 +344,8 @@ tools:
 
   get_reminder_lists:
     executor: apple_reminders
+    network: true
+    bridge: true
     description: "List available reminder lists"
     parameters: {}
     fixed_args:
@@ -394,6 +400,7 @@ tools:
   # Things 3 (via bridge)
   list_things:
     executor: things
+    bridge: true
     network: true
     description: "List tasks from Things 3 (default: inbox). Use action parameter to choose view."
     parameters:
@@ -407,6 +414,8 @@ tools:
 
   create_things_task:
     executor: things
+    network: true
+    bridge: true
     description: "Create a new task in Things 3"
     parameters:
       title:
@@ -433,6 +442,8 @@ tools:
 
   complete_things_task:
     executor: things
+    network: true
+    bridge: true
     description: "Mark a Things 3 task as completed"
     parameters:
       id:
@@ -581,6 +592,8 @@ tools:
   # iMessage Bridge (for broader iMessage access)
   imessage_send:
     executor: imessage_bridge
+    network: true
+    bridge: true
     description: "Send iMessage via bridge (broader recipient support)"
     parameters:
       recipient:

@@ -4,7 +4,8 @@ system_prompt: |
 
 tools:
   check_calendar:
-    executor: calendar
+    executor: gcal
+    network: true
     secrets: secrets/gcal.env.enc
     description: "Check today's calendar events"
     parameters:
@@ -14,6 +15,7 @@ tools:
 
   create_event:
     executor: gcal_write
+    network: true
     secrets: secrets/gcal_write.env.enc
     description: "Create a calendar event"
     parameters:
@@ -38,6 +40,7 @@ tools:
 
   check_email:
     executor: gmail_readonly
+    network: true
     secrets: secrets/gmail.env.enc
     description: "Search Gmail for emails"
     parameters:
@@ -51,6 +54,7 @@ tools:
 
   read_email:
     executor: gmail_readonly
+    network: true
     secrets: secrets/gmail.env.enc
     description: "Read the full content of a specific email by its ID"
     parameters:
@@ -61,6 +65,7 @@ tools:
 
   send_email:
     executor: gmail_send
+    network: true
     secrets: secrets/gmail_send.env.enc
     description: "Send an email"
     parameters:
@@ -79,6 +84,7 @@ tools:
 
   trash_email:
     executor: gmail_modify
+    network: true
     secrets: secrets/gmail_modify.env.enc
     description: "Move an email to trash. Always include the subject."
     parameters:
@@ -95,6 +101,7 @@ tools:
 
   mark_read:
     executor: gmail_modify
+    network: true
     secrets: secrets/gmail_modify.env.enc
     description: "Mark an email as read"
     parameters:
@@ -108,6 +115,7 @@ tools:
 
   check_weather:
     executor: weather
+    network: true
     description: "Get current weather and forecast"
     parameters:
       location:
@@ -117,6 +125,7 @@ tools:
 
   check_drive:
     executor: drive
+    network: true
     secrets: secrets/drive.env.enc
     description: "Search Google Drive files"
     parameters:
@@ -129,6 +138,7 @@ tools:
 
   upload_file:
     executor: drive_write
+    network: true
     secrets: secrets/drive_write.env.enc
     description: "Upload a file to Google Drive"
     parameters:
@@ -201,6 +211,7 @@ tools:
   # Apple Notes
   list_notes:
     executor: apple_notes
+    network: true
     description: "List notes from Apple Notes"
     parameters:
       folder:
@@ -211,6 +222,7 @@ tools:
 
   search_notes:
     executor: apple_notes
+    network: true
     description: "Search Apple Notes by text content"
     parameters:
       query:
@@ -222,6 +234,7 @@ tools:
 
   read_note:
     executor: apple_notes
+    network: true
     description: "Read the full content of a note by title"
     parameters:
       name:
@@ -233,6 +246,7 @@ tools:
 
   create_note:
     executor: apple_notes
+    network: true
     description: "Create a new note in Apple Notes"
     parameters:
       title:
@@ -252,6 +266,7 @@ tools:
   # Apple Reminders
   list_reminders:
     executor: apple_reminders
+    network: true
     description: "List reminders from Apple Reminders"
     parameters:
       list_name:
@@ -262,6 +277,7 @@ tools:
 
   create_reminder:
     executor: apple_reminders
+    network: true
     description: "Create a new reminder"
     parameters:
       title:
@@ -305,6 +321,7 @@ tools:
   web_search:
     executor: brave_search
     secrets: secrets/brave.env.enc
+    network: true
     description: "Search the web using Brave Search"
     parameters:
       query:
@@ -317,6 +334,7 @@ tools:
 
   fetch_url:
     executor: fetch_url
+    network: true
     description: "Fetch and extract text content from a URL"
     parameters:
       url:
@@ -348,6 +366,7 @@ tools:
   # Things 3 (via bridge)
   list_things:
     executor: things
+    network: true
     description: "List tasks from Things 3"
     parameters:
       filter:

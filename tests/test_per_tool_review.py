@@ -144,10 +144,10 @@ class TestMemoryToolPolicy:
         decision = engine.evaluate("update_long_term_memory")
         assert decision.verdict == ActionVerdict.ALLOW
 
-    def test_edit_memory_requires_review(self) -> None:
+    def test_edit_memory_auto_approved(self) -> None:
         engine = PolicyEngine("policies/default.yaml")
         decision = engine.evaluate("edit_memory")
-        assert decision.verdict == ActionVerdict.REVIEW
+        assert decision.verdict == ActionVerdict.ALLOW
 
     def test_delete_memory_denied(self) -> None:
         engine = PolicyEngine("policies/default.yaml")

@@ -439,6 +439,8 @@ tools:
   # Browser tools (via bridge)
   browser_open:
     executor: browser
+    network: true
+    bridge: true
     description: "Open a new browser session (managed headless Chromium or relay to user's Chrome)"
     parameters:
       mode:
@@ -452,6 +454,8 @@ tools:
 
   browser_navigate:
     executor: browser
+    network: true
+    bridge: true
     description: "Navigate to a URL and return the page content as a structured accessibility tree"
     classify_output: true
     parameters:
@@ -468,6 +472,8 @@ tools:
 
   browser_get_content:
     executor: browser
+    network: true
+    bridge: true
     description: "Get the current page content as a structured accessibility tree"
     classify_output: true
     parameters:
@@ -483,6 +489,8 @@ tools:
 
   browser_click:
     executor: browser
+    network: true
+    bridge: true
     description: "Click an element on the page by CSS selector"
     classify_output: true
     parameters:
@@ -499,6 +507,8 @@ tools:
 
   browser_type:
     executor: browser
+    network: true
+    bridge: true
     description: "Type text into an input element"
     classify_output: true
     parameters:
@@ -519,6 +529,8 @@ tools:
 
   browser_screenshot:
     executor: browser
+    network: true
+    bridge: true
     description: "Take a screenshot of the current page (returns base64 PNG)"
     classify_output: true
     parameters:
@@ -534,6 +546,8 @@ tools:
 
   browser_links:
     executor: browser
+    network: true
+    bridge: true
     description: "Get all links on the current page with their text and URLs"
     classify_output: true
     parameters:
@@ -546,6 +560,8 @@ tools:
 
   browser_close:
     executor: browser
+    network: true
+    bridge: true
     description: "Close a browser session and free resources"
     parameters:
       session_id:
@@ -586,7 +602,7 @@ session:
 
 bridge:
   enabled: true
-  url: "http://localhost:8766"
+  url: "http://localhost:8099"
   token: "$BRIDGE_TOKEN"
 
 browser:

@@ -396,7 +396,13 @@ def _build_daemon_channel(agent_def, channel_type: str):
 
 
 def _start_bridge_server(bridge_config) -> threading.Thread:
-    """Start the host bridge server in a background thread."""
+    """Start the host bridge server in a background thread.
+
+    Pre-generates scoped tokens and sets them as env vars so both the
+    bridge server and the orchestrator (for container injection) can
+    use them.
+    """
+    import secrets as _secrets
     import uvicorn as _uvicorn
 
     # Parse host/port from bridge URL
@@ -404,6 +410,13 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     parsed = urlparse(bridge_config.url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 8099
+
+    # Pre-generate scoped tokens so orchestrator can inject them into containers
+    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER"]
+    for scope in scopes:
+        env_var = f"BRIDGE_TOKEN_{scope}"
+        if not os.environ.get(env_var):
+            os.environ[env_var] = _secrets.token_urlsafe(32)
 
     def _run_bridge():
         try:

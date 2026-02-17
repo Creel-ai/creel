@@ -196,8 +196,8 @@ auto_approve:
   - search_memory
   - list_memory_files
   - update_long_term_memory
-  # Browser tools — auto-approve once session exists; risky URLs are
-  # blocked by deny_when rules above
+  # Browser tools — auto-approve; risky URLs are blocked by deny_when rules
+  - browser_open
   - browser_navigate
   - browser_click
   - browser_type

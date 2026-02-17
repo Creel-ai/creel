@@ -14,6 +14,10 @@ allow:
   - get_reminder_lists
   - web_search
   - fetch_url
+  # Browser tools (read-only)
+  - browser_get_content
+  - browser_links
+  - browser_close
   # Memory tools (writes are gated by Guardian content screening)
   - remember
   - search_memory
@@ -28,9 +32,161 @@ review:
   - mark_*
   - trash_*
   - edit_memory
+  # Browser tools (state-changing)
+  - browser_open
+  - browser_navigate
+  - browser_click
+  - browser_type
+  - browser_screenshot
 
 deny:
   - delete_*
+
+# Conditional deny rules — block dangerous shell patterns in exec commands
+# Tier 1-4 (Block): Shell injection, reverse shells, destructive commands
+deny_when:
+  # Destructive filesystem commands
+  - tool: exec
+    arg: command
+    pattern: "*rm -rf*"
+  - tool: exec
+    arg: command
+    pattern: "*rm -fr*"
+  - tool: exec
+    arg: command
+    pattern: "*mkfs*"
+  - tool: exec
+    arg: command
+    pattern: "*dd if=*of=/dev/*"
+  # Reverse shell / exfiltration patterns
+  - tool: exec
+    arg: command
+    pattern: "*>/dev/tcp/*"
+  - tool: exec
+    arg: command
+    pattern: "*/dev/udp/*"
+  - tool: exec
+    arg: command
+    pattern: "*bash -i*"
+  - tool: exec
+    arg: command
+    pattern: "*nc -e*"
+  - tool: exec
+    arg: command
+    pattern: "*ncat -e*"
+  # Pipe to shell (command injection via download)
+  # NOTE: fnmatch glob matching may false-positive on args containing "| sh"
+  # as a substring in non-pipe context. Acceptable trade-off for security.
+  - tool: exec
+    arg: command
+    pattern: "*| bash*"
+  - tool: exec
+    arg: command
+    pattern: "*| sh *"
+  - tool: exec
+    arg: command
+    pattern: "*|bash*"
+  - tool: exec
+    arg: command
+    pattern: "*|sh *"
+  - tool: exec
+    arg: command
+    pattern: "*curl*|*sh*"
+  - tool: exec
+    arg: command
+    pattern: "*wget*|*sh*"
+  # Command substitution in curl/wget payloads
+  - tool: exec
+    arg: command
+    pattern: "*$(curl*"
+  - tool: exec
+    arg: command
+    pattern: "*$(wget*"
+  # Fork bomb
+  - tool: exec
+    arg: command
+    pattern: "*:(){ :|:& };:*"
+  # Crontab modification
+  - tool: exec
+    arg: command
+    pattern: "*crontab*"
+  # chmod 777 (overly permissive)
+  - tool: exec
+    arg: command
+    pattern: "*chmod 777*"
+  - tool: exec
+    arg: command
+    pattern: "*chmod -R 777*"
+  # URL scheme allowlist (http/https only) is enforced in BrowserRelay._validate_url.
+  # These rules provide defense-in-depth at the policy layer.
+  - tool: browser_navigate
+    arg: url
+    pattern: "file://*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "javascript:*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "data:*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "blob:*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "ftp://*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "chrome://*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "chrome-extension://*"
+
+# Conditional review rules — flag risky but potentially legitimate commands
+# Tier 5-6 (Warn): Credential exposure, dangerous git ops
+# Tier 7-9 (Log): System modification, network access, exfiltration patterns
+review_when:
+  # Credential/env exposure — broad patterns, may flag benign commands
+  # containing "env" + "KEY"/"SECRET" etc. Prefer false positives for safety.
+  - tool: exec
+    arg: command
+    pattern: "*env*KEY*"
+  - tool: exec
+    arg: command
+    pattern: "*env*SECRET*"
+  - tool: exec
+    arg: command
+    pattern: "*env*TOKEN*"
+  - tool: exec
+    arg: command
+    pattern: "*env*PASSWORD*"
+  # Dangerous git operations
+  - tool: exec
+    arg: command
+    pattern: "*git push --force*"
+  - tool: exec
+    arg: command
+    pattern: "*git push -f*"
+  - tool: exec
+    arg: command
+    pattern: "*git reset --hard*"
+  # System modification
+  - tool: exec
+    arg: command
+    pattern: "*sudo*"
+  # Network access tools
+  - tool: exec
+    arg: command
+    pattern: "*ssh *"
+  - tool: exec
+    arg: command
+    pattern: "*scp *"
+  # Data exfiltration patterns
+  - tool: exec
+    arg: command
+    pattern: "*tar*|*curl*"
+  - tool: exec
+    arg: command
+    pattern: "*zip*|*curl*"
 
 # Tools that match 'review' rules but can skip human approval
 auto_approve:

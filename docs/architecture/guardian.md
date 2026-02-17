@@ -4,29 +4,23 @@ The Guardian layer screens inputs and validates tool calls before they execute. 
 
 ## Pipeline
 
-```
-Incoming message
-    │
-    ▼
-screen_input(text)                     ← before session history
-    ├── FastClassifier  (DeBERTa/ONNX, ~10ms)
-    └── LLMJudge        (Haiku, ~300ms, off by default)
-    │
-    │  blocked → return rejection, skip agent loop
-    │
-    ▼
-Agent loop → LLM returns tool_use
-    │
-    ▼
-validate_action(tool, args)            ← before execute_tool_call
-    ├── PolicyEngine    (YAML rules, <1ms)
-    │      allow  → execute
-    │      review → human approval or auto_approve
-    │      deny   → return error to LLM
-    │
-    └── CoherenceCheck  (Haiku, ~300ms)
-           coherent   → execute
-           incoherent → return error to LLM
+```mermaid
+flowchart TD
+    A["Incoming message"] --> B["screen_input(text)\n← before session history"]
+    B --> FC["FastClassifier\nDeBERTa/ONNX, ~10ms"]
+    B --> LJ["LLMJudge\nHaiku, ~300ms, off by default"]
+    FC --> blocked{"blocked?"}
+    LJ --> blocked
+    blocked -- yes --> reject["Return rejection,\nskip agent loop"]
+    blocked -- no --> agent["Agent loop → LLM returns tool_use"]
+    agent --> VA["validate_action(tool, args)\n← before execute_tool_call"]
+    VA --> PE["PolicyEngine\nYAML rules, <1ms"]
+    VA --> CC["CoherenceCheck\nHaiku, ~300ms"]
+    PE -- allow --> execute["Execute"]
+    PE -- review --> approval["Human approval\nor auto_approve"]
+    PE -- deny --> err1["Return error to LLM"]
+    CC -- coherent --> execute
+    CC -- incoherent --> err2["Return error to LLM"]
 ```
 
 ## Stages

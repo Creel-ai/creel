@@ -23,7 +23,12 @@ from textual.widgets import Button, Footer, Header, RichLog, Static, TextArea
 
 @runtime_checkable
 class TuiBackend(Protocol):
-    """Protocol for TUI chat backends (ChatServer or DaemonTuiAdapter)."""
+    """Protocol for TUI chat backends (ChatServer or DaemonTuiAdapter).
+
+    Backends may also implement ``stream_message(sender_id, text)`` to yield
+    streaming event dicts.  When present the TUI prefers it over the callback-
+    based ``on_text_delta`` path in ``handle_message``.
+    """
 
     def handle_message(
         self,
@@ -297,11 +302,15 @@ class ChatApp(App):
         server: TuiBackend,
         sender_id: str = SENDER_ID,
         model_name: str = "",
+        tool_count: int = 0,
+        guardian_active: bool = False,
     ) -> None:
         super().__init__()
         self._server = server
         self._sender_id = sender_id
         self._model_name = model_name
+        self._tool_count = tool_count
+        self._guardian_active = guardian_active
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
         self._log_poller = None
@@ -319,8 +328,22 @@ class ChatApp(App):
         bar.model_name = self._model_name
         self.query_one("#chat-input", ChatInput).focus()
         self._update_subtitle()
+        self._show_startup_banner()
         self._replay_history()
         self._install_log_handler()
+
+    def _show_startup_banner(self) -> None:
+        """Display a startup banner in the chat log."""
+        log = self.query_one("#chat-log", RichLog)
+        guardian_status = "active" if self._guardian_active else "inactive"
+        log.write(
+            Text.from_markup(
+                f"[bold bright_red]🧺 Creel agent ready.[/bold bright_red] "
+                f"Tools loaded: {self._tool_count}. "
+                f"Guardian: {guardian_status}."
+            )
+        )
+        log.write("")  # blank line after banner
 
     def _install_log_handler(self) -> None:
         """Route Python logging into a queue, polled by a timer."""
@@ -386,6 +409,50 @@ class ChatApp(App):
         self.call_from_thread(self._show_status)
         self._streaming_chunks = []
 
+        try:
+            response = self._send_message_with_stream_events(text)
+        except Exception as exc:
+            response = f"Error: {exc}"
+
+        self.call_from_thread(self._hide_status)
+        self.call_from_thread(self._finish_streaming, response)
+        self.call_from_thread(self._enable_input)
+        self.call_from_thread(self._update_subtitle)
+
+    def _send_message_with_stream_events(self, text: str) -> str:
+        # Check the class (not the instance) so MagicMock auto-attributes are ignored.
+        stream_fn = getattr(type(self._server), "stream_message", None)
+        if not callable(stream_fn):
+            return self._send_message_with_callback(text)
+
+        final_text = ""
+        for event in self._server.stream_message(self._sender_id, text):
+            event_type = str(event.get("type", ""))
+            payload = event.get("payload", {})
+            if not isinstance(payload, dict):
+                payload = {}
+
+            if event_type == "token":
+                chunk = str(payload.get("text", ""))
+                if chunk:
+                    if not self._streaming_chunks:
+                        self.call_from_thread(self._hide_status)
+                        self.call_from_thread(self._start_streaming)
+                    self._streaming_chunks.append(chunk)
+                    self.call_from_thread(
+                        self._update_streaming, "".join(self._streaming_chunks),
+                    )
+            elif event_type == "final":
+                final_text = str(payload.get("text", ""))
+            elif event_type == "error":
+                err = payload.get("error", "streaming request failed")
+                raise RuntimeError(str(err))
+
+        if final_text:
+            return final_text
+        return "".join(self._streaming_chunks)
+
+    def _send_message_with_callback(self, text: str) -> str:
         def on_delta(chunk: str) -> None:
             if not self._streaming_chunks:
                 # First chunk — swap status bar for streaming buffer
@@ -394,17 +461,9 @@ class ChatApp(App):
             self._streaming_chunks.append(chunk)
             self.call_from_thread(self._update_streaming, "".join(self._streaming_chunks))
 
-        try:
-            response = self._server.handle_message(
-                self._sender_id, text, on_text_delta=on_delta,
-            )
-        except Exception as exc:
-            response = f"Error: {exc}"
-
-        self.call_from_thread(self._hide_status)
-        self.call_from_thread(self._finish_streaming, response)
-        self.call_from_thread(self._enable_input)
-        self.call_from_thread(self._update_subtitle)
+        return self._server.handle_message(
+            self._sender_id, text, on_text_delta=on_delta,
+        )
 
     def _show_status(self) -> None:
         self.query_one("#status-bar", StatusBar).start_thinking()

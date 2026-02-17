@@ -181,6 +181,7 @@ class ChatServer:
                 guardian=self._guardian,
                 confirm_action=self._confirm_fn,
                 memory_manager=self._memory,
+                bridge_config=self._agent_def.bridge,
             )
         else:
             result = run_agent_loop(
@@ -194,6 +195,7 @@ class ChatServer:
                 confirm_action=self._confirm_fn,
                 memory_manager=self._memory,
                 on_text_delta=on_text_delta,
+                bridge_config=self._agent_def.bridge,
             )
 
         logger.info(
@@ -279,6 +281,7 @@ class ChatServer:
                 tool_input=pending.tool_input,
                 tools_config=self._agent_def.tools,
                 use_containers=self._use_containers,
+                bridge_config=self._agent_def.bridge,
             )
             result_msg = f"✅ Approved and executed: {pending.tool_name}\n\nResult:\n{tool_result}"
         except Exception as e:

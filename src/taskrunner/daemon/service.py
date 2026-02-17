@@ -201,7 +201,12 @@ class DaemonService:
             mgr = self._server._session_mgr
             if session_id:
                 session = mgr.load_session(session_id)
-                if session is None or session.sender_id != sender_id:
+                if session is None:
+                    # Session may have just been created but not yet saved to disk
+                    session = mgr.get_or_create(sender_id)
+                    if session.session_id != session_id or session.sender_id != sender_id:
+                        raise ValueError(f"Session {session_id} not found")
+                elif session.sender_id != sender_id:
                     raise ValueError(f"Session {session_id} not found")
             else:
                 session = mgr.get_or_create(sender_id)

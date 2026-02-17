@@ -156,8 +156,17 @@ def _run_protocol(
         msg_type = msg.get("type")
 
         if msg_type == "final":
-            # Update messages list with what the container produced
-            # (the container manages its own message history internally)
+            # Replace session messages with full history from container
+            # (includes all intermediate tool_use/tool_result turns)
+            if msg.get("messages"):
+                messages.clear()
+                messages.extend(msg["messages"])
+            elif msg.get("text"):
+                # Fallback: at least save the final response
+                messages.append({
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": msg["text"]}],
+                })
             proc.stdin.close()
             proc.wait(timeout=10)
             return AgentResult(

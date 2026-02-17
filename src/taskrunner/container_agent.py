@@ -320,6 +320,8 @@ def _handle_tool_request(
                             for block in content:
                                 if isinstance(block, dict) and block.get("type") == "tool_use":
                                     prior_tools.append(block.get("name", ""))
+                if prior_tools:
+                    logger.info("Coherence context: prior_tools=%s for %s", prior_tools, tool_name)
                 coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
                 if not coherence.coherent:
                     logger.warning(

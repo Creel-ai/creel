@@ -167,10 +167,22 @@ class BlueBubblesChannelConfig(BaseModel):
 
 class BridgeConfig(BaseModel):
     """Bridge server configuration for host-side macOS tools."""
-    
+
     url: str = "http://localhost:8766"
     token: str | None = None
     enabled: bool = False
+
+
+class BrowserConfig(BaseModel):
+    """Browser tool configuration for web browsing via Playwright CDP."""
+
+    enabled: bool = False
+    default_mode: str = "managed"  # "managed" | "relay"
+    cdp_url: str | None = None  # Chrome CDP endpoint for relay mode
+    max_sessions: int = 3
+    session_timeout_minutes: int = 10
+    headless: bool = True
+    blocked_domains: list[str] = Field(default_factory=list)
 
 
 class ChannelsConfig(BaseModel):
@@ -193,6 +205,7 @@ class AgentDefinition(BaseModel):
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     quiet_hours: QuietHoursConfig = Field(default_factory=QuietHoursConfig)
     bridge: BridgeConfig = Field(default_factory=BridgeConfig)
+    browser: BrowserConfig = Field(default_factory=BrowserConfig)
     guardian: GuardianConfig | None = None
 
 

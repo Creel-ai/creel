@@ -9,6 +9,7 @@ import json
 import logging
 import subprocess
 import tempfile
+from hashlib import sha256
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +19,25 @@ from taskrunner.outputs import send_output
 from taskrunner.secrets import decrypt_env_file
 
 logger = logging.getLogger(__name__)
+
+_GOOGLE_TOKEN_MAX_AGE_SECONDS = 3600
+
+
+def _replace_google_credentials_with_access_token(env_vars: dict[str, str]) -> None:
+    """Replace refresh-token JSON with a short-lived access token."""
+    creds_json = env_vars.pop("GOOGLE_CREDENTIALS_JSON", None)
+    if not creds_json:
+        return
+
+    from taskrunner.oauth import get_google_access_token_from_json
+
+    cache_key = f"google_creds:{sha256(creds_json.encode('utf-8')).hexdigest()}"
+    env_vars["GOOGLE_ACCESS_TOKEN"] = get_google_access_token_from_json(
+        creds_json,
+        cache_key=cache_key,
+        max_token_age_seconds=_GOOGLE_TOKEN_MAX_AGE_SECONDS,
+        force_refresh=False,
+    )
 
 
 def run_task(
@@ -135,6 +155,7 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
     env_overrides = {}
     if config.secrets:
         env_overrides = decrypt_env_file(config.secrets)
+        _replace_google_credentials_with_access_token(env_overrides)
 
     import os
 
@@ -546,9 +567,9 @@ def _exec_exec_inline(config: ExecutorConfig) -> str:
 def _ensure_image(image: str) -> None:
     """Build the Docker image if it doesn't already exist.
 
-    Derives the build context from the image name:
-      executor-gmail-modify:latest -> src/executors/gmail_modify/
-      llm-runner:latest           -> src/llm/
+    Derives Dockerfile/build context from image name:
+      executor-gmail-modify:latest -> -f src/executors/gmail_modify/Dockerfile src/executors/
+      llm-runner:latest            -> src/llm/
     """
     result = subprocess.run(
         ["docker", "image", "inspect", image],
@@ -559,22 +580,35 @@ def _ensure_image(image: str) -> None:
 
     tag = image.split(":")[0]
     if tag.startswith("executor-"):
-        # executor-gmail-modify -> src/executors/gmail_modify/
+        # executor-gmail-modify -> dockerfile src/executors/gmail_modify/Dockerfile
+        # with shared context src/executors/ (allows shared modules).
         name = tag.removeprefix("executor-").replace("-", "_")
-        context = Path("src/executors") / name
+        context = Path("src/executors")
+        dockerfile = context / name / "Dockerfile"
+        build_cmd = [
+            "docker",
+            "build",
+            "-t",
+            image,
+            "-f",
+            str(dockerfile),
+            str(context),
+        ]
     else:
         # llm-runner -> src/llm/
         context = Path("src") / tag.replace("-", "_")
         # Try hyphenated too: src/llm/ exists as-is
         if not context.exists():
             context = Path("src") / tag
+        dockerfile = context / "Dockerfile"
+        build_cmd = ["docker", "build", "-t", image, str(context)]
 
-    if not (context / "Dockerfile").exists():
-        raise FileNotFoundError(f"No Dockerfile at {context} for image {image}")
+    if not dockerfile.exists():
+        raise FileNotFoundError(f"No Dockerfile at {dockerfile} for image {image}")
 
-    logger.info("Building image %s from %s", image, context)
+    logger.info("Building image %s from %s (Dockerfile: %s)", image, context, dockerfile)
     build_result = subprocess.run(
-        ["docker", "build", "-t", image, str(context)],
+        build_cmd,
         capture_output=True,
         text=True,
     )
@@ -616,6 +650,9 @@ def _run_executor_container(
     # Pass args as env vars
     for key, value in config.args.items():
         env_vars[key.upper()] = value
+
+    # Never pass refresh-token JSON into executor containers.
+    _replace_google_credentials_with_access_token(env_vars)
 
     # Pass request ID for correlation
     rid = request_id_var.get(None)

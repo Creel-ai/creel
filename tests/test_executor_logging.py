@@ -152,6 +152,50 @@ class TestRunExecutorContainer:
         # Error detail truncated to 500 chars
         assert len(str(exc_info.value)) < 600
 
+    @patch("taskrunner.orchestrator._ensure_image")
+    @patch("taskrunner.orchestrator.subprocess.run")
+    @patch(
+        "taskrunner.orchestrator.decrypt_env_file",
+        return_value={
+            "GOOGLE_CREDENTIALS_JSON": (
+                '{"refresh_token":"rt","client_id":"cid","client_secret":"cs"}'
+            ),
+        },
+    )
+    @patch("taskrunner.oauth.get_google_access_token_from_json", return_value="ya29.container-token")
+    @patch("taskrunner.orchestrator.tempfile.NamedTemporaryFile")
+    def test_google_credentials_json_replaced_with_access_token(
+        self,
+        mock_tmpfile,
+        mock_access_token,
+        mock_decrypt,
+        mock_run,
+        mock_ensure,
+        config,
+    ):
+        """Container env file should include only GOOGLE_ACCESS_TOKEN."""
+        from taskrunner.orchestrator import _run_executor_container
+
+        config = ExecutorConfig(
+            name="test_executor",
+            secrets="secrets/google.env.enc",
+            args={"key": "value"},
+            timeout=30,
+        )
+
+        mock_env_file = MagicMock()
+        mock_env_file.name = "/tmp/test.env"
+        mock_tmpfile.return_value.__enter__.return_value = mock_env_file
+
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+
+        _run_executor_container(config)
+
+        written = "".join(call.args[0] for call in mock_env_file.write.call_args_list)
+        assert "GOOGLE_ACCESS_TOKEN=ya29.container-token" in written
+        assert "GOOGLE_CREDENTIALS_JSON=" not in written
+        mock_access_token.assert_called_once()
+
 
 class TestExecutorConfigTimeout:
     def test_default_timeout(self):

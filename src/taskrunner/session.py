@@ -133,6 +133,7 @@ class SessionManager:
         # No active session (or file missing or expired) — create fresh
         session = Session(sender_id=sender_id)
         self._set_active_session_id(sender_id, session.session_id)
+        self._save(session)
         logger.info("Created new session %s for %s", session.session_id, sender_id)
         return session
 

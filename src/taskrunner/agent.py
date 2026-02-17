@@ -47,6 +47,7 @@ def run_agent_loop(
     confirm_action: Callable[[str, dict, str], bool] | None = None,
     memory_manager: object | None = None,
     on_text_delta: Callable[[str], None] | None = None,
+    allowed_tools: list[str] | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -59,6 +60,8 @@ def run_agent_loop(
         use_containers: If True, run executors in Docker containers.
         guardian: Optional Guardian instance for action validation.
         on_text_delta: Optional streaming callback passed to call_llm().
+        allowed_tools: Optional per-task tool whitelist. If set, only these
+            tools may be called regardless of global policy.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -124,6 +127,31 @@ def run_agent_loop(
             tool_input = block.input
             logger.info("Tool call: %s(%s)", tool_name, tool_input)
 
+            # Per-task tool scoping — reject tools not in the whitelist
+            if allowed_tools is not None and tool_name not in allowed_tools:
+                logger.warning(
+                    "Tool %s blocked by per-task scope (allowed: %s)",
+                    tool_name, allowed_tools,
+                )
+                result = (
+                    f"Tool '{tool_name}' is not permitted for this task. "
+                    f"Allowed tools: {', '.join(allowed_tools)}"
+                )
+                is_error = True
+                tool_history.append({
+                    "tool": tool_name,
+                    "input": tool_input,
+                    "output": result,
+                    "is_error": is_error,
+                })
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                    "is_error": is_error,
+                })
+                continue
+
             # Guardian action validation (stage 3)
             if guardian is not None:
                 from guardian.types import ActionVerdict
@@ -176,7 +204,23 @@ def run_agent_loop(
                         # User approved — fall through to execute
                         guardian.log_action_outcome(tool_name, "review", "approved_by_user")
                     else:
-                        # No callback — return for async approval queue
+                        # No callback — inject synthetic tool_results for ALL
+                        # tool_use blocks so the session history stays valid,
+                        # then return for async approval queue.
+                        synthetic_results = []
+                        for b in tool_use_blocks:
+                            if b.id == block.id:
+                                msg = f"Action requires approval: {decision.reason}"
+                            else:
+                                msg = "Action skipped — another tool in this batch requires approval."
+                            synthetic_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": b.id,
+                                "content": msg,
+                                "is_error": True,
+                            })
+                        messages.append({"role": "user", "content": synthetic_results})
+
                         return AgentResult(
                             text="This action requires approval before proceeding.",
                             turns_used=turns_used,
@@ -192,7 +236,7 @@ def run_agent_loop(
                         )
 
             # Guardian coherence check — verify tool call matches user intent
-            if guardian is not None and hasattr(guardian, "check_coherence"):
+            if guardian is not None:
                 # Extract the user's last message for coherence comparison
                 user_request = ""
                 for msg in reversed(messages):
@@ -289,6 +333,18 @@ def run_agent_loop(
                     error=str(result)[:200] if is_error else None,
                 )
 
+            # Drift detection — check for behavioral anomalies
+            if guardian is not None:
+                drift_alerts = guardian.check_drift(
+                    tool_name=tool_name,
+                    output_length=len(result) if result else 0,
+                    success=not is_error,
+                )
+                for alert in drift_alerts:
+                    logger.warning(
+                        "Drift alert (%s): %s", alert.alert_type, alert.detail,
+                    )
+
             # Classify executor output for tools that return untrusted content
             tool_cfg = tools_config.get(tool_name)
             if (
@@ -332,6 +388,28 @@ def run_agent_loop(
                         "prompt injection."
                     )
                     is_error = True
+
+            # Post-execution credential scanning — redact leaked secrets
+            if not is_error and guardian is not None:
+                from guardian.credential_scanner import redact_credentials
+
+                redacted_result, cred_matches = redact_credentials(result)
+                if cred_matches:
+                    logger.warning(
+                        "Credential leak detected in %s output: %d pattern(s)",
+                        tool_name, len(cred_matches),
+                    )
+                    # Log to audit using already-detected matches (no re-scan)
+                    if hasattr(guardian, "_audit") and guardian._audit:
+                        guardian._audit.log_credential_leak(
+                            tool_name=tool_name,
+                            patterns_found=[
+                                {"pattern": m.pattern_name, "redacted": m.matched_text}
+                                for m in cred_matches
+                            ],
+                            count=len(cred_matches),
+                        )
+                    result = redacted_result
 
             tool_history.append({
                 "tool": tool_name,

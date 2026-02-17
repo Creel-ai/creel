@@ -102,6 +102,7 @@ class SessionConfig(BaseModel):
     summary_model: str = "claude-haiku-4-5-20251001"
     summary_max_tokens: int = 1024
     max_context_tokens: int = 180_000
+    encryption_key: str | None = None  # Fernet key or passphrase for encryption at rest
 
 
 class QuietHoursConfig(BaseModel):
@@ -215,6 +216,18 @@ class BridgeConfig(BaseModel):
     enabled: bool = False
 
 
+class BrowserConfig(BaseModel):
+    """Browser tool configuration for web browsing via Playwright CDP."""
+
+    enabled: bool = False
+    default_mode: str = "managed"  # "managed" | "relay"
+    cdp_url: str | None = None  # Chrome CDP endpoint for relay mode
+    max_sessions: int = 3
+    session_timeout_minutes: int = 10
+    headless: bool = True
+    blocked_domains: list[str] = Field(default_factory=list)
+
+
 class ChannelsConfig(BaseModel):
     """All channel configurations."""
 
@@ -264,6 +277,7 @@ class AgentDefinition(BaseModel):
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     quiet_hours: QuietHoursConfig = Field(default_factory=QuietHoursConfig)
     bridge: BridgeConfig = Field(default_factory=BridgeConfig)
+    browser: BrowserConfig = Field(default_factory=BrowserConfig)
     guardian: GuardianConfig | None = None
 
 
@@ -282,6 +296,7 @@ class TaskDefinition(BaseModel):
     mode: str = "simple"
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    allowed_tools: list[str] = Field(default_factory=list)
 
     @field_validator("schedule")
     @classmethod

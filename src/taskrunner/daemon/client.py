@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import httpx
 
@@ -201,16 +205,44 @@ class DaemonTuiAdapter:
         self._sender_id = sender_id
         self._active_session_id: str | None = None
 
-    def handle_message(self, sender_id: str, text: str) -> str:
-        response = self._client.send_message(
-            sender_id=sender_id,
-            text=text,
-            session_id=self._active_session_id,
-        )
-        session_id = response.get("session_id")
-        if isinstance(session_id, str) and session_id:
-            self._active_session_id = session_id
-        return str(response.get("text", ""))
+    def handle_message(
+        self,
+        sender_id: str,
+        text: str,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> str:
+        if on_text_delta is None:
+            response = self._client.send_message(
+                sender_id=sender_id,
+                text=text,
+                session_id=self._active_session_id,
+            )
+            session_id = response.get("session_id")
+            if isinstance(session_id, str) and session_id:
+                self._active_session_id = session_id
+            return str(response.get("text", ""))
+
+        final_text = ""
+        got_final = False
+        for event in self.stream_message(sender_id, text):
+            event_type = str(event.get("type", ""))
+            payload = event.get("payload", {})
+            if not isinstance(payload, dict):
+                payload = {}
+
+            if event_type == "token":
+                chunk = str(payload.get("text", ""))
+                if chunk:
+                    on_text_delta(chunk)
+            elif event_type == "final":
+                final_text = str(payload.get("text", ""))
+                got_final = True
+            elif event_type == "error":
+                err = payload.get("error", "streaming request failed")
+                raise RuntimeError(str(err))
+        if not got_final:
+            logger.warning("stream ended without a final event")
+        return final_text
 
     def stream_message(self, sender_id: str, text: str):
         for event in self._client.stream_message(

@@ -1,9 +1,18 @@
-"""Session manager - persistent conversation sessions backed by JSON files."""
+"""Session manager - persistent conversation sessions backed by JSON files.
+
+Supports optional encryption at rest using Fernet symmetric encryption.
+When an encryption key is provided, session JSON is encrypted before writing
+and decrypted on read. The key should be a 32-byte URL-safe base64-encoded
+string (standard Fernet key format).
+"""
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
+import os
 import re
 import secrets
 import time
@@ -13,6 +22,35 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Salt length prepended to encrypted session files
+_SALT_LENGTH = 16
+# PBKDF2 iterations — OWASP 2024 recommendation for SHA-256
+_KDF_ITERATIONS = 600_000
+
+
+def _derive_fernet_key(passphrase: str, salt: bytes) -> bytes:
+    """Derive a Fernet-compatible key from a passphrase using PBKDF2.
+
+    Uses PBKDF2-HMAC-SHA256 with a random salt and 600k iterations.
+    Returns a 32-byte URL-safe base64-encoded key suitable for Fernet.
+    """
+    raw = hashlib.pbkdf2_hmac("sha256", passphrase.encode(), salt, _KDF_ITERATIONS)
+    return base64.urlsafe_b64encode(raw)
+
+
+def _encrypt_data(data: bytes, key: bytes) -> bytes:
+    """Encrypt data using Fernet symmetric encryption."""
+    from cryptography.fernet import Fernet
+    f = Fernet(key)
+    return f.encrypt(data)
+
+
+def _decrypt_data(token: bytes, key: bytes) -> bytes:
+    """Decrypt Fernet-encrypted data."""
+    from cryptography.fernet import Fernet
+    f = Fernet(key)
+    return f.decrypt(token)
+
 _ACTIVE_INDEX_FILE = "_active.json"
 
 
@@ -21,7 +59,7 @@ class Session:
     """A conversation session with message history."""
 
     sender_id: str
-    session_id: str = field(default_factory=lambda: secrets.token_hex(4))
+    session_id: str = field(default_factory=lambda: secrets.token_hex(16))
     title: str = ""
     messages: list[dict] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
@@ -31,7 +69,13 @@ class Session:
 
 
 class SessionManager:
-    """Manages conversation sessions persisted as JSON files."""
+    """Manages conversation sessions persisted as JSON files.
+
+    Supports optional encryption at rest: when ``encryption_key`` is provided,
+    session data is encrypted with Fernet before writing to disk and decrypted
+    on read. The key can be a Fernet key (44 bytes base64) or a passphrase
+    (any string, hashed to derive a key).
+    """
 
     def __init__(
         self,
@@ -41,6 +85,7 @@ class SessionManager:
         summarize_on_trim: bool = False,
         summarize_fn: Callable[[list[dict]], str] | None = None,
         max_context_tokens: int = 180_000,
+        encryption_key: str | None = None,
     ):
         self._dir = Path(sessions_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -49,6 +94,21 @@ class SessionManager:
         self._summarize_on_trim = summarize_on_trim
         self._summarize_fn = summarize_fn
         self._max_context_tokens = max_context_tokens
+        self._encryption_key: bytes | None = None
+        self._encryption_passphrase: str | None = None
+
+        if encryption_key:
+            # If it looks like a Fernet key (44 chars base64), use directly
+            try:
+                key_bytes = encryption_key.encode()
+                base64.urlsafe_b64decode(key_bytes)
+                if len(key_bytes) == 44:
+                    self._encryption_key = key_bytes
+                else:
+                    self._encryption_passphrase = encryption_key
+            except Exception:
+                self._encryption_passphrase = encryption_key
+            logger.info("Session encryption enabled")
 
     # -- public API --
 
@@ -91,10 +151,10 @@ class SessionManager:
             if path.name == _ACTIVE_INDEX_FILE:
                 continue
             try:
-                data = json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
+                data = self._read_session_file(path)
+            except Exception:
                 continue
-            if data.get("sender_id") != sender_id:
+            if data is None or data.get("sender_id") != sender_id:
                 continue
             last_active = data.get("last_active", 0)
             if (time.time() - last_active) > self._ttl_seconds:
@@ -125,10 +185,10 @@ class SessionManager:
             if path.name == _ACTIVE_INDEX_FILE:
                 continue
             try:
-                data = json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
+                data = self._read_session_file(path)
+            except Exception:
                 continue
-            if data.get("sender_id") != sender_id:
+            if data is None or data.get("sender_id") != sender_id:
                 continue
             results.append({
                 "session_id": data.get("session_id", path.stem),
@@ -334,7 +394,10 @@ class SessionManager:
         return trimmed[i:]
 
     def _save(self, session: Session) -> None:
-        """Write session to disk, trimming to max_history as safety net."""
+        """Write session to disk, trimming to max_history as safety net.
+
+        If encryption is enabled, session data is encrypted before writing.
+        """
         if len(session.messages) > self._max_history:
             session.messages = self._trim_preserving_tool_pairs(
                 session.messages, self._max_history,
@@ -352,16 +415,34 @@ class SessionManager:
         }
 
         path = self._session_path(session.session_id)
-        path.write_text(json.dumps(data, indent=2))
+        json_bytes = json.dumps(data, indent=2).encode()
+
+        if self._encryption_key:
+            encrypted = _encrypt_data(json_bytes, self._encryption_key)
+            path.write_bytes(encrypted)
+        elif self._encryption_passphrase:
+            salt = os.urandom(_SALT_LENGTH)
+            key = _derive_fernet_key(self._encryption_passphrase, salt)
+            encrypted = _encrypt_data(json_bytes, key)
+            path.write_bytes(salt + encrypted)
+        else:
+            path.write_text(json_bytes.decode())
 
     def _load(self, session_id: str) -> Session | None:
-        """Load a session by its session_id."""
+        """Load a session by its session_id.
+
+        If encryption is enabled, attempts to decrypt the file first.
+        Falls back to plaintext read for backward compatibility with
+        unencrypted session files.
+        """
         path = self._session_path(session_id)
         if not path.exists():
             return None
 
         try:
-            data = json.loads(path.read_text())
+            raw_bytes = path.read_bytes()
+            data = self._decrypt_or_parse(raw_bytes)
+
             session = Session(
                 sender_id=data["sender_id"],
                 session_id=data.get("session_id", session_id),
@@ -380,6 +461,33 @@ class SessionManager:
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Corrupt session file %s, ignoring: %s", session_id, e)
             return None
+
+    def _decrypt_or_parse(self, raw_bytes: bytes) -> dict:
+        """Decrypt (if encryption enabled) or parse raw session bytes.
+
+        Tries decryption first, falls back to plaintext for backward compat.
+        """
+        if self._encryption_key:
+            try:
+                decrypted = _decrypt_data(raw_bytes, self._encryption_key)
+                return json.loads(decrypted)
+            except Exception:
+                return json.loads(raw_bytes)
+        if self._encryption_passphrase:
+            try:
+                salt = raw_bytes[:_SALT_LENGTH]
+                key = _derive_fernet_key(self._encryption_passphrase, salt)
+                decrypted = _decrypt_data(raw_bytes[_SALT_LENGTH:], key)
+                return json.loads(decrypted)
+            except Exception:
+                # Fall back to plaintext (backward compat with unencrypted files)
+                return json.loads(raw_bytes)
+        return json.loads(raw_bytes)
+
+    def _read_session_file(self, path: Path) -> dict | None:
+        """Read and parse a session file, handling encryption if enabled."""
+        raw_bytes = path.read_bytes()
+        return self._decrypt_or_parse(raw_bytes)
 
     def load_session(self, session_id: str) -> Session | None:
         """Load a session by its session_id (returns None if not found)."""

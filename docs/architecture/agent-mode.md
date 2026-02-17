@@ -2,32 +2,15 @@
 
 In agent mode, the same security boundary applies — the LLM requests tool calls, but the orchestrator handles secrets injection and executor execution:
 
-```
-                    ┌──────────────────┐
-                    │     Channels     │
-                    │stdin | iMsg | BB │
-                    └────────┬─────────┘
-                           │ incoming message
-                           ▼
-                    ┌──────────────┐
-                    │   Session    │
-                    │   Manager   │
-                    │ (JSON files) │
-                    └──────┬──────┘
-                           │ message + history
-                           ▼
-              ┌────────────────────────┐
-              │      Agent Loop        │
-              │                        │
-              │  messages ──→ LLM call │
-              │               ↓        │
-              │          tool_use? ─no─→ response
-              │               ↓ yes    │
-              │     execute via executor │
-              │     (secrets injected)  │
-              │               ↓        │
-              │     tool_result → loop  │
-              └────────────────────────┘
+```mermaid
+flowchart TD
+    CH["Channels\nstdin | iMsg | BB"] -- "incoming message" --> SM["Session Manager\n(JSON files)"]
+    SM -- "message + history" --> AL["Agent Loop"]
+    AL --> LLM["LLM call"]
+    LLM --> TU{"tool_use?"}
+    TU -- no --> resp["Response"]
+    TU -- yes --> EX["Execute via executor\n(secrets injected)"]
+    EX --> TR["tool_result"] --> AL
 ```
 
 Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAML. See [Task Definitions](../configuration/tasks.md) for details.

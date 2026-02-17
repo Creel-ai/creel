@@ -258,7 +258,18 @@ def _handle_tool_request(
                         continue
                     guardian.log_action_outcome(tool_name, "review", "approved_by_user")
                 else:
-                    # No callback — return for async approval
+                    # No callback — inject synthetic tool_results for ALL
+                    # tool calls so session history stays valid.
+                    for call in calls:
+                        if call["id"] == tool_id:
+                            msg = f"Action requires approval: {decision.reason}"
+                        else:
+                            msg = "Action skipped — another tool in this batch requires approval."
+                        results.append({
+                            "tool_use_id": call["id"],
+                            "content": msg,
+                            "is_error": True,
+                        })
                     _pending_approval_result = AgentResult(
                         text="This action requires approval before proceeding.",
                         turns_used=0,
@@ -288,7 +299,7 @@ def _handle_tool_request(
 
             if user_request:
                 coherence = guardian.check_coherence(user_request, tool_name, tool_input)
-                if not coherence.is_coherent:
+                if not coherence.coherent:
                     logger.warning(
                         "Guardian coherence check failed for %s: %s",
                         tool_name, coherence.reasoning,

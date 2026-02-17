@@ -116,6 +116,7 @@ def _run_agent_mode(
             tools_config=task.tools,
             agent_config=task.agent,
             use_containers=use_containers,
+            allowed_tools=task.allowed_tools or None,
         )
 
     logger.info(
@@ -175,6 +176,8 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
             return _exec_brave_search_inline(config)
         elif name == "fetch_url":
             return _exec_fetch_url_inline(config)
+        elif name == "browser":
+            return _exec_browser_inline(config)
         elif name == "exec":
             return _exec_exec_inline(config)
         else:
@@ -467,6 +470,62 @@ def _exec_fetch_url_inline(config: ExecutorConfig) -> str:
     url = config.args.get("url", "")
     max_chars = int(config.args.get("max_chars", "10000"))
     result = fetch_url(url, max_chars)
+    return json.dumps(result, indent=2)
+
+
+def _exec_browser_inline(config: ExecutorConfig) -> str:
+    """Run browser executor inline by calling library functions directly."""
+    from executors.browser.executor import (
+        click,
+        close_session,
+        connect,
+        get_content,
+        get_links,
+        navigate,
+        screenshot,
+        sessions,
+        type_text,
+    )
+
+    action = config.args.get("action", "connect")
+
+    if action == "connect":
+        mode = config.args.get("mode", "managed")
+        cdp_url = config.args.get("cdp_url") or None
+        headless = str(config.args.get("headless", "true")).lower() in ("true", "1", "yes")
+        result = connect(mode=mode, cdp_url=cdp_url, headless=headless)
+    elif action == "navigate":
+        session_id = config.args.get("session_id", "")
+        url = config.args.get("url", "")
+        result = navigate(session_id, url)
+    elif action == "content":
+        session_id = config.args.get("session_id", "")
+        selector = config.args.get("selector") or None
+        result = get_content(session_id, selector)
+    elif action == "click":
+        session_id = config.args.get("session_id", "")
+        selector = config.args.get("selector", "")
+        result = click(session_id, selector)
+    elif action == "type":
+        session_id = config.args.get("session_id", "")
+        selector = config.args.get("selector", "")
+        text = config.args.get("text", "")
+        result = type_text(session_id, selector, text)
+    elif action == "screenshot":
+        session_id = config.args.get("session_id", "")
+        full_page = str(config.args.get("full_page", "false")).lower() in ("true", "1", "yes")
+        result = screenshot(session_id, full_page=full_page)
+    elif action == "links":
+        session_id = config.args.get("session_id", "")
+        result = get_links(session_id)
+    elif action == "close":
+        session_id = config.args.get("session_id", "")
+        result = close_session(session_id)
+    elif action == "sessions":
+        result = sessions()
+    else:
+        raise ValueError(f"Unknown browser action: {action}")
+
     return json.dumps(result, indent=2)
 
 

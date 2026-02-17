@@ -95,7 +95,16 @@ class CoherenceChecker:
                 if block.type == "text":
                     raw_text += block.text
 
-            result = json.loads(raw_text)
+            # Try to extract JSON from response — LLM sometimes wraps it in markdown
+            try:
+                result = json.loads(raw_text)
+            except json.JSONDecodeError:
+                import re
+                match = re.search(r"\{[^}]+\}", raw_text)
+                if match:
+                    result = json.loads(match.group())
+                else:
+                    raise
 
             coherent = bool(result.get("coherent", True))
             confidence = float(result.get("confidence", 0.5))

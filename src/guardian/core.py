@@ -154,13 +154,34 @@ class Guardian:
             rejection_message=rejection_message,
         )
 
+    @staticmethod
+    def _strip_html(text: str) -> str:
+        """Strip HTML tags and decode entities for cleaner classification.
+
+        The DeBERTa classifier is trained on natural language, not HTML markup.
+        Raw HTML causes high false-positive rates on benign web content.
+        """
+        import html
+        import re
+        # Remove script/style blocks entirely
+        text = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', ' ', text)
+        # Decode HTML entities
+        text = html.unescape(text)
+        # Collapse whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
     def screen_tool_result(self, tool_name: str, text: str) -> ScreenResult:
         """Screen a tool result for prompt injection and log details.
 
         Like ``screen_input`` but additionally writes the raw text and tool
         name to the audit log so blocked results can be debugged offline.
+        Strips HTML before classification to reduce false positives on web content.
         """
-        result = self.screen_input(text)
+        cleaned = self._strip_html(text)
+        result = self.screen_input(cleaned)
 
         if result.blocked and self._audit:
             blocker = result.classifier_result or result.judge_result

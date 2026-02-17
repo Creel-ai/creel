@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from guardian.audit import AuditLogger, _hash_text
 from guardian.coherence import CoherenceChecker
+from guardian.credential_scanner import CredentialMatch, scan_for_credentials
+from guardian.drift import DriftDetector
 from guardian.fast_classifier import FastClassifier
 from guardian.llm_judge import LLMJudge
 from guardian.policy import PolicyEngine
@@ -48,10 +51,22 @@ class Guardian:
             if config.audit.enabled
             else None
         )
-        logger.info("Guardian initialized (classifier=%s, judge=%s, policy=%s)",
+        self._drift = (
+            DriftDetector(
+                z_threshold=config.drift.z_threshold,
+                error_threshold=config.drift.error_threshold,
+                error_window_size=config.drift.error_window_size,
+                new_tool_grace_count=config.drift.new_tool_grace_count,
+                audit_log_path=config.audit.log_file if config.audit.enabled else None,
+            )
+            if config.drift.enabled
+            else None
+        )
+        logger.info("Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s)",
                      config.fast_classifier.enabled,
                      config.llm_judge.enabled,
-                     config.policy.enabled)
+                     config.policy.enabled,
+                     config.drift.enabled)
 
     def warm_up(self) -> None:
         """Eagerly warm up the fast classifier at startup."""
@@ -208,17 +223,60 @@ class Guardian:
             )
 
         if self._audit:
-            self._audit._write({
-                "event": "coherence_check",
-                "ts": __import__("datetime").datetime.now(
-                    __import__("datetime").timezone.utc
-                ).isoformat(),
-                "tool_name": tool_name,
-                "coherent": result.coherent,
-                "confidence": result.confidence,
-            })
+            self._audit.log_coherence_check(
+                tool_name=tool_name,
+                coherent=result.coherent,
+                confidence=result.confidence,
+            )
 
         return result
+
+    def check_drift(
+        self,
+        tool_name: str,
+        output_length: int,
+        success: bool,
+    ) -> list:
+        """Run drift detection checks against behavioral baseline.
+
+        Returns a list of DriftAlert objects for any anomalies detected.
+        Logs drift events to the audit log.
+        """
+        if not self._drift:
+            return []
+
+        alerts = self._drift.check_all(tool_name, output_length, success)
+
+        for alert in alerts:
+            if self._audit:
+                self._audit.log_drift_alert(
+                    alert_type=alert.alert_type,
+                    tool_name=alert.tool_name,
+                    detail=alert.detail,
+                    severity=alert.severity,
+                )
+
+        return alerts
+
+    def scan_tool_output_credentials(self, tool_name: str, output: str) -> list[CredentialMatch]:
+        """Scan tool output for leaked credentials (API keys, tokens, etc.).
+
+        Returns a list of CredentialMatch objects for any detected patterns.
+        Logs findings to the audit log.
+        """
+        matches = scan_for_credentials(output)
+
+        if matches and self._audit:
+            self._audit.log_credential_leak(
+                tool_name=tool_name,
+                patterns_found=[
+                    {"pattern": m.pattern_name, "redacted": m.matched_text}
+                    for m in matches
+                ],
+                count=len(matches),
+            )
+
+        return matches
 
     def log_action_outcome(self, tool_name: str, verdict: str, outcome: str) -> None:
         """Log the final outcome of an action after user review.

@@ -101,6 +101,16 @@ class CoherenceConfig(BaseModel):
     timeout: float = 3.0
 
 
+class DriftConfig(BaseModel):
+    """Configuration for behavioral drift detection."""
+
+    enabled: bool = True
+    z_threshold: float = 3.0
+    error_threshold: float = 0.10
+    error_window_size: int = 100
+    new_tool_grace_count: int = 0  # immediate alert, no grace period
+
+
 class ReviewConfig(BaseModel):
     """Configuration for REVIEW verdict approval flow."""
 
@@ -120,4 +130,5 @@ class GuardianConfig(BaseModel):
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     coherence: CoherenceConfig = Field(default_factory=CoherenceConfig)
+    drift: DriftConfig = Field(default_factory=DriftConfig)
     review: ReviewConfig = Field(default_factory=ReviewConfig)

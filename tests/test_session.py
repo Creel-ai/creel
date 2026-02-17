@@ -20,7 +20,7 @@ def test_create_new_session(tmp_path: Path) -> None:
 
     assert session.sender_id == "+12345678901"
     assert session.messages == []
-    assert len(session.session_id) == 8  # hex(4) = 8 chars
+    assert len(session.session_id) == 32  # hex(16) = 32 chars (128-bit)
     assert session.title == ""
 
 

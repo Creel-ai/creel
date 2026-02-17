@@ -79,32 +79,15 @@ flowchart TD
 
 In agent mode, the same security boundary applies — the LLM requests tool calls, but the orchestrator handles secrets injection and executor execution:
 
-```
-                    ┌──────────────────┐
-                    │     Channels     │
-                    │stdin | iMsg | BB │
-                    └────────┬─────────┘
-                           │ incoming message
-                           ▼
-                    ┌──────────────┐
-                    │   Session    │
-                    │   Manager   │
-                    │ (JSON files) │
-                    └──────┬──────┘
-                           │ message + history
-                           ▼
-              ┌────────────────────────┐
-              │      Agent Loop        │
-              │                        │
-              │  messages ──→ LLM call │
-              │               ↓        │
-              │          tool_use? ─no─→ response
-              │               ↓ yes    │
-              │     execute via executor │
-              │     (secrets injected)  │
-              │               ↓        │
-              │     tool_result → loop  │
-              └────────────────────────┘
+```mermaid
+flowchart TD
+    CH["Channels\nstdin | iMsg | BB"] -- "incoming message" --> SM["Session Manager\n(JSON files)"]
+    SM -- "message + history" --> AL["Agent Loop"]
+    AL --> LLM["LLM call"]
+    LLM --> TU{"tool_use?"}
+    TU -- no --> resp["Response"]
+    TU -- yes --> EX["Execute via executor\n(secrets injected)"]
+    EX --> TR["tool_result"] --> AL
 ```
 
 Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAML.
@@ -113,29 +96,23 @@ Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAM
 
 The guardian layer screens inputs and validates tool calls before they execute. All stages are optional and independently configurable in `agent.yaml`:
 
-```
-Incoming message
-    │
-    ▼
-screen_input(text)                     ← before session history
-    ├── FastClassifier  (DeBERTa/ONNX, ~10ms)
-    └── LLMJudge        (Haiku, ~300ms, off by default)
-    │
-    │  blocked → return rejection, skip agent loop
-    │
-    ▼
-Agent loop → LLM returns tool_use
-    │
-    ▼
-validate_action(tool, args)            ← before execute_tool_call
-    ├── PolicyEngine    (YAML rules, <1ms)
-    │      allow  → execute
-    │      review → human approval or auto_approve
-    │      deny   → return error to LLM
-    │
-    └── CoherenceCheck  (Haiku, ~300ms)
-           coherent   → execute
-           incoherent → return error to LLM
+```mermaid
+flowchart TD
+    A["Incoming message"] --> B["screen_input(text)\n← before session history"]
+    B --> FC["FastClassifier\nDeBERTa/ONNX, ~10ms"]
+    B --> LJ["LLMJudge\nHaiku, ~300ms, off by default"]
+    FC --> blocked{"blocked?"}
+    LJ --> blocked
+    blocked -- yes --> reject["Return rejection,\nskip agent loop"]
+    blocked -- no --> agent["Agent loop → LLM returns tool_use"]
+    agent --> VA["validate_action(tool, args)\n← before execute_tool_call"]
+    VA --> PE["PolicyEngine\nYAML rules, <1ms"]
+    VA --> CC["CoherenceCheck\nHaiku, ~300ms"]
+    PE -- allow --> execute["Execute"]
+    PE -- review --> approval["Human approval\nor auto_approve"]
+    PE -- deny --> err1["Return error to LLM"]
+    CC -- coherent --> execute
+    CC -- incoherent --> err2["Return error to LLM"]
 ```
 
 **Stages:**
@@ -232,18 +209,29 @@ The exec executor provides sandboxed shell command execution within isolated Doc
 
 ## Quick Start
 
+### 1. Install
+
 ```bash
-# Set up Python and virtualenv (requires pyenv and uv)
+git clone https://github.com/creel-ai/creel.git
+cd creel
+
+```bash
+# macOS
+brew install pyenv uv age
+
+# Linux
+curl https://pyenv.run | bash      # then follow shell setup instructions
+curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo apt install age               # or: brew install age
+```
+
+```bash
 pyenv install 3.12.12   # if not already installed
 uv venv
 source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev, guardian]"
 
-# Optional: required for live ONNX export + classifier smoke tests
-uv pip install -e ".[guardian]"
-
-# Install age for secrets encryption (one-time)
-brew install age
+# Set up age for secrets encryption (one-time)
 mkdir -p ~/.age
 age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 
@@ -252,44 +240,75 @@ creel list
 
 # Validate a task definition
 creel validate weather_check
+```
 
-# Dry run (renders prompt, skips LLM and output)
-creel run weather_check --dry
+### 2. Add your Anthropic key
 
-# Full run (requires Anthropic credentials — see Authentication below)
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # or use ANTHROPIC_AUTH_TOKEN
+```
+
+### 3. Start the daemon and chat
+
+```bash
+creel daemon start          # start the background agent
+creel attach                # open the rich TUI
+```
+
+That's it — you're chatting with your agent. Type `/help` in the TUI to see commands.
+
+### More ways to use it
+
+```bash
+# One-shot message (no TUI)
+creel send "What's the weather today?"
+
+# Stream a response
+creel send "Summarize my calendar" --stream
+
+# Run a scheduled task
 creel run weather_check
 
-# Start the cron scheduler
-creel schedule
-
-# Start background daemon (agent loop + scheduler + channel plugins)
-creel daemon start
-
-# Install daemon as persistent launchd service (macOS)
+# Run on startup (macOS)
 creel daemon install
 
-# Attach rich TUI to running daemon
-creel attach
-
-# Send one message without opening TUI
-creel send "What's on my calendar today?"
-
-# Stream response events for one-shot send
-creel send "Draft a status update" --stream
-
-# Query daemon status
-creel daemon status
-
-# Stop daemon
-creel daemon stop
-
-# Uninstall launchd service
-creel daemon uninstall
-
-# Query the guardian audit log
-creel audit
+# Query the security audit log
 creel audit --blocked --tail 50
 ```
+
+> 📖 **Full setup guide** including secrets encryption, Google OAuth, and container mode: [Getting Started docs](https://creel-ai.com/getting-started/quickstart/)
+
+## Vercel Deployment
+
+The repository deploys two separate Vercel projects:
+
+- `site/` (marketing site)
+- `docs/` (MkDocs documentation built from `../mkdocs.yml`)
+
+### Build settings
+
+For `site/`:
+
+- Framework Preset: `Other`
+- Install Command: *(empty)*
+- Build Command: *(empty)*
+- Output Directory: `.` (or leave empty)
+
+For `docs/`:
+
+- Framework Preset: `Other`
+- Install Command: *(empty)*
+- Build Command: `bash build-vercel.sh`
+- Output Directory: `.vercel-static`
+
+### Deployment behavior
+
+- Enable Git integration in Vercel for preview deploys on pull requests and production deploys from `main`.
+- No GitHub Actions deploy workflow is required.
+
+### Docs canonical URL
+
+Set `MKDOCS_SITE_URL` in the docs Vercel project environment to your docs domain (for example `https://docs.creel-ai.com/`).
 
 ## Authentication
 

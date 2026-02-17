@@ -15,17 +15,27 @@ from taskrunner.session import SessionManager
 class _StubChatServer:
     def __init__(self, sessions_dir: Path) -> None:
         self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._guardian = None
 
-    def handle_message(self, sender_id: str, text: str) -> str:
+    def handle_message(
+        self,
+        sender_id: str,
+        text: str,
+        on_text_delta=None,
+    ) -> str:
         session = self._session_mgr.add_user_message(sender_id, text)
+        response = f"echo:{text}"
+        if on_text_delta is not None:
+            on_text_delta("echo:")
+            on_text_delta(text)
         session.messages.append(
             {
                 "role": "assistant",
-                "content": [{"type": "text", "text": f"echo:{text}"}],
+                "content": [{"type": "text", "text": response}],
             }
         )
         self._session_mgr.save_session(session)
-        return f"echo:{text}"
+        return response
 
 
 @pytest.fixture
@@ -109,3 +119,5 @@ def test_stream_message_endpoint(client: TestClient) -> None:
     assert events[0]["type"] == "start"
     assert events[-1]["type"] == "final"
     assert events[-1]["payload"]["text"] == "echo:hello"
+    token_chunks = [e["payload"]["text"] for e in events if e["type"] == "token"]
+    assert token_chunks == ["echo:", "hello"]

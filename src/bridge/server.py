@@ -113,9 +113,66 @@ class ThingsUpdateRequest(BaseModel):
 
 
 # iMessage request models
+# Browser request models
+class BrowserConnectRequest(BaseModel):
+    """Request for creating a browser session."""
+
+    mode: str = "managed"  # "managed" | "relay"
+    cdp_url: str | None = None
+    headless: bool = True
+
+
+class BrowserNavigateRequest(BaseModel):
+    """Request for navigating to a URL."""
+
+    session_id: str
+    url: str
+
+
+class BrowserContentRequest(BaseModel):
+    """Request for getting page content."""
+
+    session_id: str
+    selector: str | None = None
+
+
+class BrowserClickRequest(BaseModel):
+    """Request for clicking an element."""
+
+    session_id: str
+    selector: str
+
+
+class BrowserTypeRequest(BaseModel):
+    """Request for typing text into an input."""
+
+    session_id: str
+    selector: str
+    text: str
+
+
+class BrowserScreenshotRequest(BaseModel):
+    """Request for taking a screenshot."""
+
+    session_id: str
+    full_page: bool = False
+
+
+class BrowserLinksRequest(BaseModel):
+    """Request for getting page links."""
+
+    session_id: str
+
+
+class BrowserCloseRequest(BaseModel):
+    """Request for closing a browser session."""
+
+    session_id: str
+
+
 class IMessageRecentRequest(BaseModel):
     """Request for recent iMessages."""
-    
+
     limit: int = 20
 
 
@@ -136,6 +193,8 @@ def get_required_scope(request_path: str) -> str:
         return "THINGS"
     elif request_path.startswith("/imessage/"):
         return "IMESSAGE"
+    elif request_path.startswith("/browser/"):
+        return "BROWSER"
     else:
         return "UNKNOWN"
 
@@ -175,6 +234,7 @@ authenticate_notes = create_scoped_authenticator("NOTES")
 authenticate_reminders = create_scoped_authenticator("REMINDERS")
 authenticate_things = create_scoped_authenticator("THINGS")
 authenticate_imessage = create_scoped_authenticator("IMESSAGE")
+authenticate_browser = create_scoped_authenticator("BROWSER")
 
 
 def run_command(cmd: list[str], timeout: int = 30) -> BridgeResponse:
@@ -246,8 +306,8 @@ async def lifespan(app: FastAPI):
     global SCOPED_TOKENS
     
     # Generate scoped auth tokens
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE"]
-    
+    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER"]
+
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
         token = os.environ.get(env_var)
@@ -260,13 +320,36 @@ async def lifespan(app: FastAPI):
         
         SCOPED_TOKENS[scope] = token
     
-    logger.info("Bridge server ready on %s:%s with %d scoped tokens", 
+    logger.info("Bridge server ready on %s:%s with %d scoped tokens",
                os.environ.get("BRIDGE_HOST", "127.0.0.1"),
                os.environ.get("BRIDGE_PORT", "8099"),
                len(SCOPED_TOKENS))
-    
+
+    # Initialize BrowserRelay if playwright is available
+    browser_relay = None
+    try:
+        from bridge.browser import BrowserRelay
+
+        blocked_str = os.environ.get("BROWSER_BLOCKED_DOMAINS", "")
+        blocked_domains = [d.strip() for d in blocked_str.split(",") if d.strip()]
+        browser_relay = BrowserRelay(
+            max_sessions=int(os.environ.get("BROWSER_MAX_SESSIONS", "3")),
+            session_timeout_minutes=int(os.environ.get("BROWSER_SESSION_TIMEOUT", "10")),
+            blocked_domains=blocked_domains,
+        )
+        await browser_relay.start()
+        app.state.browser_relay = browser_relay
+        logger.info("BrowserRelay initialized")
+    except ImportError:
+        logger.info("Playwright not installed — browser endpoints disabled")
+        app.state.browser_relay = None
+
     yield
-    
+
+    # Shut down BrowserRelay
+    if browser_relay:
+        await browser_relay.stop()
+
     logger.info("Bridge server shutting down")
 
 
@@ -514,6 +597,162 @@ async def imessage_chats(
     
     cmd = ["/opt/homebrew/bin/imsg", "chats"]
     return run_command(cmd)
+
+
+# Browser endpoints
+def _get_relay():
+    """Get the BrowserRelay from app state, raising if unavailable."""
+    relay = getattr(app.state, "browser_relay", None)
+    if relay is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Browser relay not available (playwright not installed?)",
+        )
+    return relay
+
+
+@app.post("/browser/connect")
+async def browser_connect(
+    body: BrowserConnectRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Create a new browser session."""
+    relay = _get_relay()
+    try:
+        if body.mode == "relay":
+            if not body.cdp_url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="cdp_url required for relay mode",
+                )
+            session_id = await relay.connect_relay(body.cdp_url)
+        elif body.mode == "managed":
+            session_id = await relay.create_managed(headless=body.headless)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown mode: {body.mode}. Use 'managed' or 'relay'.",
+            )
+        return {"ok": True, "session_id": session_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Browser connect error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/browser/navigate")
+async def browser_navigate(
+    body: BrowserNavigateRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Navigate to a URL and return page content."""
+    relay = _get_relay()
+    try:
+        result = await relay.navigate(body.session_id, body.url)
+        return {"ok": True, **result}
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/browser/content")
+async def browser_content(
+    body: BrowserContentRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Get current page content as accessibility tree."""
+    relay = _get_relay()
+    try:
+        result = await relay.get_content(body.session_id, body.selector)
+        return {"ok": True, **result}
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/browser/click")
+async def browser_click(
+    body: BrowserClickRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Click an element on the page."""
+    relay = _get_relay()
+    try:
+        result = await relay.click(body.session_id, body.selector)
+        return {"ok": True, **result}
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/browser/type")
+async def browser_type(
+    body: BrowserTypeRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Type text into an input element."""
+    relay = _get_relay()
+    try:
+        result = await relay.type_text(body.session_id, body.selector, body.text)
+        return {"ok": True, **result}
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/browser/screenshot")
+async def browser_screenshot(
+    body: BrowserScreenshotRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Take a screenshot of the current page."""
+    relay = _get_relay()
+    try:
+        result = await relay.screenshot(body.session_id, body.full_page)
+        return {"ok": True, **result}
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/browser/links")
+async def browser_links(
+    body: BrowserLinksRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Get all links on the current page."""
+    relay = _get_relay()
+    try:
+        links = await relay.get_links(body.session_id)
+        return {"ok": True, "links": links}
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/browser/close")
+async def browser_close(
+    body: BrowserCloseRequest,
+    _: bool = Depends(authenticate_browser),
+):
+    """Close a browser session."""
+    relay = _get_relay()
+    try:
+        await relay.close_session(body.session_id)
+        return {"ok": True}
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/browser/sessions")
+async def browser_sessions(
+    _: bool = Depends(authenticate_browser),
+):
+    """List active browser sessions."""
+    relay = _get_relay()
+    return {"ok": True, "sessions": relay.list_sessions()}
 
 
 def main():

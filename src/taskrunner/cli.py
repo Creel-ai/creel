@@ -358,34 +358,40 @@ def cmd_attach(args: argparse.Namespace) -> int:
 
 
 def _build_daemon_channel(agent_def, channel_type: str):
-    """Build an optional channel plugin for daemon runtime."""
+    """Build an optional channel plugin for daemon runtime.
+
+    Uses the plugin registry to discover and instantiate channels.
+    Falls back to direct construction for backward compatibility.
+    """
     if channel_type == "none":
         return None, None
 
-    if channel_type == "bluebubbles":
-        from taskrunner.channels.bluebubbles import BlueBubblesChannel
+    from taskrunner.channels.registry import ChannelRegistry
+    from taskrunner.channels.plugin import ChannelCapability
 
-        bb_cfg = agent_def.channels.bluebubbles
-        if not bb_cfg:
-            raise ValueError("No bluebubbles channel configured in agent.yaml")
+    registry = ChannelRegistry()
+    registry.discover()
 
-        channel = BlueBubblesChannel(
-            server_url=bb_cfg.server_url,
-            password=bb_cfg.password,
-            allowed_senders=bb_cfg.listen_to,
-            poll_interval=bb_cfg.poll_interval,
+    # Get config from agent_def
+    config = agent_def.channels.get_channel_config(channel_type)
+    if config is None:
+        raise ValueError(f"No {channel_type} channel configured in agent.yaml")
+
+    entry = registry.get(channel_type)
+    if entry is not None:
+        channel = registry.create_channel(channel_type, config)
+        # Return channel as reply_channel if it supports WAIT_FOR_REPLY
+        reply_channel = (
+            channel
+            if ChannelCapability.WAIT_FOR_REPLY in entry.meta.capabilities
+            else None
         )
-        return channel, None
+        return channel, reply_channel
 
-    from taskrunner.channels.imessage import IMessageChannel
-
-    if not agent_def.channels.imessage:
-        raise ValueError("No imessage channel configured in agent.yaml")
-    channel = IMessageChannel(
-        allowed_senders=[agent_def.channels.imessage.listen_to],
-        poll_interval=agent_def.channels.imessage.poll_interval,
+    raise ValueError(
+        f"Unknown channel type '{channel_type}'. "
+        f"Available: {', '.join(m.id for m in registry.available())}"
     )
-    return channel, channel
 
 
 def cmd_daemon_run(args: argparse.Namespace) -> int:
@@ -416,7 +422,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
     channel_type = getattr(args, "channel_type", "imessage")
     try:
-        channel, imessage_channel = _build_daemon_channel(agent_def, channel_type)
+        channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
@@ -424,7 +430,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     server = ChatServer(
         agent_def,
         use_containers=args.containers,
-        imessage_channel=imessage_channel,
+        reply_channel=reply_channel,
     )
     service = DaemonService(
         agent_def,
@@ -1104,8 +1110,7 @@ def main() -> int:
     )
     _daemon_runtime_parent.add_argument(
         "--channel", dest="channel_type", default="imessage",
-        choices=["none", "imessage", "bluebubbles"],
-        help="Channel plugin to run inside daemon (default: imessage)",
+        help="Channel plugin to run inside daemon (default: imessage). Use 'none' to disable.",
     )
     _daemon_runtime_parent.add_argument(
         "--no-scheduler", action="store_true",
@@ -1159,7 +1164,6 @@ def main() -> int:
     )
     daemon_run.add_argument(
         "--channel", dest="channel_type", default="imessage",
-        choices=["none", "imessage", "bluebubbles"],
     )
     daemon_run.add_argument("--no-scheduler", action="store_true")
     daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]

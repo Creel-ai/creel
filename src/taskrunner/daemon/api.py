@@ -156,4 +156,20 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    # Mount webhook routes from any channels that provide them
+    for name, channel in service.get_channels().items():
+        routes = channel.get_webhook_routes()
+        if not routes:
+            continue
+        for route in routes:
+            method = route["method"].upper()
+            path = route["path"]
+            handler = route["handler"]
+            if method == "GET":
+                app.get(path)(handler)
+            elif method == "POST":
+                app.post(path)(handler)
+            else:
+                app.api_route(path, methods=[method])(handler)
+
     return app

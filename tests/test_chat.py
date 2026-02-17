@@ -344,10 +344,10 @@ class TestSendIMessage:
         server = ChatServer(agent_def)
 
         mock_channel = MagicMock()
-        server._imessage_channel = mock_channel
+        server._reply_channel = mock_channel
 
         with patch("taskrunner.chat.should_suppress", return_value=True):
-            server._send_imessage("user1", "hello", proactive=True)
+            server._send_reply("user1", "hello", proactive=True)
 
         mock_channel.send.assert_not_called()
 
@@ -363,10 +363,10 @@ class TestSendIMessage:
         server = ChatServer(agent_def)
 
         mock_channel = MagicMock()
-        server._imessage_channel = mock_channel
+        server._reply_channel = mock_channel
 
         with patch("taskrunner.chat.should_suppress", return_value=True):
-            server._send_imessage("user1", "reply msg", proactive=False)
+            server._send_reply("user1", "reply msg", proactive=False)
 
         # Direct replies should still go through
         mock_channel.send.assert_called_once()

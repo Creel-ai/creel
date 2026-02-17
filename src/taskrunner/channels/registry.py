@@ -1,0 +1,97 @@
+"""Channel plugin registry — discovers and instantiates channel plugins."""
+
+from __future__ import annotations
+
+import importlib.metadata
+import logging
+import sys
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from taskrunner.channels.base import Channel
+from taskrunner.channels.plugin import ChannelPluginMeta
+
+logger = logging.getLogger(__name__)
+
+ENTRY_POINT_GROUP = "creel.channels"
+
+
+@dataclass
+class _ChannelEntry:
+    """Internal record for a registered channel plugin."""
+
+    meta: ChannelPluginMeta
+    factory: Callable[[dict[str, Any]], Channel]
+
+
+class ChannelRegistry:
+    """Discovers, registers, and instantiates channel plugins."""
+
+    def __init__(self) -> None:
+        self._entries: dict[str, _ChannelEntry] = {}
+
+    def register(
+        self,
+        meta: ChannelPluginMeta,
+        factory: Callable[[dict[str, Any]], Channel],
+    ) -> None:
+        """Register a channel plugin by its metadata and factory function."""
+        if meta.id in self._entries:
+            logger.warning("Overwriting channel plugin '%s'", meta.id)
+        self._entries[meta.id] = _ChannelEntry(meta=meta, factory=factory)
+        logger.debug("Registered channel plugin '%s'", meta.id)
+
+    def discover(self) -> None:
+        """Scan entry points for channel plugins and register them.
+
+        Each entry point must resolve to a ``register_plugin()`` callable
+        that returns ``(ChannelPluginMeta, factory_fn)``.
+        """
+        eps = importlib.metadata.entry_points()
+        # Python 3.12+: entry_points() returns a SelectableGroups or dict-like
+        if hasattr(eps, "select"):
+            channel_eps = eps.select(group=ENTRY_POINT_GROUP)
+        else:
+            channel_eps = eps.get(ENTRY_POINT_GROUP, [])
+
+        for ep in channel_eps:
+            try:
+                register_fn = ep.load()
+                meta, factory = register_fn()
+                self.register(meta, factory)
+            except Exception:
+                logger.exception(
+                    "Failed to load channel plugin '%s' from entry point", ep.name
+                )
+
+    def get(self, channel_id: str) -> _ChannelEntry | None:
+        """Look up a registered channel entry by ID."""
+        return self._entries.get(channel_id)
+
+    def available(self) -> list[ChannelPluginMeta]:
+        """Return metadata for all registered plugins compatible with this platform."""
+        platform = sys.platform
+        result = []
+        for entry in self._entries.values():
+            if entry.meta.platform is None or entry.meta.platform == platform:
+                result.append(entry.meta)
+        result.sort(key=lambda m: (m.priority, m.id))
+        return result
+
+    def create_channel(self, channel_id: str, config: dict[str, Any]) -> Channel:
+        """Instantiate a channel from its registered factory.
+
+        Args:
+            channel_id: Plugin ID (e.g. "imessage").
+            config: Raw config dict passed to the factory function.
+
+        Raises:
+            ValueError: If the channel ID is not registered.
+        """
+        entry = self._entries.get(channel_id)
+        if entry is None:
+            known = ", ".join(sorted(self._entries.keys())) or "(none)"
+            raise ValueError(
+                f"Unknown channel '{channel_id}'. Registered: {known}"
+            )
+        return entry.factory(config)

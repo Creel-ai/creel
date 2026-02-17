@@ -191,7 +191,7 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
     server = ChatServer.__new__(ChatServer)
     server._agent_def = agent_def
     server._use_containers = False
-    server._imessage_channel = imessage_channel
+    server._reply_channel = imessage_channel
     server._guardian = guardian
     server._confirm_fn = None
     server._memory = None

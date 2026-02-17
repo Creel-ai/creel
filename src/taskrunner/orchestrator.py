@@ -630,7 +630,7 @@ def _run_executor_container(
         bridge_url = bridge_url.replace("://127.0.0.1", "://host.docker.internal")
         env_vars["BRIDGE_URL"] = bridge_url
         # Look up scoped token by executor name (e.g. browser → BRIDGE_TOKEN_BROWSER)
-        executor_name = config.executor.upper() if config.executor else ""
+        executor_name = config.name.upper() if config.name else ""
         scoped_token = os.environ.get(f"BRIDGE_TOKEN_{executor_name}", "")
         if scoped_token:
             env_vars["BRIDGE_TOKEN"] = scoped_token

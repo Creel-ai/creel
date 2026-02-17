@@ -631,8 +631,13 @@ def _run_executor_container(
         bridge_url = bridge_url.replace("://127.0.0.1", "://host.docker.internal")
         env_vars["BRIDGE_URL"] = bridge_url
         # Look up scoped token by executor name (e.g. browser → BRIDGE_TOKEN_BROWSER)
+        # Strip common prefixes (apple_notes → NOTES, apple_reminders → REMINDERS)
         executor_name = config.name.upper() if config.name else ""
-        scoped_token = os.environ.get(f"BRIDGE_TOKEN_{executor_name}", "")
+        scope_name = executor_name.removeprefix("APPLE_").removeprefix("IMESSAGE_")
+        scoped_token = (
+            os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
+            or os.environ.get(f"BRIDGE_TOKEN_{executor_name}", "")
+        )
         if scoped_token:
             env_vars["BRIDGE_TOKEN"] = scoped_token
         elif bridge_config.token:

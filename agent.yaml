@@ -236,6 +236,7 @@ tools:
   list_notes:
     executor: apple_notes
     network: true
+    bridge: true
     description: "List notes from Apple Notes"
     parameters:
       folder:
@@ -247,6 +248,7 @@ tools:
   search_notes:
     executor: apple_notes
     network: true
+    bridge: true
     description: "Search Apple Notes by text content"
     parameters:
       query:
@@ -259,6 +261,7 @@ tools:
   read_note:
     executor: apple_notes
     network: true
+    bridge: true
     description: "Read the full content of a note by title"
     parameters:
       name:
@@ -271,6 +274,8 @@ tools:
   create_note:
     executor: apple_notes
     network: true
+    bridge: true
+    bridge: true
     description: "Create a new note in Apple Notes"
     parameters:
       title:

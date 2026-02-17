@@ -165,6 +165,56 @@ class AuditLogger:
             "outcome": outcome,
         })
 
+    def log_coherence_check(
+        self,
+        *,
+        tool_name: str,
+        coherent: bool,
+        confidence: float | None = None,
+    ) -> None:
+        """Log a coherence check event."""
+        self._write({
+            "event": "coherence_check",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "tool_name": tool_name,
+            "coherent": coherent,
+            "confidence": confidence,
+        })
+
+    def log_drift_alert(
+        self,
+        *,
+        alert_type: str,
+        tool_name: str,
+        detail: str,
+        severity: str,
+    ) -> None:
+        """Log a drift detection alert."""
+        self._write({
+            "event": "drift_alert",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "alert_type": alert_type,
+            "tool_name": tool_name,
+            "detail": detail,
+            "severity": severity,
+        })
+
+    def log_credential_leak(
+        self,
+        *,
+        tool_name: str,
+        patterns_found: list[dict],
+        count: int,
+    ) -> None:
+        """Log a credential leak detection event."""
+        self._write({
+            "event": "credential_leak",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "tool_name": tool_name,
+            "patterns_found": patterns_found,
+            "count": count,
+        })
+
     def log_tool_result(
         self,
         *,

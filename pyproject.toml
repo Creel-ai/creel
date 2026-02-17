@@ -36,6 +36,9 @@ guardian = [
     "onnxruntime>=1.16.0",
     "optimum[onnxruntime]>=1.14.0",
 ]
+encryption = [
+    "cryptography>=41.0",
+]
 browser = [
     "playwright>=1.40.0",
 ]

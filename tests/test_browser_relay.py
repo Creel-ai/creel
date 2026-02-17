@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bridge.browser import BrowserRelay, BLOCKED_SCHEMES, _start_chromium_container, _stop_container
+from bridge.browser import BrowserRelay, ALLOWED_SCHEMES, _start_chromium_container, _stop_container
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def relay():
 
 
 class TestURLValidation:
-    """Test URL scheme and domain validation."""
+    """Test URL scheme and domain validation (allowlist: http/https only)."""
 
     def test_blocks_file_scheme(self, relay):
         with pytest.raises(ValueError, match="not allowed"):
@@ -32,6 +32,22 @@ class TestURLValidation:
         with pytest.raises(ValueError, match="not allowed"):
             relay._validate_url("data:text/html,<h1>hi</h1>")
 
+    def test_blocks_blob_scheme(self, relay):
+        with pytest.raises(ValueError, match="not allowed"):
+            relay._validate_url("blob:https://example.com/uuid")
+
+    def test_blocks_ftp_scheme(self, relay):
+        with pytest.raises(ValueError, match="not allowed"):
+            relay._validate_url("ftp://internal.server/secret")
+
+    def test_blocks_chrome_scheme(self, relay):
+        with pytest.raises(ValueError, match="not allowed"):
+            relay._validate_url("chrome://settings")
+
+    def test_blocks_chrome_extension_scheme(self, relay):
+        with pytest.raises(ValueError, match="not allowed"):
+            relay._validate_url("chrome-extension://abc/popup.html")
+
     def test_blocks_configured_domain(self, relay):
         with pytest.raises(ValueError, match="blocked"):
             relay._validate_url("https://evil.com/page")
@@ -41,11 +57,9 @@ class TestURLValidation:
             relay._validate_url("https://sub.evil.com/page")
 
     def test_allows_https(self, relay):
-        # Should not raise
         relay._validate_url("https://example.com")
 
     def test_allows_http(self, relay):
-        # Should not raise
         relay._validate_url("http://example.com")
 
     def test_rejects_missing_scheme(self, relay):
@@ -252,6 +266,104 @@ class TestAccessibilityTree:
         result = await relay._get_accessibility_tree(page)
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_escaped_quotes_in_name(self, relay):
+        """Test that names with escaped quotes are parsed correctly."""
+        snapshot = '- button "Say \\"Hello\\""\n'
+        page = self._make_page_mock(snapshot)
+        result = await relay._get_accessibility_tree(page)
+        assert len(result) == 1
+        assert result[0]["name"] == 'Say "Hello"'
+
+
+class TestCDPURLValidation:
+    """Test CDP URL validation (localhost only)."""
+
+    def test_allows_localhost(self, relay):
+        relay._validate_cdp_url("http://localhost:9222")
+
+    def test_allows_127_0_0_1(self, relay):
+        relay._validate_cdp_url("http://127.0.0.1:9222")
+
+    def test_allows_ipv6_loopback(self, relay):
+        relay._validate_cdp_url("http://[::1]:9222")
+
+    def test_blocks_remote_host(self, relay):
+        with pytest.raises(ValueError, match="localhost"):
+            relay._validate_cdp_url("http://192.168.1.100:9222")
+
+    def test_blocks_cloud_metadata(self, relay):
+        with pytest.raises(ValueError, match="localhost"):
+            relay._validate_cdp_url("http://169.254.169.254/latest/meta-data")
+
+    def test_blocks_internal_hostname(self, relay):
+        with pytest.raises(ValueError, match="localhost"):
+            relay._validate_cdp_url("http://internal-service:9222")
+
+
+class TestPageHandlers:
+    """Test page event handler installation."""
+
+    def test_install_page_handlers(self, relay):
+        """Test that dialog/popup/download handlers are registered."""
+        page = MagicMock()
+        relay._install_page_handlers(page)
+        calls = [c[0][0] for c in page.on.call_args_list]
+        assert "dialog" in calls
+        assert "popup" in calls
+        assert "download" in calls
+
+
+class TestPostNavigationValidation:
+    """Test that click/type_text validate the resulting URL."""
+
+    @pytest.mark.asyncio
+    async def test_click_blocks_navigation_to_bad_scheme(self, relay):
+        from bridge.browser import BrowserSession
+
+        page = AsyncMock()
+        # After click, page ends up at file:// URL
+        page.url = "file:///etc/passwd"
+
+        session = BrowserSession(session_id="s1", mode="managed", page=page)
+        relay._sessions["s1"] = session
+
+        with pytest.raises(ValueError, match="not allowed"):
+            await relay.click("s1", "a.malicious-link")
+
+        # Should have tried to go back
+        page.go_back.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_click_allows_safe_navigation(self, relay):
+        from bridge.browser import BrowserSession
+
+        page = AsyncMock()
+        page.url = "https://example.com/page2"
+
+        session = BrowserSession(session_id="s1", mode="managed", page=page)
+        relay._sessions["s1"] = session
+
+        result = await relay.click("s1", "a#safe-link")
+        assert result["ok"] is True
+        assert result["url"] == "https://example.com/page2"
+
+    @pytest.mark.asyncio
+    async def test_type_blocks_navigation_to_blocked_domain(self, relay):
+        from bridge.browser import BrowserSession
+
+        page = AsyncMock()
+        # After form submission, page navigates to blocked domain
+        page.url = "https://evil.com/phishing"
+
+        session = BrowserSession(session_id="s1", mode="managed", page=page)
+        relay._sessions["s1"] = session
+
+        with pytest.raises(ValueError, match="blocked"):
+            await relay.type_text("s1", "input#search", "query")
+
+        page.go_back.assert_called_once()
+
 
 class TestNavigate:
     """Test the navigate method."""
@@ -318,12 +430,15 @@ class TestTypeText:
         from bridge.browser import BrowserSession
 
         page = AsyncMock()
+        page.url = "https://example.com"
+
         session = BrowserSession(session_id="s1", mode="managed", page=page)
         relay._sessions["s1"] = session
 
         result = await relay.type_text("s1", "input#search", "hello world")
 
         assert result["ok"] is True
+        assert result["url"] == "https://example.com"
         page.fill.assert_called_once_with("input#search", "hello world")
 
 
@@ -376,20 +491,27 @@ class TestContainerManagement:
 
     @patch("bridge.browser.subprocess.run")
     def test_start_chromium_container(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="abc123container\n", stderr=""
-        )
+        # First call: docker run, second call: docker port
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="abc123container\n", stderr=""),
+            MagicMock(returncode=0, stdout="127.0.0.1:55432\n", stderr=""),
+        ]
 
-        container_id = _start_chromium_container(9222)
+        container_id, port = _start_chromium_container()
 
         assert container_id == "abc123container"
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args[0][0]
-        assert "docker" in cmd
-        assert "--cap-drop=ALL" in cmd
-        assert "--read-only" in cmd
-        assert "--memory=512m" in cmd
-        assert "-p" in cmd
+        assert port == 55432
+        assert mock_run.call_count == 2
+        # Check docker run command
+        run_cmd = mock_run.call_args_list[0][0][0]
+        assert "docker" in run_cmd
+        assert "--cap-drop=ALL" in run_cmd
+        assert "--read-only" in run_cmd
+        assert "--memory=512m" in run_cmd
+        assert "-p" in run_cmd
+        # Check docker port command
+        port_cmd = mock_run.call_args_list[1][0][0]
+        assert port_cmd == ["docker", "port", "abc123container", "9222"]
 
     @patch("bridge.browser.subprocess.run")
     def test_start_chromium_container_failure(self, mock_run):
@@ -398,7 +520,23 @@ class TestContainerManagement:
         )
 
         with pytest.raises(RuntimeError, match="Failed to start"):
-            _start_chromium_container(9222)
+            _start_chromium_container()
+
+    @patch("bridge.browser.subprocess.run")
+    def test_start_chromium_container_port_query_failure(self, mock_run):
+        """Container starts but port query fails — container is cleaned up."""
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="abc123container\n", stderr=""),
+            MagicMock(returncode=1, stdout="", stderr="no such container"),
+        ]
+
+        with pytest.raises(RuntimeError, match="Failed to get container port"):
+            _start_chromium_container()
+
+        # Should have tried to stop the container
+        assert mock_run.call_count == 3  # run + port + stop
+        stop_cmd = mock_run.call_args_list[2][0][0]
+        assert stop_cmd == ["docker", "stop", "abc123container"]
 
     @patch("bridge.browser.subprocess.run")
     def test_stop_container(self, mock_run):

@@ -330,9 +330,12 @@ async def lifespan(app: FastAPI):
     try:
         from bridge.browser import BrowserRelay
 
+        blocked_str = os.environ.get("BROWSER_BLOCKED_DOMAINS", "")
+        blocked_domains = [d.strip() for d in blocked_str.split(",") if d.strip()]
         browser_relay = BrowserRelay(
             max_sessions=int(os.environ.get("BROWSER_MAX_SESSIONS", "3")),
             session_timeout_minutes=int(os.environ.get("BROWSER_SESSION_TIMEOUT", "10")),
+            blocked_domains=blocked_domains,
         )
         await browser_relay.start()
         app.state.browser_relay = browser_relay
@@ -631,7 +634,10 @@ async def browser_connect(
                 detail=f"Unknown mode: {body.mode}. Use 'managed' or 'relay'.",
             )
         return {"ok": True, "session_id": session_id}
-    except RuntimeError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Browser connect error: %s", e)
         return {"ok": False, "error": str(e)}
 
 
@@ -645,7 +651,8 @@ async def browser_navigate(
     try:
         result = await relay.navigate(body.session_id, body.url)
         return {"ok": True, **result}
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
 
 
@@ -659,7 +666,8 @@ async def browser_content(
     try:
         result = await relay.get_content(body.session_id, body.selector)
         return {"ok": True, **result}
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
 
 
@@ -673,7 +681,8 @@ async def browser_click(
     try:
         result = await relay.click(body.session_id, body.selector)
         return {"ok": True, **result}
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
 
 
@@ -687,7 +696,8 @@ async def browser_type(
     try:
         result = await relay.type_text(body.session_id, body.selector, body.text)
         return {"ok": True, **result}
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
 
 
@@ -701,7 +711,8 @@ async def browser_screenshot(
     try:
         result = await relay.screenshot(body.session_id, body.full_page)
         return {"ok": True, **result}
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
 
 
@@ -715,7 +726,8 @@ async def browser_links(
     try:
         links = await relay.get_links(body.session_id)
         return {"ok": True, "links": links}
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
 
 
@@ -729,7 +741,8 @@ async def browser_close(
     try:
         await relay.close_session(body.session_id)
         return {"ok": True}
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
+        logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
 
 

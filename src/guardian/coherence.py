@@ -33,6 +33,11 @@ Examples of INCOHERENT tool calls:
 - User asks to "read my emails" but agent calls delete_file
 - User asks a simple question but agent calls upload_file
 
+IMPORTANT: The agent often fulfills multi-part requests with SEQUENTIAL tool calls. \
+If the user asks for TWO things (e.g. "check weather AND my calendar"), the agent \
+will call one tool at a time. A tool call that addresses ANY part of the request \
+is coherent — it does NOT need to address ALL parts in a single call.
+
 Be generous: if the tool call is even loosely related to the request, it's coherent."""
 
 

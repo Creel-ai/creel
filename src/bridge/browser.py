@@ -22,8 +22,8 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-# Dangerous URL schemes that must be blocked
-BLOCKED_SCHEMES = {"file", "javascript", "data"}
+# Only these URL schemes are permitted
+ALLOWED_SCHEMES = {"http", "https"}
 
 # Default Chromium Docker image
 DEFAULT_CHROMIUM_IMAGE = "zenika/alpine-chrome:latest"
@@ -99,13 +99,17 @@ class BrowserRelay:
         """Connect to a user's Chrome instance via CDP.
 
         Args:
-            cdp_url: Chrome DevTools Protocol WebSocket URL
+            cdp_url: Chrome DevTools Protocol URL
                      (e.g., http://localhost:9222)
 
         Returns:
             session_id for subsequent commands
+
+        Raises:
+            ValueError: If cdp_url does not point to localhost
         """
         self._check_session_limit()
+        self._validate_cdp_url(cdp_url)
 
         chromium = self._playwright.chromium
         browser = await chromium.connect_over_cdp(cdp_url)
@@ -117,6 +121,8 @@ class BrowserRelay:
         else:
             context = await browser.new_context()
             page = await context.new_page()
+
+        self._install_page_handlers(page)
 
         session_id = str(uuid.uuid4())
         self._sessions[session_id] = BrowserSession(
@@ -137,29 +143,28 @@ class BrowserRelay:
         """
         self._check_session_limit()
 
-        # Find a free host port for CDP
-        import socket
+        # Launch Chromium container; Docker assigns a random host port
+        container_id, host_port = _start_chromium_container(headless)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            host_port = s.getsockname()[1]
+        # Connect to CDP, cleaning up the container on any failure
+        try:
+            cdp_url = f"http://localhost:{host_port}"
+            await self._wait_for_cdp(cdp_url)
 
-        # Launch Chromium container
-        container_id = _start_chromium_container(host_port, headless)
+            chromium = self._playwright.chromium
+            browser = await chromium.connect_over_cdp(cdp_url)
 
-        # Wait for CDP to become available
-        cdp_url = f"http://localhost:{host_port}"
-        await self._wait_for_cdp(cdp_url)
+            contexts = browser.contexts
+            if contexts and contexts[0].pages:
+                page = contexts[0].pages[0]
+            else:
+                context = await browser.new_context()
+                page = await context.new_page()
 
-        chromium = self._playwright.chromium
-        browser = await chromium.connect_over_cdp(cdp_url)
-
-        contexts = browser.contexts
-        if contexts and contexts[0].pages:
-            page = contexts[0].pages[0]
-        else:
-            context = await browser.new_context()
-            page = await context.new_page()
+            self._install_page_handlers(page)
+        except Exception:
+            _stop_container(container_id)
+            raise
 
         session_id = str(uuid.uuid4())
         self._sessions[session_id] = BrowserSession(
@@ -194,7 +199,10 @@ class BrowserRelay:
         async with session.lock:
             session.last_used = time.time()
             await session.page.goto(url, wait_until="domcontentloaded")
-            await session.page.wait_for_load_state("networkidle")
+            try:
+                await session.page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass  # Continue with whatever has loaded; SPAs may never idle
 
             title = await session.page.title()
             current_url = session.page.url
@@ -253,9 +261,18 @@ class BrowserRelay:
             except Exception:
                 pass  # Page may not navigate after click
 
+            # Validate the resulting URL in case click triggered navigation
+            # to a blocked scheme or domain
+            current_url = session.page.url
+            try:
+                self._validate_url(current_url)
+            except ValueError:
+                await session.page.go_back()
+                raise
+
             return {
                 "ok": True,
-                "url": session.page.url,
+                "url": current_url,
             }
 
     async def type_text(
@@ -269,15 +286,28 @@ class BrowserRelay:
             text: Text to type
 
         Returns:
-            Dict with ok status
+            Dict with ok status and current URL
         """
         session = self._get_session(session_id)
 
         async with session.lock:
             session.last_used = time.time()
             await session.page.fill(selector, text)
+            # Wait briefly for any form-triggered navigation
+            try:
+                await session.page.wait_for_load_state("networkidle", timeout=2000)
+            except Exception:
+                pass
 
-            return {"ok": True}
+            # Validate resulting URL in case form submission navigated
+            current_url = session.page.url
+            try:
+                self._validate_url(current_url)
+            except ValueError:
+                await session.page.go_back()
+                raise
+
+            return {"ok": True, "url": current_url}
 
     async def screenshot(
         self, session_id: str, full_page: bool = False
@@ -358,6 +388,28 @@ class BrowserRelay:
 
     # --- Internal helpers ---
 
+    @staticmethod
+    def _validate_cdp_url(cdp_url: str) -> None:
+        """Ensure CDP URL points to localhost only (prevent SSRF)."""
+        parsed = urlparse(cdp_url)
+        hostname = parsed.hostname or ""
+        allowed = {"localhost", "127.0.0.1", "::1"}
+        if hostname not in allowed:
+            raise ValueError(
+                f"CDP URL must point to localhost, got '{hostname}'"
+            )
+
+    @staticmethod
+    def _install_page_handlers(page: Any) -> None:
+        """Register handlers for dialogs, popups, and downloads.
+
+        Prevents malicious pages from hanging the session with alert()
+        or spawning untracked popups.
+        """
+        page.on("dialog", lambda dialog: dialog.dismiss())
+        page.on("popup", lambda popup: popup.close())
+        page.on("download", lambda download: download.cancel())
+
     def _check_session_limit(self) -> None:
         if len(self._sessions) >= self._max_sessions:
             raise RuntimeError(
@@ -372,14 +424,14 @@ class BrowserRelay:
         return session
 
     def _validate_url(self, url: str) -> None:
-        """Block dangerous URL schemes and blocked domains."""
+        """Validate URL scheme (allowlist) and blocked domains."""
         parsed = urlparse(url)
-
-        if parsed.scheme in BLOCKED_SCHEMES:
-            raise ValueError(f"URL scheme '{parsed.scheme}' is not allowed")
 
         if not parsed.scheme:
             raise ValueError("URL must include a scheme (e.g., https://)")
+
+        if parsed.scheme not in ALLOWED_SCHEMES:
+            raise ValueError(f"URL scheme '{parsed.scheme}' is not allowed")
 
         hostname = parsed.hostname or ""
         for blocked in self._blocked_domains:
@@ -413,10 +465,11 @@ class BrowserRelay:
 
         # Pattern: "- role \"name\" [attr=value]: text_value"
         # Indentation (number of leading spaces) determines depth.
+        # Name may contain escaped quotes (e.g., "Say \"Hello\"").
         line_re = re.compile(
             r'^(?P<indent>\s*)-\s+'
             r'(?P<role>\w+)'
-            r'(?:\s+"(?P<name>[^"]*)")?'
+            r'(?:\s+"(?P<name>(?:[^"\\]|\\.)*)")?'
             r'(?:\s+\[(?P<attrs>[^\]]*)\])?'
             r'(?::\s*(?P<value>.+))?$'
         )
@@ -432,7 +485,7 @@ class BrowserRelay:
             indent = len(m.group("indent"))
             depth = indent // 2  # aria_snapshot uses 2-space indent
             role = m.group("role")
-            name = m.group("name") or ""
+            name = (m.group("name") or "").replace('\\"', '"')
             value = m.group("value") or ""
 
             # Parse level from attributes like [level=1]
@@ -504,10 +557,13 @@ class BrowserRelay:
                     logger.warning("Error cleaning up session %s: %s", sid, e)
 
 
-def _start_chromium_container(host_port: int, headless: bool = True) -> str:
+def _start_chromium_container(headless: bool = True) -> tuple[str, int]:
     """Start a headless Chromium Docker container.
 
-    Returns the container ID.
+    Lets Docker assign a random host port to avoid TOCTOU race conditions.
+
+    Returns:
+        Tuple of (container_id, host_port).
     """
     cmd = [
         "docker",
@@ -521,7 +577,7 @@ def _start_chromium_container(host_port: int, headless: bool = True) -> str:
         "--memory=512m",
         "--cpus=1.0",
         "-p",
-        f"{host_port}:9222",
+        "127.0.0.1::9222",  # random host port, bound to localhost only
         DEFAULT_CHROMIUM_IMAGE,
         "--no-sandbox",
         "--remote-debugging-address=0.0.0.0",
@@ -536,8 +592,24 @@ def _start_chromium_container(host_port: int, headless: bool = True) -> str:
         raise RuntimeError(f"Failed to start Chromium container: {result.stderr.strip()}")
 
     container_id = result.stdout.strip()
+
+    # Query Docker for the actual assigned host port
+    port_result = subprocess.run(
+        ["docker", "port", container_id, "9222"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if port_result.returncode != 0:
+        _stop_container(container_id)
+        raise RuntimeError(f"Failed to get container port: {port_result.stderr.strip()}")
+
+    # Output format: "127.0.0.1:XXXXX" or "0.0.0.0:XXXXX"
+    port_line = port_result.stdout.strip().splitlines()[0]
+    host_port = int(port_line.rsplit(":", 1)[1])
+
     logger.info("Started Chromium container %s on port %d", container_id[:12], host_port)
-    return container_id
+    return container_id, host_port
 
 
 def _stop_container(container_id: str) -> None:

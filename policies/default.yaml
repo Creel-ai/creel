@@ -43,6 +43,8 @@ deny:
   - delete_*
 
 deny_when:
+  # URL scheme allowlist (http/https only) is enforced in BrowserRelay._validate_url.
+  # These rules provide defense-in-depth at the policy layer.
   - tool: browser_navigate
     arg: url
     pattern: "file://*"
@@ -52,6 +54,18 @@ deny_when:
   - tool: browser_navigate
     arg: url
     pattern: "data:*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "blob:*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "ftp://*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "chrome://*"
+  - tool: browser_navigate
+    arg: url
+    pattern: "chrome-extension://*"
 
 # Tools that match 'review' rules but can skip human approval
 auto_approve:

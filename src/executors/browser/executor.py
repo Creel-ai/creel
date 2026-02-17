@@ -15,13 +15,19 @@ from typing import Any
 import requests
 
 
-def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
+def call_bridge(
+    endpoint: str,
+    data: dict[str, Any] | None = None,
+    timeout: int = 30,
+    method: str = "POST",
+) -> dict:
     """Make an HTTP call to the bridge server.
 
     Args:
         endpoint: Bridge endpoint path (e.g., '/browser/navigate')
         data: Request body data (optional)
         timeout: Request timeout in seconds
+        method: HTTP method (default "POST")
 
     Returns:
         Bridge response as dict
@@ -44,10 +50,12 @@ def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int 
     }
 
     try:
-        if data is not None:
+        if method.upper() == "GET":
+            response = requests.get(url, headers=headers, timeout=timeout)
+        elif data is not None:
             response = requests.post(url, json=data, headers=headers, timeout=timeout)
         else:
-            response = requests.post(url, json={}, headers=headers, timeout=timeout)
+            response = requests.post(url, headers=headers, timeout=timeout)
 
         response.raise_for_status()
         result = response.json()
@@ -113,22 +121,7 @@ def close_session(session_id: str) -> dict[str, Any]:
 
 def sessions() -> dict[str, Any]:
     """List active browser sessions via bridge."""
-    bridge_url = os.environ.get("BRIDGE_URL")
-    bridge_token = os.environ.get("BRIDGE_TOKEN")
-
-    if not bridge_url:
-        raise RuntimeError("BRIDGE_URL environment variable not set")
-    if not bridge_token:
-        raise RuntimeError("BRIDGE_TOKEN environment variable not set")
-
-    url = f"{bridge_url}/browser/sessions"
-    headers = {
-        "Authorization": f"Bearer {bridge_token}",
-        "Content-Type": "application/json",
-    }
-    response = requests.get(url, headers=headers, timeout=10)
-    response.raise_for_status()
-    return response.json()
+    return call_bridge("/browser/sessions", method="GET", timeout=10)
 
 
 def main() -> None:

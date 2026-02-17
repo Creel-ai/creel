@@ -443,6 +443,10 @@ class BrowserRelay:
     ) -> list[dict[str, Any]]:
         """Extract the accessibility tree from the page.
 
+        Args:
+            page: Playwright page object.
+            selector: Optional CSS selector to scope to a subtree.
+
         Returns a list of node dicts with role, name, value, level.
         Truncated at max_content_chars.
 
@@ -525,15 +529,15 @@ class BrowserRelay:
         import httpx
 
         deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient() as client:
+            while time.time() < deadline:
+                try:
                     resp = await client.get(f"{cdp_url}/json/version", timeout=2.0)
                     if resp.status_code == 200:
                         return
-            except Exception:
-                pass
-            await asyncio.sleep(0.5)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
 
         raise TimeoutError(
             f"CDP endpoint {cdp_url} did not become available within {timeout}s"

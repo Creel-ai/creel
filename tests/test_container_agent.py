@@ -352,6 +352,7 @@ class TestRunAgentLoopContainer:
             tools_config=_make_tools(),
             use_containers=False,
             memory_manager=None,
+            bridge_config=None,
         )
 
     @patch("taskrunner.container_agent._ensure_image")

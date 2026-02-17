@@ -40,6 +40,7 @@ def run_agent_loop_container(
     guardian: object | None = None,
     confirm_action: Callable[[str, dict, str], bool] | None = None,
     memory_manager: object | None = None,
+    bridge_config: object | None = None,
 ) -> AgentResult:
     """Run the agent loop inside an isolated Docker container.
 
@@ -103,7 +104,7 @@ def run_agent_loop_container(
         try:
             return _run_protocol(
                 proc, start_msg, messages, tools_config, use_containers,
-                guardian, confirm_action, memory_manager,
+                guardian, confirm_action, memory_manager, bridge_config,
             )
         except Exception as e:
             logger.exception("Container agent protocol error")
@@ -147,6 +148,7 @@ def _run_protocol(
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
+    bridge_config: object | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
     _send_to_container(proc, start_msg)
@@ -192,6 +194,7 @@ def _run_protocol(
             results = _handle_tool_request(
                 msg["calls"], tools_config, use_containers,
                 guardian, confirm_action, memory_manager, messages,
+                bridge_config=bridge_config,
             )
 
             # Check if any result requires async approval
@@ -228,6 +231,7 @@ def _handle_tool_request(
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
     messages: list[dict],
+    bridge_config: object | None = None,
 ) -> list[dict] | None:
     """Process tool calls from the container, applying Guardian checks.
 
@@ -353,6 +357,7 @@ def _handle_tool_request(
                 tools_config=tools_config,
                 use_containers=use_containers,
                 memory_manager=memory_manager,
+                bridge_config=bridge_config,
             )
             is_error = False
             elapsed_ms = (time.perf_counter() - t0) * 1000

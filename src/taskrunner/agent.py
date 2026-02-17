@@ -48,6 +48,7 @@ def run_agent_loop(
     memory_manager: object | None = None,
     on_text_delta: Callable[[str], None] | None = None,
     allowed_tools: list[str] | None = None,
+    bridge_config: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -314,6 +315,7 @@ def run_agent_loop(
                     tools_config=tools_config,
                     use_containers=use_containers,
                     memory_manager=memory_manager,
+                    bridge_config=bridge_config,
                 )
                 is_error = False
                 elapsed_ms = (time.perf_counter() - t0) * 1000

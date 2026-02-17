@@ -391,13 +391,15 @@ tools:
   list_things:
     executor: things
     network: true
-    description: "List tasks from Things 3"
+    description: "List tasks from Things 3 (default: inbox). Use action parameter to choose view."
     parameters:
-      filter:
+      action:
         type: string
-        description: "Task filter: inbox, today, anytime, upcoming, someday, logbook"
-    fixed_args:
-      action: "list"
+        description: "View to list: inbox, today, upcoming, projects, or search (requires query param)"
+      query:
+        type: string
+        description: "Search query (only used when action is 'search')"
+    fixed_args: {}
 
   create_things_task:
     executor: things
@@ -423,18 +425,19 @@ tools:
         type: string
         description: "Area or project name"
     fixed_args:
-      action: "create"
+      action: "add"
 
   complete_things_task:
     executor: things
     description: "Mark a Things 3 task as completed"
     parameters:
-      title:
+      id:
         type: string
-        description: "Task title to complete"
+        description: "Task ID to complete (use list_things to find IDs)"
         required: true
     fixed_args:
-      action: "complete"
+      action: "update"
+      completed: "true"
 
   # Browser tools (via bridge)
   browser_open:

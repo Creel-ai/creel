@@ -141,6 +141,7 @@ def main() -> None:
                 "stop_reason": "end_turn",
                 "tool_history": tool_history,
                 "last_input_tokens": last_input_tokens,
+                "messages": messages,
             })
             return
 
@@ -205,6 +206,7 @@ def main() -> None:
     except Exception as e:
         text = f"Error on final turn: {e}"
 
+    messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
     _send({
         "type": "final",
         "text": text,
@@ -213,6 +215,7 @@ def main() -> None:
         "stop_reason": "max_turns",
         "tool_history": tool_history,
         "last_input_tokens": last_input_tokens,
+        "messages": messages,
     })
 
 

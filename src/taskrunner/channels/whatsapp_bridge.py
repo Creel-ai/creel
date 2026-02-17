@@ -133,6 +133,10 @@ class NeonizeWhatsAppBridge(WhatsAppBridge):
 
     Suitable for development/simple setups. Handles QR code pairing
     and persists auth state to disk.
+
+    NOTE: This is currently a stub — ``send_message`` and
+    ``get_messages_since`` raise ``NotImplementedError``.
+    Use ``HttpWhatsAppBridge`` for a working implementation.
     """
 
     def __init__(self, auth_state_dir: str) -> None:

@@ -255,11 +255,11 @@ def run_agent_loop(
                     prior_tools = []
                     for msg in messages:
                         if msg.get("role") == "assistant":
-                            content = msg.get("content", [])
-                            if isinstance(content, list):
-                                for block in content:
-                                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                                        prior_tools.append(block.get("name", ""))
+                            msg_content = msg.get("content", [])
+                            if isinstance(msg_content, list):
+                                for b in msg_content:
+                                    if isinstance(b, dict) and b.get("type") == "tool_use":
+                                        prior_tools.append(b.get("name", ""))
                     coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
                     if not coherence.coherent:
                         logger.warning(

@@ -53,9 +53,13 @@ WMO_CODES: dict[int, str] = {
 
 def _geocode(location: str) -> dict:
     """Resolve a location name to coordinates via Open-Meteo geocoding."""
+    # Open-Meteo geocoder works best with city name only — strip state/country
+    # suffixes like "Denver, CO" or "Denver, Colorado, US".
+    city = location.split(",")[0].strip()
+
     resp = httpx.get(
         GEOCODE_URL,
-        params={"name": location, "count": 1, "language": "en", "format": "json"},
+        params={"name": city, "count": 1, "language": "en", "format": "json"},
         timeout=10.0,
     )
     resp.raise_for_status()

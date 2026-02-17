@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from taskrunner.channels import Channel
 from taskrunner.outputs import MESSAGE_PREFIX
@@ -194,3 +194,30 @@ class IMessageChannel(Channel):
             return messages
         finally:
             conn.close()
+
+
+def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:
+    """Return plugin metadata and factory for the iMessage channel."""
+    from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
+    from taskrunner.models import IMessageChannelConfig
+
+    meta = ChannelPluginMeta(
+        id="imessage",
+        label="iMessage",
+        capabilities=(
+            ChannelCapability.POLLING
+            | ChannelCapability.SEND
+            | ChannelCapability.WAIT_FOR_REPLY
+        ),
+        config_schema=IMessageChannelConfig,
+        platform="darwin",
+    )
+
+    def factory(config: dict[str, Any]) -> IMessageChannel:
+        cfg = IMessageChannelConfig(**config)
+        return IMessageChannel(
+            allowed_senders=[cfg.listen_to],
+            poll_interval=cfg.poll_interval,
+        )
+
+    return meta, factory

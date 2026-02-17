@@ -266,6 +266,31 @@ class DaemonService:
 
     # --- Channel/plugin lifecycle ---
 
+    def get_channels(self) -> dict[str, Channel]:
+        """Return a snapshot of registered channels."""
+        with self._lock:
+            return dict(self._channels)
+
+    def start_configured_channels(self, agent_def: AgentDefinition) -> None:
+        """Discover and start all channels configured in agent.yaml."""
+        from taskrunner.channels.plugin import ChannelCapability
+        from taskrunner.channels.registry import ChannelRegistry
+
+        registry = ChannelRegistry()
+        registry.discover()
+
+        for channel_id in agent_def.channels.configured_channels():
+            config = agent_def.channels.get_channel_config(channel_id)
+            if config is None:
+                continue
+            try:
+                channel = registry.create_channel(channel_id, config)
+                self.register_channel(channel_id, channel)
+                self.start_channel(channel_id)
+                logger.info("Started configured channel '%s'", channel_id)
+            except Exception:
+                logger.exception("Failed to start channel '%s'", channel_id)
+
     def register_channel(self, name: str, channel: Channel) -> None:
         """Register a channel plugin instance by name."""
         with self._lock:

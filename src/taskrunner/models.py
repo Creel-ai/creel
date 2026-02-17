@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from guardian.types import GuardianConfig
 
@@ -166,6 +166,48 @@ class BlueBubblesChannelConfig(BaseModel):
         return [os.path.expandvars(s) for s in v]
 
 
+class WhatsAppChannelConfig(BaseModel):
+    """WhatsApp channel settings."""
+
+    phone_number: str
+    mode: str = "polling"  # "polling" or "webhook"
+    auth_state_dir: str = "whatsapp_auth"
+    webhook_path: str = "/webhooks/whatsapp"
+    webhook_verify_token: str = ""
+    webhook_secret: str = ""
+    bridge_url: str | None = None
+    poll_interval: int = 5
+    allowed_senders: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_webhook_verify_token(self) -> WhatsAppChannelConfig:
+        if self.mode == "webhook" and not self.webhook_verify_token:
+            raise ValueError(
+                "webhook_verify_token must be set when mode is 'webhook'"
+            )
+        return self
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        allowed = {"polling", "webhook"}
+        if v not in allowed:
+            raise ValueError(f"mode must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("phone_number")
+    @classmethod
+    def expand_phone(cls, v: str) -> str:
+        return os.path.expandvars(v)
+
+    @field_validator("allowed_senders", mode="before")
+    @classmethod
+    def expand_allowed_senders(cls, v: list[str] | str) -> list[str]:
+        if isinstance(v, str):
+            v = [v]
+        return [os.path.expandvars(s) for s in v]
+
+
 class BridgeConfig(BaseModel):
     """Bridge server configuration for host-side macOS tools."""
 
@@ -189,8 +231,37 @@ class BrowserConfig(BaseModel):
 class ChannelsConfig(BaseModel):
     """All channel configurations."""
 
+    model_config = ConfigDict(extra="allow")
+
     imessage: IMessageChannelConfig | None = None
     bluebubbles: BlueBubblesChannelConfig | None = None
+    whatsapp: WhatsAppChannelConfig | None = None
+
+    def configured_channels(self) -> list[str]:
+        """Return IDs of channels that have configuration present."""
+        result = []
+        for name, field_info in self.model_fields.items():
+            val = getattr(self, name, None)
+            if val is not None and isinstance(val, BaseModel):
+                result.append(name)
+        # Check extra fields for plugin-provided channels
+        if self.model_extra:
+            for key, val in self.model_extra.items():
+                if val is not None and key not in result:
+                    result.append(key)
+        return result
+
+    def get_channel_config(self, channel_id: str) -> dict[str, Any] | None:
+        """Return the raw config dict for a channel, or None if unconfigured."""
+        typed = getattr(self, channel_id, None)
+        if typed is not None and isinstance(typed, BaseModel):
+            return typed.model_dump()
+        # Check extras
+        if self.model_extra and channel_id in self.model_extra:
+            val = self.model_extra[channel_id]
+            if isinstance(val, dict):
+                return val
+        return None
 
 
 class AgentDefinition(BaseModel):

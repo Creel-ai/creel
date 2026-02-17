@@ -364,6 +364,51 @@ class TestPostNavigationValidation:
 
         page.go_back.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_selector_scopes_tree(self, relay):
+        """Test that providing a selector scopes the a11y tree."""
+        page = AsyncMock()
+        element = AsyncMock()
+        page.query_selector.return_value = element
+
+        scoped_snapshot = {
+            "role": "generic",
+            "name": "Scoped",
+            "children": [
+                {"role": "heading", "name": "Scoped Heading", "children": []},
+            ],
+        }
+        page.accessibility.snapshot.return_value = scoped_snapshot
+
+        result = await relay._get_accessibility_tree(page, selector="#main")
+
+        page.query_selector.assert_called_once_with("#main")
+        page.accessibility.snapshot.assert_called_once_with(root=element)
+        roles = [n["role"] for n in result]
+        assert "heading" in roles
+
+    @pytest.mark.asyncio
+    async def test_selector_not_found_falls_back(self, relay):
+        """Test that a non-matching selector falls back to full page."""
+        page = AsyncMock()
+        page.query_selector.return_value = None
+
+        full_snapshot = {
+            "role": "WebArea",
+            "name": "Full Page",
+            "children": [
+                {"role": "heading", "name": "Full Heading", "children": []},
+            ],
+        }
+        page.accessibility.snapshot.return_value = full_snapshot
+
+        result = await relay._get_accessibility_tree(page, selector="#nonexistent")
+
+        page.query_selector.assert_called_once_with("#nonexistent")
+        # Falls back to full page snapshot (no root argument)
+        page.accessibility.snapshot.assert_called_once_with()
+        assert any(n.get("name") == "Full Heading" for n in result)
+
 
 class TestNavigate:
     """Test the navigate method."""

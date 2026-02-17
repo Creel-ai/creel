@@ -65,6 +65,7 @@ class CoherenceChecker:
         user_request: str,
         tool_name: str,
         tool_args: dict,
+        prior_tools: list[str] | None = None,
     ) -> CoherenceResult:
         """Check if a tool call is coherent with the user's request.
 
@@ -83,9 +84,18 @@ class CoherenceChecker:
         try:
             from taskrunner.llm import _get_client
 
+            prior_context = ""
+            if prior_tools:
+                prior_context = (
+                    f"\n\nTools already called in this conversation (in order): "
+                    f"{', '.join(prior_tools)}\n"
+                    f"The agent is now making the NEXT call in the sequence."
+                )
+
             user_msg = (
                 f"User request: {user_request}\n\n"
                 f"Tool call: {tool_name}({json.dumps(tool_args, default=str)})"
+                f"{prior_context}"
             )
 
             client = _get_client()

@@ -311,7 +311,16 @@ def _handle_tool_request(
                     break
 
             if user_request:
-                coherence = guardian.check_coherence(user_request, tool_name, tool_input)
+                # Collect prior tool names from conversation for context
+                prior_tools = []
+                for msg in messages:
+                    if msg.get("role") == "assistant":
+                        content = msg.get("content", [])
+                        if isinstance(content, list):
+                            for block in content:
+                                if isinstance(block, dict) and block.get("type") == "tool_use":
+                                    prior_tools.append(block.get("name", ""))
+                coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
                 if not coherence.coherent:
                     logger.warning(
                         "Guardian coherence check failed for %s: %s",

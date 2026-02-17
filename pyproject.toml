@@ -37,7 +37,7 @@ guardian = [
     "optimum[onnxruntime]>=1.14.0",
 ]
 whatsapp = [
-    "neonize>=1.0.0",
+    "neonize>=0.3.9",
 ]
 docs = [
     "mkdocs>=1.6.0",

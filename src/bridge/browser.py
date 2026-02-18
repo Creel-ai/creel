@@ -1,8 +1,9 @@
 """Browser relay service for Creel bridge.
 
-Manages browser sessions via Playwright CDP connections. Supports two modes:
+Manages browser sessions via Playwright CDP connections. Supports three modes:
 - relay: connects to user's Chrome (launched with --remote-debugging-port)
 - managed: spawns a headless Chromium Docker container and connects via CDP
+- native: launches a local Chrome/Chromium subprocess with a fresh temp profile
 
 Primary output is the accessibility tree (structured, token-efficient).
 Screenshot fallback available when visual context is needed.
@@ -13,7 +14,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import os
+import platform
+import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -28,16 +33,29 @@ ALLOWED_SCHEMES = {"http", "https"}
 # Default Chromium Docker image
 DEFAULT_CHROMIUM_IMAGE = "zenika/alpine-chrome:latest"
 
+# Resource types to block for memory savings (images, media, fonts, stylesheets)
+BLOCKED_RESOURCE_TYPES = {"image", "media", "font", "stylesheet"}
+
+
+class BrowserError(Exception):
+    """Base exception for browser relay errors."""
+
+
+class SessionDead(BrowserError):
+    """Raised when a browser session is no longer responsive."""
+
 
 @dataclass
 class BrowserSession:
     """Tracks a single browser session."""
 
     session_id: str
-    mode: str  # "relay" | "managed"
+    mode: str  # "relay" | "managed" | "native"
     browser: Any = None  # playwright Browser
     page: Any = None  # playwright Page
     container_id: str | None = None  # Docker container ID (managed mode)
+    process: Any = None  # subprocess.Popen (native mode)
+    temp_profile_dir: str | None = None  # temp user-data-dir (native mode)
     last_used: float = field(default_factory=time.time)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -55,6 +73,12 @@ class BrowserRelay:
         session_timeout_minutes: int = 10,
         blocked_domains: list[str] | None = None,
         max_content_chars: int = 10000,
+        container_memory: str = "1024m",
+        container_shm_size: str = "256m",
+        container_tmpfs_size: str = "128M",
+        navigate_timeout_ms: int = 30000,
+        snapshot_timeout_ms: int = 15000,
+        block_heavy_resources: bool = True,
     ):
         self._playwright: Any = None
         self._sessions: dict[str, BrowserSession] = {}
@@ -62,6 +86,12 @@ class BrowserRelay:
         self._session_timeout = session_timeout_minutes * 60  # convert to seconds
         self._blocked_domains = set(blocked_domains or [])
         self._max_content_chars = max_content_chars
+        self._container_memory = container_memory
+        self._container_shm_size = container_shm_size
+        self._container_tmpfs_size = container_tmpfs_size
+        self._navigate_timeout_ms = navigate_timeout_ms
+        self._snapshot_timeout_ms = snapshot_timeout_ms
+        self._block_heavy_resources = block_heavy_resources
         self._cleanup_task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -94,6 +124,58 @@ class BrowserRelay:
             self._playwright = None
 
         logger.info("BrowserRelay stopped")
+
+    async def create_native(self, headless: bool = True) -> str:
+        """Launch a local Chrome/Chromium subprocess and connect via CDP.
+
+        Uses a fresh temporary profile directory for credential isolation.
+
+        Returns:
+            session_id for subsequent commands
+        """
+        self._check_session_limit()
+
+        chrome_binary = _find_chrome_binary()
+        process, port, temp_dir = _start_native_chrome(chrome_binary, headless)
+
+        try:
+            cdp_url = f"http://localhost:{port}"
+            await self._wait_for_cdp(cdp_url)
+
+            chromium = self._playwright.chromium
+            browser = await chromium.connect_over_cdp(cdp_url)
+
+            contexts = browser.contexts
+            if contexts and contexts[0].pages:
+                page = contexts[0].pages[0]
+            else:
+                context = await browser.new_context()
+                page = await context.new_page()
+
+            self._install_page_handlers(page)
+        except Exception:
+            process.terminate()
+            process.wait(timeout=5)
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
+
+        session_id = str(uuid.uuid4())
+        self._sessions[session_id] = BrowserSession(
+            session_id=session_id,
+            mode="native",
+            browser=browser,
+            page=page,
+            process=process,
+            temp_profile_dir=temp_dir,
+        )
+
+        logger.info(
+            "Native session %s started (pid=%d, port=%d)",
+            session_id,
+            process.pid,
+            port,
+        )
+        return session_id
 
     async def connect_relay(self, cdp_url: str) -> str:
         """Connect to a user's Chrome instance via CDP.
@@ -144,7 +226,12 @@ class BrowserRelay:
         self._check_session_limit()
 
         # Launch Chromium container; Docker assigns a random host port
-        container_id, host_port = _start_chromium_container(headless)
+        container_id, host_port = _start_chromium_container(
+            headless,
+            memory=self._container_memory,
+            shm_size=self._container_shm_size,
+            tmpfs_size=self._container_tmpfs_size,
+        )
 
         # Connect to CDP, cleaning up the container on any failure
         try:
@@ -191,28 +278,65 @@ class BrowserRelay:
             url: URL to navigate to
 
         Returns:
-            Dict with title, url, and content (accessibility tree nodes)
+            Dict with title, url, and content (accessibility tree nodes).
+            May include ``partial: True`` if content extraction timed out.
         """
         self._validate_url(url)
         session = self._get_session(session_id)
 
+        partial = False
+
         async with session.lock:
             session.last_used = time.time()
-            await session.page.goto(url, wait_until="domcontentloaded")
             try:
-                await session.page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                pass  # Continue with whatever has loaded; SPAs may never idle
+                # Outer ceiling: navigate_timeout + 15s for content extraction
+                async def _do_navigate():
+                    nonlocal partial
+                    await session.page.goto(
+                        url,
+                        wait_until="domcontentloaded",
+                        timeout=self._navigate_timeout_ms,
+                    )
+                    try:
+                        await session.page.wait_for_load_state(
+                            "networkidle", timeout=10000
+                        )
+                    except Exception:
+                        pass  # Continue with whatever has loaded; SPAs may never idle
 
-            title = await session.page.title()
-            current_url = session.page.url
-            content = await self._get_accessibility_tree(session.page)
+                    title = await session.page.title()
+                    current_url = session.page.url
+                    content, was_partial = await self._get_accessibility_tree(
+                        session.page
+                    )
+                    partial = was_partial
+                    return title, current_url, content
 
-        return {
+                title, current_url, content = await asyncio.wait_for(
+                    _do_navigate(),
+                    timeout=(self._navigate_timeout_ms / 1000) + 15,
+                )
+            except asyncio.TimeoutError:
+                # Navigation itself timed out — return what we can
+                title = ""
+                try:
+                    title = await asyncio.wait_for(
+                        session.page.title(), timeout=2
+                    )
+                except Exception:
+                    pass
+                current_url = session.page.url
+                content = []
+                partial = True
+
+        result: dict[str, Any] = {
             "title": title,
             "url": current_url,
             "content": content,
         }
+        if partial:
+            result["partial"] = True
+        return result
 
     async def get_content(
         self, session_id: str, selector: str | None = None
@@ -224,7 +348,8 @@ class BrowserRelay:
             selector: Optional CSS selector to scope content extraction
 
         Returns:
-            Dict with title, url, and content nodes
+            Dict with title, url, and content nodes.
+            May include ``partial: True`` if content extraction timed out.
         """
         session = self._get_session(session_id)
 
@@ -232,13 +357,18 @@ class BrowserRelay:
             session.last_used = time.time()
             title = await session.page.title()
             current_url = session.page.url
-            content = await self._get_accessibility_tree(session.page, selector)
+            content, partial = await self._get_accessibility_tree(
+                session.page, selector
+            )
 
-        return {
+        result: dict[str, Any] = {
             "title": title,
             "url": current_url,
             "content": content,
         }
+        if partial:
+            result["partial"] = True
+        return result
 
     async def click(self, session_id: str, selector: str) -> dict[str, Any]:
         """Click an element on the page.
@@ -254,7 +384,7 @@ class BrowserRelay:
 
         async with session.lock:
             session.last_used = time.time()
-            await session.page.click(selector)
+            await session.page.click(selector, timeout=self._navigate_timeout_ms)
             # Wait for potential navigation
             try:
                 await session.page.wait_for_load_state("networkidle", timeout=5000)
@@ -292,7 +422,7 @@ class BrowserRelay:
 
         async with session.lock:
             session.last_used = time.time()
-            await session.page.fill(selector, text)
+            await session.page.fill(selector, text, timeout=self._navigate_timeout_ms)
             # Wait briefly for any form-triggered navigation
             try:
                 await session.page.wait_for_load_state("networkidle", timeout=2000)
@@ -358,6 +488,7 @@ class BrowserRelay:
         """Close a browser session and clean up resources.
 
         For managed sessions, also stops the Docker container.
+        For native sessions, terminates the Chrome process and cleans up temp dir.
         """
         session = self._sessions.pop(session_id, None)
         if not session:
@@ -371,6 +502,18 @@ class BrowserRelay:
 
         if session.mode == "managed" and session.container_id:
             _stop_container(session.container_id)
+        elif session.mode == "native":
+            if session.process:
+                try:
+                    session.process.terminate()
+                    session.process.wait(timeout=5)
+                except Exception as e:
+                    logger.warning("Error terminating native Chrome for session %s: %s", session_id, e)
+            if session.temp_profile_dir:
+                try:
+                    shutil.rmtree(session.temp_profile_dir, ignore_errors=True)
+                except Exception as e:
+                    logger.warning("Error cleaning up temp profile for session %s: %s", session_id, e)
 
         logger.info("Session %s closed (mode=%s)", session_id, session.mode)
 
@@ -399,16 +542,26 @@ class BrowserRelay:
                 f"CDP URL must point to localhost, got '{hostname}'"
             )
 
-    @staticmethod
-    def _install_page_handlers(page: Any) -> None:
-        """Register handlers for dialogs, popups, and downloads.
+    def _install_page_handlers(self, page: Any) -> None:
+        """Register handlers for dialogs, popups, downloads, and resource blocking.
 
         Prevents malicious pages from hanging the session with alert()
-        or spawning untracked popups.
+        or spawning untracked popups. Optionally blocks heavy resources
+        (images, media, fonts, stylesheets) to save memory.
         """
         page.on("dialog", lambda dialog: dialog.dismiss())
         page.on("popup", lambda popup: popup.close())
         page.on("download", lambda download: download.cancel())
+
+        if self._block_heavy_resources:
+
+            async def _block_resources(route):
+                if route.request.resource_type in BLOCKED_RESOURCE_TYPES:
+                    await route.abort()
+                else:
+                    await route.continue_()
+
+            page.route("**/*", _block_resources)
 
     def _check_session_limit(self) -> None:
         if len(self._sessions) >= self._max_sessions:
@@ -421,7 +574,41 @@ class BrowserRelay:
         session = self._sessions.get(session_id)
         if not session:
             raise ValueError(f"Unknown session: {session_id}")
+
+        # Check if session is still alive for managed mode
+        if session.mode == "managed" and session.container_id:
+            if not self._is_container_running(session.container_id):
+                self._sessions.pop(session_id, None)
+                raise SessionDead(
+                    f"Session {session_id} is dead (container stopped). "
+                    "Open a new session with browser_open."
+                )
+
         return session
+
+    @staticmethod
+    def _is_container_running(container_id: str) -> bool:
+        """Check if a Docker container is still running."""
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Running}}", container_id],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.returncode == 0 and result.stdout.strip() == "true"
+        except Exception:
+            return False
+
+    async def _is_session_alive(self, session: BrowserSession) -> bool:
+        """Check if a session's page is still responsive."""
+        try:
+            await asyncio.wait_for(
+                session.page.evaluate("1"), timeout=3
+            )
+            return True
+        except Exception:
+            return False
 
     def _validate_url(self, url: str) -> None:
         """Validate URL scheme (allowlist) and blocked domains."""
@@ -440,14 +627,16 @@ class BrowserRelay:
 
     async def _get_accessibility_tree(
         self, page: Any, selector: str | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], bool]:
         """Extract the accessibility tree from the page.
 
         Args:
             page: Playwright page object.
             selector: Optional CSS selector to scope to a subtree.
 
-        Returns a list of node dicts with role, name, value, level.
+        Returns a tuple of (nodes, partial) where nodes is a list of node
+        dicts with role, name, value, level, and partial is True if the
+        content extraction fell back to inner_text due to a timeout.
         Truncated at max_content_chars.
 
         Uses Playwright's locator.aria_snapshot() which returns a YAML-like
@@ -456,13 +645,31 @@ class BrowserRelay:
         import re
 
         locator = page.locator(selector) if selector else page.locator("body")
+
+        snapshot = None
+        partial = False
         try:
-            snapshot = await locator.aria_snapshot()
-        except Exception:
-            return []
+            snapshot = await asyncio.wait_for(
+                locator.aria_snapshot(),
+                timeout=self._snapshot_timeout_ms / 1000,
+            )
+        except (asyncio.TimeoutError, Exception) as exc:
+            # Fallback: try to get plain text content instead
+            if isinstance(exc, asyncio.TimeoutError):
+                logger.warning("aria_snapshot timed out, falling back to inner_text")
+            try:
+                body_text = await asyncio.wait_for(
+                    page.inner_text("body"), timeout=5
+                )
+                if body_text:
+                    truncated = body_text[: self._max_content_chars]
+                    return [{"role": "text", "value": truncated}], True
+            except Exception:
+                pass
+            return [], not isinstance(exc, asyncio.TimeoutError)
 
         if not snapshot or not snapshot.strip():
-            return []
+            return [], False
 
         nodes: list[dict[str, Any]] = []
         total_chars = 0
@@ -522,7 +729,7 @@ class BrowserRelay:
             ):
                 nodes.append(entry)
 
-        return nodes
+        return nodes, partial
 
     async def _wait_for_cdp(self, cdp_url: str, timeout: float = 15.0) -> None:
         """Wait for the CDP endpoint to become available."""
@@ -561,10 +768,21 @@ class BrowserRelay:
                     logger.warning("Error cleaning up session %s: %s", sid, e)
 
 
-def _start_chromium_container(headless: bool = True) -> tuple[str, int]:
+def _start_chromium_container(
+    headless: bool = True,
+    memory: str = "1024m",
+    shm_size: str = "256m",
+    tmpfs_size: str = "128M",
+) -> tuple[str, int]:
     """Start a headless Chromium Docker container.
 
     Lets Docker assign a random host port to avoid TOCTOU race conditions.
+
+    Args:
+        headless: Launch in headless mode.
+        memory: Container memory limit (e.g., "1024m").
+        shm_size: Shared memory size (Chrome uses /dev/shm heavily).
+        tmpfs_size: tmpfs mount size for /tmp.
 
     Returns:
         Tuple of (container_id, host_port).
@@ -577,8 +795,9 @@ def _start_chromium_container(headless: bool = True) -> tuple[str, int]:
         "--cap-drop=ALL",
         "--read-only",
         "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=64M",
-        "--memory=512m",
+        f"/tmp:rw,noexec,nosuid,size={tmpfs_size}",
+        f"--memory={memory}",
+        f"--shm-size={shm_size}",
         "--cpus=1.0",
         "-p",
         "127.0.0.1::9222",  # random host port, bound to localhost only
@@ -628,3 +847,95 @@ def _stop_container(container_id: str) -> None:
         logger.info("Stopped container %s", container_id[:12])
     except Exception as e:
         logger.warning("Error stopping container %s: %s", container_id[:12], e)
+
+
+def _find_chrome_binary() -> str:
+    """Find a locally-installed Chrome/Chromium binary.
+
+    Returns:
+        Path to the Chrome executable.
+
+    Raises:
+        FileNotFoundError: If no Chrome installation is found.
+    """
+    system = platform.system()
+
+    if system == "Darwin":
+        candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ]
+        for path in candidates:
+            if os.path.isfile(path):
+                return path
+    elif system == "Linux":
+        for name in ("google-chrome", "google-chrome-stable", "chromium-browser", "chromium"):
+            path = shutil.which(name)
+            if path:
+                return path
+
+    raise FileNotFoundError(
+        f"No Chrome/Chromium installation found on {system}. "
+        "Install Google Chrome or Chromium, or use 'managed' mode instead."
+    )
+
+
+def _start_native_chrome(
+    chrome_binary: str, headless: bool = True
+) -> tuple[Any, int, str]:
+    """Launch Chrome as a subprocess with a fresh temp profile.
+
+    Args:
+        chrome_binary: Path to Chrome executable.
+        headless: Launch in headless mode.
+
+    Returns:
+        Tuple of (process, cdp_port, temp_profile_dir).
+    """
+    import re as _re
+
+    temp_dir = tempfile.mkdtemp(prefix="creel-chrome-")
+
+    cmd = [
+        chrome_binary,
+        "--remote-debugging-port=0",  # OS assigns a free port
+        f"--user-data-dir={temp_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-networking",
+        "--disable-sync",
+    ]
+
+    if headless:
+        cmd.append("--headless=new")
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    # Chrome prints "DevTools listening on ws://127.0.0.1:PORT/..." to stderr
+    port = None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        line = process.stderr.readline()
+        if not line:
+            if process.poll() is not None:
+                break
+            time.sleep(0.1)
+            continue
+        decoded = line.decode("utf-8", errors="replace")
+        m = _re.search(r"DevTools listening on ws://[\w.]+:(\d+)/", decoded)
+        if m:
+            port = int(m.group(1))
+            break
+
+    if port is None:
+        process.terminate()
+        process.wait(timeout=5)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise RuntimeError("Failed to detect Chrome CDP port from stderr output")
+
+    logger.info("Started native Chrome (pid=%d, port=%d)", process.pid, port)
+    return process, port, temp_dir

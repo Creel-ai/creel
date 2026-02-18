@@ -116,7 +116,7 @@ class ThingsUpdateRequest(BaseModel):
 class BrowserConnectRequest(BaseModel):
     """Request for creating a browser session."""
 
-    mode: str = "managed"  # "managed" | "relay"
+    mode: str = "managed"  # "managed" | "relay" | "native"
     cdp_url: str | None = None
     headless: bool = True
 
@@ -336,6 +336,12 @@ async def lifespan(app: FastAPI):
             max_sessions=int(os.environ.get("BROWSER_MAX_SESSIONS", "3")),
             session_timeout_minutes=int(os.environ.get("BROWSER_SESSION_TIMEOUT", "10")),
             blocked_domains=blocked_domains,
+            container_memory=os.environ.get("BROWSER_CONTAINER_MEMORY", "1024m"),
+            container_shm_size=os.environ.get("BROWSER_CONTAINER_SHM_SIZE", "256m"),
+            container_tmpfs_size=os.environ.get("BROWSER_CONTAINER_TMPFS_SIZE", "128M"),
+            navigate_timeout_ms=int(os.environ.get("BROWSER_NAVIGATE_TIMEOUT_MS", "30000")),
+            snapshot_timeout_ms=int(os.environ.get("BROWSER_SNAPSHOT_TIMEOUT_MS", "15000")),
+            block_heavy_resources=os.environ.get("BROWSER_BLOCK_HEAVY_RESOURCES", "true").lower() in ("true", "1", "yes"),
         )
         await browser_relay.start()
         app.state.browser_relay = browser_relay
@@ -636,10 +642,12 @@ async def browser_connect(
             session_id = await relay.connect_relay(body.cdp_url)
         elif body.mode == "managed":
             session_id = await relay.create_managed(headless=body.headless)
+        elif body.mode == "native":
+            session_id = await relay.create_native(headless=body.headless)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown mode: {body.mode}. Use 'managed' or 'relay'.",
+                detail=f"Unknown mode: {body.mode}. Use 'managed', 'relay', or 'native'.",
             )
         return {"ok": True, "session_id": session_id}
     except HTTPException:
@@ -655,10 +663,15 @@ async def browser_navigate(
     _: bool = Depends(authenticate_browser),
 ):
     """Navigate to a URL and return page content."""
+    from bridge.browser import SessionDead
+
     relay = _get_relay()
     try:
         result = await relay.navigate(body.session_id, body.url)
         return {"ok": True, **result}
+    except SessionDead as e:
+        logger.warning("Browser session dead: %s", e)
+        return {"ok": False, "error": str(e), "session_dead": True}
     except Exception as e:
         logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
@@ -670,10 +683,15 @@ async def browser_content(
     _: bool = Depends(authenticate_browser),
 ):
     """Get current page content as accessibility tree."""
+    from bridge.browser import SessionDead
+
     relay = _get_relay()
     try:
         result = await relay.get_content(body.session_id, body.selector)
         return {"ok": True, **result}
+    except SessionDead as e:
+        logger.warning("Browser session dead: %s", e)
+        return {"ok": False, "error": str(e), "session_dead": True}
     except Exception as e:
         logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
@@ -685,10 +703,15 @@ async def browser_click(
     _: bool = Depends(authenticate_browser),
 ):
     """Click an element on the page."""
+    from bridge.browser import SessionDead
+
     relay = _get_relay()
     try:
         result = await relay.click(body.session_id, body.selector)
         return {"ok": True, **result}
+    except SessionDead as e:
+        logger.warning("Browser session dead: %s", e)
+        return {"ok": False, "error": str(e), "session_dead": True}
     except Exception as e:
         logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
@@ -700,10 +723,15 @@ async def browser_type(
     _: bool = Depends(authenticate_browser),
 ):
     """Type text into an input element."""
+    from bridge.browser import SessionDead
+
     relay = _get_relay()
     try:
         result = await relay.type_text(body.session_id, body.selector, body.text)
         return {"ok": True, **result}
+    except SessionDead as e:
+        logger.warning("Browser session dead: %s", e)
+        return {"ok": False, "error": str(e), "session_dead": True}
     except Exception as e:
         logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
@@ -715,10 +743,15 @@ async def browser_screenshot(
     _: bool = Depends(authenticate_browser),
 ):
     """Take a screenshot of the current page."""
+    from bridge.browser import SessionDead
+
     relay = _get_relay()
     try:
         result = await relay.screenshot(body.session_id, body.full_page)
         return {"ok": True, **result}
+    except SessionDead as e:
+        logger.warning("Browser session dead: %s", e)
+        return {"ok": False, "error": str(e), "session_dead": True}
     except Exception as e:
         logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}
@@ -730,10 +763,15 @@ async def browser_links(
     _: bool = Depends(authenticate_browser),
 ):
     """Get all links on the current page."""
+    from bridge.browser import SessionDead
+
     relay = _get_relay()
     try:
         links = await relay.get_links(body.session_id)
         return {"ok": True, "links": links}
+    except SessionDead as e:
+        logger.warning("Browser session dead: %s", e)
+        return {"ok": False, "error": str(e), "session_dead": True}
     except Exception as e:
         logger.warning("Browser endpoint error: %s", e)
         return {"ok": False, "error": str(e)}

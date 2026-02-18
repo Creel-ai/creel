@@ -136,6 +136,15 @@ class TestWrapperFunctions:
         )
 
     @patch("executors.browser.executor.call_bridge")
+    def test_connect_native_mode(self, mock_bridge):
+        mock_bridge.return_value = {"ok": True, "session_id": "s1"}
+        result = executor.connect(mode="native")
+        assert result["session_id"] == "s1"
+        mock_bridge.assert_called_once_with(
+            "/browser/connect", {"mode": "native", "headless": True}, timeout=60
+        )
+
+    @patch("executors.browser.executor.call_bridge")
     def test_navigate(self, mock_bridge):
         mock_bridge.return_value = {
             "ok": True,

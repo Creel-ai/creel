@@ -22,24 +22,38 @@ logger = logging.getLogger(__name__)
 
 _GOOGLE_TOKEN_MAX_AGE_SECONDS = 3600
 
-_HASH_GLOBS = ("Dockerfile", "*.py", "*.txt")
+_HASH_GLOBS = ("Dockerfile", "**/*.py", "**/*.txt")
 
 
 def _compute_executor_hash(executor_dir: Path) -> str:
-    """Hash all source files in an executor directory.
+    """Hash all source files in an executor directory and shared context files.
 
     Returns the first 12 hex chars of the SHA-256 digest computed over
-    sorted (relative-path, file-contents) pairs.
+    sorted (relative-path, file-contents) pairs.  Shared files in the
+    parent build-context directory (e.g. ``google_creds.py``) are also
+    included so that changes to shared modules trigger a rebuild.
     """
     h = sha256()
+    # Executor-specific files
     paths = sorted(
         p
         for pattern in _HASH_GLOBS
         for p in executor_dir.glob(pattern)
         if p.is_file()
     )
+    # Shared files in the build context (src/executors/)
+    context_dir = executor_dir.parent
+    shared = sorted(
+        p
+        for pattern in _HASH_GLOBS
+        for p in context_dir.glob(pattern)
+        if p.is_file()
+    )
     for p in paths:
         h.update(p.relative_to(executor_dir).as_posix().encode())
+        h.update(p.read_bytes())
+    for p in shared:
+        h.update(("../" + p.relative_to(context_dir).as_posix()).encode())
         h.update(p.read_bytes())
     return h.hexdigest()[:12]
 

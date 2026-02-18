@@ -35,6 +35,7 @@ nav:
     - Getting Started: getting-started/quickstart.md
     - Authentication: getting-started/authentication.md
     - Google Services Setup: getting-started/google-services.md
+    - OpenClaw Migration: getting-started/openclaw-migration.md
   - Architecture:
     - Overview: architecture/overview.md
     - Agent Mode: architecture/agent-mode.md
@@ -51,6 +52,7 @@ nav:
     - Google Drive: executors/google-drive.md
     - iMessage: executors/imessage.md
     - Apple Apps: executors/apple-apps.md
+    - Notion: executors/notion.md
     - Web Search & Fetch: executors/web.md
     - Shell Exec: executors/exec.md
   - Deployment:

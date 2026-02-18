@@ -15,7 +15,12 @@ import time
 from typing import TYPE_CHECKING
 
 from guardian.types import ActionVerdict
-from taskrunner.agent import AgentResult, PendingApproval, _extract_prior_tools
+from taskrunner.agent import (
+    AgentResult,
+    PendingApproval,
+    _ensure_tool_call_integrity,
+    _extract_prior_tools,
+)
 from taskrunner.models import AgentConfig, LLMConfig, ToolConfig
 from taskrunner.orchestrator import _ensure_image
 from taskrunner.tools import build_tool_definitions, execute_tool_call
@@ -48,6 +53,7 @@ def run_agent_loop_container(
     The container communicates via JSON-over-stdio. Tool execution,
     Guardian validation, and secret management all happen on the host.
     """
+    _ensure_tool_call_integrity(messages)
     _ensure_image(_IMAGE)
 
     include_memory = memory_manager is not None
@@ -273,16 +279,33 @@ def _handle_tool_request(
                 else:
                     # No callback — inject synthetic tool_results for ALL
                     # tool calls so session history stays valid.
-                    for call in calls:
-                        if call["id"] == tool_id:
+                    assistant_tool_use = []
+                    synthetic_results = []
+                    for c in calls:
+                        assistant_tool_use.append({
+                            "type": "tool_use",
+                            "id": c["id"],
+                            "name": c["name"],
+                            "input": c["input"],
+                        })
+                        if c["id"] == tool_id:
                             msg = f"Action requires approval: {decision.reason}"
                         else:
                             msg = "Action skipped — another tool in this batch requires approval."
-                        results.append({
-                            "tool_use_id": call["id"],
+                        synthetic_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": c["id"],
                             "content": msg,
                             "is_error": True,
                         })
+
+                    # Persist the blocked tool call + synthetic results into
+                    # host-side session history before returning.
+                    messages.append({"role": "assistant", "content": assistant_tool_use})
+                    messages.append({
+                        "role": "user",
+                        "content": synthetic_results,
+                    })
                     _pending_approval_result = AgentResult(
                         text="This action requires approval before proceeding.",
                         turns_used=0,

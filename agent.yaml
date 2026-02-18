@@ -622,6 +622,104 @@ tools:
     fixed_args:
       action: "close"
 
+  # Git operations (via bridge)
+  git_status:
+    executor: git_ops
+    network: true
+    bridge: true
+    classify_output: true
+    description: "Get git repository status"
+    parameters:
+      short:
+        type: boolean
+        description: "Use short format output"
+    fixed_args:
+      action: "status"
+
+  git_diff:
+    executor: git_ops
+    network: true
+    bridge: true
+    classify_output: true
+    description: "Show git diff of working tree changes"
+    parameters:
+      cached:
+        type: boolean
+        description: "Show staged changes (--cached)"
+      diff_path:
+        type: string
+        description: "Limit diff to specific file path"
+    fixed_args:
+      action: "diff"
+
+  git_log:
+    executor: git_ops
+    network: true
+    bridge: true
+    classify_output: true
+    description: "Show git commit log"
+    parameters:
+      max_count:
+        type: integer
+        description: "Maximum number of commits to show (default: 10)"
+      oneline:
+        type: boolean
+        description: "Use one-line format (default: true)"
+    fixed_args:
+      action: "log"
+
+  git_commit:
+    executor: git_ops
+    network: true
+    bridge: true
+    description: "Create a git commit"
+    parameters:
+      message:
+        type: string
+        description: "Commit message"
+        required: true
+      all:
+        type: boolean
+        description: "Stage all modified files before committing (-a)"
+    fixed_args:
+      action: "commit"
+
+  git_branch:
+    executor: git_ops
+    network: true
+    bridge: true
+    description: "List or manage git branches"
+    parameters:
+      name:
+        type: string
+        description: "Branch name to create or delete"
+      delete:
+        type: boolean
+        description: "Delete the specified branch"
+      list_all:
+        type: boolean
+        description: "List all branches including remotes"
+    fixed_args:
+      action: "branch"
+
+  git_push:
+    executor: git_ops
+    network: true
+    bridge: true
+    description: "Push commits to remote repository"
+    parameters:
+      remote:
+        type: string
+        description: "Remote name (default: origin)"
+      branch:
+        type: string
+        description: "Branch name to push"
+      set_upstream:
+        type: boolean
+        description: "Set upstream tracking (-u)"
+    fixed_args:
+      action: "push"
+
   # iMessage Bridge (for broader iMessage access)
   imessage_send:
     executor: imessage_bridge

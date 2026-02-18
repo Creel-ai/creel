@@ -14,6 +14,9 @@ allow:
   - list_reminders
   - get_reminder_lists
   - list_things
+  - git_status
+  - git_diff
+  - git_log
   - web_search
   - fetch_url
   # Browser tools (read-only)
@@ -34,6 +37,10 @@ review:
   - mark_*
   - trash_*
   - edit_memory
+  # Git tools (state-changing)
+  - git_commit
+  - git_branch
+  - git_push
   # Browser tools (state-changing)
   - browser_open
   - browser_navigate

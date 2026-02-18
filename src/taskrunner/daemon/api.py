@@ -53,7 +53,8 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
                     service.resume_session, request.sender_id, request.session_id
                 )
             text = await asyncio.to_thread(
-                service.send_message, request.sender_id, request.text
+                service.send_message, request.sender_id, request.text,
+                auto_approve=request.auto_approve,
             )
             session_id = await asyncio.to_thread(
                 service.get_active_session_id, request.sender_id
@@ -79,6 +80,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
                         sender_id=request.sender_id,
                         text=request.text,
                         session_id=request.session_id,
+                        auto_approve=request.auto_approve,
                     ):
                         asyncio.run_coroutine_threadsafe(
                             q.put(raw_event), loop

@@ -17,6 +17,14 @@ EOF
 
 `NOTION_VERSION` is optional and defaults to `2022-06-28`.
 
+## Smoke Tests
+
+`tests/test_notion_smoke.py` reuses the encrypted secrets file by default:
+
+- Reads `NOTION_API_KEY` from `secrets/notion.env.enc` (or shell env if already set)
+- Optionally reads `NOTION_TEST_PAGE_ID` and `NOTION_TEST_DATABASE_ID` for deeper live checks
+- Optional override: `NOTION_SMOKE_SECRETS_FILE=/path/to/notion.env.enc`
+
 ## Configuration
 
 ```yaml

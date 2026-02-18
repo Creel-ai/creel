@@ -27,6 +27,8 @@ class _StubChatServer:
         sender_id: str,
         text: str,
         on_text_delta=None,
+        *,
+        auto_approve: bool = False,
     ) -> str:
         self.calls.append((sender_id, text))
         session = self._session_mgr.add_user_message(sender_id, text)

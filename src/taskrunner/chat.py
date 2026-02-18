@@ -87,9 +87,16 @@ class ChatServer:
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
         # Initialize approval queue
-        approvals_dir = "approvals"
+        # Keep approval state scoped with session storage by default so tests
+        # and multi-instance deployments don't share a global pending queue.
+        default_approvals_dir = str(Path(agent_def.session.sessions_dir).parent / "approvals")
+        approvals_dir = default_approvals_dir
         if agent_def.guardian and agent_def.guardian.review:
-            approvals_dir = getattr(agent_def.guardian.review, "approvals_dir", approvals_dir)
+            configured = getattr(agent_def.guardian.review, "approvals_dir", "approvals")
+            # Preserve explicit custom dirs; map the legacy default ("approvals")
+            # to a session-scoped location for isolation.
+            if configured and configured != "approvals":
+                approvals_dir = configured
         self._approval_queue = ApprovalQueue(approvals_dir=approvals_dir)
 
         # Initialize guardian if configured and enabled
@@ -149,6 +156,13 @@ class ChatServer:
                     sender_id, pending, stripped.lower() in _APPROVE_WORDS,
                 )
 
+        # Screen input through guardian (before adding to session)
+        if self._guardian:
+            screen_result = self._guardian.screen_input(text)
+            if screen_result.blocked:
+                logger.warning("Guardian blocked input from %s", sender_id)
+                return screen_result.rejection_message
+
         # Do not start a new LLM turn while an approval is pending.
         pending = self._approval_queue.get_pending(sender_id)
         if pending is not None:
@@ -157,13 +171,6 @@ class ChatServer:
                 f"⏳ Approval still pending for `{pending.tool_name}`. "
                 "Reply Y to approve or N to deny."
             )
-
-        # Screen input through guardian (before adding to session)
-        if self._guardian:
-            screen_result = self._guardian.screen_input(text)
-            if screen_result.blocked:
-                logger.warning("Guardian blocked input from %s", sender_id)
-                return screen_result.rejection_message
 
         # Add user message and get session with history
         session = self._session_mgr.add_user_message(sender_id, text)

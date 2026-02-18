@@ -306,7 +306,7 @@ class TestExecutorSecrets:
             }
         )
         env_file = tmp_path / "google.env"
-        env_file.write_text(f"GOOGLE_CREDENTIALS_JSON={json.dumps(creds_json)}\n")
+        env_file.write_text(f"GOOGLE_CREDENTIALS_JSON={creds_json}\n")
         enc_path = encrypt_env_file(env_file, recipient_path=str(pub_file))
 
         cfg = ExecutorConfig(secrets=str(enc_path), args={})

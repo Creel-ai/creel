@@ -32,12 +32,16 @@ def _replace_google_credentials_with_access_token(env_vars: dict[str, str]) -> N
     from taskrunner.oauth import get_google_access_token_from_json
 
     cache_key = f"google_creds:{sha256(creds_json.encode('utf-8')).hexdigest()}"
-    env_vars["GOOGLE_ACCESS_TOKEN"] = get_google_access_token_from_json(
-        creds_json,
-        cache_key=cache_key,
-        max_token_age_seconds=_GOOGLE_TOKEN_MAX_AGE_SECONDS,
-        force_refresh=False,
-    )
+    try:
+        env_vars["GOOGLE_ACCESS_TOKEN"] = get_google_access_token_from_json(
+            creds_json,
+            cache_key=cache_key,
+            max_token_age_seconds=_GOOGLE_TOKEN_MAX_AGE_SECONDS,
+            force_refresh=False,
+        )
+    except Exception:
+        logger.exception("Failed to mint Google access token; executor will not receive credentials")
+        raise
 
 
 def run_task(

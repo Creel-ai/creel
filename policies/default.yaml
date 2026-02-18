@@ -16,6 +16,9 @@ allow:
   - list_things
   - web_search
   - fetch_url
+  # File operations (read-only)
+  - read_file
+  - list_files
   # Browser tools (read-only)
   - browser_get_content
   - browser_links
@@ -228,3 +231,6 @@ auto_approve:
   - browser_click
   - browser_type
   - browser_screenshot
+  # File operations (writes are sandboxed to workspace)
+  - write_file
+  - edit_file

@@ -27,6 +27,7 @@ import argparse
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -394,6 +395,49 @@ def _build_daemon_channel(agent_def, channel_type: str):
     )
 
 
+def _start_bridge_server(bridge_config) -> threading.Thread:
+    """Start the host bridge server in a background thread.
+
+    Pre-generates scoped tokens and sets them as env vars so both the
+    bridge server and the orchestrator (for container injection) can
+    use them.
+    """
+    import secrets as _secrets
+    import uvicorn as _uvicorn
+
+    # Parse host/port from bridge URL
+    from urllib.parse import urlparse
+    parsed = urlparse(bridge_config.url)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or 8099
+
+    # Pre-generate scoped tokens so orchestrator can inject them into containers
+    from taskrunner.orchestrator import _EXECUTOR_TO_BRIDGE_SCOPE
+    scopes = sorted(set(_EXECUTOR_TO_BRIDGE_SCOPE.values()))
+    for scope in scopes:
+        env_var = f"BRIDGE_TOKEN_{scope}"
+        if not os.environ.get(env_var):
+            os.environ[env_var] = _secrets.token_urlsafe(32)
+
+    def _run_bridge():
+        try:
+            from bridge.server import app as bridge_app
+            logger.info("Starting bridge server on %s:%d", host, port)
+            _uvicorn.run(
+                bridge_app,
+                host=host,
+                port=port,
+                access_log=False,
+                log_level="info",
+            )
+        except Exception:
+            logger.exception("Bridge server failed")
+
+    t = threading.Thread(target=_run_bridge, daemon=True, name="bridge-server")
+    t.start()
+    return t
+
+
 def cmd_daemon_run(args: argparse.Namespace) -> int:
     """Run the daemon server in the foreground (internal command)."""
     import uvicorn
@@ -458,6 +502,11 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     guardian_status = "active" if server._guardian else "inactive"
     tool_count = len(agent_def.tools)
     print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
+
+    # Start host bridge server if enabled
+    bridge_thread = None
+    if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
+        bridge_thread = _start_bridge_server(agent_def.bridge)
 
     app = create_daemon_app(service)
 
@@ -837,6 +886,23 @@ def cmd_daemon_status(args: argparse.Namespace) -> int:
             print(f"  - {ch.get('name')}: {state} ({detail})")
     else:
         print("Channels: none registered")
+
+    # Check bridge server health
+    try:
+        agent_def = _load_agent_def(args)
+        if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
+            import httpx
+            bridge_url = agent_def.bridge.url.rstrip("/")
+            try:
+                br = httpx.get(f"{bridge_url}/health", timeout=1.0)
+                if br.status_code == 200:
+                    print(f"Bridge: running ({bridge_url})")
+                else:
+                    print(f"Bridge: unhealthy (HTTP {br.status_code})")
+            except Exception:
+                print(f"Bridge: not reachable ({bridge_url})")
+    except Exception:
+        pass  # No agent config or bridge not configured
 
     return 0
 

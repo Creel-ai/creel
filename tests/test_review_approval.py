@@ -242,6 +242,7 @@ def test_chat_y_approves_and_executes(mock_exec, tmp_path):
         tool_input={"to": "x@y.com"},
         tools_config=server._agent_def.tools,
         use_containers=False,
+        bridge_config=server._agent_def.bridge,
     )
 
 

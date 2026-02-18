@@ -36,6 +36,19 @@ class AgentResult:
     last_input_tokens: int = 0
 
 
+def _extract_prior_tools(messages: list[dict]) -> list[str]:
+    """Extract tool names from prior assistant messages for coherence context."""
+    prior = []
+    for msg in messages:
+        if msg.get("role") == "assistant":
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        prior.append(block.get("name", ""))
+    return prior
+
+
 def run_agent_loop(
     messages: list[dict],
     llm_config: LLMConfig,
@@ -48,6 +61,7 @@ def run_agent_loop(
     memory_manager: object | None = None,
     on_text_delta: Callable[[str], None] | None = None,
     allowed_tools: list[str] | None = None,
+    bridge_config: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -251,7 +265,8 @@ def run_agent_loop(
                         break
 
                 if user_request:
-                    coherence = guardian.check_coherence(user_request, tool_name, tool_input)
+                    prior_tools = _extract_prior_tools(messages)
+                    coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
                     if not coherence.coherent:
                         logger.warning(
                             "Guardian coherence check failed for %s: %s",
@@ -314,6 +329,7 @@ def run_agent_loop(
                     tools_config=tools_config,
                     use_containers=use_containers,
                     memory_manager=memory_manager,
+                    bridge_config=bridge_config,
                 )
                 is_error = False
                 elapsed_ms = (time.perf_counter() - t0) * 1000

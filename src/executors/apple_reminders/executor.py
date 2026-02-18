@@ -77,6 +77,11 @@ def add_reminder(title: str, list_name: str | None = None, due: str | None = Non
     return call_bridge("/reminders/add", data)
 
 
+def get_reminder_lists() -> dict[str, Any]:
+    """List available reminder lists via bridge."""
+    return call_bridge("/reminders/lists")
+
+
 def complete_reminder(reminder_id: str) -> dict[str, Any]:
     """Complete a reminder via bridge."""
     return call_bridge("/reminders/complete", {"id": reminder_id})
@@ -101,13 +106,16 @@ def main() -> None:
             
             result = add_reminder(title, list_name, due)
         
+        elif action == "lists":
+            result = get_reminder_lists()
+
         elif action == "complete":
             reminder_id = os.environ.get("ID")
             if not reminder_id:
                 raise ValueError("ID environment variable required for complete action")
-            
+
             result = complete_reminder(reminder_id)
-        
+
         else:
             raise ValueError(f"Unknown action: {action}")
         

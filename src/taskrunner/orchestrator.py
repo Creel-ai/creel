@@ -19,6 +19,14 @@ from taskrunner.secrets import decrypt_env_file
 
 logger = logging.getLogger(__name__)
 
+_EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
+    "apple_notes": "NOTES",
+    "apple_reminders": "REMINDERS",
+    "things": "THINGS",
+    "imessage_bridge": "IMESSAGE",
+    "browser": "BROWSER",
+}
+
 
 def run_task(
     task_path: str | Path,
@@ -562,10 +570,10 @@ def _ensure_image(image: str) -> None:
         # executor-gmail-modify -> src/executors/gmail_modify/
         name = tag.removeprefix("executor-").replace("-", "_")
         context = Path("src/executors") / name
+    elif tag == "llm-runner":
+        context = Path("src/llm")
     else:
-        # llm-runner -> src/llm/
         context = Path("src") / tag.replace("-", "_")
-        # Try hyphenated too: src/llm/ exists as-is
         if not context.exists():
             context = Path("src") / tag
 
@@ -624,8 +632,19 @@ def _run_executor_container(
     
     # Add bridge configuration if enabled
     if bridge_config and bridge_config.enabled:
-        env_vars["BRIDGE_URL"] = bridge_config.url
-        if bridge_config.token:
+        import os
+        # Rewrite localhost to host.docker.internal for container access
+        bridge_url = bridge_config.url
+        bridge_url = bridge_url.replace("://localhost", "://host.docker.internal")
+        bridge_url = bridge_url.replace("://127.0.0.1", "://host.docker.internal")
+        env_vars["BRIDGE_URL"] = bridge_url
+        # Look up scoped token by executor name (e.g. browser → BRIDGE_TOKEN_BROWSER)
+        executor_name = config.name or ""
+        scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(executor_name, executor_name.upper())
+        scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
+        if scoped_token:
+            env_vars["BRIDGE_TOKEN"] = scoped_token
+        elif bridge_config.token:
             env_vars["BRIDGE_TOKEN"] = bridge_config.token
 
     with tempfile.NamedTemporaryFile(

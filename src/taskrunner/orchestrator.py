@@ -618,15 +618,13 @@ def _ensure_image(image: str) -> None:
         # executor-gmail-modify -> dockerfile src/executors/gmail_modify/Dockerfile
         # with shared context src/executors/ (allows shared modules).
         name = tag.removeprefix("executor-").replace("-", "_")
-        context = Path("src/executors")
-        dockerfile = context / name / "Dockerfile"
+        context = Path("src/executors") / name
+        dockerfile = context / "Dockerfile"
         build_cmd = [
             "docker",
             "build",
             "-t",
             image,
-            "-f",
-            str(dockerfile),
             str(context),
         ]
     elif tag == "llm-runner":

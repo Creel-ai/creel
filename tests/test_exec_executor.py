@@ -252,14 +252,17 @@ class TestContainerExecution:
         mock_env_file = MagicMock()
         mock_env_file.name = "/tmp/test.env"
         mock_tempfile.return_value.__enter__.return_value = mock_env_file
-        
+
+        # Mock _ensure_image to return the image name (content-hash passthrough)
+        mock_ensure_image.return_value = "custom-exec:v1.0"
+
         # Mock subprocess result
         mock_subprocess.return_value = MagicMock(
             returncode=0,
             stdout='{"result": "success"}',
             stderr="",
         )
-        
+
         # Create test configs
         executor_config = ExecutorConfig(name="exec")
         tool_config = ToolConfig(
@@ -267,12 +270,12 @@ class TestContainerExecution:
             description="Test",
             image="custom-exec:v1.0"  # Image override
         )
-        
+
         result = _run_executor_container(executor_config, tool_config)
-        
+
         # Check that the custom image was used
         mock_ensure_image.assert_called_with("custom-exec:v1.0")
-        
+
         docker_cmd = mock_subprocess.call_args[0][0]
         assert "custom-exec:v1.0" in docker_cmd
 

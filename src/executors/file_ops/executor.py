@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""File operations executor - read, write, edit, and list files.
+
+All paths are sandboxed to a workspace root (WORKSPACE env var, default /workspace).
+Symlinks are resolved before access checks to prevent traversal.
+Outputs JSON to stdout.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import sys
+
+
+def _workspace() -> str:
+    """Return resolved workspace root path."""
+    return os.path.realpath(os.environ.get("WORKSPACE", "/workspace"))
+
+
+def _safe_path(file_path: str) -> str:
+    """Resolve a path and verify it stays within the workspace.
+
+    Resolves symlinks via os.path.realpath so that symlink-based
+    traversal is blocked.
+
+    Raises ValueError if the resolved path escapes the workspace.
+    """
+    workspace = _workspace()
+    resolved = os.path.realpath(os.path.join(workspace, file_path))
+    # Ensure resolved path is workspace itself or a child of it
+    if resolved != workspace and not resolved.startswith(workspace + os.sep):
+        raise ValueError(f"Path escapes workspace: {file_path}")
+    return resolved
+
+
+def action_read() -> dict:
+    """Read a file, optionally with offset/limit (line-based)."""
+    file_path = os.environ.get("FILE_PATH", "")
+    if not file_path:
+        return {"error": "FILE_PATH is required"}
+
+    offset = int(os.environ.get("OFFSET", "0"))
+    limit = int(os.environ.get("LIMIT", "0"))
+
+    try:
+        resolved = _safe_path(file_path)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    if not os.path.exists(resolved):
+        return {"error": f"File not found: {file_path}"}
+    if not os.path.isfile(resolved):
+        return {"error": f"Not a file: {file_path}"}
+
+    try:
+        with open(resolved) as f:
+            lines = f.readlines()
+
+        if offset > 0:
+            lines = lines[offset:]
+        if limit > 0:
+            lines = lines[:limit]
+
+        content = "".join(lines)
+        return {"path": file_path, "content": content, "lines": len(lines)}
+    except OSError as e:
+        return {"error": str(e)}
+
+
+def action_write() -> dict:
+    """Write content to a file (creates parent dirs if needed)."""
+    file_path = os.environ.get("FILE_PATH", "")
+    content = os.environ.get("CONTENT", "")
+    if not file_path:
+        return {"error": "FILE_PATH is required"}
+
+    try:
+        resolved = _safe_path(file_path)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    try:
+        os.makedirs(os.path.dirname(resolved), exist_ok=True)
+        with open(resolved, "w") as f:
+            f.write(content)
+        return {"path": file_path, "bytes_written": len(content.encode())}
+    except OSError as e:
+        return {"error": str(e)}
+
+
+def action_edit() -> dict:
+    """Replace OLD_TEXT with NEW_TEXT in a file."""
+    file_path = os.environ.get("FILE_PATH", "")
+    old_text = os.environ.get("OLD_TEXT", "")
+    new_text = os.environ.get("NEW_TEXT", "")
+    if not file_path:
+        return {"error": "FILE_PATH is required"}
+    if not old_text:
+        return {"error": "OLD_TEXT is required"}
+
+    try:
+        resolved = _safe_path(file_path)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    if not os.path.exists(resolved):
+        return {"error": f"File not found: {file_path}"}
+
+    try:
+        with open(resolved) as f:
+            content = f.read()
+
+        count = content.count(old_text)
+        if count == 0:
+            return {"error": "OLD_TEXT not found in file"}
+
+        updated = content.replace(old_text, new_text)
+        with open(resolved, "w") as f:
+            f.write(updated)
+
+        return {"path": file_path, "replacements": count}
+    except OSError as e:
+        return {"error": str(e)}
+
+
+def action_list() -> dict:
+    """List files in a directory, optionally filtered by glob pattern."""
+    directory = os.environ.get("DIRECTORY", ".")
+    pattern = os.environ.get("PATTERN", "*")
+    recursive = os.environ.get("RECURSIVE", "false").lower() == "true"
+
+    try:
+        resolved = _safe_path(directory)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    if not os.path.exists(resolved):
+        return {"error": f"Directory not found: {directory}"}
+    if not os.path.isdir(resolved):
+        return {"error": f"Not a directory: {directory}"}
+
+    try:
+        entries = []
+        if recursive:
+            for root, dirs, files in os.walk(resolved):
+                for name in dirs + files:
+                    full = os.path.join(root, name)
+                    rel = os.path.relpath(full, resolved)
+                    if fnmatch.fnmatch(name, pattern):
+                        entries.append({
+                            "name": rel,
+                            "type": "directory" if os.path.isdir(full) else "file",
+                            "size": os.path.getsize(full) if os.path.isfile(full) else 0,
+                        })
+        else:
+            for name in sorted(os.listdir(resolved)):
+                if fnmatch.fnmatch(name, pattern):
+                    full = os.path.join(resolved, name)
+                    entries.append({
+                        "name": name,
+                        "type": "directory" if os.path.isdir(full) else "file",
+                        "size": os.path.getsize(full) if os.path.isfile(full) else 0,
+                    })
+
+        return {"directory": directory, "entries": entries, "count": len(entries)}
+    except OSError as e:
+        return {"error": str(e)}
+
+
+ACTIONS = {
+    "read": action_read,
+    "write": action_write,
+    "edit": action_edit,
+    "list": action_list,
+}
+
+
+def main() -> None:
+    action = os.environ.get("ACTION", "").lower()
+    if action not in ACTIONS:
+        result = {"error": f"Unknown action: {action!r}. Valid: {', '.join(ACTIONS)}"}
+        print(json.dumps(result))
+        sys.exit(1)
+
+    result = ACTIONS[action]()
+    print(json.dumps(result, indent=2))
+    if "error" in result:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

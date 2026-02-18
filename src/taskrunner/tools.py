@@ -11,8 +11,15 @@ from taskrunner.orchestrator import _run_executor_container, _run_executor_inlin
 
 logger = logging.getLogger(__name__)
 
-# Dangerous root paths that set_workspace should reject
-_DANGEROUS_ROOTS = frozenset({"/", "/etc", "/var", "/usr", "/bin", "/sbin", "/lib", "/boot", "/dev", "/proc", "/sys"})
+# System directories that must never be used as workspaces.
+# Checked via both exact match and prefix match (e.g. /etc/nginx is also blocked).
+_SYSTEM_DIRS = frozenset({
+    "/etc", "/var", "/usr", "/bin", "/sbin", "/lib", "/boot",
+    "/dev", "/proc", "/sys",
+})
+
+# User-sensitive directories (relative to home) that should be blocked.
+_SENSITIVE_HOME_DIRS = (".ssh", ".gnupg", ".age", ".aws")
 
 
 BUILTIN_MEMORY_TOOLS = [
@@ -214,18 +221,39 @@ def build_tool_definitions(
     return tool_defs
 
 
+def _is_blocked_path(path: str) -> bool:
+    """Check if a resolved path is a blocked system or sensitive location."""
+    if path == "/":
+        return True
+    # Prefix match against system directories (blocks /etc AND /etc/nginx/...)
+    for d in _SYSTEM_DIRS:
+        if path == d or path.startswith(d + "/"):
+            return True
+    # Block sensitive user directories
+    home = os.path.expanduser("~")
+    if home != "~":
+        for name in _SENSITIVE_HOME_DIRS:
+            sensitive = os.path.join(home, name)
+            if path == sensitive or path.startswith(sensitive + "/"):
+                return True
+    return False
+
+
 def _validate_workspace_path(path: str) -> str | None:
-    """Validate a workspace path and return an error message or None if valid."""
+    """Validate a workspace path and return an error message or None if valid.
+
+    Returns a generic error message to avoid leaking path details to the LLM.
+    """
     if not os.path.isabs(path):
-        return f"Path must be absolute, got: {path}"
-    # Check the literal path and the resolved path against dangerous roots
+        return "Path must be absolute"
     resolved = os.path.realpath(path)
-    if path in _DANGEROUS_ROOTS or resolved in _DANGEROUS_ROOTS:
-        return f"Cannot use dangerous root as workspace: {path}"
+    # Check both the literal path and the resolved path (handles symlinks)
+    if _is_blocked_path(path) or _is_blocked_path(resolved):
+        return "Cannot use this path as workspace"
     if not os.path.exists(resolved):
-        return f"Path does not exist: {resolved}"
+        return "Path does not exist"
     if not os.path.isdir(resolved):
-        return f"Path is not a directory: {resolved}"
+        return "Path is not a directory"
     return None
 
 
@@ -262,6 +290,9 @@ def execute_tool_call(
     """
     # Handle set_workspace built-in
     if tool_name == "set_workspace":
+        # set_workspace requires an active session (not task mode)
+        if session_state is None:
+            return json.dumps({"error": "set_workspace is only available in interactive sessions"})
         path = tool_input.get("path", "")
         if not path:
             return json.dumps({"error": "path is required"})
@@ -269,8 +300,7 @@ def execute_tool_call(
         if error:
             return json.dumps({"error": error})
         resolved = os.path.realpath(path)
-        if session_state is not None:
-            session_state["workspace"] = resolved
+        session_state["workspace"] = resolved
         return json.dumps({"workspace": resolved, "status": "ok"})
 
     # Handle built-in tools
@@ -311,12 +341,21 @@ def execute_tool_call(
 
     cfg = tools_config[tool_name]
 
+    # Security: strip 'workspace' from LLM-provided input for file_ops tools
+    # to prevent bypassing the set_workspace approval flow.
+    if cfg.executor == "file_ops":
+        tool_input = {k: v for k, v in tool_input.items() if k != "workspace"}
+
     # Merge: LLM input as base, fixed_args override
     merged_args = {**tool_input, **cfg.fixed_args}
 
     # Inject workspace from session_state for file_ops tools
     if cfg.executor == "file_ops" and session_state and "workspace" in session_state:
-        merged_args["workspace"] = session_state["workspace"]
+        workspace = session_state["workspace"]
+        # Re-validate: workspace may have been removed since set_workspace
+        if not os.path.isdir(workspace):
+            return json.dumps({"error": "Workspace is no longer valid (directory removed or inaccessible)"})
+        merged_args["workspace"] = workspace
 
     # Convert all values to strings (executors expect string args)
     string_args = {k: str(v) for k, v in merged_args.items()}

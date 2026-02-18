@@ -10,11 +10,50 @@ import pytest
 
 from taskrunner.tools import (
     BUILTIN_WORKSPACE_TOOLS,
+    _is_blocked_path,
     _validate_workspace_path,
     build_tool_definitions,
     execute_tool_call,
 )
 from taskrunner.models import ToolConfig, ToolParameter
+
+
+# ---------------------------------------------------------------------------
+# _is_blocked_path
+# ---------------------------------------------------------------------------
+
+class TestIsBlockedPath:
+
+    def test_root_blocked(self):
+        assert _is_blocked_path("/") is True
+
+    def test_system_dirs_blocked(self):
+        for d in ["/etc", "/var", "/usr", "/bin", "/sbin", "/dev", "/proc"]:
+            assert _is_blocked_path(d) is True, f"Expected {d} to be blocked"
+
+    def test_system_subdirs_blocked(self):
+        """Prefix matching: subdirectories of system dirs are also blocked."""
+        assert _is_blocked_path("/etc/nginx") is True
+        assert _is_blocked_path("/var/log/syslog") is True
+        assert _is_blocked_path("/usr/local/bin") is True
+
+    def test_sensitive_home_dirs_blocked(self):
+        home = os.path.expanduser("~")
+        if home == "~":
+            pytest.skip("Cannot determine home directory")
+        for name in (".ssh", ".gnupg", ".age", ".aws"):
+            assert _is_blocked_path(os.path.join(home, name)) is True
+            # Subdirectories too
+            assert _is_blocked_path(os.path.join(home, name, "keys")) is True
+
+    def test_normal_dirs_not_blocked(self, tmp_path):
+        assert _is_blocked_path(str(tmp_path)) is False
+
+    def test_home_itself_not_blocked(self):
+        home = os.path.expanduser("~")
+        if home == "~":
+            pytest.skip("Cannot determine home directory")
+        assert _is_blocked_path(home) is False
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +73,7 @@ class TestValidateWorkspacePath:
     def test_nonexistent_path_rejected(self):
         error = _validate_workspace_path("/tmp/nonexistent_abc_xyz_12345")
         assert error is not None
-        assert "does not exist" in error
+        assert "does not exist" in error.lower()
 
     def test_file_not_dir_rejected(self, tmp_path):
         f = tmp_path / "file.txt"
@@ -47,7 +86,20 @@ class TestValidateWorkspacePath:
         for root in ["/", "/etc", "/var", "/usr", "/bin"]:
             error = _validate_workspace_path(root)
             assert error is not None, f"Expected rejection for {root}"
-            assert "dangerous" in error.lower()
+
+    def test_system_subdir_rejected(self):
+        """Subdirectories of system dirs are also blocked."""
+        # /etc/pam.d exists on macOS/Linux
+        if os.path.isdir("/etc/pam.d"):
+            error = _validate_workspace_path("/etc/pam.d")
+            assert error is not None
+
+    def test_generic_error_messages(self):
+        """Error messages should not leak path details."""
+        error = _validate_workspace_path("/")
+        assert error is not None
+        # Should NOT contain the actual path in the message
+        assert "Cannot use this path" in error
 
     def test_symlink_resolved(self, tmp_path):
         real = tmp_path / "real"
@@ -122,7 +174,6 @@ class TestSetWorkspaceHandler:
         )
         result = json.loads(result_str)
         assert "error" in result
-        assert "dangerous" in result["error"].lower()
 
     def test_set_workspace_empty_path_error(self):
         state: dict = {}
@@ -135,8 +186,8 @@ class TestSetWorkspaceHandler:
         result = json.loads(result_str)
         assert "error" in result
 
-    def test_set_workspace_no_session_state(self, tmp_path):
-        """set_workspace without session_state should still succeed."""
+    def test_set_workspace_no_session_state_rejected(self, tmp_path):
+        """set_workspace without session_state should fail (task mode guard)."""
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": str(tmp_path)},
@@ -144,7 +195,8 @@ class TestSetWorkspaceHandler:
             session_state=None,
         )
         result = json.loads(result_str)
-        assert result["status"] == "ok"
+        assert "error" in result
+        assert "interactive" in result["error"].lower()
 
     def test_set_workspace_resolves_symlinks(self, tmp_path):
         real = tmp_path / "real"
@@ -284,6 +336,57 @@ class TestWorkspaceInjection:
         execute_tool_call("set_workspace", {"path": str(dir2)}, tools, session_state=state)
         r2 = json.loads(execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state))
         assert r2["content"] == "from dir2"
+
+
+# ---------------------------------------------------------------------------
+# Security: workspace key stripping and re-validation
+# ---------------------------------------------------------------------------
+
+class TestWorkspaceSecurity:
+
+    def test_workspace_key_stripped_from_llm_input(self, tmp_path):
+        """LLM cannot inject workspace key in tool_input to bypass set_workspace."""
+        legit_ws = tmp_path / "legit"
+        evil_ws = tmp_path / "evil"
+        legit_ws.mkdir()
+        evil_ws.mkdir()
+        (legit_ws / "f.txt").write_text("legit content")
+        (evil_ws / "f.txt").write_text("evil content")
+
+        state = {"workspace": str(legit_ws)}
+        tools = _make_file_ops_tools()
+
+        # LLM tries to override workspace via tool_input
+        result_str = execute_tool_call(
+            tool_name="read_file",
+            tool_input={"file_path": "f.txt", "workspace": str(evil_ws)},
+            tools_config=tools,
+            session_state=state,
+        )
+        result = json.loads(result_str)
+        # Should read from legit workspace, not evil
+        assert result["content"] == "legit content"
+
+    def test_workspace_revalidated_on_use(self, tmp_path):
+        """If workspace directory is deleted after set_workspace, file_ops fails."""
+        ws = tmp_path / "ws"
+        ws.mkdir()
+
+        state = {"workspace": str(ws)}
+        tools = _make_file_ops_tools()
+
+        # Delete the workspace directory
+        ws.rmdir()
+
+        result_str = execute_tool_call(
+            tool_name="read_file",
+            tool_input={"file_path": "f.txt"},
+            tools_config=tools,
+            session_state=state,
+        )
+        result = json.loads(result_str)
+        assert "error" in result
+        assert "no longer valid" in result["error"].lower()
 
 
 # ---------------------------------------------------------------------------

@@ -360,6 +360,57 @@ def test_chat_no_auto_approve_has_no_confirm(mock_run, tmp_path):
     assert confirm_fn is None
 
 
+@patch("taskrunner.chat.run_agent_loop")
+def test_chat_pending_approval_blocks_new_message(mock_run, tmp_path):
+    """A new non-approval message should be blocked while approval is pending."""
+    server = _make_chat_server(tmp_path)
+    server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
+
+    response = server.handle_message("sender1", "send another email")
+
+    assert "pending" in response.lower()
+    assert "approve" in response.lower()
+    mock_run.assert_not_called()
+
+
+@patch("taskrunner.agent.call_llm")
+def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
+    """Agent loop should inject synthetic tool_result before the next user turn."""
+    from taskrunner.agent import run_agent_loop
+    from taskrunner.models import AgentConfig, LLMConfig
+
+    mock_llm.return_value = FakeTextResponse("Recovered")
+    messages = [
+        {"role": "user", "content": "send email"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tool_orphan", "name": "send_email", "input": {"to": "x@y.com"}},
+        ]},
+        {"role": "user", "content": "actually nevermind"},
+    ]
+
+    result = run_agent_loop(
+        messages=messages,
+        llm_config=LLMConfig(model="test"),
+        tools_config={"send_email": MagicMock()},
+        agent_config=AgentConfig(max_turns=1),
+        guardian=None,
+    )
+
+    assert result.stop_reason == "end_turn"
+    repaired = [
+        msg for msg in messages
+        if msg.get("role") == "user"
+        and isinstance(msg.get("content"), list)
+        and any(
+            isinstance(block, dict)
+            and block.get("type") == "tool_result"
+            and block.get("tool_use_id") == "tool_orphan"
+            for block in msg["content"]
+        )
+    ]
+    assert repaired, "Expected synthetic tool_result for orphaned tool_use"
+
+
 def test_chat_approval_sends_imessage(tmp_path):
     """Approval request sends iMessage when channel is available."""
     mock_channel = MagicMock()

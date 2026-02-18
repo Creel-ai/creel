@@ -235,3 +235,18 @@ cases:
     phase: extras
     title: CLI Help Contract
     handler: cli_help
+
+  - id: extras-6-notion-smoke
+    order: 350
+    phase: extras
+    title: Notion Executor Live Smoke (env-gated)
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_notion_smoke.py"
+      - "-v"
+      - "-m"
+      - "smoke"
+    timeout: 900

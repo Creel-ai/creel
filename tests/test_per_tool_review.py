@@ -153,3 +153,15 @@ class TestMemoryToolPolicy:
         engine = PolicyEngine("policies/default.yaml")
         decision = engine.evaluate("delete_memory")
         assert decision.verdict == ActionVerdict.DENY
+
+
+class TestNotionToolPolicy:
+    def test_notion_read_action_allowed(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("notion_api", {"action": "search"})
+        assert decision.verdict == ActionVerdict.ALLOW
+
+    def test_notion_write_like_action_requires_review(self) -> None:
+        engine = PolicyEngine("policies/default.yaml")
+        decision = engine.evaluate("notion_api", {"action": "create_page"})
+        assert decision.verdict == ActionVerdict.REVIEW

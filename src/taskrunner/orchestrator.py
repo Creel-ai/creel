@@ -207,6 +207,8 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
             return _exec_apple_reminders_inline(config)
         elif name == "brave_search":
             return _exec_brave_search_inline(config)
+        elif name == "notion":
+            return _exec_notion_inline(config)
         elif name == "fetch_url":
             return _exec_fetch_url_inline(config)
         elif name == "browser":
@@ -493,6 +495,27 @@ def _exec_brave_search_inline(config: ExecutorConfig) -> str:
     query = config.args.get("query", "")
     count = int(config.args.get("count", "5"))
     result = search(query, count)
+    return json.dumps(result, indent=2)
+
+
+def _exec_notion_inline(config: ExecutorConfig) -> str:
+    """Run Notion executor inline."""
+    from executors.notion.executor import run_action
+
+    action = config.args.get("action", "")
+    if not action:
+        raise ValueError("notion executor requires an 'action' argument")
+
+    result = run_action(
+        action=action,
+        query=config.args.get("query", ""),
+        page_id=config.args.get("page_id", ""),
+        database_id=config.args.get("database_id", ""),
+        filter_json=config.args.get("filter_json", ""),
+        sorts_json=config.args.get("sorts_json", ""),
+        page_size=config.args.get("page_size"),
+        start_cursor=config.args.get("start_cursor", ""),
+    )
     return json.dumps(result, indent=2)
 
 

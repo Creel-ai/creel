@@ -430,6 +430,14 @@ async def reminders_list(
     return run_command(cmd)
 
 
+@app.post("/reminders/lists", response_model=BridgeResponse)
+async def reminders_lists(
+    _: bool = Depends(authenticate_reminders)
+) -> BridgeResponse:
+    """List available reminder lists via remindctl CLI."""
+    return run_command(["remindctl", "list"])
+
+
 @app.post("/reminders/add", response_model=BridgeResponse)
 async def reminders_add(
     request: RemindersAddRequest,

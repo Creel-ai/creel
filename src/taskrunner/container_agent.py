@@ -15,7 +15,7 @@ import time
 from typing import TYPE_CHECKING
 
 from guardian.types import ActionVerdict
-from taskrunner.agent import AgentResult, PendingApproval
+from taskrunner.agent import AgentResult, PendingApproval, _extract_prior_tools
 from taskrunner.models import AgentConfig, LLMConfig, ToolConfig
 from taskrunner.orchestrator import _ensure_image
 from taskrunner.tools import build_tool_definitions, execute_tool_call
@@ -40,6 +40,7 @@ def run_agent_loop_container(
     guardian: object | None = None,
     confirm_action: Callable[[str, dict, str], bool] | None = None,
     memory_manager: object | None = None,
+    bridge_config: object | None = None,
 ) -> AgentResult:
     """Run the agent loop inside an isolated Docker container.
 
@@ -103,7 +104,7 @@ def run_agent_loop_container(
         try:
             return _run_protocol(
                 proc, start_msg, messages, tools_config, use_containers,
-                guardian, confirm_action, memory_manager,
+                guardian, confirm_action, memory_manager, bridge_config,
             )
         except Exception as e:
             logger.exception("Container agent protocol error")
@@ -147,6 +148,7 @@ def _run_protocol(
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
+    bridge_config: object | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
     _send_to_container(proc, start_msg)
@@ -156,8 +158,17 @@ def _run_protocol(
         msg_type = msg.get("type")
 
         if msg_type == "final":
-            # Update messages list with what the container produced
-            # (the container manages its own message history internally)
+            # Replace session messages with full history from container
+            # (includes all intermediate tool_use/tool_result turns)
+            if msg.get("messages"):
+                messages.clear()
+                messages.extend(msg["messages"])
+            elif msg.get("text"):
+                # Fallback: at least save the final response
+                messages.append({
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": msg["text"]}],
+                })
             proc.stdin.close()
             proc.wait(timeout=10)
             return AgentResult(
@@ -183,6 +194,7 @@ def _run_protocol(
             results = _handle_tool_request(
                 msg["calls"], tools_config, use_containers,
                 guardian, confirm_action, memory_manager, messages,
+                bridge_config=bridge_config,
             )
 
             # Check if any result requires async approval
@@ -219,6 +231,7 @@ def _handle_tool_request(
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
     messages: list[dict],
+    bridge_config: object | None = None,
 ) -> list[dict] | None:
     """Process tool calls from the container, applying Guardian checks.
 
@@ -298,7 +311,10 @@ def _handle_tool_request(
                     break
 
             if user_request:
-                coherence = guardian.check_coherence(user_request, tool_name, tool_input)
+                prior_tools = _extract_prior_tools(messages)
+                if prior_tools:
+                    logger.info("Coherence context: prior_tools=%s for %s", prior_tools, tool_name)
+                coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
                 if not coherence.coherent:
                     logger.warning(
                         "Guardian coherence check failed for %s: %s",
@@ -344,6 +360,7 @@ def _handle_tool_request(
                 tools_config=tools_config,
                 use_containers=use_containers,
                 memory_manager=memory_manager,
+                bridge_config=bridge_config,
             )
             is_error = False
             elapsed_ms = (time.perf_counter() - t0) * 1000

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 
+
 def get_credentials(
     *,
     env_var: str = "GOOGLE_ACCESS_TOKEN",

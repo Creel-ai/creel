@@ -53,16 +53,18 @@ class DaemonService:
 
     # --- Message and session API ---
 
-    def send_message(self, sender_id: str, text: str) -> str:
+    def send_message(self, sender_id: str, text: str, *, auto_approve: bool = False) -> str:
         """Route a message through the agent loop and return the response text."""
         with self._lock:
-            return self._server.handle_message(sender_id, text)
+            return self._server.handle_message(sender_id, text, auto_approve=auto_approve)
 
     def stream_message(
         self,
         sender_id: str,
         text: str,
         session_id: str | None = None,
+        *,
+        auto_approve: bool = False,
     ):
         """Yield daemon streaming events for a single request."""
         active_session_id: str | None = None
@@ -107,6 +109,7 @@ class DaemonService:
                         sender_id,
                         text,
                         on_text_delta=on_delta,
+                        auto_approve=auto_approve,
                     )
             except Exception as exc:
                 error = exc

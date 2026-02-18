@@ -22,6 +22,8 @@ class _StubChatServer:
         sender_id: str,
         text: str,
         on_text_delta=None,
+        *,
+        auto_approve: bool = False,
     ) -> str:
         session = self._session_mgr.add_user_message(sender_id, text)
         response = f"echo:{text}"

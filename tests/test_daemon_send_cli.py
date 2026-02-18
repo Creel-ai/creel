@@ -8,7 +8,7 @@ from pathlib import Path
 from taskrunner import cli
 
 
-def _make_args(tmp_path: Path, stream: bool = True) -> argparse.Namespace:
+def _make_args(tmp_path: Path, stream: bool = True, auto_approve: bool = False) -> argparse.Namespace:
     return argparse.Namespace(
         sender_id="cli",
         message="hello",
@@ -16,6 +16,7 @@ def _make_args(tmp_path: Path, stream: bool = True) -> argparse.Namespace:
         socket_path=tmp_path / "daemon.sock",
         timeout=5.0,
         stream=stream,
+        auto_approve=auto_approve,
     )
 
 
@@ -24,8 +25,8 @@ def test_cmd_send_stream_prints_tokens(tmp_path: Path, monkeypatch, capsys) -> N
         def __init__(self, socket_path, timeout):
             del socket_path, timeout
 
-        def stream_message(self, sender_id: str, text: str, session_id=None):
-            del sender_id, text, session_id
+        def stream_message(self, sender_id: str, text: str, session_id=None, auto_approve=False):
+            del sender_id, text, session_id, auto_approve
             yield {"type": "start", "payload": {}}
             yield {"type": "token", "payload": {"text": "echo:"}}
             yield {"type": "token", "payload": {"text": "hello"}}
@@ -46,8 +47,8 @@ def test_cmd_send_stream_error_event(tmp_path: Path, monkeypatch, capsys) -> Non
         def __init__(self, socket_path, timeout):
             del socket_path, timeout
 
-        def stream_message(self, sender_id: str, text: str, session_id=None):
-            del sender_id, text, session_id
+        def stream_message(self, sender_id: str, text: str, session_id=None, auto_approve=False):
+            del sender_id, text, session_id, auto_approve
             yield {"type": "error", "payload": {"error": "boom"}}
 
     monkeypatch.setattr("taskrunner.daemon.client.DaemonApiClient", _FakeClient)
@@ -58,3 +59,48 @@ def test_cmd_send_stream_error_event(tmp_path: Path, monkeypatch, capsys) -> Non
 
     assert rc == 1
     assert "boom" in out.err
+
+
+def test_cmd_send_stream_auto_approve_forwarded(tmp_path: Path, monkeypatch, capsys) -> None:
+    """--auto-approve flag is forwarded to stream_message."""
+    received_auto_approve = []
+
+    class _FakeClient:
+        def __init__(self, socket_path, timeout):
+            del socket_path, timeout
+
+        def stream_message(self, sender_id: str, text: str, session_id=None, auto_approve=False):
+            received_auto_approve.append(auto_approve)
+            yield {"type": "final", "payload": {"text": "done"}}
+
+    monkeypatch.setattr("taskrunner.daemon.client.DaemonApiClient", _FakeClient)
+    args = _make_args(tmp_path, stream=True, auto_approve=True)
+
+    rc = cli.cmd_send(args)
+
+    assert rc == 0
+    assert received_auto_approve == [True]
+
+
+def test_cmd_send_non_stream_auto_approve_in_payload(tmp_path: Path, monkeypatch, capsys) -> None:
+    """--auto-approve flag is included in non-streaming HTTP payload."""
+    import json
+
+    captured_payloads = []
+
+    class _FakeResponse:
+        status_code = 200
+        def json(self):
+            return {"text": "done"}
+
+    def _fake_request(socket_path, method, path, json_body=None, timeout=None):
+        captured_payloads.append(json_body)
+        return _FakeResponse()
+
+    monkeypatch.setattr(cli, "_daemon_request", _fake_request)
+    args = _make_args(tmp_path, stream=False, auto_approve=True)
+
+    rc = cli.cmd_send(args)
+
+    assert rc == 0
+    assert captured_payloads[0].get("auto_approve") is True

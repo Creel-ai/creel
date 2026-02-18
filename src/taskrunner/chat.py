@@ -113,6 +113,8 @@ class ChatServer:
         sender_id: str,
         text: str,
         on_text_delta: Callable[[str], None] | None = None,
+        *,
+        auto_approve: bool = False,
     ) -> str:
         """Process an incoming message and return a response."""
         # Set request ID for this message
@@ -183,6 +185,21 @@ class ChatServer:
             from taskrunner.orchestrator import _load_secrets_to_env
             _load_secrets_to_env(self._agent_def.llm.secrets)
 
+        # Build the confirm_action callback for this request.
+        # --auto-approve from `creel send` provides a callback that always
+        # approves, so REVIEW-verdict tools execute immediately instead of
+        # being queued for async approval the CLI caller can never answer.
+        confirm_action = self._confirm_fn
+        if auto_approve and confirm_action is not None:
+            logger.debug("auto_approve requested but confirm_fn already set; using existing confirm_fn")
+        elif auto_approve:
+            def _auto_confirm(tool_name: str, tool_input: dict, reason: str) -> bool:
+                logger.info("Auto-approving %s (reason: %s)", tool_name, reason)
+                if self._guardian is not None:
+                    self._guardian.log_action_outcome(tool_name, "review", "auto_approved_by_cli")
+                return True
+            confirm_action = _auto_confirm
+
         # Run the agent loop (containerized or direct)
         if self._use_containers:
             from taskrunner.container_agent import run_agent_loop_container
@@ -195,7 +212,7 @@ class ChatServer:
                 system_prompt=system_prompt,
                 use_containers=self._use_containers,
                 guardian=self._guardian,
-                confirm_action=self._confirm_fn,
+                confirm_action=confirm_action,
                 memory_manager=self._memory,
                 bridge_config=self._agent_def.bridge,
             )
@@ -208,7 +225,7 @@ class ChatServer:
                 system_prompt=system_prompt,
                 use_containers=self._use_containers,
                 guardian=self._guardian,
-                confirm_action=self._confirm_fn,
+                confirm_action=confirm_action,
                 memory_manager=self._memory,
                 on_text_delta=on_text_delta,
                 bridge_config=self._agent_def.bridge,

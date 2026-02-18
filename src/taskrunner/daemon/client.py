@@ -70,6 +70,7 @@ class DaemonApiClient:
         sender_id: str,
         text: str,
         session_id: str | None = None,
+        auto_approve: bool = False,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "sender_id": sender_id,
@@ -77,6 +78,8 @@ class DaemonApiClient:
         }
         if session_id:
             payload["session_id"] = session_id
+        if auto_approve:
+            payload["auto_approve"] = True
         return self._request("POST", "/v1/messages", json_body=payload)
 
     def stream_message(
@@ -84,6 +87,7 @@ class DaemonApiClient:
         sender_id: str,
         text: str,
         session_id: str | None = None,
+        auto_approve: bool = False,
     ):
         payload: dict[str, Any] = {
             "sender_id": sender_id,
@@ -91,6 +95,8 @@ class DaemonApiClient:
         }
         if session_id:
             payload["session_id"] = session_id
+        if auto_approve:
+            payload["auto_approve"] = True
 
         client = self._get_client()
         with client.stream("POST", "/v1/messages/stream", json=payload) as resp:

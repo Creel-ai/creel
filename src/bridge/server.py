@@ -7,23 +7,28 @@ executes CLI commands like memo and remindctl on behalf of containerized executo
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import subprocess
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import PurePosixPath
 from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from bridge.browser import SessionDead
 
 logger = logging.getLogger(__name__)
+
+MAX_OUTPUT_BYTES = 1_000_000
 
 # Scoped auth tokens by tool group
 SCOPED_TOKENS: dict[str, str] = {}
@@ -171,7 +176,86 @@ class BrowserCloseRequest(BaseModel):
     session_id: str
 
 
+def _validate_git_ref(value: str) -> str:
+    """Validate that a git ref name does not look like a flag."""
+    if value.startswith("-"):
+        raise ValueError("must not start with '-'")
+    return value
+
+
 # iMessage request models
+class GitStatusRequest(BaseModel):
+    """Request for git status."""
+
+    short: bool = False
+
+
+class GitDiffRequest(BaseModel):
+    """Request for git diff."""
+
+    cached: bool = False
+    path: str | None = None
+
+    @field_validator("path")
+    @classmethod
+    def path_no_traversal(cls, v: str | None) -> str | None:
+        if v is not None and ".." in PurePosixPath(v).parts:
+            raise ValueError("path must not contain '..' traversal")
+        return v
+
+
+class GitLogRequest(BaseModel):
+    """Request for git log."""
+
+    max_count: int = Field(default=10, le=500)
+    oneline: bool = True
+
+
+class GitCommitRequest(BaseModel):
+    """Request for git commit."""
+
+    message: str = Field(max_length=50_000)
+    all: bool = False
+
+
+class GitBranchRequest(BaseModel):
+    """Request for git branch operations."""
+
+    name: str | None = None
+    delete: bool = False
+    list_all: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def name_not_flag(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_git_ref(v)
+        return v
+
+
+class GitPushRequest(BaseModel):
+    """Request for git push."""
+
+    remote: str = "origin"
+    branch: str | None = None
+    set_upstream: bool = False
+
+    @field_validator("remote")
+    @classmethod
+    def remote_not_flag(cls, v: str) -> str:
+        _validate_git_ref(v)
+        if not re.fullmatch(r"[a-zA-Z0-9_.\-]+", v):
+            raise ValueError("remote must be a named remote, not a URL")
+        return v
+
+    @field_validator("branch")
+    @classmethod
+    def branch_not_flag(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_git_ref(v)
+        return v
+
+
 class IMessageRecentRequest(BaseModel):
     """Request for recent iMessages."""
 
@@ -180,7 +264,7 @@ class IMessageRecentRequest(BaseModel):
 
 class IMessageSendRequest(BaseModel):
     """Request for sending an iMessage."""
-    
+
     to: str
     text: str
 
@@ -197,6 +281,8 @@ def get_required_scope(request_path: str) -> str:
         return "IMESSAGE"
     elif request_path.startswith("/browser/"):
         return "BROWSER"
+    elif request_path.startswith("/git/"):
+        return "GIT"
     else:
         return "UNKNOWN"
 
@@ -218,7 +304,7 @@ def create_scoped_authenticator(required_scope: str):
                 detail=f"No token configured for scope {required_scope}"
             )
         
-        if credentials.credentials != expected_token:
+        if not hmac.compare_digest(credentials.credentials, expected_token):
             logger.warning("Invalid auth token attempted for scope %s", required_scope)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -237,35 +323,41 @@ authenticate_reminders = create_scoped_authenticator("REMINDERS")
 authenticate_things = create_scoped_authenticator("THINGS")
 authenticate_imessage = create_scoped_authenticator("IMESSAGE")
 authenticate_browser = create_scoped_authenticator("BROWSER")
+authenticate_git = create_scoped_authenticator("GIT")
 
 
-def run_command(cmd: list[str], timeout: int = 30) -> BridgeResponse:
+def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> BridgeResponse:
     """Execute a CLI command safely using subprocess.
-    
+
     Args:
         cmd: Command as list of strings (never shell=True)
         timeout: Timeout in seconds
-    
+        cwd: Working directory for command execution
+
     Returns:
         BridgeResponse with command output or error
     """
     execution_id = str(uuid.uuid4())
     logger.info("Executing command: %s (execution_id=%s)", " ".join(cmd), execution_id)
-    
+
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=cwd,
             check=False  # Don't raise on non-zero exit codes
         )
         
         if result.returncode == 0:
             logger.info("Command succeeded (execution_id=%s)", execution_id)
+            stdout = result.stdout.strip()
+            if len(stdout) > MAX_OUTPUT_BYTES:
+                stdout = stdout[:MAX_OUTPUT_BYTES] + "\n...[output truncated]"
             return BridgeResponse(
                 ok=True,
-                output=result.stdout.strip(),
+                output=stdout,
                 execution_id=execution_id
             )
         else:
@@ -308,7 +400,7 @@ async def lifespan(app: FastAPI):
     global SCOPED_TOKENS
     
     # Generate scoped auth tokens
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER"]
+    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT"]
 
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -789,6 +881,93 @@ async def browser_sessions(
     """List active browser sessions."""
     relay = _get_relay()
     return {"ok": True, "sessions": relay.list_sessions()}
+
+
+# Git endpoints
+GIT_REPO_DIR = os.environ.get("GIT_REPO_DIR", os.getcwd())
+logger.info("Git repo directory: %s", GIT_REPO_DIR)
+
+
+@app.post("/git/status", response_model=BridgeResponse)
+async def git_status(
+    request: GitStatusRequest = GitStatusRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Get git status."""
+    cmd = ["git", "status"]
+    if request.short:
+        cmd.append("--short")
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/diff", response_model=BridgeResponse)
+async def git_diff(
+    request: GitDiffRequest = GitDiffRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Get git diff."""
+    cmd = ["git", "diff"]
+    if request.cached:
+        cmd.append("--cached")
+    if request.path:
+        cmd.extend(["--", request.path])
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/log", response_model=BridgeResponse)
+async def git_log(
+    request: GitLogRequest = GitLogRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Get git log."""
+    cmd = ["git", "log", f"--max-count={request.max_count}"]
+    if request.oneline:
+        cmd.append("--oneline")
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/commit", response_model=BridgeResponse)
+async def git_commit(
+    request: GitCommitRequest,
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Create a git commit."""
+    cmd = ["git", "commit", "-m", request.message]
+    if request.all:
+        cmd.insert(2, "-a")
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/branch", response_model=BridgeResponse)
+async def git_branch(
+    request: GitBranchRequest = GitBranchRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """List or manage git branches."""
+    cmd = ["git", "branch"]
+    if request.list_all:
+        cmd.append("-a")
+    elif request.name:
+        if request.delete:
+            cmd.extend(["-d", "--", request.name])
+        else:
+            cmd.extend(["--", request.name])
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/push", response_model=BridgeResponse)
+async def git_push(
+    request: GitPushRequest = GitPushRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Push to remote."""
+    cmd = ["git", "push"]
+    if request.set_upstream:
+        cmd.append("-u")
+    cmd.append(request.remote)
+    if request.branch:
+        cmd.append(request.branch)
+    return run_command(cmd, cwd=GIT_REPO_DIR, timeout=60)
 
 
 def main():

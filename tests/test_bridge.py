@@ -105,6 +105,7 @@ class TestBridgeCommands:
             capture_output=True,
             text=True,
             timeout=30,
+            cwd=None,
             check=False
         )
 

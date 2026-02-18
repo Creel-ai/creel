@@ -627,6 +627,7 @@ tools:
     executor: git_ops
     network: true
     bridge: true
+    classify_output: true
     description: "Get git repository status"
     parameters:
       short:
@@ -639,6 +640,7 @@ tools:
     executor: git_ops
     network: true
     bridge: true
+    classify_output: true
     description: "Show git diff of working tree changes"
     parameters:
       cached:
@@ -654,6 +656,7 @@ tools:
     executor: git_ops
     network: true
     bridge: true
+    classify_output: true
     description: "Show git commit log"
     parameters:
       max_count:

@@ -695,3 +695,137 @@ class TestBridgeEndpoints:
             headers={"Authorization": "Bearer wrong-token"}
         )
         assert response.status_code == 401
+
+    # --- Security fix tests ---
+
+    def test_git_push_rejects_url_as_remote(self, client, auth_headers):
+        """Test /git/push rejects URLs as remote (prevents arbitrary push)."""
+        for url in [
+            "https://evil.com/repo.git",
+            "git@evil.com:repo.git",
+            "file:///tmp/repo",
+            "ssh://user@host/repo",
+        ]:
+            response = client.post(
+                "/git/push", json={"remote": url},
+                headers=auth_headers,
+            )
+            assert response.status_code == 422, f"Should reject remote={url!r}"
+
+    def test_git_push_accepts_named_remotes(self, client, auth_headers):
+        """Test /git/push accepts valid named remotes."""
+        for name in ["origin", "upstream", "my-fork", "my_fork", "remote.v2"]:
+            with patch("bridge.server.run_command") as mock_run:
+                mock_run.return_value = MagicMock(
+                    ok=True, output="pushed", error="",
+                    execution_id="test-id",
+                    model_dump=lambda: {"ok": True, "output": "pushed", "error": "", "execution_id": "test-id"},
+                )
+                response = client.post(
+                    "/git/push", json={"remote": name},
+                    headers=auth_headers,
+                )
+            assert response.status_code == 200, f"Should accept remote={name!r}"
+
+    def test_git_diff_rejects_path_traversal(self, client, auth_headers):
+        """Test /git/diff rejects paths with '..' traversal."""
+        for bad_path in ["../etc/passwd", "src/../../secret", "foo/../../../bar"]:
+            response = client.post(
+                "/git/diff", json={"path": bad_path},
+                headers=auth_headers,
+            )
+            assert response.status_code == 422, f"Should reject path={bad_path!r}"
+
+    def test_git_diff_accepts_nested_paths(self, client, auth_headers):
+        """Test /git/diff accepts legitimate nested paths."""
+        for good_path in ["src/foo/bar.py", "README.md", "a/b/c/d.txt"]:
+            with patch("bridge.server.run_command") as mock_run:
+                mock_run.return_value = MagicMock(
+                    ok=True, output="diff", error="",
+                    execution_id="test-id",
+                    model_dump=lambda: {"ok": True, "output": "diff", "error": "", "execution_id": "test-id"},
+                )
+                response = client.post(
+                    "/git/diff", json={"path": good_path},
+                    headers=auth_headers,
+                )
+            assert response.status_code == 200, f"Should accept path={good_path!r}"
+
+    def test_git_log_rejects_max_count_over_500(self, client, auth_headers):
+        """Test /git/log rejects max_count > 500."""
+        response = client.post(
+            "/git/log", json={"max_count": 501},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+    def test_git_log_accepts_max_count_500(self, client, auth_headers):
+        """Test /git/log accepts max_count=500."""
+        with patch("bridge.server.run_command") as mock_run:
+            mock_run.return_value = MagicMock(
+                ok=True, output="commits", error="",
+                execution_id="test-id",
+                model_dump=lambda: {"ok": True, "output": "commits", "error": "", "execution_id": "test-id"},
+            )
+            response = client.post(
+                "/git/log", json={"max_count": 500},
+                headers=auth_headers,
+            )
+        assert response.status_code == 200
+
+    def test_git_commit_rejects_overlong_message(self, client, auth_headers):
+        """Test /git/commit rejects messages longer than 50,000 chars."""
+        response = client.post(
+            "/git/commit", json={"message": "x" * 50_001},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+    def test_git_commit_accepts_max_length_message(self, client, auth_headers):
+        """Test /git/commit accepts messages at the 50,000 char limit."""
+        with patch("bridge.server.run_command") as mock_run:
+            mock_run.return_value = MagicMock(
+                ok=True, output="committed", error="",
+                execution_id="test-id",
+                model_dump=lambda: {"ok": True, "output": "committed", "error": "", "execution_id": "test-id"},
+            )
+            response = client.post(
+                "/git/commit", json={"message": "x" * 50_000},
+                headers=auth_headers,
+            )
+        assert response.status_code == 200
+
+
+class TestOutputTruncation:
+    """Test output truncation in run_command."""
+
+    @patch("bridge.server.subprocess.run")
+    def test_output_truncated_at_1mb(self, mock_run):
+        """Test that output exceeding 1MB is truncated."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "x" * 2_000_000
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        from bridge.server import run_command, MAX_OUTPUT_BYTES
+        result = run_command(["git", "log"])
+
+        assert len(result.output) <= MAX_OUTPUT_BYTES + 50  # allow for suffix
+        assert result.output.endswith("\n...[output truncated]")
+        assert result.ok is True
+
+    @patch("bridge.server.subprocess.run")
+    def test_output_not_truncated_under_1mb(self, mock_run):
+        """Test that output under 1MB is not truncated."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "short output"
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
+
+        from bridge.server import run_command
+        result = run_command(["git", "status"])
+
+        assert result.output == "short output"
+        assert "[output truncated]" not in result.output

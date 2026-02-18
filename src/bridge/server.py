@@ -7,13 +7,16 @@ executes CLI commands like memo and remindctl on behalf of containerized executo
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import subprocess
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import PurePosixPath
 from typing import Any
 
 import uvicorn
@@ -24,6 +27,8 @@ from pydantic import BaseModel, Field, field_validator
 from bridge.browser import SessionDead
 
 logger = logging.getLogger(__name__)
+
+MAX_OUTPUT_BYTES = 1_000_000
 
 # Scoped auth tokens by tool group
 SCOPED_TOKENS: dict[str, str] = {}
@@ -191,18 +196,25 @@ class GitDiffRequest(BaseModel):
     cached: bool = False
     path: str | None = None
 
+    @field_validator("path")
+    @classmethod
+    def path_no_traversal(cls, v: str | None) -> str | None:
+        if v is not None and ".." in PurePosixPath(v).parts:
+            raise ValueError("path must not contain '..' traversal")
+        return v
+
 
 class GitLogRequest(BaseModel):
     """Request for git log."""
 
-    max_count: int = 10
+    max_count: int = Field(default=10, le=500)
     oneline: bool = True
 
 
 class GitCommitRequest(BaseModel):
     """Request for git commit."""
 
-    message: str
+    message: str = Field(max_length=50_000)
     all: bool = False
 
 
@@ -231,7 +243,10 @@ class GitPushRequest(BaseModel):
     @field_validator("remote")
     @classmethod
     def remote_not_flag(cls, v: str) -> str:
-        return _validate_git_ref(v)
+        _validate_git_ref(v)
+        if not re.fullmatch(r"[a-zA-Z0-9_.\-]+", v):
+            raise ValueError("remote must be a named remote, not a URL")
+        return v
 
     @field_validator("branch")
     @classmethod
@@ -289,7 +304,7 @@ def create_scoped_authenticator(required_scope: str):
                 detail=f"No token configured for scope {required_scope}"
             )
         
-        if credentials.credentials != expected_token:
+        if not hmac.compare_digest(credentials.credentials, expected_token):
             logger.warning("Invalid auth token attempted for scope %s", required_scope)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -337,9 +352,12 @@ def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> Br
         
         if result.returncode == 0:
             logger.info("Command succeeded (execution_id=%s)", execution_id)
+            stdout = result.stdout.strip()
+            if len(stdout) > MAX_OUTPUT_BYTES:
+                stdout = stdout[:MAX_OUTPUT_BYTES] + "\n...[output truncated]"
             return BridgeResponse(
                 ok=True,
-                output=result.stdout.strip(),
+                output=stdout,
                 execution_id=execution_id
             )
         else:

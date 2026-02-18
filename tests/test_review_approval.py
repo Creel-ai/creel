@@ -328,6 +328,35 @@ def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
     assert repaired, "Expected synthetic tool_result for orphaned tool_use"
 
 
+def test_partial_tool_results_repaired():
+    """When some tool_results are present but others missing, only missing ones are injected."""
+    from taskrunner.agent import _ensure_tool_call_integrity
+
+    messages = [
+        {"role": "user", "content": "do two things"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tool_a", "name": "send_email", "input": {}},
+            {"type": "tool_use", "id": "tool_b", "name": "check_weather", "input": {}},
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tool_a", "content": "sent", "is_error": False},
+        ]},
+        {"role": "user", "content": "what happened?"},
+    ]
+
+    count = _ensure_tool_call_integrity(messages)
+
+    assert count == 1
+    # The existing user tool_result message should now have 2 entries
+    tool_result_msg = messages[2]
+    assert len(tool_result_msg["content"]) == 2
+    ids = {b["tool_use_id"] for b in tool_result_msg["content"]}
+    assert ids == {"tool_a", "tool_b"}
+    # The injected one should be an error
+    injected = [b for b in tool_result_msg["content"] if b["tool_use_id"] == "tool_b"]
+    assert injected[0]["is_error"] is True
+
+
 def test_chat_approval_sends_imessage(tmp_path):
     """Approval request sends iMessage when channel is available."""
     mock_channel = MagicMock()

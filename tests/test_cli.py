@@ -729,6 +729,7 @@ class TestCmdSendNonStreaming:
             session_id=None,
             timeout=5.0,
             stream=False,
+            auto_approve=False,
         )
         defaults.update(overrides)
         return cli_args(**defaults)

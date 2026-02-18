@@ -79,18 +79,19 @@ def test_search_parses_titles(mock_request):
 
 @patch("executors.notion.executor.requests.request")
 def test_retrieve_page_hits_page_endpoint(mock_request):
+    page_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
     mock_request.return_value = _mock_response({
         "object": "page",
-        "id": "abc123",
-        "url": "https://notion.so/abc123",
+        "id": page_uuid,
+        "url": f"https://notion.so/{page_uuid}",
         "properties": {},
     })
 
-    run_action("retrieve_page", page_id="abc123")
+    run_action("retrieve_page", page_id=page_uuid)
 
     call = mock_request.call_args
     assert call.args[0] == "GET"
-    assert call.args[1].endswith("/pages/abc123")
+    assert call.args[1].endswith(f"/pages/{page_uuid}")
 
 
 @patch("executors.notion.executor.requests.request")
@@ -101,9 +102,10 @@ def test_query_database_sends_filter_and_sorts(mock_request):
         "has_more": False,
     })
 
+    db_uuid = "12345678-abcd-ef01-2345-678901abcdef"
     run_action(
         "query_database",
-        database_id="db123",
+        database_id=db_uuid,
         filter_json='{"property":"Status","status":{"equals":"Todo"}}',
         sorts_json='[{"timestamp":"last_edited_time","direction":"descending"}]',
         page_size="500",
@@ -111,7 +113,7 @@ def test_query_database_sends_filter_and_sorts(mock_request):
 
     call = mock_request.call_args
     assert call.args[0] == "POST"
-    assert call.args[1].endswith("/databases/db123/query")
+    assert call.args[1].endswith(f"/databases/{db_uuid}/query")
     assert call.kwargs["json"]["page_size"] == 100  # clamped
     assert call.kwargs["json"]["filter"]["property"] == "Status"
     assert call.kwargs["json"]["sorts"][0]["direction"] == "descending"
@@ -140,7 +142,17 @@ def test_query_database_requires_database_id():
 
 def test_invalid_filter_json_raises():
     with pytest.raises(ValueError, match="filter_json"):
-        run_action("query_database", database_id="db123", filter_json="{not-json")
+        run_action("query_database", database_id="12345678-abcd-ef01-2345-678901abcdef", filter_json="{not-json")
+
+
+def test_page_id_path_traversal_rejected():
+    with pytest.raises(ValueError, match="valid Notion UUID"):
+        run_action("retrieve_page", page_id="../users")
+
+
+def test_database_id_path_traversal_rejected():
+    with pytest.raises(ValueError, match="valid Notion UUID"):
+        run_action("query_database", database_id="../users")
 
 
 @patch("executors.notion.executor.requests.request")

@@ -9,13 +9,25 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from typing import Any
 
 import requests
 
 NOTION_API_URL = "https://api.notion.com/v1"
-NOTION_VERSION = "2022-06-28"
+DEFAULT_NOTION_VERSION = "2022-06-28"
+
+_NOTION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _validate_notion_id(value: str, name: str) -> str:
+    if not _NOTION_ID_RE.match(value):
+        raise ValueError(f"{name} must be a valid Notion UUID")
+    return value
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -37,7 +49,7 @@ def _notion_request(
     if not api_key:
         raise RuntimeError("NOTION_API_KEY is not set")
 
-    notion_version = os.environ.get("NOTION_VERSION", NOTION_VERSION)
+    notion_version = os.environ.get("NOTION_VERSION", DEFAULT_NOTION_VERSION)
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Notion-Version": notion_version,
@@ -215,6 +227,7 @@ def search(query: str = "", page_size: int = DEFAULT_PAGE_SIZE, start_cursor: st
 def retrieve_page(page_id: str) -> dict[str, Any]:
     if not page_id:
         raise ValueError("page_id is required for action='retrieve_page'")
+    _validate_notion_id(page_id, "page_id")
 
     data = _notion_request("GET", f"/pages/{page_id}")
     return _summarize_result(data)
@@ -230,6 +243,7 @@ def query_database(
 ) -> dict[str, Any]:
     if not database_id:
         raise ValueError("database_id is required for action='query_database'")
+    _validate_notion_id(database_id, "database_id")
 
     payload: dict[str, Any] = {
         "page_size": page_size,

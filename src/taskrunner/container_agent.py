@@ -18,8 +18,8 @@ from guardian.types import ActionVerdict
 from taskrunner.agent import (
     AgentResult,
     PendingApproval,
+    _ensure_tool_call_integrity,
     _extract_prior_tools,
-    ensure_tool_call_integrity,
 )
 from taskrunner.models import AgentConfig, LLMConfig, ToolConfig
 from taskrunner.orchestrator import _ensure_image
@@ -53,7 +53,7 @@ def run_agent_loop_container(
     The container communicates via JSON-over-stdio. Tool execution,
     Guardian validation, and secret management all happen on the host.
     """
-    ensure_tool_call_integrity(messages)
+    _ensure_tool_call_integrity(messages)
     _ensure_image(_IMAGE)
 
     include_memory = memory_manager is not None
@@ -280,19 +280,21 @@ def _handle_tool_request(
                     # No callback — inject synthetic tool_results for ALL
                     # tool calls so session history stays valid.
                     assistant_tool_use = []
-                    for call in calls:
+                    synthetic_results = []
+                    for c in calls:
                         assistant_tool_use.append({
                             "type": "tool_use",
-                            "id": call["id"],
-                            "name": call["name"],
-                            "input": call["input"],
+                            "id": c["id"],
+                            "name": c["name"],
+                            "input": c["input"],
                         })
-                        if call["id"] == tool_id:
+                        if c["id"] == tool_id:
                             msg = f"Action requires approval: {decision.reason}"
                         else:
                             msg = "Action skipped — another tool in this batch requires approval."
-                        results.append({
-                            "tool_use_id": call["id"],
+                        synthetic_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": c["id"],
                             "content": msg,
                             "is_error": True,
                         })
@@ -302,15 +304,7 @@ def _handle_tool_request(
                     messages.append({"role": "assistant", "content": assistant_tool_use})
                     messages.append({
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": r["tool_use_id"],
-                                "content": r["content"],
-                                "is_error": r["is_error"],
-                            }
-                            for r in results
-                        ],
+                        "content": synthetic_results,
                     })
                     _pending_approval_result = AgentResult(
                         text="This action requires approval before proceeding.",

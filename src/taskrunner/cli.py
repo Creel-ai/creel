@@ -924,7 +924,7 @@ def cmd_send(args: argparse.Namespace) -> int:
                 sender_id=args.sender_id,
                 text=args.message,
                 session_id=args.session_id,
-                auto_approve=getattr(args, "auto_approve", False),
+                auto_approve=args.auto_approve,
             ):
                 event_type = str(event.get("type", ""))
                 payload = event.get("payload", {})
@@ -956,7 +956,7 @@ def cmd_send(args: argparse.Namespace) -> int:
     }
     if args.session_id:
         payload["session_id"] = args.session_id
-    if getattr(args, "auto_approve", False):
+    if args.auto_approve:
         payload["auto_approve"] = True
 
     try:

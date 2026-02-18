@@ -174,7 +174,9 @@ class ChatServer:
         # approves, so REVIEW-verdict tools execute immediately instead of
         # being queued for async approval the CLI caller can never answer.
         confirm_action = self._confirm_fn
-        if auto_approve and confirm_action is None:
+        if auto_approve and confirm_action is not None:
+            logger.debug("auto_approve requested but confirm_fn already set; using existing confirm_fn")
+        elif auto_approve:
             def _auto_confirm(tool_name: str, tool_input: dict, reason: str) -> bool:
                 logger.info("Auto-approving %s (reason: %s)", tool_name, reason)
                 if self._guardian is not None:

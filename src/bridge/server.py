@@ -21,6 +21,8 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
+from bridge.browser import SessionDead
+
 logger = logging.getLogger(__name__)
 
 # Scoped auth tokens by tool group
@@ -663,8 +665,6 @@ async def browser_navigate(
     _: bool = Depends(authenticate_browser),
 ):
     """Navigate to a URL and return page content."""
-    from bridge.browser import SessionDead
-
     relay = _get_relay()
     try:
         result = await relay.navigate(body.session_id, body.url)
@@ -683,8 +683,6 @@ async def browser_content(
     _: bool = Depends(authenticate_browser),
 ):
     """Get current page content as accessibility tree."""
-    from bridge.browser import SessionDead
-
     relay = _get_relay()
     try:
         result = await relay.get_content(body.session_id, body.selector)
@@ -703,8 +701,6 @@ async def browser_click(
     _: bool = Depends(authenticate_browser),
 ):
     """Click an element on the page."""
-    from bridge.browser import SessionDead
-
     relay = _get_relay()
     try:
         result = await relay.click(body.session_id, body.selector)
@@ -723,8 +719,6 @@ async def browser_type(
     _: bool = Depends(authenticate_browser),
 ):
     """Type text into an input element."""
-    from bridge.browser import SessionDead
-
     relay = _get_relay()
     try:
         result = await relay.type_text(body.session_id, body.selector, body.text)
@@ -743,8 +737,6 @@ async def browser_screenshot(
     _: bool = Depends(authenticate_browser),
 ):
     """Take a screenshot of the current page."""
-    from bridge.browser import SessionDead
-
     relay = _get_relay()
     try:
         result = await relay.screenshot(body.session_id, body.full_page)
@@ -763,8 +755,6 @@ async def browser_links(
     _: bool = Depends(authenticate_browser),
 ):
     """Get all links on the current page."""
-    from bridge.browser import SessionDead
-
     relay = _get_relay()
     try:
         links = await relay.get_links(body.session_id)

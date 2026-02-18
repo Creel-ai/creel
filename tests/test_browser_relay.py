@@ -359,10 +359,12 @@ class TestCDPURLValidation:
 class TestPageHandlers:
     """Test page event handler installation."""
 
-    def test_install_page_handlers(self, relay):
+    @pytest.mark.asyncio
+    async def test_install_page_handlers(self, relay):
         """Test that dialog/popup/download handlers are registered."""
         page = MagicMock()
-        relay._install_page_handlers(page)
+        page.route = AsyncMock()
+        await relay._install_page_handlers(page)
         calls = [c[0][0] for c in page.on.call_args_list]
         assert "dialog" in calls
         assert "popup" in calls

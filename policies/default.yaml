@@ -40,6 +40,8 @@ review:
   - mark_*
   - trash_*
   - edit_memory
+  # Workspace management (requires user approval for each directory)
+  - set_workspace
   # Git tools (state-changing)
   - git_commit
   - git_branch
@@ -238,6 +240,8 @@ auto_approve:
   - browser_click
   - browser_type
   - browser_screenshot
-  # File operations (writes are sandboxed to workspace)
+  # File operations — writes are sandboxed to the approved workspace by the
+  # executor's _safe_path. set_workspace requires explicit REVIEW approval,
+  # and workspace key is stripped from LLM input to prevent injection bypass.
   - write_file
   - edit_file

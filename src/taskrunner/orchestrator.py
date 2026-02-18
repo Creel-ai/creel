@@ -9,6 +9,7 @@ import json
 import logging
 import subprocess
 import tempfile
+import threading
 from hashlib import sha256
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,9 @@ from taskrunner.secrets import decrypt_env_file
 logger = logging.getLogger(__name__)
 
 _GOOGLE_TOKEN_MAX_AGE_SECONDS = 3600
+
+# Lock for inline executor env-var mutations (os.environ is process-global)
+_ENV_LOCK = threading.Lock()
 
 _HASH_GLOBS = ("Dockerfile", "**/*.py", "**/*.txt")
 
@@ -199,13 +203,27 @@ def _run_agent_mode(
 
 
 def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
-    """Run an executor by importing and calling it directly (no container)."""
+    """Run an executor by importing and calling it directly (no container).
+
+    Uses _ENV_LOCK to serialize env-var mutations since os.environ is
+    process-global and concurrent calls could interleave.
+    """
     # Load secrets if configured
     env_overrides = {}
     if config.secrets:
         env_overrides = decrypt_env_file(config.secrets)
         _replace_google_credentials_with_access_token(env_overrides)
 
+    import os
+
+    with _ENV_LOCK:
+        return _run_executor_inline_locked(name, config, env_overrides)
+
+
+def _run_executor_inline_locked(
+    name: str, config: ExecutorConfig, env_overrides: dict[str, str],
+) -> str:
+    """Inner executor dispatch, called under _ENV_LOCK."""
     import os
 
     old_env = {}
@@ -826,11 +844,28 @@ def _run_executor_container(
         elif bridge_config.token:
             env_vars["BRIDGE_TOKEN"] = bridge_config.token
 
+    # Handle workspace mount for file_ops (must be before env_file write
+    # so WORKSPACE=/workspace ends up in the env file, not the host path)
+    import os
+    _workspace_mount: tuple[str, str] | None = None
+    workspace_path = config.args.get("workspace")
+    if workspace_path and config.name in ("file_ops",):
+        resolved_ws = os.path.realpath(workspace_path)
+        if not os.path.isdir(resolved_ws):
+            raise RuntimeError("Workspace directory no longer exists")
+        # Use read-only mount for read/list operations
+        action = config.args.get("action", "")
+        mount_mode = "ro" if action in ("read", "list") else "rw"
+        _workspace_mount = (resolved_ws, mount_mode)
+        env_vars["WORKSPACE"] = "/workspace"
+
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".env", delete=True, prefix="creel-"
     ) as env_file:
         for key, value in env_vars.items():
-            env_file.write(f"{key}={value}\n")
+            # Sanitize values to prevent env-file newline injection
+            sanitized = value.replace("\n", "").replace("\r", "")
+            env_file.write(f"{key}={sanitized}\n")
         env_file.flush()
 
         # Build docker run command
@@ -844,20 +879,17 @@ def _run_executor_container(
             "--cpus=0.5",
             "--env-file", env_file.name,
         ]
-        
+
         # Add mount options from tool config
         if tool_config and tool_config.mounts:
-            import os
             for mount in tool_config.mounts:
                 # Expand ~ to home directory
                 host_path = os.path.expanduser(mount.path)
                 docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
 
         # Mount dynamic workspace for file_ops executor
-        workspace_path = config.args.get("workspace")
-        if workspace_path and config.name in ("file_ops",):
-            docker_cmd.extend(["-v", f"{workspace_path}:/workspace:rw"])
-            env_vars["WORKSPACE"] = "/workspace"
+        if _workspace_mount:
+            docker_cmd.extend(["-v", f"{_workspace_mount[0]}:/workspace:{_workspace_mount[1]}"])
 
         # Add network isolation if disabled
         if tool_config and not tool_config.network:

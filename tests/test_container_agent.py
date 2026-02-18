@@ -144,12 +144,13 @@ class TestHandleToolRequest:
         mock_execute.return_value = '{"temp": "72"}'
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
-        results = _handle_tool_request(
+        results, pending = _handle_tool_request(
             calls, _make_tools(), use_containers=False,
             guardian=None, confirm_action=None, memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
+        assert pending is None
         assert len(results) == 1
         assert results[0]["tool_use_id"] == "toolu_1"
         assert results[0]["content"] == '{"temp": "72"}'
@@ -160,12 +161,13 @@ class TestHandleToolRequest:
         mock_execute.side_effect = RuntimeError("Network error")
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
-        results = _handle_tool_request(
+        results, pending = _handle_tool_request(
             calls, _make_tools(), use_containers=False,
             guardian=None, confirm_action=None, memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
+        assert pending is None
         assert results[0]["is_error"] is True
         assert "Network error" in results[0]["content"]
 
@@ -178,12 +180,13 @@ class TestHandleToolRequest:
         guardian.validate_action.return_value = deny_decision
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
-        results = _handle_tool_request(
+        results, pending = _handle_tool_request(
             calls, _make_tools(), use_containers=False,
             guardian=guardian, confirm_action=None, memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
+        assert pending is None
         assert results[0]["is_error"] is True
         assert "denied by security policy" in results[0]["content"].lower()
         mock_execute.assert_not_called()
@@ -203,18 +206,19 @@ class TestHandleToolRequest:
         confirm_fn = MagicMock(return_value=True)
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
-        results = _handle_tool_request(
+        results, pending = _handle_tool_request(
             calls, _make_tools(), use_containers=False,
             guardian=guardian, confirm_action=confirm_fn, memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
+        assert pending is None
         assert results[0]["is_error"] is False
         confirm_fn.assert_called_once()
 
     @patch("taskrunner.container_agent.execute_tool_call")
-    def test_guardian_review_no_callback_returns_none(self, mock_execute):
-        """Without confirm callback, review verdict returns None (approval_required)."""
+    def test_guardian_review_no_callback_returns_pending(self, mock_execute):
+        """Without confirm callback, review verdict returns pending AgentResult."""
         guardian = MagicMock()
         review_decision = MagicMock()
         review_decision.verdict = ActionVerdict.REVIEW
@@ -223,13 +227,15 @@ class TestHandleToolRequest:
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         messages = [{"role": "user", "content": "Weather?"}]
-        result = _handle_tool_request(
+        results, pending = _handle_tool_request(
             calls, _make_tools(), use_containers=False,
             guardian=guardian, confirm_action=None, memory_manager=None,
             messages=messages,
         )
 
-        assert result is None
+        assert results is None
+        assert pending is not None
+        assert pending.stop_reason == "approval_required"
         mock_execute.assert_not_called()
         assert len(messages) == 3
         assert messages[1]["role"] == "assistant"
@@ -264,12 +270,13 @@ class TestHandleToolRequest:
         guardian.screen_tool_result.return_value = screen_result
 
         calls = [{"id": "toolu_1", "name": "read_email", "input": {"message_id": "abc"}}]
-        results = _handle_tool_request(
+        results, pending = _handle_tool_request(
             calls, tools, use_containers=False,
             guardian=guardian, confirm_action=None, memory_manager=None,
             messages=[{"role": "user", "content": "Read email abc"}],
         )
 
+        assert pending is None
         assert results[0]["is_error"] is True
         assert "blocked" in results[0]["content"].lower()
 

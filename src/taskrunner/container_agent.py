@@ -207,7 +207,7 @@ def _run_protocol(
             )
 
         elif msg_type == "tool_request":
-            results = _handle_tool_request(
+            results, pending_result = _handle_tool_request(
                 msg["calls"], tools_config, use_containers,
                 guardian, confirm_action, memory_manager, messages,
                 bridge_config=bridge_config,
@@ -219,8 +219,7 @@ def _run_protocol(
                 # approval_required — we need to bail out
                 proc.kill()
                 proc.wait(timeout=5)
-                # The pending_approval was set by _handle_tool_request
-                return _pending_approval_result
+                return pending_result
 
             _send_to_container(proc, {"type": "tool_results", "results": results})
 
@@ -236,10 +235,6 @@ def _run_protocol(
             )
 
 
-# Module-level state for passing pending approval out of _handle_tool_request
-_pending_approval_result: AgentResult | None = None
-
-
 def _handle_tool_request(
     calls: list[dict],
     tools_config: dict[str, ToolConfig],
@@ -250,13 +245,13 @@ def _handle_tool_request(
     messages: list[dict],
     bridge_config: object | None = None,
     session_state: dict | None = None,
-) -> list[dict] | None:
+) -> tuple[list[dict] | None, AgentResult | None]:
     """Process tool calls from the container, applying Guardian checks.
 
-    Returns a list of tool result dicts, or None if approval is required.
+    Returns a tuple of (results, pending_result):
+    - (results, None) on success
+    - (None, AgentResult) when approval is required
     """
-    global _pending_approval_result
-
     results = []
     for call in calls:
         tool_name = call["name"]
@@ -318,7 +313,7 @@ def _handle_tool_request(
                         "role": "user",
                         "content": synthetic_results,
                     })
-                    _pending_approval_result = AgentResult(
+                    pending_result = AgentResult(
                         text="This action requires approval before proceeding.",
                         turns_used=0,
                         tool_calls_made=0,
@@ -329,7 +324,7 @@ def _handle_tool_request(
                             reason=decision.reason,
                         ),
                     )
-                    return None
+                    return None, pending_result
 
         # Guardian coherence check
         if guardian is not None and hasattr(guardian, "check_coherence"):
@@ -466,4 +461,4 @@ def _handle_tool_request(
             "is_error": is_error,
         })
 
-    return results
+    return results, None

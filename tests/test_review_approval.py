@@ -282,7 +282,9 @@ def test_chat_y_approves_and_executes(mock_exec, tmp_path):
         tool_input={"to": "x@y.com"},
         tools_config=server._agent_def.tools,
         use_containers=False,
+        memory_manager=server._memory,
         bridge_config=server._agent_def.bridge,
+        session_state=server._session_states.get("sender1"),
     )
 
 

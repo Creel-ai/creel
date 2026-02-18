@@ -172,6 +172,49 @@ class BrowserCloseRequest(BaseModel):
 
 
 # iMessage request models
+class GitStatusRequest(BaseModel):
+    """Request for git status."""
+
+    short: bool = False
+
+
+class GitDiffRequest(BaseModel):
+    """Request for git diff."""
+
+    cached: bool = False
+    path: str | None = None
+
+
+class GitLogRequest(BaseModel):
+    """Request for git log."""
+
+    max_count: int = 10
+    oneline: bool = True
+
+
+class GitCommitRequest(BaseModel):
+    """Request for git commit."""
+
+    message: str
+    all: bool = False
+
+
+class GitBranchRequest(BaseModel):
+    """Request for git branch operations."""
+
+    name: str | None = None
+    delete: bool = False
+    list_all: bool = False
+
+
+class GitPushRequest(BaseModel):
+    """Request for git push."""
+
+    remote: str = "origin"
+    branch: str | None = None
+    set_upstream: bool = False
+
+
 class IMessageRecentRequest(BaseModel):
     """Request for recent iMessages."""
 
@@ -180,7 +223,7 @@ class IMessageRecentRequest(BaseModel):
 
 class IMessageSendRequest(BaseModel):
     """Request for sending an iMessage."""
-    
+
     to: str
     text: str
 
@@ -197,6 +240,8 @@ def get_required_scope(request_path: str) -> str:
         return "IMESSAGE"
     elif request_path.startswith("/browser/"):
         return "BROWSER"
+    elif request_path.startswith("/git/"):
+        return "GIT"
     else:
         return "UNKNOWN"
 
@@ -237,27 +282,30 @@ authenticate_reminders = create_scoped_authenticator("REMINDERS")
 authenticate_things = create_scoped_authenticator("THINGS")
 authenticate_imessage = create_scoped_authenticator("IMESSAGE")
 authenticate_browser = create_scoped_authenticator("BROWSER")
+authenticate_git = create_scoped_authenticator("GIT")
 
 
-def run_command(cmd: list[str], timeout: int = 30) -> BridgeResponse:
+def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> BridgeResponse:
     """Execute a CLI command safely using subprocess.
-    
+
     Args:
         cmd: Command as list of strings (never shell=True)
         timeout: Timeout in seconds
-    
+        cwd: Working directory for command execution
+
     Returns:
         BridgeResponse with command output or error
     """
     execution_id = str(uuid.uuid4())
     logger.info("Executing command: %s (execution_id=%s)", " ".join(cmd), execution_id)
-    
+
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=cwd,
             check=False  # Don't raise on non-zero exit codes
         )
         
@@ -308,7 +356,7 @@ async def lifespan(app: FastAPI):
     global SCOPED_TOKENS
     
     # Generate scoped auth tokens
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER"]
+    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT"]
 
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -789,6 +837,92 @@ async def browser_sessions(
     """List active browser sessions."""
     relay = _get_relay()
     return {"ok": True, "sessions": relay.list_sessions()}
+
+
+# Git endpoints
+GIT_REPO_DIR = os.environ.get("GIT_REPO_DIR", os.getcwd())
+
+
+@app.post("/git/status", response_model=BridgeResponse)
+async def git_status(
+    request: GitStatusRequest = GitStatusRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Get git status."""
+    cmd = ["git", "status"]
+    if request.short:
+        cmd.append("--short")
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/diff", response_model=BridgeResponse)
+async def git_diff(
+    request: GitDiffRequest = GitDiffRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Get git diff."""
+    cmd = ["git", "diff"]
+    if request.cached:
+        cmd.append("--cached")
+    if request.path:
+        cmd.extend(["--", request.path])
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/log", response_model=BridgeResponse)
+async def git_log(
+    request: GitLogRequest = GitLogRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Get git log."""
+    cmd = ["git", "log", f"--max-count={request.max_count}"]
+    if request.oneline:
+        cmd.append("--oneline")
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/commit", response_model=BridgeResponse)
+async def git_commit(
+    request: GitCommitRequest,
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Create a git commit."""
+    cmd = ["git", "commit", "-m", request.message]
+    if request.all:
+        cmd.insert(2, "-a")
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/branch", response_model=BridgeResponse)
+async def git_branch(
+    request: GitBranchRequest = GitBranchRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """List or manage git branches."""
+    cmd = ["git", "branch"]
+    if request.list_all:
+        cmd.append("-a")
+    elif request.name:
+        if request.delete:
+            cmd.extend(["-d", request.name])
+        else:
+            cmd.append(request.name)
+    return run_command(cmd, cwd=GIT_REPO_DIR)
+
+
+@app.post("/git/push", response_model=BridgeResponse)
+async def git_push(
+    request: GitPushRequest = GitPushRequest(),
+    _: bool = Depends(authenticate_git),
+) -> BridgeResponse:
+    """Push to remote."""
+    cmd = ["git", "push"]
+    if request.set_upstream:
+        cmd.append("-u")
+    cmd.append(request.remote)
+    if request.branch:
+        cmd.append(request.branch)
+    return run_command(cmd, cwd=GIT_REPO_DIR, timeout=60)
 
 
 def main():

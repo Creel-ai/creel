@@ -326,8 +326,9 @@ def _handle_tool_request(
                     )
                     return None, pending_result
 
-        # Guardian coherence check
-        if guardian is not None and hasattr(guardian, "check_coherence"):
+        # Guardian coherence check (skip for ALLOW-listed tools — already policy-approved)
+        _policy_verdict = decision.verdict if guardian is not None else None
+        if guardian is not None and hasattr(guardian, "check_coherence") and _policy_verdict != ActionVerdict.ALLOW:
             user_request = ""
             for msg in reversed(messages):
                 if msg.get("role") == "user":

@@ -978,6 +978,33 @@ Audit options:
   --since DATE      Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
 ```
 
+## OpenClaw Migration Scripts
+
+Use the migration scripts to import OpenClaw workspaces/config/history into this repo.
+
+```bash
+# Full dry-run (default phases 1-2)
+python scripts/migrate-openclaw.py --source /path/to/openclaw
+
+# Apply migration
+python scripts/migrate-openclaw.py --source /path/to/openclaw --apply
+
+# Include skills migration (phase 3) explicitly
+python scripts/migrate-openclaw.py --source /path/to/openclaw --phases 1,2,3 --apply
+
+# Run one phase only
+python scripts/migrate-openclaw-phase1.py --source /path/to/openclaw --apply
+python scripts/migrate-openclaw-phase2.py --source /path/to/openclaw --apply
+python scripts/migrate-openclaw-phase3.py --source /path/to/openclaw --apply
+```
+
+Key flags:
+- `--phases 1,2` choose phases to run (phase 3 is opt-in)
+- `--apply` write files (without it: dry-run)
+- `--overwrite/--no-overwrite` file conflict behavior
+- `--apply-agent-config` write merged `agent.migrated.yaml` back to `agent.yaml`
+- `--report-json <path>` write a machine-readable migration report
+
 ## Project Structure
 
 ```

@@ -125,7 +125,7 @@ def main() -> None:
 
         elif action == "diff":
             cached = os.environ.get("CACHED", "").lower() in ("true", "1", "yes")
-            path = os.environ.get("PATH_FILTER")
+            path = os.environ.get("PATH_FILTER") or os.environ.get("DIFF_PATH")
             result = diff(cached, path)
 
         elif action == "log":

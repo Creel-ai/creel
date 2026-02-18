@@ -644,7 +644,7 @@ tools:
       cached:
         type: boolean
         description: "Show staged changes (--cached)"
-      path:
+      diff_path:
         type: string
         description: "Limit diff to specific file path"
     fixed_args:
@@ -657,7 +657,7 @@ tools:
     description: "Show git commit log"
     parameters:
       max_count:
-        type: string
+        type: integer
         description: "Maximum number of commits to show (default: 10)"
       oneline:
         type: boolean

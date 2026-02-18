@@ -320,7 +320,7 @@ class TestMainFunction:
         """Test main with diff action, cached and path."""
         mock_diff.return_value = {"ok": True, "output": "cached diff"}
 
-        with patch.dict(os.environ, {"ACTION": "diff", "CACHED": "true", "PATH_FILTER": "src/main.py"}):
+        with patch.dict(os.environ, {"ACTION": "diff", "CACHED": "true", "DIFF_PATH": "src/main.py"}):
             from executors.git_ops.executor import main
             main()
 
@@ -467,7 +467,9 @@ class TestBridgeEndpoints:
         SCOPED_TOKENS["GIT"] = "test-git-token"
 
         from bridge.server import app
-        return TestClient(app)
+        yield TestClient(app)
+
+        SCOPED_TOKENS.pop("GIT", None)
 
     @pytest.fixture
     def auth_headers(self):
@@ -613,7 +615,7 @@ class TestBridgeEndpoints:
 
         assert response.status_code == 200
         args = mock_run.call_args
-        assert args[0][0] == ["git", "branch", "feature/new"]
+        assert args[0][0] == ["git", "branch", "--", "feature/new"]
 
     def test_git_branch_delete_endpoint(self, client, auth_headers):
         """Test /git/branch delete."""
@@ -627,7 +629,7 @@ class TestBridgeEndpoints:
 
         assert response.status_code == 200
         args = mock_run.call_args
-        assert args[0][0] == ["git", "branch", "-d", "old"]
+        assert args[0][0] == ["git", "branch", "-d", "--", "old"]
 
     def test_git_push_endpoint(self, client, auth_headers):
         """Test /git/push endpoint."""
@@ -656,6 +658,30 @@ class TestBridgeEndpoints:
         assert response.status_code == 200
         args = mock_run.call_args
         assert args[0][0] == ["git", "push", "-u", "origin", "main"]
+
+    def test_git_branch_rejects_flag_injection(self, client, auth_headers):
+        """Test /git/branch rejects names starting with '-'."""
+        response = client.post(
+            "/git/branch", json={"name": "--delete"},
+            headers=auth_headers
+        )
+        assert response.status_code == 422
+
+    def test_git_push_rejects_flag_in_remote(self, client, auth_headers):
+        """Test /git/push rejects remote names starting with '-'."""
+        response = client.post(
+            "/git/push", json={"remote": "--force"},
+            headers=auth_headers
+        )
+        assert response.status_code == 422
+
+    def test_git_push_rejects_flag_in_branch(self, client, auth_headers):
+        """Test /git/push rejects branch names starting with '-'."""
+        response = client.post(
+            "/git/push", json={"branch": "--all"},
+            headers=auth_headers
+        )
+        assert response.status_code == 422
 
     def test_git_endpoint_unauthorized(self, client):
         """Test git endpoint without auth returns 403."""

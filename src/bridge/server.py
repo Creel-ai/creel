@@ -19,7 +19,7 @@ from typing import Any
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from bridge.browser import SessionDead
 
@@ -171,6 +171,13 @@ class BrowserCloseRequest(BaseModel):
     session_id: str
 
 
+def _validate_git_ref(value: str) -> str:
+    """Validate that a git ref name does not look like a flag."""
+    if value.startswith("-"):
+        raise ValueError("must not start with '-'")
+    return value
+
+
 # iMessage request models
 class GitStatusRequest(BaseModel):
     """Request for git status."""
@@ -206,6 +213,13 @@ class GitBranchRequest(BaseModel):
     delete: bool = False
     list_all: bool = False
 
+    @field_validator("name")
+    @classmethod
+    def name_not_flag(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_git_ref(v)
+        return v
+
 
 class GitPushRequest(BaseModel):
     """Request for git push."""
@@ -213,6 +227,18 @@ class GitPushRequest(BaseModel):
     remote: str = "origin"
     branch: str | None = None
     set_upstream: bool = False
+
+    @field_validator("remote")
+    @classmethod
+    def remote_not_flag(cls, v: str) -> str:
+        return _validate_git_ref(v)
+
+    @field_validator("branch")
+    @classmethod
+    def branch_not_flag(cls, v: str | None) -> str | None:
+        if v is not None:
+            _validate_git_ref(v)
+        return v
 
 
 class IMessageRecentRequest(BaseModel):
@@ -841,6 +867,7 @@ async def browser_sessions(
 
 # Git endpoints
 GIT_REPO_DIR = os.environ.get("GIT_REPO_DIR", os.getcwd())
+logger.info("Git repo directory: %s", GIT_REPO_DIR)
 
 
 @app.post("/git/status", response_model=BridgeResponse)
@@ -904,9 +931,9 @@ async def git_branch(
         cmd.append("-a")
     elif request.name:
         if request.delete:
-            cmd.extend(["-d", request.name])
+            cmd.extend(["-d", "--", request.name])
         else:
-            cmd.append(request.name)
+            cmd.extend(["--", request.name])
     return run_command(cmd, cwd=GIT_REPO_DIR)
 
 

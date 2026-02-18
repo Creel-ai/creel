@@ -166,6 +166,7 @@ class TestRunExecutorInline:
             ("apple_notes", "taskrunner.orchestrator._exec_apple_notes_inline"),
             ("apple_reminders", "taskrunner.orchestrator._exec_apple_reminders_inline"),
             ("brave_search", "taskrunner.orchestrator._exec_brave_search_inline"),
+            ("notion", "taskrunner.orchestrator._exec_notion_inline"),
             ("fetch_url", "taskrunner.orchestrator._exec_fetch_url_inline"),
         ],
     )

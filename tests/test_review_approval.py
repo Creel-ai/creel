@@ -277,6 +277,86 @@ def test_chat_no_pending_passes_to_agent(mock_run, tmp_path):
     mock_run.assert_called_once()
 
 
+@patch("taskrunner.chat.run_agent_loop")
+def test_chat_pending_approval_blocks_new_message(mock_run, tmp_path):
+    """A new non-approval message should be blocked while approval is pending."""
+    server = _make_chat_server(tmp_path)
+    server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
+
+    response = server.handle_message("sender1", "send another email")
+
+    assert "pending" in response.lower()
+    assert "approve" in response.lower()
+    mock_run.assert_not_called()
+
+
+@patch("taskrunner.agent.call_llm")
+def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
+    """Agent loop should inject synthetic tool_result before the next user turn."""
+    from taskrunner.agent import run_agent_loop
+    from taskrunner.models import AgentConfig, LLMConfig
+
+    mock_llm.return_value = FakeTextResponse("Recovered")
+    messages = [
+        {"role": "user", "content": "send email"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tool_orphan", "name": "send_email", "input": {"to": "x@y.com"}},
+        ]},
+        {"role": "user", "content": "actually nevermind"},
+    ]
+
+    result = run_agent_loop(
+        messages=messages,
+        llm_config=LLMConfig(model="test"),
+        tools_config={"send_email": MagicMock()},
+        agent_config=AgentConfig(max_turns=1),
+        guardian=None,
+    )
+
+    assert result.stop_reason == "end_turn"
+    repaired = [
+        msg for msg in messages
+        if msg.get("role") == "user"
+        and isinstance(msg.get("content"), list)
+        and any(
+            isinstance(block, dict)
+            and block.get("type") == "tool_result"
+            and block.get("tool_use_id") == "tool_orphan"
+            for block in msg["content"]
+        )
+    ]
+    assert repaired, "Expected synthetic tool_result for orphaned tool_use"
+
+
+def test_partial_tool_results_repaired():
+    """When some tool_results are present but others missing, only missing ones are injected."""
+    from taskrunner.agent import _ensure_tool_call_integrity
+
+    messages = [
+        {"role": "user", "content": "do two things"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tool_a", "name": "send_email", "input": {}},
+            {"type": "tool_use", "id": "tool_b", "name": "check_weather", "input": {}},
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tool_a", "content": "sent", "is_error": False},
+        ]},
+        {"role": "user", "content": "what happened?"},
+    ]
+
+    count = _ensure_tool_call_integrity(messages)
+
+    assert count == 1
+    # The existing user tool_result message should now have 2 entries
+    tool_result_msg = messages[2]
+    assert len(tool_result_msg["content"]) == 2
+    ids = {b["tool_use_id"] for b in tool_result_msg["content"]}
+    assert ids == {"tool_a", "tool_b"}
+    # The injected one should be an error
+    injected = [b for b in tool_result_msg["content"] if b["tool_use_id"] == "tool_b"]
+    assert injected[0]["is_error"] is True
+
+
 def test_chat_approval_sends_imessage(tmp_path):
     """Approval request sends iMessage when channel is available."""
     mock_channel = MagicMock()

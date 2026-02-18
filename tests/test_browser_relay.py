@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bridge.browser import BrowserRelay, BrowserSession, ALLOWED_SCHEMES, _start_chromium_container, _stop_container
+from bridge.browser import (
+    BrowserRelay,
+    BrowserSession,
+    ALLOWED_SCHEMES,
+    CREEL_CONTAINER_LABEL,
+    _reap_orphaned_containers,
+    _start_chromium_container,
+    _stop_container,
+)
 
 
 @pytest.fixture
@@ -627,3 +636,226 @@ class TestStartStop:
 
         assert len(relay._sessions) == 0
         pw_mock.stop.assert_called_once()
+
+
+class TestReapOrphanedContainers:
+    """Test _reap_orphaned_containers function."""
+
+    @patch("bridge.browser.subprocess.run")
+    def test_reaps_orphaned_containers(self, mock_run):
+        """Should find and stop all labeled containers."""
+        mock_run.side_effect = [
+            # docker ps -q --filter label=...
+            MagicMock(returncode=0, stdout="aaa111\nbbb222\n", stderr=""),
+            # docker stop aaa111
+            MagicMock(returncode=0, stdout="", stderr=""),
+            # docker stop bbb222
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+
+        count = _reap_orphaned_containers()
+
+        assert count == 2
+        # First call: docker ps
+        ps_cmd = mock_run.call_args_list[0][0][0]
+        assert ps_cmd == ["docker", "ps", "-q", "--filter", f"label={CREEL_CONTAINER_LABEL}"]
+        # Second call: docker stop aaa111
+        assert mock_run.call_args_list[1][0][0] == ["docker", "stop", "aaa111"]
+        # Third call: docker stop bbb222
+        assert mock_run.call_args_list[2][0][0] == ["docker", "stop", "bbb222"]
+
+    @patch("bridge.browser.subprocess.run")
+    def test_no_orphans(self, mock_run):
+        """Should return 0 when no containers are found."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        count = _reap_orphaned_containers()
+
+        assert count == 0
+        mock_run.assert_called_once()
+
+    @patch("bridge.browser.subprocess.run")
+    def test_docker_unavailable(self, mock_run):
+        """Should return 0 when Docker is not installed."""
+        mock_run.side_effect = FileNotFoundError("docker not found")
+
+        count = _reap_orphaned_containers()
+
+        assert count == 0
+
+    @patch("bridge.browser.subprocess.run")
+    def test_docker_ps_failure(self, mock_run):
+        """Should return 0 when docker ps fails."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+
+        count = _reap_orphaned_containers()
+
+        assert count == 0
+
+    @patch("bridge.browser.subprocess.run")
+    def test_docker_timeout(self, mock_run):
+        """Should return 0 when docker ps times out."""
+        import subprocess as sp
+        mock_run.side_effect = sp.TimeoutExpired(cmd="docker", timeout=10)
+
+        count = _reap_orphaned_containers()
+
+        assert count == 0
+
+
+class TestContainerLabel:
+    """Test that managed containers are created with the correct label."""
+
+    @patch("bridge.browser.subprocess.run")
+    def test_docker_run_includes_label(self, mock_run):
+        """The docker run command should include --label with CREEL_CONTAINER_LABEL."""
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="abc123\n", stderr=""),
+            MagicMock(returncode=0, stdout="127.0.0.1:55432\n", stderr=""),
+        ]
+
+        _start_chromium_container()
+
+        run_cmd = mock_run.call_args_list[0][0][0]
+        # Find --label and the value that follows it
+        label_idx = run_cmd.index("--label")
+        assert run_cmd[label_idx + 1] == CREEL_CONTAINER_LABEL
+
+
+class TestCleanupLoopDeadConnections:
+    """Test that the cleanup loop detects dead browser connections."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_closes_dead_connections(self):
+        """Sessions with disconnected browsers should be cleaned up."""
+        from bridge.browser import BrowserSession
+
+        relay = BrowserRelay(session_timeout_minutes=10)
+
+        # Create a session with a dead browser (is_connected returns False)
+        dead_browser = MagicMock()
+        dead_browser.is_connected.return_value = False
+        dead_browser.close = AsyncMock()
+
+        relay._sessions["dead-1"] = BrowserSession(
+            session_id="dead-1",
+            mode="managed",
+            browser=dead_browser,
+            container_id="container-dead",
+            last_used=time.time(),  # recently used, not idle
+        )
+
+        # Create a session with a live browser
+        live_browser = MagicMock()
+        live_browser.is_connected.return_value = True
+
+        relay._sessions["live-1"] = BrowserSession(
+            session_id="live-1",
+            mode="managed",
+            browser=live_browser,
+            container_id="container-live",
+            last_used=time.time(),
+        )
+
+        with patch("bridge.browser._stop_container"):
+            # Run one iteration of the cleanup logic (bypass the sleep)
+            now = time.time()
+            to_close = []
+            for sid, s in relay._sessions.items():
+                if now - s.last_used > relay._session_timeout:
+                    to_close.append(sid)
+                elif s.browser and not s.browser.is_connected():
+                    to_close.append(sid)
+
+            for sid in to_close:
+                await relay.close_session(sid)
+
+        # Dead session should be removed, live session should remain
+        assert "dead-1" not in relay._sessions
+        assert "live-1" in relay._sessions
+
+
+class TestGetSessionDeadBrowser:
+    """Test that _get_session rejects dead browser sessions."""
+
+    def test_rejects_dead_browser_connection(self, relay):
+        """_get_session should raise SessionDead for dead connections."""
+        from bridge.browser import SessionDead
+
+        dead_browser = MagicMock()
+        dead_browser.is_connected.return_value = False
+
+        relay._sessions["dead-1"] = BrowserSession(
+            session_id="dead-1",
+            mode="relay",
+            browser=dead_browser,
+        )
+
+        # Need a running event loop for the async cleanup task scheduling
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            with pytest.raises(SessionDead, match="disconnected"):
+                relay._get_session("dead-1")
+        finally:
+            # Clean up pending tasks
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+
+    def test_allows_connected_browser(self, relay):
+        """_get_session should return the session if browser is connected."""
+        live_browser = MagicMock()
+        live_browser.is_connected.return_value = True
+
+        session = BrowserSession(
+            session_id="live-1",
+            mode="relay",
+            browser=live_browser,
+        )
+        relay._sessions["live-1"] = session
+
+        result = relay._get_session("live-1")
+        assert result is session
+
+    def test_allows_session_without_browser(self, relay):
+        """_get_session should work when browser is None (no is_connected check)."""
+        session = BrowserSession(
+            session_id="no-browser",
+            mode="relay",
+            browser=None,
+        )
+        relay._sessions["no-browser"] = session
+
+        result = relay._get_session("no-browser")
+        assert result is session
+
+
+class TestStartReapsOrphans:
+    """Test that BrowserRelay.start() calls _reap_orphaned_containers."""
+
+    @pytest.mark.asyncio
+    async def test_start_reaps_orphans(self):
+        """start() should reap orphaned containers before initializing Playwright."""
+        relay = BrowserRelay()
+
+        pw_instance = AsyncMock()
+        pw_context_manager = AsyncMock()
+        pw_context_manager.start.return_value = pw_instance
+
+        with patch("bridge.browser._reap_orphaned_containers", return_value=2) as mock_reap, \
+             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.async_api": MagicMock(async_playwright=MagicMock(return_value=pw_context_manager))}):
+            await relay.start()
+
+        mock_reap.assert_called_once()
+
+        # Cleanup
+        if relay._cleanup_task:
+            relay._cleanup_task.cancel()
+            try:
+                await relay._cleanup_task
+            except asyncio.CancelledError:
+                pass

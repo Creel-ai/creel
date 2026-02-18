@@ -36,6 +36,9 @@ DEFAULT_CHROMIUM_IMAGE = "zenika/alpine-chrome:latest"
 # Resource types to block for memory savings (images, media, fonts, stylesheets)
 BLOCKED_RESOURCE_TYPES = {"image", "media", "font", "stylesheet"}
 
+# Label applied to managed Chromium containers for orphan detection
+CREEL_CONTAINER_LABEL = "creel.browser=managed"
+
 
 class BrowserError(Exception):
     """Base exception for browser relay errors."""
@@ -96,6 +99,10 @@ class BrowserRelay:
 
     async def start(self) -> None:
         """Initialize Playwright and start the session cleanup task."""
+        reaped = _reap_orphaned_containers()
+        if reaped:
+            logger.info("Cleaned up %d orphaned container(s) from previous run", reaped)
+
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
@@ -590,6 +597,13 @@ class BrowserRelay:
                     "Open a new session with browser_open."
                 )
 
+        # General check: browser CDP connection dropped (any mode)
+        if session.browser and not session.browser.is_connected():
+            asyncio.get_event_loop().create_task(self.close_session(session_id))
+            raise SessionDead(
+                f"Session {session_id} is dead (browser disconnected). "
+                "Open a new session with browser_open."
+            )
         return session
 
     @staticmethod
@@ -748,17 +762,20 @@ class BrowserRelay:
         )
 
     async def _cleanup_loop(self) -> None:
-        """Periodically clean up idle sessions."""
+        """Periodically clean up idle and dead sessions."""
         while True:
             await asyncio.sleep(60)  # Check every minute
             now = time.time()
-            expired = [
-                sid
-                for sid, s in self._sessions.items()
-                if now - s.last_used > self._session_timeout
-            ]
-            for sid in expired:
-                logger.info("Cleaning up idle session %s", sid)
+            to_close: list[tuple[str, str]] = []  # (session_id, reason)
+
+            for sid, s in self._sessions.items():
+                if now - s.last_used > self._session_timeout:
+                    to_close.append((sid, "idle"))
+                elif s.browser and not s.browser.is_connected():
+                    to_close.append((sid, "dead connection"))
+
+            for sid, reason in to_close:
+                logger.info("Cleaning up session %s (%s)", sid, reason)
                 try:
                     await self.close_session(sid)
                 except Exception as e:
@@ -791,6 +808,8 @@ def _start_chromium_container(
         "--rm",
         "--cap-drop=ALL",
         "--read-only",
+        "--label",
+        CREEL_CONTAINER_LABEL,
         "--tmpfs",
         f"/tmp:rw,noexec,nosuid,size={tmpfs_size}",
         f"--memory={memory}",
@@ -830,6 +849,46 @@ def _start_chromium_container(
 
     logger.info("Started Chromium container %s on port %d", container_id[:12], host_port)
     return container_id, host_port
+
+
+def _reap_orphaned_containers() -> int:
+    """Find and stop any orphaned Creel-managed Chromium containers.
+
+    Queries Docker for containers with the CREEL_CONTAINER_LABEL and stops them.
+    Called on startup to clean up containers left by a previous crash.
+
+    Returns:
+        Number of containers reaped.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "-q", "--filter", f"label={CREEL_CONTAINER_LABEL}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.debug("Docker not available for orphan reaping: %s", e)
+        return 0
+
+    if result.returncode != 0:
+        logger.debug("docker ps failed (rc=%d): %s", result.returncode, result.stderr.strip())
+        return 0
+
+    container_ids = result.stdout.strip().splitlines()
+    if not container_ids:
+        return 0
+
+    reaped = 0
+    for cid in container_ids:
+        cid = cid.strip()
+        if cid:
+            logger.info("Reaping orphaned container %s", cid[:12])
+            _stop_container(cid)
+            reaped += 1
+
+    logger.info("Reaped %d orphaned container(s)", reaped)
+    return reaped
 
 
 def _stop_container(container_id: str) -> None:

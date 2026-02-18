@@ -49,6 +49,111 @@ def _extract_prior_tools(messages: list[dict]) -> list[str]:
     return prior
 
 
+def _ensure_tool_call_integrity(messages: list[dict]) -> int:
+    """Repair orphaned tool_use/tool_result sequences in-place.
+
+    Anthropic requires every assistant ``tool_use`` block to be followed
+    immediately by a user message containing matching ``tool_result`` blocks.
+    If the pair is broken (for example, by an interrupted approval flow),
+    inject synthetic ``tool_result`` blocks so later LLM calls remain valid.
+
+    Returns the number of synthetic tool_result blocks inserted.
+    """
+    inserted_blocks = 0
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        role = msg.get("role")
+        content = msg.get("content")
+        if role != "assistant" or not isinstance(content, list):
+            i += 1
+            continue
+
+        tool_uses = [
+            block for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("id")
+        ]
+        if not tool_uses:
+            i += 1
+            continue
+
+        required_ids = [str(block["id"]) for block in tool_uses]
+        next_msg = messages[i + 1] if i + 1 < len(messages) else None
+        next_role = next_msg.get("role") if isinstance(next_msg, dict) else None
+        next_content = next_msg.get("content") if isinstance(next_msg, dict) else None
+        valid_next_list = next_role == "user" and isinstance(next_content, list)
+
+        if valid_next_list:
+            tool_result_blocks = [
+                block for block in next_content
+                if isinstance(block, dict) and block.get("type") == "tool_result"
+            ]
+            contains_non_tool_results = any(
+                not isinstance(block, dict) or block.get("type") != "tool_result"
+                for block in next_content
+            )
+            present_ids = {
+                str(block.get("tool_use_id"))
+                for block in tool_result_blocks
+                if block.get("tool_use_id") is not None
+            }
+
+            missing_ids = [tool_id for tool_id in required_ids if tool_id not in present_ids]
+            if not missing_ids:
+                i += 2
+                continue
+
+            if not contains_non_tool_results:
+                # Pure tool_result message — append missing results in-place.
+                for tool_id in missing_ids:
+                    next_content.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": (
+                            "Tool execution was blocked or interrupted before results "
+                            "were recorded."
+                        ),
+                        "is_error": True,
+                    })
+                inserted_blocks += len(missing_ids)
+                i += 2
+                continue
+
+            # Mixed content (text + tool_results) — insert a separate message
+            # with only the missing results so we don't duplicate existing ones.
+            synthetic_for_missing = [{
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": (
+                    "Tool execution was blocked or interrupted before results were recorded."
+                ),
+                "is_error": True,
+            } for tool_id in missing_ids]
+            messages.insert(i + 1, {"role": "user", "content": synthetic_for_missing})
+            inserted_blocks += len(synthetic_for_missing)
+            i += 3  # skip: assistant, inserted synthetic, original next_msg
+            continue
+
+        synthetic_results = [{
+            "type": "tool_result",
+            "tool_use_id": tool_id,
+            "content": (
+                "Tool execution was blocked or interrupted before results were recorded."
+            ),
+            "is_error": True,
+        } for tool_id in required_ids]
+        messages.insert(i + 1, {"role": "user", "content": synthetic_results})
+        inserted_blocks += len(synthetic_results)
+        i += 2
+
+    if inserted_blocks:
+        logger.warning(
+            "Repaired %d orphaned tool_result block(s) in message history",
+            inserted_blocks,
+        )
+    return inserted_blocks
+
+
 def run_agent_loop(
     messages: list[dict],
     llm_config: LLMConfig,
@@ -90,6 +195,7 @@ def run_agent_loop(
     for turn in range(agent_config.max_turns):
         turns_used += 1
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
+        _ensure_tool_call_integrity(messages)
 
         try:
             response = call_llm(
@@ -448,6 +554,7 @@ def run_agent_loop(
     # Don't stream the forced summary — it's an internal wrap-up, not a direct
     # response, and streaming it would concatenate with the prior streamed output.
     logger.warning("Max turns (%d) reached, forcing final response", agent_config.max_turns)
+    _ensure_tool_call_integrity(messages)
     try:
         response = call_llm(
             messages=messages,

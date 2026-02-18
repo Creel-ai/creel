@@ -23,6 +23,7 @@ class SendMessageRequest(BaseModel):
     sender_id: str = Field(min_length=1, max_length=128)
     text: str = Field(min_length=1)
     session_id: str | None = None
+    auto_approve: bool = False
 
 
 class SendMessageResponse(BaseModel):

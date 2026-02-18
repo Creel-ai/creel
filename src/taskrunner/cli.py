@@ -924,6 +924,7 @@ def cmd_send(args: argparse.Namespace) -> int:
                 sender_id=args.sender_id,
                 text=args.message,
                 session_id=args.session_id,
+                auto_approve=getattr(args, "auto_approve", False),
             ):
                 event_type = str(event.get("type", ""))
                 payload = event.get("payload", {})
@@ -955,6 +956,8 @@ def cmd_send(args: argparse.Namespace) -> int:
     }
     if args.session_id:
         payload["session_id"] = args.session_id
+    if getattr(args, "auto_approve", False):
+        payload["auto_approve"] = True
 
     try:
         resp = _daemon_request(
@@ -1267,6 +1270,12 @@ def main() -> int:
         "--stream",
         action="store_true",
         help="Stream response events from daemon (SSE)",
+    )
+    send_parser.add_argument(
+        "--auto-approve",
+        action="store_true",
+        default=False,
+        help="Auto-approve Guardian REVIEW actions instead of queuing them",
     )
 
     args = parser.parse_args()

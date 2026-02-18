@@ -85,16 +85,31 @@ class TestApprovalQueue:
 # ── Agent loop REVIEW → approval_required tests ─────────────────────
 
 
+class _FakeCoherence:
+    coherent = True
+    reasoning = ""
+
+
 class FakeGuardian:
     def __init__(self, verdict: ActionVerdict, reason: str = "test reason"):
         self._verdict = verdict
         self._reason = reason
+        self._audit = None
 
     def validate_action(self, tool_name, tool_input):
         return ActionDecision(verdict=self._verdict, tool_name=tool_name, reason=self._reason)
 
     def log_action_outcome(self, tool_name, stage, outcome):
         pass
+
+    def check_coherence(self, user_request, tool_name, tool_input, prior_tools=None):
+        return _FakeCoherence()
+
+    def check_drift(self, tool_name, output_length, success):
+        return []
+
+    def screen_tool_result(self, tool_name, result):
+        return MagicMock(blocked=False)
 
 
 class FakeToolUse:
@@ -142,6 +157,30 @@ def test_review_returns_approval_required(mock_llm, mock_exec):
     assert result.pending_approval is not None
     assert result.pending_approval.tool_name == "send_email"
     mock_exec.assert_not_called()
+
+
+@patch("taskrunner.agent.execute_tool_call", return_value="ok")
+@patch("taskrunner.agent.call_llm")
+def test_review_with_confirm_action_approves(mock_llm, mock_exec):
+    """REVIEW verdict + confirm_action that returns True → tool executes."""
+    from taskrunner.agent import run_agent_loop
+    from taskrunner.models import AgentConfig, LLMConfig
+
+    mock_llm.side_effect = [FakeResponse(), FakeTextResponse()]
+
+    auto_confirm = MagicMock(return_value=True)
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "send an email"}],
+        llm_config=LLMConfig(model="test"),
+        tools_config={"send_email": MagicMock()},
+        agent_config=AgentConfig(max_turns=5),
+        guardian=FakeGuardian(ActionVerdict.REVIEW),
+        confirm_action=auto_confirm,
+    )
+
+    assert result.stop_reason == "end_turn"
+    auto_confirm.assert_called_once()
+    mock_exec.assert_called_once()
 
 
 @patch("taskrunner.agent.execute_tool_call", return_value="ok")
@@ -275,6 +314,50 @@ def test_chat_no_pending_passes_to_agent(mock_run, tmp_path):
 
     # Should have gone to agent loop, not approval handler
     mock_run.assert_called_once()
+
+
+@patch("taskrunner.chat.run_agent_loop")
+def test_chat_auto_approve_passes_confirm_action(mock_run, tmp_path):
+    """auto_approve=True passes a confirm_action callback to agent loop."""
+    from taskrunner.agent import AgentResult
+
+    mock_run.return_value = AgentResult(
+        text="Task created.",
+        turns_used=1,
+        tool_calls_made=1,
+        stop_reason="end_turn",
+    )
+
+    server = _make_chat_server(tmp_path)
+    response = server.handle_message("sender1", "add task", auto_approve=True)
+
+    assert response == "Task created."
+    # Verify confirm_action was passed (not None)
+    call_kwargs = mock_run.call_args
+    confirm_fn = call_kwargs.kwargs.get("confirm_action") or call_kwargs[1].get("confirm_action")
+    assert confirm_fn is not None
+    # The auto-confirm callback should always return True
+    assert confirm_fn("some_tool", {}, "test reason") is True
+
+
+@patch("taskrunner.chat.run_agent_loop")
+def test_chat_no_auto_approve_has_no_confirm(mock_run, tmp_path):
+    """Without auto_approve, confirm_action is None (no _confirm_fn set)."""
+    from taskrunner.agent import AgentResult
+
+    mock_run.return_value = AgentResult(
+        text="Done.",
+        turns_used=1,
+        tool_calls_made=0,
+        stop_reason="end_turn",
+    )
+
+    server = _make_chat_server(tmp_path)
+    response = server.handle_message("sender1", "hello")
+
+    call_kwargs = mock_run.call_args
+    confirm_fn = call_kwargs.kwargs.get("confirm_action") or call_kwargs[1].get("confirm_action")
+    assert confirm_fn is None
 
 
 def test_chat_approval_sends_imessage(tmp_path):

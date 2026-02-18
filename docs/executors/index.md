@@ -13,6 +13,7 @@ Executors are isolated, stateless data fetchers that run with minimal credential
 | [bluebubbles / imessage_bridge](imessage.md) | BlueBubbles API / Bridge token | LLM, other credentials |
 | [apple_notes / apple_reminders / things](apple-apps.md) | Bridge HTTP token (scoped) | LLM, other credentials |
 | [brave_search / fetch_url](web.md) | Brave API key / None | LLM, other credentials |
+| [notion](notion.md) | Notion integration token | LLM, other credentials |
 | [exec](exec.md) | Host filesystem (mounted paths only) | LLM, other credentials |
 
 ## How Executors Run

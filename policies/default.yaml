@@ -4,6 +4,7 @@ allow:
   - check_email
   - read_email
   - check_drive
+  - notion_api
   - check_messages
   - get_chats
   - react_imessage
@@ -188,6 +189,21 @@ review_when:
   - tool: exec
     arg: command
     pattern: "*zip*|*curl*"
+  # Notion is read-only by default; flag write-like actions for explicit review.
+  # NOTE: The executor also enforces a READ_ONLY_ACTIONS allowlist
+  # (see src/executors/notion/executor.py). Keep both in sync.
+  - tool: notion_api
+    arg: action
+    pattern: "create*"
+  - tool: notion_api
+    arg: action
+    pattern: "update*"
+  - tool: notion_api
+    arg: action
+    pattern: "delete*"
+  - tool: notion_api
+    arg: action
+    pattern: "archive*"
 
 # Tools that match 'review' rules but can skip human approval
 auto_approve:

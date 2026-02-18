@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 
 from taskrunner.models import BridgeConfig, ExecutorConfig, ToolConfig
 from taskrunner.orchestrator import _run_executor_container, _run_executor_inline
 
 logger = logging.getLogger(__name__)
+
+# System directories that must never be used as workspaces.
+# Checked via both exact match and prefix match (e.g. /etc/nginx is also blocked).
+_SYSTEM_DIRS = frozenset({
+    "/etc", "/var", "/usr", "/bin", "/sbin", "/lib", "/boot",
+    "/dev", "/proc", "/sys",
+})
+
+# User-sensitive directories (relative to home) that should be blocked.
+_SENSITIVE_HOME_DIRS = (".ssh", ".gnupg", ".age", ".aws")
 
 
 BUILTIN_MEMORY_TOOLS = [
@@ -133,15 +145,41 @@ BUILTIN_MEMORY_TOOLS = [
 ]
 
 
+BUILTIN_WORKSPACE_TOOLS = [
+    {
+        "name": "set_workspace",
+        "description": (
+            "Set the workspace directory for file operations. Call this before "
+            "using read_file, write_file, edit_file, or list_files to operate "
+            "on a specific directory. The path must be an absolute directory "
+            "that exists on the host. Requires user approval on first use."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the directory to use as workspace.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+]
+
+
 def build_tool_definitions(
     tools_config: dict[str, ToolConfig],
     include_memory_tools: bool = False,
+    include_workspace_tools: bool = False,
 ) -> list[dict]:
     """Convert YAML tool configs to Anthropic API tool definitions.
 
     Args:
         tools_config: Mapping of tool name -> ToolConfig.
         include_memory_tools: If True, include built-in memory tools.
+        include_workspace_tools: If True, include built-in workspace tools
+            (set_workspace).
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
@@ -150,6 +188,8 @@ def build_tool_definitions(
 
     if include_memory_tools:
         tool_defs.extend(BUILTIN_MEMORY_TOOLS)
+    if include_workspace_tools:
+        tool_defs.extend(BUILTIN_WORKSPACE_TOOLS)
     for name, cfg in tools_config.items():
         properties: dict[str, dict] = {}
         required: list[str] = []
@@ -181,6 +221,42 @@ def build_tool_definitions(
     return tool_defs
 
 
+def _is_blocked_path(path: str) -> bool:
+    """Check if a resolved path is a blocked system or sensitive location."""
+    if path == "/":
+        return True
+    # Prefix match against system directories (blocks /etc AND /etc/nginx/...)
+    for d in _SYSTEM_DIRS:
+        if path == d or path.startswith(d + "/"):
+            return True
+    # Block sensitive user directories
+    home = os.path.expanduser("~")
+    if home != "~":
+        for name in _SENSITIVE_HOME_DIRS:
+            sensitive = os.path.join(home, name)
+            if path == sensitive or path.startswith(sensitive + "/"):
+                return True
+    return False
+
+
+def _validate_workspace_path(path: str) -> str | None:
+    """Validate a workspace path and return an error message or None if valid.
+
+    Returns a generic error message to avoid leaking path details to the LLM.
+    """
+    if not os.path.isabs(path):
+        return "Path must be absolute"
+    resolved = os.path.realpath(path)
+    # Check both the literal path and the resolved path (handles symlinks)
+    if _is_blocked_path(path) or _is_blocked_path(resolved):
+        return "Cannot use this path as workspace"
+    if not os.path.exists(resolved):
+        return "Path does not exist"
+    if not os.path.isdir(resolved):
+        return "Path is not a directory"
+    return None
+
+
 def execute_tool_call(
     tool_name: str,
     tool_input: dict,
@@ -188,6 +264,7 @@ def execute_tool_call(
     use_containers: bool = False,
     memory_manager: object | None = None,
     bridge_config: BridgeConfig | None = None,
+    session_state: dict | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -200,6 +277,10 @@ def execute_tool_call(
         tool_input: Arguments provided by the LLM.
         tools_config: All tool configurations.
         use_containers: If True, run in Docker container.
+        memory_manager: Optional memory manager for memory tools.
+        bridge_config: Optional bridge configuration.
+        session_state: Optional per-session state dict. Used to store/read
+            workspace path for file_ops tools.
 
     Returns:
         The executor output as a string.
@@ -207,6 +288,21 @@ def execute_tool_call(
     Raises:
         ValueError: If tool_name is not found in tools_config.
     """
+    # Handle set_workspace built-in
+    if tool_name == "set_workspace":
+        # set_workspace requires an active session (not task mode)
+        if session_state is None:
+            return json.dumps({"error": "set_workspace is only available in interactive sessions"})
+        path = tool_input.get("path", "")
+        if not path:
+            return json.dumps({"error": "path is required"})
+        error = _validate_workspace_path(path)
+        if error:
+            return json.dumps({"error": error})
+        resolved = os.path.realpath(path)
+        session_state["workspace"] = resolved
+        return json.dumps({"workspace": resolved, "status": "ok"})
+
     # Handle built-in tools
     if tool_name == "remember" and memory_manager is not None:
         from taskrunner.memory import MemoryManager
@@ -245,8 +341,21 @@ def execute_tool_call(
 
     cfg = tools_config[tool_name]
 
+    # Security: strip 'workspace' from LLM-provided input for file_ops tools
+    # to prevent bypassing the set_workspace approval flow.
+    if cfg.executor == "file_ops":
+        tool_input = {k: v for k, v in tool_input.items() if k != "workspace"}
+
     # Merge: LLM input as base, fixed_args override
     merged_args = {**tool_input, **cfg.fixed_args}
+
+    # Inject workspace from session_state for file_ops tools
+    if cfg.executor == "file_ops" and session_state and "workspace" in session_state:
+        workspace = session_state["workspace"]
+        # Re-validate: workspace may have been removed since set_workspace
+        if not os.path.isdir(workspace):
+            return json.dumps({"error": "Workspace is no longer valid (directory removed or inaccessible)"})
+        merged_args["workspace"] = workspace
 
     # Convert all values to strings (executors expect string args)
     string_args = {k: str(v) for k, v in merged_args.items()}

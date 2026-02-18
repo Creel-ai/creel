@@ -86,6 +86,9 @@ class ChatServer:
             )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
+        # Per-sender session state (e.g. workspace path for file_ops)
+        self._session_states: dict[str, dict] = {}
+
         # Initialize approval queue
         # Keep approval state scoped with session storage by default so tests
         # and multi-instance deployments don't share a global pending queue.
@@ -127,11 +130,13 @@ class ChatServer:
         # Handle clear command
         if stripped.lower() in _CLEAR_COMMANDS:
             self._session_mgr.clear(sender_id)
+            self._session_states.pop(sender_id, None)
             return "Session cleared."
 
         # Handle /new — start a new session
         if stripped.lower() == "/new":
             session = self._session_mgr.new_session(sender_id)
+            self._session_states.pop(sender_id, None)
             return f"Started new session {session.session_id}."
 
         # Handle /sessions — list all sessions
@@ -200,6 +205,9 @@ class ChatServer:
                 return True
             confirm_action = _auto_confirm
 
+        # Look up per-sender session state (workspace path, etc.)
+        session_state = self._session_states.setdefault(sender_id, {})
+
         # Run the agent loop (containerized or direct)
         if self._use_containers:
             from taskrunner.container_agent import run_agent_loop_container
@@ -215,6 +223,7 @@ class ChatServer:
                 confirm_action=confirm_action,
                 memory_manager=self._memory,
                 bridge_config=self._agent_def.bridge,
+                session_state=session_state,
             )
         else:
             result = run_agent_loop(
@@ -229,6 +238,7 @@ class ChatServer:
                 memory_manager=self._memory,
                 on_text_delta=on_text_delta,
                 bridge_config=self._agent_def.bridge,
+                session_state=session_state,
             )
 
         logger.info(
@@ -307,14 +317,17 @@ class ChatServer:
             self._send_reply(sender_id, result_msg, proactive=False)  # Direct reply to approval
             return result_msg
 
-        # Execute the tool
+        # Execute the tool with full context (session_state, memory)
+        session_state = self._session_states.get(sender_id)
         try:
             tool_result = execute_tool_call(
                 tool_name=pending.tool_name,
                 tool_input=pending.tool_input,
                 tools_config=self._agent_def.tools,
                 use_containers=self._use_containers,
+                memory_manager=self._memory,
                 bridge_config=self._agent_def.bridge,
+                session_state=session_state,
             )
             result_msg = f"✅ Approved and executed: {pending.tool_name}\n\nResult:\n{tool_result}"
         except Exception as e:

@@ -492,11 +492,11 @@ tools:
     executor: browser
     network: true
     bridge: true
-    description: "Open a new browser session (managed headless Chromium or relay to user's Chrome)"
+    description: "Open a new browser session. Modes: 'managed' (Docker headless), 'native' (local Chrome subprocess), or 'relay' (user's Chrome)"
     parameters:
       mode:
         type: string
-        description: "Session mode: 'managed' (isolated headless) or 'relay' (user's Chrome)"
+        description: "Session mode: 'managed' (isolated Docker headless), 'native' (local Chrome, no Docker), or 'relay' (user's Chrome)"
       cdp_url:
         type: string
         description: "Chrome CDP URL for relay mode (e.g., http://localhost:9222)"
@@ -664,6 +664,12 @@ browser:
   cdp_url: "http://localhost:9222"
   max_sessions: 3
   session_timeout_minutes: 10
+  container_memory: "1024m"
+  container_shm_size: "256m"
+  container_tmpfs_size: "128M"
+  navigate_timeout_ms: 30000
+  snapshot_timeout_ms: 15000
+  block_heavy_resources: true
 
 workspace:
   path: workspace

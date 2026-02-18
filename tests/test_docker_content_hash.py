@@ -60,6 +60,20 @@ class TestComputeExecutorHash:
 
         assert h1 == h2
 
+    def test_changes_when_shared_file_changes(self, tmp_path: Path) -> None:
+        """Shared files in the parent (build context) affect the hash."""
+        executor_dir = tmp_path / "weather"
+        executor_dir.mkdir()
+        (executor_dir / "Dockerfile").write_text("FROM python:3.12")
+        (tmp_path / "google_creds.py").write_text("v1")
+
+        h1 = _compute_executor_hash(executor_dir)
+
+        (tmp_path / "google_creds.py").write_text("v2")
+        h2 = _compute_executor_hash(executor_dir)
+
+        assert h1 != h2
+
     def test_empty_dir(self, tmp_path: Path) -> None:
         """An empty directory still produces a valid 12-char hash."""
         h = _compute_executor_hash(tmp_path)
@@ -124,17 +138,6 @@ class TestEnsureImageContentHash:
         assert result != "executor-weather:latest"
         # Only one subprocess call (inspect), no build
         assert mock_run.call_count == 1
-
-    @patch("taskrunner.orchestrator.subprocess.run")
-    def test_rebuild_on_code_change(self, mock_run: MagicMock, tmp_path: Path) -> None:
-        """Changing source code produces a different hash tag."""
-        executor_dir = self._setup_executor_dir(tmp_path)
-        hash_before = _compute_executor_hash(executor_dir)
-
-        (executor_dir / "executor.py").write_text("print('weather v2')")
-        hash_after = _compute_executor_hash(executor_dir)
-
-        assert hash_before != hash_after
 
     @patch("taskrunner.orchestrator.subprocess.run")
     def test_non_executor_image_unchanged(self, mock_run: MagicMock, tmp_path: Path) -> None:

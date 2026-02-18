@@ -167,6 +167,7 @@ def run_agent_loop(
     on_text_delta: Callable[[str], None] | None = None,
     allowed_tools: list[str] | None = None,
     bridge_config: object | None = None,
+    session_state: dict | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -186,7 +187,14 @@ def run_agent_loop(
         AgentResult with the final response and execution metadata.
     """
     include_memory = memory_manager is not None
-    tool_defs = build_tool_definitions(tools_config, include_memory_tools=include_memory) if tools_config else []
+    include_workspace = bool(
+        tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
+    )
+    tool_defs = build_tool_definitions(
+        tools_config,
+        include_memory_tools=include_memory,
+        include_workspace_tools=include_workspace,
+    ) if tools_config else []
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []
@@ -436,6 +444,7 @@ def run_agent_loop(
                     use_containers=use_containers,
                     memory_manager=memory_manager,
                     bridge_config=bridge_config,
+                    session_state=session_state,
                 )
                 is_error = False
                 elapsed_ms = (time.perf_counter() - t0) * 1000

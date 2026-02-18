@@ -234,6 +234,7 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
     server._guardian = guardian
     server._confirm_fn = None
     server._memory = None
+    server._session_states = {}
     server._approval_queue = ApprovalQueue(approvals_dir=str(tmp_path / "approvals"))
 
     from taskrunner.session import SessionManager

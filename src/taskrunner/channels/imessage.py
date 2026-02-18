@@ -60,12 +60,21 @@ class IMessageChannel(Channel):
                 new_messages = self._poll(last_rowid)
                 consecutive_errors = 0  # reset on success
                 for msg in new_messages:
-                    sender = msg["sender"]
-                    if sender in self._allowed_senders:
-                        logger.info("Message from %s: %s", sender, msg["text"][:80])
-                        response = callback(sender, msg["text"])
-                        self.send(sender, response)
+                    # Always advance rowid so we never reprocess a message
                     last_rowid = max(last_rowid, msg["rowid"])
+                    sender = msg["sender"]
+                    text = msg["text"]
+                    # Skip our own replies (iMessage to self shows as is_from_me=0)
+                    if text.startswith(MESSAGE_PREFIX):
+                        logger.debug("Skipping own message: %s", text[:40])
+                        continue
+                    if sender in self._allowed_senders:
+                        logger.info("Message from %s: %s", sender, text[:80])
+                        try:
+                            response = callback(sender, text)
+                            self.send(sender, response)
+                        except Exception:
+                            logger.exception("Error handling message from %s", sender)
             except Exception:
                 consecutive_errors += 1
                 backoff = min(self._poll_interval * (2 ** consecutive_errors), max_backoff)

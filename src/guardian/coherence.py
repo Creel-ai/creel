@@ -40,6 +40,8 @@ is coherent — it does NOT need to address ALL parts in a single call.
 
 Be generous: if the tool call is even loosely related to the request, it's coherent."""
 
+_SKIP_COHERENCE = frozenset({"browser_close", "browser_sessions", "mark_read"})
+
 
 class CoherenceChecker:
     """LLM-based action coherence checker.
@@ -75,8 +77,6 @@ class CoherenceChecker:
         if not self._config.enabled:
             return CoherenceResult(coherent=True, confidence=1.0, reasoning="Coherence check disabled")
 
-        # Skip coherence check for cleanup/housekeeping tools
-        _SKIP_COHERENCE = {"browser_close", "browser_sessions", "mark_read"}
         if tool_name in _SKIP_COHERENCE:
             return CoherenceResult(coherent=True, confidence=1.0, reasoning=f"Skipped: {tool_name} is a cleanup tool")
 

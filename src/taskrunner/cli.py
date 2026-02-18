@@ -412,7 +412,8 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     port = parsed.port or 8099
 
     # Pre-generate scoped tokens so orchestrator can inject them into containers
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER"]
+    from taskrunner.orchestrator import _EXECUTOR_TO_BRIDGE_SCOPE
+    scopes = sorted(set(_EXECUTOR_TO_BRIDGE_SCOPE.values()))
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
         if not os.environ.get(env_var):

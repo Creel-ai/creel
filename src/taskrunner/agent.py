@@ -36,6 +36,19 @@ class AgentResult:
     last_input_tokens: int = 0
 
 
+def _extract_prior_tools(messages: list[dict]) -> list[str]:
+    """Extract tool names from prior assistant messages for coherence context."""
+    prior = []
+    for msg in messages:
+        if msg.get("role") == "assistant":
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        prior.append(block.get("name", ""))
+    return prior
+
+
 def run_agent_loop(
     messages: list[dict],
     llm_config: LLMConfig,
@@ -252,14 +265,7 @@ def run_agent_loop(
                         break
 
                 if user_request:
-                    prior_tools = []
-                    for msg in messages:
-                        if msg.get("role") == "assistant":
-                            msg_content = msg.get("content", [])
-                            if isinstance(msg_content, list):
-                                for b in msg_content:
-                                    if isinstance(b, dict) and b.get("type") == "tool_use":
-                                        prior_tools.append(b.get("name", ""))
+                    prior_tools = _extract_prior_tools(messages)
                     coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
                     if not coherence.coherent:
                         logger.warning(

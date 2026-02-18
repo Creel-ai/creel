@@ -332,6 +332,39 @@ tools:
         type: string
         description: "Number of results (default: 5, max: 20)"
 
+  notion_api:
+    executor: notion
+    secrets: secrets/notion.env.enc
+    network: true
+    classify_output: true
+    description: "Query Notion in read-only mode (search, retrieve page, query database)"
+    parameters:
+      action:
+        type: string
+        description: "Action: search, retrieve_page, query_database"
+        required: true
+      query:
+        type: string
+        description: "Search text for action='search'"
+      page_id:
+        type: string
+        description: "Notion page ID for action='retrieve_page'"
+      database_id:
+        type: string
+        description: "Notion database ID for action='query_database'"
+      filter_json:
+        type: string
+        description: "JSON object filter for action='query_database'"
+      sorts_json:
+        type: string
+        description: "JSON array of sort objects for action='query_database'"
+      page_size:
+        type: string
+        description: "Results page size (1-100, default 20)"
+      start_cursor:
+        type: string
+        description: "Pagination cursor for search/query_database"
+
   fetch_url:
     executor: fetch_url
     network: true

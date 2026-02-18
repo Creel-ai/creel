@@ -51,6 +51,7 @@ nav:
     - Google Drive: executors/google-drive.md
     - iMessage: executors/imessage.md
     - Apple Apps: executors/apple-apps.md
+    - Notion: executors/notion.md
     - Web Search & Fetch: executors/web.md
     - Shell Exec: executors/exec.md
   - Deployment:

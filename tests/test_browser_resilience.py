@@ -141,6 +141,7 @@ class TestAriaSnapshotTimeoutFallback:
         # Falls back to inner_text
         assert len(nodes) == 1
         assert nodes[0]["role"] == "text"
+        assert partial is True
 
 
 class TestDeadSessionDetection:
@@ -208,14 +209,48 @@ class TestDeadSessionDetection:
             assert result is session
             mock_check.assert_not_called()
 
+    def test_dead_native_session_detected(self, relay):
+        """When Chrome process has exited, SessionDead should be raised."""
+        process_mock = MagicMock()
+        process_mock.poll.return_value = 1  # process exited
+
+        session = BrowserSession(
+            session_id="native-dead",
+            mode="native",
+            process=process_mock,
+        )
+        relay._sessions["native-dead"] = session
+
+        with pytest.raises(SessionDead, match="dead"):
+            relay._get_session("native-dead")
+
+        assert "native-dead" not in relay._sessions
+
+    def test_alive_native_session_ok(self, relay):
+        """A running Chrome process should not raise SessionDead."""
+        process_mock = MagicMock()
+        process_mock.poll.return_value = None  # still running
+
+        session = BrowserSession(
+            session_id="native-alive",
+            mode="native",
+            process=process_mock,
+        )
+        relay._sessions["native-alive"] = session
+
+        result = relay._get_session("native-alive")
+        assert result is session
+
 
 class TestResourceBlocking:
     """Test resource blocking in page handlers."""
 
-    def test_resource_blocking_installed(self, relay):
+    @pytest.mark.asyncio
+    async def test_resource_blocking_installed(self, relay):
         """Verify page.route is called when block_heavy_resources is True."""
         page = MagicMock()
-        relay._install_page_handlers(page)
+        page.route = AsyncMock()
+        await relay._install_page_handlers(page)
 
         # Check dialog, popup, download handlers are registered
         on_calls = [c[0][0] for c in page.on.call_args_list]
@@ -228,10 +263,12 @@ class TestResourceBlocking:
         args = page.route.call_args
         assert args[0][0] == "**/*"
 
-    def test_resource_blocking_not_installed_when_disabled(self, relay_no_blocking):
+    @pytest.mark.asyncio
+    async def test_resource_blocking_not_installed_when_disabled(self, relay_no_blocking):
         """Verify page.route is NOT called when block_heavy_resources is False."""
         page = MagicMock()
-        relay_no_blocking._install_page_handlers(page)
+        page.route = AsyncMock()
+        await relay_no_blocking._install_page_handlers(page)
 
         page.route.assert_not_called()
 
@@ -239,7 +276,8 @@ class TestResourceBlocking:
     async def test_resource_blocking_aborts_images(self, relay):
         """Verify the route handler aborts image/media/font requests."""
         page = MagicMock()
-        relay._install_page_handlers(page)
+        page.route = AsyncMock()
+        await relay._install_page_handlers(page)
 
         # Get the route handler function
         route_handler = page.route.call_args[0][1]
@@ -255,7 +293,8 @@ class TestResourceBlocking:
     async def test_resource_blocking_allows_documents(self, relay):
         """Verify HTML/XHR/fetch requests pass through."""
         page = MagicMock()
-        relay._install_page_handlers(page)
+        page.route = AsyncMock()
+        await relay._install_page_handlers(page)
 
         route_handler = page.route.call_args[0][1]
 

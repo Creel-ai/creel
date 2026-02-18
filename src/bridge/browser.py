@@ -152,7 +152,7 @@ class BrowserRelay:
                 context = await browser.new_context()
                 page = await context.new_page()
 
-            self._install_page_handlers(page)
+            await self._install_page_handlers(page)
         except Exception:
             process.terminate()
             process.wait(timeout=5)
@@ -204,7 +204,7 @@ class BrowserRelay:
             context = await browser.new_context()
             page = await context.new_page()
 
-        self._install_page_handlers(page)
+        await self._install_page_handlers(page)
 
         session_id = str(uuid.uuid4())
         self._sessions[session_id] = BrowserSession(
@@ -248,7 +248,7 @@ class BrowserRelay:
                 context = await browser.new_context()
                 page = await context.new_page()
 
-            self._install_page_handlers(page)
+            await self._install_page_handlers(page)
         except Exception:
             _stop_container(container_id)
             raise
@@ -510,10 +510,7 @@ class BrowserRelay:
                 except Exception as e:
                     logger.warning("Error terminating native Chrome for session %s: %s", session_id, e)
             if session.temp_profile_dir:
-                try:
-                    shutil.rmtree(session.temp_profile_dir, ignore_errors=True)
-                except Exception as e:
-                    logger.warning("Error cleaning up temp profile for session %s: %s", session_id, e)
+                shutil.rmtree(session.temp_profile_dir, ignore_errors=True)
 
         logger.info("Session %s closed (mode=%s)", session_id, session.mode)
 
@@ -542,7 +539,7 @@ class BrowserRelay:
                 f"CDP URL must point to localhost, got '{hostname}'"
             )
 
-    def _install_page_handlers(self, page: Any) -> None:
+    async def _install_page_handlers(self, page: Any) -> None:
         """Register handlers for dialogs, popups, downloads, and resource blocking.
 
         Prevents malicious pages from hanging the session with alert()
@@ -561,7 +558,7 @@ class BrowserRelay:
                 else:
                     await route.continue_()
 
-            page.route("**/*", _block_resources)
+            await page.route("**/*", _block_resources)
 
     def _check_session_limit(self) -> None:
         if len(self._sessions) >= self._max_sessions:
@@ -584,6 +581,15 @@ class BrowserRelay:
                     "Open a new session with browser_open."
                 )
 
+        # Check if session is still alive for native mode
+        if session.mode == "native" and session.process:
+            if session.process.poll() is not None:
+                self._sessions.pop(session_id, None)
+                raise SessionDead(
+                    f"Session {session_id} is dead (Chrome process exited). "
+                    "Open a new session with browser_open."
+                )
+
         return session
 
     @staticmethod
@@ -597,16 +603,6 @@ class BrowserRelay:
                 timeout=5,
             )
             return result.returncode == 0 and result.stdout.strip() == "true"
-        except Exception:
-            return False
-
-    async def _is_session_alive(self, session: BrowserSession) -> bool:
-        """Check if a session's page is still responsive."""
-        try:
-            await asyncio.wait_for(
-                session.page.evaluate("1"), timeout=3
-            )
-            return True
         except Exception:
             return False
 
@@ -653,9 +649,10 @@ class BrowserRelay:
                 locator.aria_snapshot(),
                 timeout=self._snapshot_timeout_ms / 1000,
             )
-        except (asyncio.TimeoutError, Exception) as exc:
+        except Exception as exc:
             # Fallback: try to get plain text content instead
-            if isinstance(exc, asyncio.TimeoutError):
+            is_timeout = isinstance(exc, asyncio.TimeoutError)
+            if is_timeout:
                 logger.warning("aria_snapshot timed out, falling back to inner_text")
             try:
                 body_text = await asyncio.wait_for(
@@ -666,7 +663,7 @@ class BrowserRelay:
                     return [{"role": "text", "value": truncated}], True
             except Exception:
                 pass
-            return [], not isinstance(exc, asyncio.TimeoutError)
+            return [], is_timeout
 
         if not snapshot or not snapshot.strip():
             return [], False

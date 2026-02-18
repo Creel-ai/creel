@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Google Calendar write executor - creates calendar events.
 
-Requires GOOGLE_CREDENTIALS_JSON env var containing the OAuth2 credentials
-(refresh token, client ID, client secret).
+Requires GOOGLE_ACCESS_TOKEN env var containing a short-lived OAuth2 access token.
 Outputs JSON to stdout.
 """
 
@@ -12,27 +11,12 @@ import json
 import os
 import sys
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-
-def get_credentials() -> Credentials:
-    """Build credentials from environment variable."""
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if not creds_json:
-        raise RuntimeError("GOOGLE_CREDENTIALS_JSON environment variable not set")
-
-    creds_data = json.loads(creds_json)
-    creds = Credentials(
-        token=None,
-        refresh_token=creds_data["refresh_token"],
-        client_id=creds_data["client_id"],
-        client_secret=creds_data["client_secret"],
-        token_uri="https://oauth2.googleapis.com/token",
-    )
-    creds.refresh(Request())
-    return creds
+try:
+    from executors.google_creds import get_credentials
+except ModuleNotFoundError:
+    from google_creds import get_credentials
 
 
 def create_event(

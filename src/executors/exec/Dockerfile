@@ -20,6 +20,6 @@ USER executor
 WORKDIR /app
 
 # Copy executor script
-COPY --chown=executor:executor executor.py .
+COPY --chown=executor:executor exec/executor.py ./executor.py
 
 ENTRYPOINT ["python", "executor.py"]

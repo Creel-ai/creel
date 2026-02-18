@@ -5,9 +5,10 @@ RUN useradd -m -u 1000 executor
 USER executor
 WORKDIR /app
 
-COPY --chown=executor:executor requirements.txt .
+COPY --chown=executor:executor drive_write/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-COPY --chown=executor:executor executor.py .
+COPY --chown=executor:executor google_creds.py .
+COPY --chown=executor:executor drive_write/executor.py ./executor.py
 
 ENTRYPOINT ["python", "executor.py"]

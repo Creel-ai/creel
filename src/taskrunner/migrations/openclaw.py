@@ -645,13 +645,10 @@ class OpenClawMigrator:
             return {"role": "user", "content": [block]}
 
         if role == "system":
-            if isinstance(content, list):
-                text = self._extract_text_from_blocks(content) or self._to_text(content)
-            else:
-                text = self._to_text(content)
-            if not text:
-                return None
-            return {"role": "user", "content": f"[Imported system note]\n{text}"}
+            # Skip OpenClaw system messages when importing session history.
+            # Creel session history should begin with user content, and
+            # injecting system notes as user messages can change behavior.
+            return None
 
         # Default to user content.
         if self._looks_like_tool_result_blocks(content):

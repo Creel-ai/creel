@@ -215,6 +215,8 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
             return _exec_browser_inline(config)
         elif name == "exec":
             return _exec_exec_inline(config)
+        elif name == "file_ops":
+            return _exec_file_ops_inline(config)
         else:
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
@@ -599,6 +601,49 @@ def _exec_exec_inline(config: ExecutorConfig) -> str:
     return json.dumps(result, indent=2)
 
 
+def _exec_file_ops_inline(config: ExecutorConfig) -> str:
+    """Run file_ops executor inline."""
+    import os
+
+    from executors.file_ops.executor import ACTIONS
+
+    action = config.args.get("action", "")
+    if action not in ACTIONS:
+        raise ValueError(f"file_ops: unknown action '{action}'")
+
+    # Map config args to the uppercase env vars the executor expects
+    env_map = {
+        "workspace": "WORKSPACE",
+        "action": "ACTION",
+        "file_path": "FILE_PATH",
+        "content": "CONTENT",
+        "old_text": "OLD_TEXT",
+        "new_text": "NEW_TEXT",
+        "offset": "OFFSET",
+        "limit": "LIMIT",
+        "directory": "DIRECTORY",
+        "pattern": "PATTERN",
+        "recursive": "RECURSIVE",
+    }
+
+    old_env: dict[str, str | None] = {}
+    for arg_key, env_key in env_map.items():
+        value = config.args.get(arg_key, "")
+        if value:
+            old_env[env_key] = os.environ.get(env_key)
+            os.environ[env_key] = str(value)
+
+    try:
+        result = ACTIONS[action]()
+        return json.dumps(result, indent=2)
+    finally:
+        for env_key in old_env:
+            if old_env[env_key] is None:
+                os.environ.pop(env_key, None)
+            else:
+                os.environ[env_key] = old_env[env_key]
+
+
 def _ensure_image(image: str) -> None:
     """Build the Docker image if it doesn't already exist.
 
@@ -739,7 +784,13 @@ def _run_executor_container(
                 # Expand ~ to home directory
                 host_path = os.path.expanduser(mount.path)
                 docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
-        
+
+        # Mount dynamic workspace for file_ops executor
+        workspace_path = config.args.get("workspace")
+        if workspace_path and config.name in ("file_ops",):
+            docker_cmd.extend(["-v", f"{workspace_path}:/workspace:rw"])
+            env_vars["WORKSPACE"] = "/workspace"
+
         # Add network isolation if disabled
         if tool_config and not tool_config.network:
             docker_cmd.extend(["--network=none"])

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 
 from taskrunner.models import BridgeConfig, ExecutorConfig, ToolConfig
 from taskrunner.orchestrator import _run_executor_container, _run_executor_inline
 
 logger = logging.getLogger(__name__)
+
+# Dangerous root paths that set_workspace should reject
+_DANGEROUS_ROOTS = frozenset({"/", "/etc", "/var", "/usr", "/bin", "/sbin", "/lib", "/boot", "/dev", "/proc", "/sys"})
 
 
 BUILTIN_MEMORY_TOOLS = [
@@ -133,15 +138,41 @@ BUILTIN_MEMORY_TOOLS = [
 ]
 
 
+BUILTIN_WORKSPACE_TOOLS = [
+    {
+        "name": "set_workspace",
+        "description": (
+            "Set the workspace directory for file operations. Call this before "
+            "using read_file, write_file, edit_file, or list_files to operate "
+            "on a specific directory. The path must be an absolute directory "
+            "that exists on the host. Requires user approval on first use."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the directory to use as workspace.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+]
+
+
 def build_tool_definitions(
     tools_config: dict[str, ToolConfig],
     include_memory_tools: bool = False,
+    include_workspace_tools: bool = False,
 ) -> list[dict]:
     """Convert YAML tool configs to Anthropic API tool definitions.
 
     Args:
         tools_config: Mapping of tool name -> ToolConfig.
         include_memory_tools: If True, include built-in memory tools.
+        include_workspace_tools: If True, include built-in workspace tools
+            (set_workspace).
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
@@ -150,6 +181,8 @@ def build_tool_definitions(
 
     if include_memory_tools:
         tool_defs.extend(BUILTIN_MEMORY_TOOLS)
+    if include_workspace_tools:
+        tool_defs.extend(BUILTIN_WORKSPACE_TOOLS)
     for name, cfg in tools_config.items():
         properties: dict[str, dict] = {}
         required: list[str] = []
@@ -181,6 +214,21 @@ def build_tool_definitions(
     return tool_defs
 
 
+def _validate_workspace_path(path: str) -> str | None:
+    """Validate a workspace path and return an error message or None if valid."""
+    if not os.path.isabs(path):
+        return f"Path must be absolute, got: {path}"
+    # Check the literal path and the resolved path against dangerous roots
+    resolved = os.path.realpath(path)
+    if path in _DANGEROUS_ROOTS or resolved in _DANGEROUS_ROOTS:
+        return f"Cannot use dangerous root as workspace: {path}"
+    if not os.path.exists(resolved):
+        return f"Path does not exist: {resolved}"
+    if not os.path.isdir(resolved):
+        return f"Path is not a directory: {resolved}"
+    return None
+
+
 def execute_tool_call(
     tool_name: str,
     tool_input: dict,
@@ -188,6 +236,7 @@ def execute_tool_call(
     use_containers: bool = False,
     memory_manager: object | None = None,
     bridge_config: BridgeConfig | None = None,
+    session_state: dict | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -200,6 +249,10 @@ def execute_tool_call(
         tool_input: Arguments provided by the LLM.
         tools_config: All tool configurations.
         use_containers: If True, run in Docker container.
+        memory_manager: Optional memory manager for memory tools.
+        bridge_config: Optional bridge configuration.
+        session_state: Optional per-session state dict. Used to store/read
+            workspace path for file_ops tools.
 
     Returns:
         The executor output as a string.
@@ -207,6 +260,19 @@ def execute_tool_call(
     Raises:
         ValueError: If tool_name is not found in tools_config.
     """
+    # Handle set_workspace built-in
+    if tool_name == "set_workspace":
+        path = tool_input.get("path", "")
+        if not path:
+            return json.dumps({"error": "path is required"})
+        error = _validate_workspace_path(path)
+        if error:
+            return json.dumps({"error": error})
+        resolved = os.path.realpath(path)
+        if session_state is not None:
+            session_state["workspace"] = resolved
+        return json.dumps({"workspace": resolved, "status": "ok"})
+
     # Handle built-in tools
     if tool_name == "remember" and memory_manager is not None:
         from taskrunner.memory import MemoryManager
@@ -247,6 +313,10 @@ def execute_tool_call(
 
     # Merge: LLM input as base, fixed_args override
     merged_args = {**tool_input, **cfg.fixed_args}
+
+    # Inject workspace from session_state for file_ops tools
+    if cfg.executor == "file_ops" and session_state and "workspace" in session_state:
+        merged_args["workspace"] = session_state["workspace"]
 
     # Convert all values to strings (executors expect string args)
     string_args = {k: str(v) for k, v in merged_args.items()}

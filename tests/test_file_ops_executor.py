@@ -16,6 +16,8 @@ from executors.file_ops.executor import (
     action_write,
     main,
 )
+from taskrunner.models import ExecutorConfig
+from taskrunner.orchestrator import _exec_file_ops_inline
 
 
 @pytest.fixture()
@@ -448,3 +450,87 @@ class TestMain:
             assert "error" in output
         finally:
             cleanup()
+
+
+class TestExecFileOpsInline:
+    """Tests for the _exec_file_ops_inline orchestrator handler."""
+
+    def test_read_action(self, workspace):
+        (workspace / "hello.txt").write_text("hello inline")
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "read", "file_path": "hello.txt"},
+        )
+        result = json.loads(_exec_file_ops_inline(config))
+        assert result["content"] == "hello inline"
+
+    def test_write_action(self, workspace):
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "write", "file_path": "new.txt", "content": "written"},
+        )
+        result = json.loads(_exec_file_ops_inline(config))
+        assert result["bytes_written"] == 7
+        assert (workspace / "new.txt").read_text() == "written"
+
+    def test_list_action(self, workspace):
+        (workspace / "a.txt").write_text("a")
+        (workspace / "b.txt").write_text("b")
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "list", "directory": "."},
+        )
+        result = json.loads(_exec_file_ops_inline(config))
+        names = [e["name"] for e in result["entries"]]
+        assert "a.txt" in names
+        assert "b.txt" in names
+
+    def test_edit_action(self, workspace):
+        (workspace / "doc.txt").write_text("foo bar baz")
+        config = ExecutorConfig(
+            name="file_ops",
+            args={
+                "action": "edit",
+                "file_path": "doc.txt",
+                "old_text": "bar",
+                "new_text": "qux",
+            },
+        )
+        result = json.loads(_exec_file_ops_inline(config))
+        assert result["replacements"] == 1
+        assert (workspace / "doc.txt").read_text() == "foo qux baz"
+
+    def test_unknown_action_raises(self, workspace):
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "delete"},
+        )
+        with pytest.raises(ValueError, match="unknown action"):
+            _exec_file_ops_inline(config)
+
+    def test_workspace_arg_overrides_env(self, tmp_path):
+        """The workspace arg should set WORKSPACE env for the executor."""
+        ws = tmp_path / "custom_ws"
+        ws.mkdir()
+        (ws / "f.txt").write_text("custom")
+
+        config = ExecutorConfig(
+            name="file_ops",
+            args={
+                "action": "read",
+                "file_path": "f.txt",
+                "workspace": str(ws),
+            },
+        )
+        result = json.loads(_exec_file_ops_inline(config))
+        assert result["content"] == "custom"
+
+    def test_env_restored_after_call(self, workspace):
+        """Environment variables should be restored after execution."""
+        old_workspace = os.environ.get("WORKSPACE")
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "list", "directory": "."},
+        )
+        _exec_file_ops_inline(config)
+        assert os.environ.get("WORKSPACE") == old_workspace

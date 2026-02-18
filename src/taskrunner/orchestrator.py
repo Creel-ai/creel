@@ -28,6 +28,7 @@ _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "things": "THINGS",
     "imessage_bridge": "IMESSAGE",
     "browser": "BROWSER",
+    "git_ops": "GIT",
 }
 
 

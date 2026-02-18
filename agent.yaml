@@ -349,7 +349,7 @@ tools:
     description: "List available reminder lists"
     parameters: {}
     fixed_args:
-      action: "list"
+      action: "lists"
 
   # Web Search
   web_search:

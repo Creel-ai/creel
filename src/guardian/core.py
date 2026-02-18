@@ -160,6 +160,9 @@ class Guardian:
 
         The DeBERTa classifier is trained on natural language, not HTML markup.
         Raw HTML causes high false-positive rates on benign web content.
+
+        Note: This is a best-effort heuristic to reduce noise, not a security
+        boundary. The classifier and judge remain the actual detection layers.
         """
         import html
         import re

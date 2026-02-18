@@ -19,6 +19,14 @@ from taskrunner.secrets import decrypt_env_file
 
 logger = logging.getLogger(__name__)
 
+_EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
+    "apple_notes": "NOTES",
+    "apple_reminders": "REMINDERS",
+    "things": "THINGS",
+    "imessage_bridge": "IMESSAGE",
+    "browser": "BROWSER",
+}
+
 
 def run_task(
     task_path: str | Path,
@@ -631,13 +639,9 @@ def _run_executor_container(
         bridge_url = bridge_url.replace("://127.0.0.1", "://host.docker.internal")
         env_vars["BRIDGE_URL"] = bridge_url
         # Look up scoped token by executor name (e.g. browser → BRIDGE_TOKEN_BROWSER)
-        # Strip common prefixes (apple_notes → NOTES, apple_reminders → REMINDERS)
-        executor_name = config.name.upper() if config.name else ""
-        scope_name = executor_name.removeprefix("APPLE_").removeprefix("IMESSAGE_")
-        scoped_token = (
-            os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
-            or os.environ.get(f"BRIDGE_TOKEN_{executor_name}", "")
-        )
+        executor_name = config.name or ""
+        scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(executor_name, executor_name.upper())
+        scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
         if scoped_token:
             env_vars["BRIDGE_TOKEN"] = scoped_token
         elif bridge_config.token:

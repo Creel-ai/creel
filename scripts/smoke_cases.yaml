@@ -250,3 +250,30 @@ cases:
       - "-m"
       - "smoke"
     timeout: 900
+
+  - id: extras-7-set-workspace-unit
+    order: 360
+    phase: extras
+    title: set_workspace Unit Tests
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_set_workspace.py", "-v"]
+    timeout: 900
+
+  - id: extras-8-file-ops-inline
+    order: 370
+    phase: extras
+    title: file_ops Inline Handler Tests
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_file_ops_executor.py::TestExecFileOpsInline"
+      - "-v"
+    timeout: 900
+
+  - id: extras-9-set-workspace-e2e
+    order: 380
+    phase: extras
+    title: set_workspace End-to-End Behavioral
+    handler: set_workspace_e2e

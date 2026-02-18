@@ -341,6 +341,74 @@ class TestBrowserRelayUnavailable:
         assert response.status_code == 503
 
 
+class TestBrowserConnectNative:
+    """Test native mode connect endpoint."""
+
+    def test_connect_native_mode(self, client, browser_auth_headers, mock_relay):
+        mock_relay.create_native.return_value = "session-native-1"
+
+        with patch.object(app.state, "browser_relay", mock_relay, create=True):
+            response = client.post(
+                "/browser/connect",
+                json={"mode": "native", "headless": True},
+                headers=browser_auth_headers,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ok"] is True
+        assert result["session_id"] == "session-native-1"
+        mock_relay.create_native.assert_called_once_with(headless=True)
+
+    def test_connect_invalid_mode_rejected(self, client, browser_auth_headers, mock_relay):
+        with patch.object(app.state, "browser_relay", mock_relay, create=True):
+            response = client.post(
+                "/browser/connect",
+                json={"mode": "bogus"},
+                headers=browser_auth_headers,
+            )
+
+        assert response.status_code == 400
+
+
+class TestBrowserSessionDead:
+    """Test SessionDead error handling in endpoints."""
+
+    def test_navigate_session_dead_error(self, client, browser_auth_headers, mock_relay):
+        from bridge.browser import SessionDead
+
+        mock_relay.navigate.side_effect = SessionDead("Session dead")
+
+        with patch.object(app.state, "browser_relay", mock_relay, create=True):
+            response = client.post(
+                "/browser/navigate",
+                json={"session_id": "s1", "url": "https://example.com"},
+                headers=browser_auth_headers,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ok"] is False
+        assert result["session_dead"] is True
+        assert "dead" in result["error"].lower()
+
+    def test_content_session_dead_error(self, client, browser_auth_headers, mock_relay):
+        from bridge.browser import SessionDead
+
+        mock_relay.get_content.side_effect = SessionDead("Session dead")
+
+        with patch.object(app.state, "browser_relay", mock_relay, create=True):
+            response = client.post(
+                "/browser/content",
+                json={"session_id": "s1"},
+                headers=browser_auth_headers,
+            )
+
+        result = response.json()
+        assert result["ok"] is False
+        assert result["session_dead"] is True
+
+
 class TestCrossScopeAccess:
     """Test that browser tokens can't access other endpoints and vice versa."""
 

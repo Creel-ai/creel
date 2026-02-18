@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bridge.browser import BrowserRelay, ALLOWED_SCHEMES, _start_chromium_container, _stop_container
+from bridge.browser import BrowserRelay, BrowserSession, ALLOWED_SCHEMES, _start_chromium_container, _stop_container
 
 
 @pytest.fixture
@@ -72,8 +72,6 @@ class TestSessionManagement:
 
     def test_session_limit_enforced(self, relay):
         """Test that exceeding max_sessions raises."""
-        from bridge.browser import BrowserSession
-
         # Fill up sessions
         for i in range(3):
             relay._sessions[f"session-{i}"] = BrowserSession(
@@ -84,8 +82,6 @@ class TestSessionManagement:
             relay._check_session_limit()
 
     def test_get_session_found(self, relay):
-        from bridge.browser import BrowserSession
-
         session = BrowserSession(session_id="test-123", mode="relay")
         relay._sessions["test-123"] = session
 
@@ -97,8 +93,6 @@ class TestSessionManagement:
             relay._get_session("nonexistent")
 
     def test_list_sessions(self, relay):
-        from bridge.browser import BrowserSession
-
         page_mock = MagicMock()
         page_mock.url = "https://example.com"
 
@@ -119,8 +113,6 @@ class TestSessionManagement:
     @pytest.mark.asyncio
     async def test_close_session_managed_stops_container(self, relay):
         """Test that closing a managed session stops its Docker container."""
-        from bridge.browser import BrowserSession
-
         browser_mock = AsyncMock()
         session = BrowserSession(
             session_id="managed-1",
@@ -140,8 +132,6 @@ class TestSessionManagement:
     @pytest.mark.asyncio
     async def test_close_session_relay_no_container_stop(self, relay):
         """Test that closing a relay session does not try to stop a container."""
-        from bridge.browser import BrowserSession
-
         browser_mock = AsyncMock()
         session = BrowserSession(
             session_id="relay-1",
@@ -177,14 +167,16 @@ class TestAccessibilityTree:
     @pytest.mark.asyncio
     async def test_empty_snapshot(self, relay):
         page = self._make_page_mock(None)
-        result = await relay._get_accessibility_tree(page)
+        result, partial = await relay._get_accessibility_tree(page)
         assert result == []
+        assert partial is False
 
     @pytest.mark.asyncio
     async def test_empty_string_snapshot(self, relay):
         page = self._make_page_mock("")
-        result = await relay._get_accessibility_tree(page)
+        result, partial = await relay._get_accessibility_tree(page)
         assert result == []
+        assert partial is False
 
     @pytest.mark.asyncio
     async def test_basic_tree(self, relay):
@@ -194,9 +186,10 @@ class TestAccessibilityTree:
             '- textbox "Search": query'
         )
         page = self._make_page_mock(snapshot)
-        result = await relay._get_accessibility_tree(page)
+        result, partial = await relay._get_accessibility_tree(page)
 
         assert len(result) == 3
+        assert partial is False
         roles = [n["role"] for n in result]
         assert "heading" in roles
         assert "link" in roles
@@ -221,7 +214,7 @@ class TestAccessibilityTree:
             '  - link "About"'
         )
         page = self._make_page_mock(snapshot)
-        result = await relay._get_accessibility_tree(page)
+        result, partial = await relay._get_accessibility_tree(page)
 
         links = [n for n in result if n["role"] == "link"]
         assert len(links) == 2
@@ -237,7 +230,7 @@ class TestAccessibilityTree:
             '- heading "' + "C" * 30 + '" [level=3]'
         )
         page = self._make_page_mock(snapshot)
-        result = await relay._get_accessibility_tree(page)
+        result, partial = await relay._get_accessibility_tree(page)
         # Should have stopped before including all nodes
         total_chars = sum(len(n.get("name", "")) for n in result)
         assert total_chars <= 80  # Some overshoot is OK due to per-line check
@@ -258,22 +251,84 @@ class TestAccessibilityTree:
 
     @pytest.mark.asyncio
     async def test_aria_snapshot_exception_returns_empty(self, relay):
-        """Test that an exception from aria_snapshot returns empty list."""
+        """Test that an exception from aria_snapshot falls back to inner_text."""
         page = MagicMock()
         locator = MagicMock()
-        locator.aria_snapshot = AsyncMock(side_effect=Exception("timeout"))
+        locator.aria_snapshot = AsyncMock(side_effect=Exception("element detached"))
         page.locator.return_value = locator
-        result = await relay._get_accessibility_tree(page)
-        assert result == []
+        page.inner_text = AsyncMock(return_value="Fallback text")
+        result, partial = await relay._get_accessibility_tree(page)
+        assert len(result) == 1
+        assert result[0]["role"] == "text"
 
     @pytest.mark.asyncio
     async def test_escaped_quotes_in_name(self, relay):
         """Test that names with escaped quotes are parsed correctly."""
         snapshot = '- button "Say \\"Hello\\""\n'
         page = self._make_page_mock(snapshot)
-        result = await relay._get_accessibility_tree(page)
+        result, partial = await relay._get_accessibility_tree(page)
         assert len(result) == 1
         assert result[0]["name"] == 'Say "Hello"'
+
+    @pytest.mark.asyncio
+    async def test_navigate_passes_timeout_to_goto(self, relay):
+        """Verify timeout kwarg is passed to page.goto."""
+        page = AsyncMock()
+        page.title.return_value = "Example"
+        page.url = "https://example.com"
+        locator = MagicMock()
+        locator.aria_snapshot = AsyncMock(return_value='- heading "Hello" [level=1]')
+        page.locator = MagicMock(return_value=locator)
+
+        session = BrowserSession(session_id="s1", mode="managed", page=page)
+        relay._sessions["s1"] = session
+
+        await relay.navigate("s1", "https://example.com")
+
+        page.goto.assert_called_once_with(
+            "https://example.com",
+            wait_until="domcontentloaded",
+            timeout=relay._navigate_timeout_ms,
+        )
+
+    @pytest.mark.asyncio
+    async def test_huge_snapshot_truncation(self):
+        """10K+ line snapshot should be truncated at max_content_chars."""
+        relay = BrowserRelay(max_content_chars=500)
+        lines = [f'- link "Link number {i}"' for i in range(10000)]
+        snapshot = "\n".join(lines)
+        page = MagicMock()
+        locator = MagicMock()
+        locator.aria_snapshot = AsyncMock(return_value=snapshot)
+        page.locator.return_value = locator
+
+        result, partial = await relay._get_accessibility_tree(page)
+        total_chars = sum(len(n.get("name", "")) for n in result)
+        assert total_chars <= 600  # Allow some overshoot
+
+    @pytest.mark.asyncio
+    async def test_malformed_snapshot_lines_skipped(self, relay):
+        """Garbage lines should be safely ignored."""
+        snapshot = (
+            "random garbage line\n"
+            '- heading "Valid" [level=1]\n'
+            "more garbage\n"
+            "123 not a valid line\n"
+            '- link "Also Valid"'
+        )
+        page = self._make_page_mock(snapshot)
+        result, partial = await relay._get_accessibility_tree(page)
+        assert len(result) == 2
+        assert result[0]["name"] == "Valid"
+        assert result[1]["name"] == "Also Valid"
+
+    @pytest.mark.asyncio
+    async def test_empty_snapshot_returns_empty_list(self, relay):
+        """Whitespace-only snapshot should return empty."""
+        page = self._make_page_mock("   \n  \n  ")
+        result, partial = await relay._get_accessibility_tree(page)
+        assert result == []
+        assert partial is False
 
 
 class TestCDPURLValidation:
@@ -319,8 +374,6 @@ class TestPostNavigationValidation:
 
     @pytest.mark.asyncio
     async def test_click_blocks_navigation_to_bad_scheme(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         # After click, page ends up at file:// URL
         page.url = "file:///etc/passwd"
@@ -336,8 +389,6 @@ class TestPostNavigationValidation:
 
     @pytest.mark.asyncio
     async def test_click_allows_safe_navigation(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         page.url = "https://example.com/page2"
 
@@ -350,8 +401,6 @@ class TestPostNavigationValidation:
 
     @pytest.mark.asyncio
     async def test_type_blocks_navigation_to_blocked_domain(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         # After form submission, page navigates to blocked domain
         page.url = "https://evil.com/phishing"
@@ -369,8 +418,6 @@ class TestNavigate:
 
     @pytest.mark.asyncio
     async def test_navigate_success(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         page.title.return_value = "Example"
         page.url = "https://example.com"
@@ -387,12 +434,14 @@ class TestNavigate:
         assert result["title"] == "Example"
         assert result["url"] == "https://example.com"
         assert len(result["content"]) >= 1
-        page.goto.assert_called_once_with("https://example.com", wait_until="domcontentloaded")
+        page.goto.assert_called_once_with(
+            "https://example.com",
+            wait_until="domcontentloaded",
+            timeout=relay._navigate_timeout_ms,
+        )
 
     @pytest.mark.asyncio
     async def test_navigate_blocked_url(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         session = BrowserSession(session_id="s1", mode="managed", page=page)
         relay._sessions["s1"] = session
@@ -406,8 +455,6 @@ class TestClick:
 
     @pytest.mark.asyncio
     async def test_click_success(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         page.url = "https://example.com/after-click"
 
@@ -418,7 +465,7 @@ class TestClick:
 
         assert result["ok"] is True
         assert result["url"] == "https://example.com/after-click"
-        page.click.assert_called_once_with("button#submit")
+        page.click.assert_called_once_with("button#submit", timeout=relay._navigate_timeout_ms)
 
 
 class TestTypeText:
@@ -426,8 +473,6 @@ class TestTypeText:
 
     @pytest.mark.asyncio
     async def test_type_success(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         page.url = "https://example.com"
 
@@ -438,7 +483,7 @@ class TestTypeText:
 
         assert result["ok"] is True
         assert result["url"] == "https://example.com"
-        page.fill.assert_called_once_with("input#search", "hello world")
+        page.fill.assert_called_once_with("input#search", "hello world", timeout=relay._navigate_timeout_ms)
 
 
 class TestScreenshot:
@@ -446,8 +491,6 @@ class TestScreenshot:
 
     @pytest.mark.asyncio
     async def test_screenshot_success(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         page.url = "https://example.com"
         page.screenshot.return_value = b"\x89PNG\r\n\x1a\n"  # Minimal PNG header
@@ -467,8 +510,6 @@ class TestGetLinks:
 
     @pytest.mark.asyncio
     async def test_get_links_success(self, relay):
-        from bridge.browser import BrowserSession
-
         page = AsyncMock()
         page.evaluate.return_value = [
             {"text": "Home", "href": "https://example.com/"},
@@ -506,7 +547,8 @@ class TestContainerManagement:
         assert "docker" in run_cmd
         assert "--cap-drop=ALL" in run_cmd
         assert "--read-only" in run_cmd
-        assert "--memory=512m" in run_cmd
+        assert "--memory=1024m" in run_cmd
+        assert "--shm-size=256m" in run_cmd
         assert "-p" in run_cmd
         # Check docker port command
         port_cmd = mock_run.call_args_list[1][0][0]
@@ -560,8 +602,6 @@ class TestStartStop:
         pw_mock = AsyncMock()
         relay._playwright = pw_mock
         relay._cleanup_task = asyncio.create_task(asyncio.sleep(999))
-
-        from bridge.browser import BrowserSession
 
         browser1 = AsyncMock()
         browser2 = AsyncMock()

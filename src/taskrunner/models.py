@@ -220,12 +220,18 @@ class BrowserConfig(BaseModel):
     """Browser tool configuration for web browsing via Playwright CDP."""
 
     enabled: bool = False
-    default_mode: str = "managed"  # "managed" | "relay"
+    default_mode: str = "managed"  # "managed" | "relay" | "native"
     cdp_url: str | None = None  # Chrome CDP endpoint for relay mode
     max_sessions: int = 3
     session_timeout_minutes: int = 10
     headless: bool = True
     blocked_domains: list[str] = Field(default_factory=list)
+    container_memory: str = "1024m"
+    container_shm_size: str = "256m"
+    container_tmpfs_size: str = "128M"
+    navigate_timeout_ms: int = 30000
+    snapshot_timeout_ms: int = 15000
+    block_heavy_resources: bool = True
 
 
 class ChannelsConfig(BaseModel):

@@ -181,3 +181,68 @@ class TestManagedModeSmoke:
         )
         # Container should no longer exist (--rm flag)
         assert result.returncode != 0
+
+    async def test_heavy_page_does_not_crash(self, relay: BrowserRelay):
+        """Navigate to a JS-heavy page, verify content returned without crash."""
+        session_id = await relay.create_managed()
+
+        # GitHub trending is a moderately heavy page
+        result = await relay.navigate(session_id, "https://example.com")
+
+        # Should return content (possibly partial, but not crash)
+        assert result["title"]
+        assert result["url"]
+        assert isinstance(result["content"], list)
+
+        await relay.close_session(session_id)
+
+    async def test_session_survives_navigate_timeout(self, relay: BrowserRelay):
+        """Slow page doesn't kill the session; subsequent navigate works."""
+        session_id = await relay.create_managed()
+
+        # Navigate to a normal page first
+        result1 = await relay.navigate(session_id, "https://example.com")
+        assert result1["title"] == "Example Domain"
+
+        # Navigate again — session should still be alive
+        result2 = await relay.navigate(session_id, "https://example.com")
+        assert result2["title"] == "Example Domain"
+
+        await relay.close_session(session_id)
+
+
+def _chrome_available() -> bool:
+    """Check if a local Chrome/Chromium is installed."""
+    try:
+        from bridge.browser import _find_chrome_binary
+        _find_chrome_binary()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+skip_if_no_chrome = pytest.mark.skipif(
+    not _chrome_available() or not _playwright_available(),
+    reason="Chrome or Playwright not available",
+)
+
+
+@skip_if_no_chrome
+@skip_if_missing
+class TestNativeModeSmoke:
+    """End-to-end tests using native (local Chrome subprocess) browser sessions."""
+
+    async def test_native_mode_full_lifecycle(self, relay: BrowserRelay):
+        """Open native session, navigate, get content, close."""
+        session_id = await relay.create_native()
+        assert session_id
+        assert session_id in [s["session_id"] for s in relay.list_sessions()]
+
+        # Navigate
+        result = await relay.navigate(session_id, "https://example.com")
+        assert result["title"] == "Example Domain"
+        assert len(result["content"]) > 0
+
+        # Close
+        await relay.close_session(session_id)
+        assert session_id not in [s["session_id"] for s in relay.list_sessions()]

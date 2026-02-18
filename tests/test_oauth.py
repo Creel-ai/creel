@@ -11,6 +11,7 @@ import pytest
 
 from taskrunner.oauth import (
     DEFAULT_MAX_TOKEN_AGE,
+    _token_cache,
     _token_refresh_log,
     check_credential_freshness,
     clear_token_cache,
@@ -22,8 +23,10 @@ from taskrunner.oauth import (
 def clean_token_cache():
     """Clear the token cache before and after each test."""
     _token_refresh_log.clear()
+    _token_cache.clear()
     yield
     _token_refresh_log.clear()
+    _token_cache.clear()
 
 
 class TestGetGoogleCredentials:
@@ -176,5 +179,8 @@ class TestClearTokenCache:
     def test_clear_removes_all_entries(self) -> None:
         _token_refresh_log["A"] = time.time()
         _token_refresh_log["B"] = time.time()
+        _token_cache["A"] = "tok-a"
+        _token_cache["B"] = "tok-b"
         clear_token_cache()
         assert len(_token_refresh_log) == 0
+        assert len(_token_cache) == 0

@@ -290,6 +290,49 @@ class TestExecutorSecrets:
 
         assert os.environ.get("TEMP_SECRET") is None
 
+    def test_google_credentials_json_replaced_with_access_token(
+        self, tmp_path, age_keypair, monkeypatch
+    ) -> None:
+        """Inline executor env should receive GOOGLE_ACCESS_TOKEN, not refresh JSON."""
+        key_file, pub_file = age_keypair
+        monkeypatch.setenv("AGE_IDENTITY_FILE", str(key_file))
+        from taskrunner.secrets import encrypt_env_file
+
+        creds_json = json.dumps(
+            {
+                "refresh_token": "rt",
+                "client_id": "cid",
+                "client_secret": "cs",
+            }
+        )
+        env_file = tmp_path / "google.env"
+        env_file.write_text(f"GOOGLE_CREDENTIALS_JSON={creds_json}\n")
+        enc_path = encrypt_env_file(env_file, recipient_path=str(pub_file))
+
+        cfg = ExecutorConfig(secrets=str(enc_path), args={})
+        captured_env: dict[str, str | None] = {}
+
+        def fake_weather(config):
+            captured_env["GOOGLE_ACCESS_TOKEN"] = os.environ.get("GOOGLE_ACCESS_TOKEN")
+            captured_env["GOOGLE_CREDENTIALS_JSON"] = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+            return '{"ok": true}'
+
+        with (
+            patch(
+                "taskrunner.oauth.get_google_access_token_from_json",
+                return_value="ya29.inline-token",
+            ) as mock_token,
+            patch(
+                "taskrunner.orchestrator._exec_weather_inline",
+                side_effect=fake_weather,
+            ),
+        ):
+            _run_executor_inline("weather", cfg)
+
+        assert captured_env["GOOGLE_ACCESS_TOKEN"] == "ya29.inline-token"
+        assert captured_env["GOOGLE_CREDENTIALS_JSON"] is None
+        mock_token.assert_called_once()
+
 
 class TestLoadSecretsToEnv:
     def test_loads_and_sets(self, tmp_path, age_keypair) -> None:

@@ -22,6 +22,42 @@ logger = logging.getLogger(__name__)
 
 _GOOGLE_TOKEN_MAX_AGE_SECONDS = 3600
 
+_HASH_GLOBS = ("Dockerfile", "**/*.py", "**/*.txt")
+
+
+def _compute_executor_hash(executor_dir: Path) -> str:
+    """Hash all source files in an executor directory and shared context files.
+
+    Returns the first 12 hex chars of the SHA-256 digest computed over
+    sorted (relative-path, file-contents) pairs.  Shared files in the
+    parent build-context directory (e.g. ``google_creds.py``) are also
+    included so that changes to shared modules trigger a rebuild.
+    """
+    h = sha256()
+    # Executor-specific files
+    paths = sorted(
+        p
+        for pattern in _HASH_GLOBS
+        for p in executor_dir.glob(pattern)
+        if p.is_file()
+    )
+    # Shared files in the build context (src/executors/)
+    context_dir = executor_dir.parent
+    shared = sorted(
+        p
+        for pattern in _HASH_GLOBS
+        for p in context_dir.glob(pattern)
+        if p.is_file()
+    )
+    for p in paths:
+        h.update(p.relative_to(executor_dir).as_posix().encode())
+        h.update(p.read_bytes())
+    for p in shared:
+        h.update(("../" + p.relative_to(context_dir).as_posix()).encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()[:12]
+
+
 _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "apple_notes": "NOTES",
     "apple_reminders": "REMINDERS",
@@ -599,51 +635,82 @@ def _exec_exec_inline(config: ExecutorConfig) -> str:
     return json.dumps(result, indent=2)
 
 
-def _ensure_image(image: str) -> None:
+def _ensure_image(image: str) -> str:
     """Build the Docker image if it doesn't already exist.
+
+    For executor images the tag is derived from a content hash of the
+    executor source directory so that code changes automatically trigger
+    a rebuild.  Returns the image reference that should be used to run
+    the container (may differ from *image* when a hash tag is applied).
 
     Derives Dockerfile/build context from image name:
       executor-gmail-modify:latest -> -f src/executors/gmail_modify/Dockerfile src/executors/
       llm-runner:latest            -> src/llm/
     """
+    base = image.split(":")[0]
+
+    if base.startswith("executor-"):
+        name = base.removeprefix("executor-").replace("-", "_")
+        executor_dir = Path("src/executors") / name
+        content_hash = _compute_executor_hash(executor_dir)
+        hashed_image = f"{base}:{content_hash}"
+
+        # Already built with this hash – nothing to do.
+        inspect = subprocess.run(
+            ["docker", "image", "inspect", hashed_image],
+            capture_output=True,
+        )
+        if inspect.returncode == 0:
+            return hashed_image
+
+        context = Path("src/executors")
+        dockerfile = executor_dir / "Dockerfile"
+        if not dockerfile.exists():
+            raise FileNotFoundError(f"No Dockerfile at {dockerfile} for image {image}")
+
+        _build_image(
+            tags=[hashed_image, f"{base}:latest"],
+            dockerfile=dockerfile,
+            context=context,
+        )
+        return hashed_image
+
+    # Non-executor images: use existing tag-based check.
     result = subprocess.run(
         ["docker", "image", "inspect", image],
         capture_output=True,
     )
     if result.returncode == 0:
-        return
+        return image
 
-    tag = image.split(":")[0]
-    if tag.startswith("executor-"):
-        # executor-gmail-modify -> dockerfile src/executors/gmail_modify/Dockerfile
-        # with shared context src/executors/ (allows shared modules).
-        name = tag.removeprefix("executor-").replace("-", "_")
-        context = Path("src/executors")
-        dockerfile = context / name / "Dockerfile"
-        build_cmd = [
-            "docker",
-            "build",
-            "-t",
-            image,
-            "-f",
-            str(dockerfile),
-            str(context),
-        ]
-    elif tag == "llm-runner":
+    if base == "llm-runner":
         context = Path("src/llm")
         dockerfile = context / "Dockerfile"
-        build_cmd = ["docker", "build", "-t", image, str(context)]
     else:
-        context = Path("src") / tag.replace("-", "_")
+        context = Path("src") / base.replace("-", "_")
         if not context.exists():
-            context = Path("src") / tag
+            context = Path("src") / base
         dockerfile = context / "Dockerfile"
-        build_cmd = ["docker", "build", "-t", image, str(context)]
 
     if not dockerfile.exists():
         raise FileNotFoundError(f"No Dockerfile at {dockerfile} for image {image}")
 
-    logger.info("Building image %s from %s (Dockerfile: %s)", image, context, dockerfile)
+    _build_image(tags=[image], dockerfile=dockerfile, context=context)
+    return image
+
+
+def _build_image(
+    tags: list[str],
+    dockerfile: Path,
+    context: Path,
+) -> None:
+    """Run ``docker build`` with one or more ``-t`` tags."""
+    build_cmd: list[str] = ["docker", "build"]
+    for t in tags:
+        build_cmd.extend(["-t", t])
+    build_cmd.extend(["-f", str(dockerfile), str(context)])
+
+    logger.info("Building image %s from %s (Dockerfile: %s)", tags[0], context, dockerfile)
     build_result = subprocess.run(
         build_cmd,
         capture_output=True,
@@ -651,8 +718,8 @@ def _ensure_image(image: str) -> None:
     )
     if build_result.returncode != 0:
         build_err = build_result.stderr.strip() if build_result.stderr else "unknown error"
-        logger.error("Docker build failed for %s:\n%s", image, build_err)
-        raise RuntimeError(f"Docker build failed for {image}: {build_err[:500]}")
+        logger.error("Docker build failed for %s:\n%s", tags[0], build_err)
+        raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
 
 
 def _run_executor_container(
@@ -676,7 +743,7 @@ def _run_executor_container(
 
     # Determine image to use - tool config overrides executor config
     image = tool_config.image if (tool_config and tool_config.image) else config.image
-    _ensure_image(image)
+    image = _ensure_image(image)
     
     env_vars: dict[str, str] = {}
 

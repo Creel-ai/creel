@@ -222,14 +222,22 @@ class TestHandleToolRequest:
         guardian.validate_action.return_value = review_decision
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
+        messages = [{"role": "user", "content": "Weather?"}]
         result = _handle_tool_request(
             calls, _make_tools(), use_containers=False,
             guardian=guardian, confirm_action=None, memory_manager=None,
-            messages=[{"role": "user", "content": "Weather?"}],
+            messages=messages,
         )
 
         assert result is None
         mock_execute.assert_not_called()
+        assert len(messages) == 3
+        assert messages[1]["role"] == "assistant"
+        assert messages[1]["content"][0]["type"] == "tool_use"
+        assert messages[1]["content"][0]["id"] == "toolu_1"
+        assert messages[2]["role"] == "user"
+        assert messages[2]["content"][0]["type"] == "tool_result"
+        assert messages[2]["content"][0]["tool_use_id"] == "toolu_1"
 
     @patch("taskrunner.container_agent.execute_tool_call")
     def test_output_screening(self, mock_execute):

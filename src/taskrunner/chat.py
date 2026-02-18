@@ -149,6 +149,15 @@ class ChatServer:
                     sender_id, pending, stripped.lower() in _APPROVE_WORDS,
                 )
 
+        # Do not start a new LLM turn while an approval is pending.
+        pending = self._approval_queue.get_pending(sender_id)
+        if pending is not None:
+            self._send_approval_request(sender_id, pending)
+            return (
+                f"⏳ Approval still pending for `{pending.tool_name}`. "
+                "Reply Y to approve or N to deny."
+            )
+
         # Screen input through guardian (before adding to session)
         if self._guardian:
             screen_result = self._guardian.screen_input(text)

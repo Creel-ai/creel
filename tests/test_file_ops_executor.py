@@ -147,6 +147,26 @@ class TestActionRead:
         finally:
             cleanup()
 
+    def test_read_invalid_offset(self, workspace):
+        (workspace / "test.txt").write_text("hello\n")
+        cleanup = _set_env({"FILE_PATH": "test.txt", "OFFSET": "abc"})
+        try:
+            result = action_read()
+            assert "error" in result
+            assert "must be integers" in result["error"]
+        finally:
+            cleanup()
+
+    def test_read_invalid_limit(self, workspace):
+        (workspace / "test.txt").write_text("hello\n")
+        cleanup = _set_env({"FILE_PATH": "test.txt", "LIMIT": "xyz"})
+        try:
+            result = action_read()
+            assert "error" in result
+            assert "must be integers" in result["error"]
+        finally:
+            cleanup()
+
 
 class TestActionWrite:
     """Tests for the write action."""
@@ -175,6 +195,15 @@ class TestActionWrite:
             result = action_write()
             assert "error" in result
             assert "escapes workspace" in result["error"]
+        finally:
+            cleanup()
+
+    def test_write_empty_content(self, workspace):
+        cleanup = _set_env({"FILE_PATH": "empty.txt", "CONTENT": ""})
+        try:
+            result = action_write()
+            assert result["bytes_written"] == 0
+            assert (workspace / "empty.txt").read_text() == ""
         finally:
             cleanup()
 
@@ -338,6 +367,36 @@ class TestActionList:
         finally:
             cleanup()
 
+    def test_list_skips_symlinks(self, workspace):
+        (workspace / "real.txt").write_text("real")
+        (workspace / "link.txt").symlink_to(workspace / "real.txt")
+        cleanup = _set_env({"DIRECTORY": "."})
+        try:
+            result = action_list()
+            names = [e["name"] for e in result["entries"]]
+            assert "real.txt" in names
+            assert "link.txt" not in names
+        finally:
+            cleanup()
+
+    def test_list_recursive_skips_symlinks(self, workspace):
+        sub = workspace / "sub"
+        sub.mkdir()
+        (sub / "real.txt").write_text("real")
+        (sub / "link.txt").symlink_to(sub / "real.txt")
+        cleanup = _set_env({
+            "DIRECTORY": ".",
+            "PATTERN": "*.txt",
+            "RECURSIVE": "true",
+        })
+        try:
+            result = action_list()
+            names = [e["name"] for e in result["entries"]]
+            assert os.path.join("sub", "real.txt") in names
+            assert os.path.join("sub", "link.txt") not in names
+        finally:
+            cleanup()
+
     def test_list_entry_types(self, workspace):
         (workspace / "file.txt").write_text("data")
         (workspace / "dir").mkdir()
@@ -361,7 +420,7 @@ class TestMain:
             with pytest.raises(SystemExit, match="1"):
                 main()
             captured = capsys.readouterr()
-            output = json.loads(captured.out)
+            output = json.loads(captured.err)
             assert "error" in output
             assert "Unknown action" in output["error"]
         finally:
@@ -383,5 +442,9 @@ class TestMain:
         try:
             with pytest.raises(SystemExit, match="1"):
                 main()
+            captured = capsys.readouterr()
+            assert captured.out == ""
+            output = json.loads(captured.err)
+            assert "error" in output
         finally:
             cleanup()

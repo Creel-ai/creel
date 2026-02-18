@@ -441,10 +441,10 @@ tools:
         required: true
       offset:
         type: string
-        description: "Line offset to start reading from (0-based)"
+        description: "Line offset to start reading from, as a number (0-based)"
       limit:
         type: string
-        description: "Max number of lines to return"
+        description: "Max number of lines to return, as a number"
     fixed_args:
       action: "read"
 

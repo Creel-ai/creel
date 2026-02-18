@@ -3,7 +3,7 @@
 
 All paths are sandboxed to a workspace root (WORKSPACE env var, default /workspace).
 Symlinks are resolved before access checks to prevent traversal.
-Outputs JSON to stdout.
+Outputs JSON to stdout on success, stderr on error.
 """
 
 from __future__ import annotations
@@ -41,8 +41,11 @@ def action_read() -> dict:
     if not file_path:
         return {"error": "FILE_PATH is required"}
 
-    offset = int(os.environ.get("OFFSET", "0"))
-    limit = int(os.environ.get("LIMIT", "0"))
+    try:
+        offset = int(os.environ.get("OFFSET", "0"))
+        limit = int(os.environ.get("LIMIT", "0"))
+    except ValueError:
+        return {"error": "OFFSET and LIMIT must be integers"}
 
     try:
         resolved = _safe_path(file_path)
@@ -55,7 +58,7 @@ def action_read() -> dict:
         return {"error": f"Not a file: {file_path}"}
 
     try:
-        with open(resolved) as f:
+        with open(resolved, encoding="utf-8") as f:
             lines = f.readlines()
 
         if offset > 0:
@@ -83,7 +86,7 @@ def action_write() -> dict:
 
     try:
         os.makedirs(os.path.dirname(resolved), exist_ok=True)
-        with open(resolved, "w") as f:
+        with open(resolved, "w", encoding="utf-8") as f:
             f.write(content)
         return {"path": file_path, "bytes_written": len(content.encode())}
     except OSError as e:
@@ -109,7 +112,7 @@ def action_edit() -> dict:
         return {"error": f"File not found: {file_path}"}
 
     try:
-        with open(resolved) as f:
+        with open(resolved, encoding="utf-8") as f:
             content = f.read()
 
         count = content.count(old_text)
@@ -117,7 +120,7 @@ def action_edit() -> dict:
             return {"error": "OLD_TEXT not found in file"}
 
         updated = content.replace(old_text, new_text)
-        with open(resolved, "w") as f:
+        with open(resolved, "w", encoding="utf-8") as f:
             f.write(updated)
 
         return {"path": file_path, "replacements": count}
@@ -145,8 +148,10 @@ def action_list() -> dict:
         entries = []
         if recursive:
             for root, dirs, files in os.walk(resolved):
-                for name in dirs + files:
+                for name in sorted(dirs + files):
                     full = os.path.join(root, name)
+                    if os.path.islink(full):
+                        continue
                     rel = os.path.relpath(full, resolved)
                     if fnmatch.fnmatch(name, pattern):
                         entries.append({
@@ -156,8 +161,10 @@ def action_list() -> dict:
                         })
         else:
             for name in sorted(os.listdir(resolved)):
+                full = os.path.join(resolved, name)
+                if os.path.islink(full):
+                    continue
                 if fnmatch.fnmatch(name, pattern):
-                    full = os.path.join(resolved, name)
                     entries.append({
                         "name": name,
                         "type": "directory" if os.path.isdir(full) else "file",
@@ -181,13 +188,14 @@ def main() -> None:
     action = os.environ.get("ACTION", "").lower()
     if action not in ACTIONS:
         result = {"error": f"Unknown action: {action!r}. Valid: {', '.join(ACTIONS)}"}
-        print(json.dumps(result))
+        print(json.dumps(result), file=sys.stderr)
         sys.exit(1)
 
     result = ACTIONS[action]()
-    print(json.dumps(result, indent=2))
     if "error" in result:
+        print(json.dumps(result, indent=2), file=sys.stderr)
         sys.exit(1)
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

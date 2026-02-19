@@ -277,3 +277,167 @@ cases:
     phase: extras
     title: set_workspace End-to-End Behavioral
     handler: set_workspace_e2e
+
+  # --- Tier 1: Security gaps ---
+
+  - id: security-19-drift-detection
+    order: 185
+    phase: security
+    title: Drift Detection
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_drift.py", "-v"]
+    timeout: 900
+
+  - id: security-20-credential-scanner
+    order: 186
+    phase: security
+    title: Credential Scanner
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_credential_scanner.py", "-v"]
+    timeout: 900
+
+  # --- Tier 1: Foundation gaps ---
+
+  - id: foundation-9-memory-system
+    order: 81
+    phase: foundation
+    title: Memory System
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_memory.py"
+      - "tests/test_memory_guardian.py"
+      - "-v"
+    timeout: 900
+
+  - id: foundation-10-chat-server
+    order: 82
+    phase: foundation
+    title: Chat Server
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_chat.py", "-v"]
+    timeout: 900
+
+  - id: foundation-11-streaming
+    order: 83
+    phase: foundation
+    title: Streaming
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_streaming.py", "-v"]
+    timeout: 900
+
+  - id: foundation-12-scheduler
+    order: 84
+    phase: foundation
+    title: Scheduler
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_scheduler.py", "-v"]
+    timeout: 900
+
+  # --- Tier 2: Daemon ---
+
+  - id: extras-10-daemon-service
+    order: 390
+    phase: extras
+    title: Daemon Service + API
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_daemon_service.py"
+      - "tests/test_daemon_api.py"
+      - "-v"
+    timeout: 900
+
+  - id: extras-11-daemon-client
+    order: 400
+    phase: extras
+    title: Daemon Client + Send CLI
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_daemon_client.py"
+      - "tests/test_daemon_send_cli.py"
+      - "-v"
+    timeout: 900
+
+  - id: extras-12-daemon-launchd
+    order: 410
+    phase: extras
+    title: Daemon launchd Integration
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_daemon_launchd.py", "-v"]
+    timeout: 900
+
+  # --- Tier 2: Channels ---
+
+  - id: extras-13-channels-imessage
+    order: 420
+    phase: extras
+    title: iMessage Bridge Executor
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_imessage_bridge_executor.py", "-v"]
+    timeout: 900
+
+  - id: extras-14-channels-whatsapp
+    order: 430
+    phase: extras
+    title: WhatsApp Bridge + Channel
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_whatsapp_bridge.py"
+      - "tests/test_whatsapp_channel.py"
+      - "-v"
+    timeout: 900
+
+  - id: extras-15-channels-bluebubbles
+    order: 440
+    phase: extras
+    title: BlueBubbles Channel
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_bluebubbles.py", "-v"]
+    timeout: 900
+
+  # --- Tier 2: Browser, TUI, Infra ---
+
+  - id: extras-16-browser-unit
+    order: 450
+    phase: extras
+    title: Browser Unit Tests
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_browser_bridge.py"
+      - "tests/test_browser_executor.py"
+      - "tests/test_browser_native.py"
+      - "tests/test_browser_relay.py"
+      - "tests/test_browser_resilience.py"
+      - "tests/test_browser_smoke.py"
+      - "-v"
+    timeout: 900
+
+  - id: extras-17-tui
+    order: 460
+    phase: extras
+    title: TUI Tests
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_tui.py", "-v"]
+    timeout: 900
+
+  - id: extras-18-docker-content-hash
+    order: 470
+    phase: extras
+    title: Docker Content Hash
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_docker_content_hash.py", "-v"]
+    timeout: 900

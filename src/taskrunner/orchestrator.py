@@ -231,6 +231,20 @@ def _run_executor_inline_locked(
         old_env[k] = os.environ.get(k)
         os.environ[k] = v
 
+    # Inject BRIDGE_URL and scoped BRIDGE_TOKEN for bridge-calling executors
+    # in inline mode (container mode handles this in _build_container_env).
+    if not os.environ.get("BRIDGE_URL"):
+        # Bridge URL defaults to localhost:8099 for inline execution
+        bridge_url = os.environ.get("CREEL_BRIDGE_URL", "http://localhost:8099")
+        old_env.setdefault("BRIDGE_URL", os.environ.get("BRIDGE_URL"))
+        os.environ["BRIDGE_URL"] = bridge_url
+    if not os.environ.get("BRIDGE_TOKEN"):
+        scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(name, name.upper())
+        scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
+        if scoped_token:
+            old_env.setdefault("BRIDGE_TOKEN", os.environ.get("BRIDGE_TOKEN"))
+            os.environ["BRIDGE_TOKEN"] = scoped_token
+
     try:
         if name == "weather":
             return _exec_weather_inline(config)

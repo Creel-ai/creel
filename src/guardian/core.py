@@ -176,14 +176,68 @@ class Guardian:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
 
+    @staticmethod
+    def _extract_page_text(text: str) -> str:
+        """Extract plain text from tool output for classification.
+
+        Tool output (especially browser tools) may be JSON containing
+        accessibility tree nodes, HTML, or other structured formats.
+        The DeBERTa classifier works on natural language, so we extract
+        just the human-readable text content.
+        """
+        import json
+        import re
+
+        # Try to parse as JSON and extract text fields from a11y tree nodes
+        try:
+            data = json.loads(text)
+
+            # Handle {"content": [...nodes...]} or {"result": {..., "content": [...]}}
+            nodes = None
+            if isinstance(data, dict):
+                nodes = data.get("content") or data.get("nodes")
+                if nodes is None and "result" in data:
+                    inner = data["result"]
+                    if isinstance(inner, dict):
+                        nodes = inner.get("content") or inner.get("nodes")
+            elif isinstance(data, list):
+                nodes = data
+
+            if isinstance(nodes, list):
+                # Extract name and value fields — skip structural keys
+                # like role, level, depth
+                texts = []
+                for node in nodes:
+                    if isinstance(node, dict):
+                        for key in ("name", "value", "text"):
+                            val = node.get(key)
+                            if val and isinstance(val, str):
+                                texts.append(val)
+                if texts:
+                    return " ".join(texts)
+
+            # If it's JSON but not a node list, just stringify values
+            if isinstance(data, dict):
+                parts = []
+                for v in data.values():
+                    if isinstance(v, str):
+                        parts.append(v)
+                if parts:
+                    return " ".join(parts)
+        except (json.JSONDecodeError, TypeError, KeyError):
+            pass
+
+        # Fall back to HTML stripping for non-JSON content
+        return Guardian._strip_html(text)
+
     def screen_tool_result(self, tool_name: str, text: str) -> ScreenResult:
         """Screen a tool result for prompt injection and log details.
 
-        Like ``screen_input`` but additionally writes the raw text and tool
-        name to the audit log so blocked results can be debugged offline.
-        Strips HTML before classification to reduce false positives on web content.
+        Extracts plain text from structured tool output (JSON a11y trees,
+        HTML, etc.) before classification so the DeBERTa model sees natural
+        language instead of structural markup that triggers false positives.
         """
-        cleaned = self._strip_html(text)
+        cleaned = self._extract_page_text(text)
         result = self.screen_input(cleaned)
 
         if result.blocked and self._audit:

@@ -380,7 +380,12 @@ def run_agent_loop(
 
                 if user_request:
                     prior_tools = _extract_prior_tools(messages)
-                    coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
+                    available_tool_names = list(tools_config.keys()) if tools_config else None
+                    coherence = guardian.check_coherence(
+                        user_request, tool_name, tool_input,
+                        prior_tools=prior_tools,
+                        available_tools=available_tool_names,
+                    )
                     if not coherence.coherent:
                         logger.warning(
                             "Guardian coherence check failed for %s: %s",

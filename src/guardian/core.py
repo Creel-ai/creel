@@ -288,13 +288,18 @@ class Guardian:
         tool_name: str,
         tool_args: dict,
         prior_tools: list[str] | None = None,
+        available_tools: list[str] | None = None,
     ) -> CoherenceResult:
         """Check if a tool call is coherent with the user's original request.
 
         Returns a CoherenceResult. When coherence checking is disabled,
         returns coherent=True.
         """
-        result = self._coherence.check(user_request, tool_name, tool_args, prior_tools=prior_tools)
+        result = self._coherence.check(
+            user_request, tool_name, tool_args,
+            prior_tools=prior_tools,
+            available_tools=available_tools,
+        )
 
         if not result.coherent:
             logger.warning(

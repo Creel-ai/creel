@@ -102,7 +102,7 @@ class FakeGuardian:
     def log_action_outcome(self, tool_name, stage, outcome):
         pass
 
-    def check_coherence(self, user_request, tool_name, tool_input, prior_tools=None):
+    def check_coherence(self, user_request, tool_name, tool_input, prior_tools=None, available_tools=None):
         return _FakeCoherence()
 
     def check_drift(self, tool_name, output_length, success):

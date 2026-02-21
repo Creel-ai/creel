@@ -15,7 +15,7 @@ Spec: `.ralph/specs/cron-scheduled-jobs.md`
   - CronJob: `id`, `name`, `schedule`, `target` (main | isolated), `payload`, `delivery`, `enabled`, `created_at`, `updated_at`, `source` (user | yaml_import)
   - Tests: `tests/test_cron_models.py`
 
-- [ ] **1.2** Create JobStore (JSON file persistence)
+- [x] **1.2** Create JobStore (JSON file persistence)
   - File: `src/taskrunner/cron/store.py`
   - `JobStore` class: `load()`, `save()`, `add()`, `get()`, `list()`, `update()`, `remove()`
   - Run history: `add_run()`, `get_runs()`, capped at N per job
@@ -87,4 +87,6 @@ Spec: `.ralph/specs/cron-scheduled-jobs.md`
 
 ## Learnings
 
-(Updated as implementation progresses)
+- JobStore follows the same `_load()`/`_save()` + graceful corruption handling pattern used in `approvals.py`
+- `_CREEL_STATE_DIR = Path.home() / ".creel"` is already established in `cli.py`
+- Pydantic v2 `model_dump()` / `model_dump_json()` roundtrips cleanly for persistence

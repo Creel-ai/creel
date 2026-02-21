@@ -8,10 +8,12 @@ from taskrunner.cron.models import (
     RunStatus,
     Schedule,
 )
+from taskrunner.cron.store import JobStore
 
 __all__ = [
     "CronJob",
     "Delivery",
+    "JobStore",
     "Payload",
     "RunRecord",
     "RunStatus",

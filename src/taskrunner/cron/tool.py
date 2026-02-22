@@ -10,14 +10,13 @@ import json
 import logging
 from typing import Any
 
+from taskrunner.cron.manager import CronManager
 from taskrunner.cron.models import (
     CronJob,
     Delivery,
     Payload,
-    RunRecord,
     Schedule,
 )
-from taskrunner.cron.store import JobStore
 
 logger = logging.getLogger(__name__)
 
@@ -118,13 +117,13 @@ CRON_TOOL_DEFINITION = {
 
 def handle_cron_tool(
     tool_input: dict[str, Any],
-    store: JobStore,
+    manager: CronManager,
 ) -> str:
     """Handle a cron tool call from the agent.
 
     Args:
         tool_input: The tool input from the LLM.
-        store: The JobStore for persistence.
+        manager: The CronManager for scheduling and persistence.
 
     Returns:
         JSON string with the result.
@@ -133,17 +132,17 @@ def handle_cron_tool(
 
     try:
         if action == "list":
-            return _action_list(store)
+            return _action_list(manager)
         elif action == "add":
-            return _action_add(tool_input, store)
+            return _action_add(tool_input, manager)
         elif action == "update":
-            return _action_update(tool_input, store)
+            return _action_update(tool_input, manager)
         elif action == "remove":
-            return _action_remove(tool_input, store)
+            return _action_remove(tool_input, manager)
         elif action == "run":
-            return _action_run(tool_input, store)
+            return _action_run(tool_input, manager)
         elif action == "runs":
-            return _action_runs(tool_input, store)
+            return _action_runs(tool_input, manager)
         else:
             return json.dumps({"error": f"Unknown action: {action}"})
     except Exception as e:
@@ -151,17 +150,17 @@ def handle_cron_tool(
         return json.dumps({"error": str(e)})
 
 
-def _action_list(store: JobStore) -> str:
-    """List all jobs."""
-    jobs = store.list()
+def _action_list(manager: CronManager) -> str:
+    """List all jobs (managed + legacy)."""
+    jobs = manager.list_jobs()
     return json.dumps({
         "jobs": [_job_summary(j) for j in jobs],
         "count": len(jobs),
     })
 
 
-def _action_add(tool_input: dict[str, Any], store: JobStore) -> str:
-    """Create a new job."""
+def _action_add(tool_input: dict[str, Any], manager: CronManager) -> str:
+    """Create a new job and schedule it."""
     name = tool_input.get("name")
     if not name:
         return json.dumps({"error": "name is required for add"})
@@ -205,7 +204,7 @@ def _action_add(tool_input: dict[str, Any], store: JobStore) -> str:
         payload=payload,
         delivery=delivery,
     )
-    store.add(job)
+    manager.add_job(job)
 
     return json.dumps({
         "status": "created",
@@ -213,13 +212,13 @@ def _action_add(tool_input: dict[str, Any], store: JobStore) -> str:
     })
 
 
-def _action_update(tool_input: dict[str, Any], store: JobStore) -> str:
-    """Update an existing job."""
+def _action_update(tool_input: dict[str, Any], manager: CronManager) -> str:
+    """Update an existing job and reschedule."""
     job_id = tool_input.get("job_id")
     if not job_id:
         return json.dumps({"error": "job_id is required for update"})
 
-    job = store.get(job_id)
+    job = manager.get_job(job_id)
     if job is None:
         return json.dumps({"error": f"Job '{job_id}' not found"})
 
@@ -241,21 +240,21 @@ def _action_update(tool_input: dict[str, Any], store: JobStore) -> str:
     if not fields:
         return json.dumps({"status": "no_changes", "job": _job_summary(job)})
 
-    updated = store.update(job_id, **fields)
+    updated = manager.update_job(job_id, **fields)
     return json.dumps({
         "status": "updated",
         "job": _job_summary(updated),
     })
 
 
-def _action_remove(tool_input: dict[str, Any], store: JobStore) -> str:
-    """Remove a job."""
+def _action_remove(tool_input: dict[str, Any], manager: CronManager) -> str:
+    """Remove a job and unschedule it."""
     job_id = tool_input.get("job_id")
     if not job_id:
         return json.dumps({"error": "job_id is required for remove"})
 
     try:
-        removed = store.remove(job_id)
+        removed = manager.remove_job(job_id)
     except KeyError:
         return json.dumps({"error": f"Job '{job_id}' not found"})
 
@@ -265,43 +264,41 @@ def _action_remove(tool_input: dict[str, Any], store: JobStore) -> str:
     })
 
 
-def _action_run(tool_input: dict[str, Any], store: JobStore) -> str:
-    """Trigger a job immediately.
-
-    Note: This records a run in history but doesn't actually execute the job
-    payload — actual execution requires the CronManager with its executor.
-    The agent tool simply validates the job exists and records the trigger.
-    For CLI `creel cron run`, the CronManager handles real execution.
-    """
+def _action_run(tool_input: dict[str, Any], manager: CronManager) -> str:
+    """Trigger a job immediately via the CronManager."""
     job_id = tool_input.get("job_id")
     if not job_id:
         return json.dumps({"error": "job_id is required for run"})
 
-    job = store.get(job_id)
+    job = manager.get_job(job_id)
     if job is None:
         return json.dumps({"error": f"Job '{job_id}' not found"})
+
+    manager.trigger_job(job_id)
 
     return json.dumps({
         "status": "triggered",
         "job": _job_summary(job),
-        "note": "Job has been triggered for immediate execution.",
     })
 
 
-def _action_runs(tool_input: dict[str, Any], store: JobStore) -> str:
+def _action_runs(tool_input: dict[str, Any], manager: CronManager) -> str:
     """Show run history for a job."""
     job_id = tool_input.get("job_id")
     if not job_id:
         return json.dumps({"error": "job_id is required for runs"})
 
-    job = store.get(job_id)
-    if job is None:
+    job = manager.get_job(job_id)
+    runs = manager.get_runs(job_id)
+
+    # Job may have been auto-deleted (one-shot) but runs still exist
+    if job is None and not runs:
         return json.dumps({"error": f"Job '{job_id}' not found"})
 
-    runs = store.get_runs(job_id)
+    job_name = job.name if job else "(deleted)"
     return json.dumps({
         "job_id": job_id,
-        "job_name": job.name,
+        "job_name": job_name,
         "runs": [_run_summary(r) for r in runs],
         "count": len(runs),
     })

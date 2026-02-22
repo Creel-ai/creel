@@ -271,7 +271,7 @@ def execute_tool_call(
     memory_manager: object | None = None,
     bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
-    cron_store: object | None = None,
+    cron_manager: object | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -288,7 +288,7 @@ def execute_tool_call(
         bridge_config: Optional bridge configuration.
         session_state: Optional per-session state dict. Used to store/read
             workspace path for file_ops tools.
-        cron_store: Optional JobStore for cron tool.
+        cron_manager: Optional CronManager for cron tool.
 
     Returns:
         The executor output as a string.
@@ -344,10 +344,10 @@ def execute_tool_call(
     if tool_name == "list_memory_files" and memory_manager is not None:
         return memory_manager.list_memory_files()
 
-    if tool_name == "cron" and cron_store is not None:
+    if tool_name == "cron" and cron_manager is not None:
         from taskrunner.cron.tool import handle_cron_tool
 
-        return handle_cron_tool(tool_input, cron_store)
+        return handle_cron_tool(tool_input, cron_manager)
 
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")

@@ -212,7 +212,7 @@ class TestLegacyTaskLoading:
 
         daemon_service.start_cron_manager(tasks_dir=tasks_dir)
 
-        legacy_count = len(daemon_service.cron_manager._legacy_jobs)
+        legacy_count = daemon_service.cron_manager.legacy_job_count
         assert legacy_count == 0
 
         daemon_service.stop_cron_manager()

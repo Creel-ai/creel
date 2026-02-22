@@ -476,7 +476,7 @@ class TestEndToEndAgentToolFlow:
                 "payload_kind": "systemEvent",
                 "target": "main",
             },
-            store,
+            mgr,
         )
         result = json.loads(result_json)
         assert result["status"] == "created"
@@ -495,7 +495,7 @@ class TestEndToEndAgentToolFlow:
         assert "Time for standup!" in text
 
         # History recorded
-        runs = store.get_runs(job_id)
+        runs = mgr.get_runs(job_id)
         assert len(runs) == 1
         assert runs[0].status == RunStatus.SUCCESS
 
@@ -514,7 +514,7 @@ class TestEndToEndAgentToolFlow:
                 "schedule_expr": future_ts,
                 "message": "Check the logs",
             },
-            store,
+            mgr,
         )
         result = json.loads(result_json)
         assert result["status"] == "created"
@@ -528,20 +528,21 @@ class TestEndToEndAgentToolFlow:
         assert executor.call_count == 1
 
         # Should be auto-deleted
-        assert store.get(job_id) is None
+        assert mgr.store.get(job_id) is None
 
-        # Agent can verify via runs action
+        # Agent can still view run history for deleted one-shot jobs
         runs_json = handle_cron_tool(
             {"action": "runs", "job_id": job_id},
-            store,
+            mgr,
         )
-        # Job is gone so runs action returns error
         runs_result = json.loads(runs_json)
-        assert "error" in runs_result or runs_result.get("count", 0) >= 0
+        assert runs_result["count"] >= 1
+        assert runs_result["job_name"] == "(deleted)"
 
     def test_agent_lists_update_and_removes_job(self, tmp_path: Path):
         """Full CRUD lifecycle via the agent tool."""
         store = _make_store(tmp_path)
+        mgr = CronManager(store)
 
         # Add
         result = json.loads(handle_cron_tool(
@@ -552,20 +553,20 @@ class TestEndToEndAgentToolFlow:
                 "schedule_expr": "3600",
                 "message": "Generate daily report",
             },
-            store,
+            mgr,
         ))
         assert result["status"] == "created"
         job_id = result["job"]["id"]
 
         # List
-        result = json.loads(handle_cron_tool({"action": "list"}, store))
+        result = json.loads(handle_cron_tool({"action": "list"}, mgr))
         assert result["count"] == 1
         assert result["jobs"][0]["name"] == "daily report"
 
         # Update
         result = json.loads(handle_cron_tool(
             {"action": "update", "job_id": job_id, "name": "weekly report"},
-            store,
+            mgr,
         ))
         assert result["status"] == "updated"
         assert result["job"]["name"] == "weekly report"
@@ -573,12 +574,12 @@ class TestEndToEndAgentToolFlow:
         # Remove
         result = json.loads(handle_cron_tool(
             {"action": "remove", "job_id": job_id},
-            store,
+            mgr,
         ))
         assert result["status"] == "removed"
 
         # List should be empty
-        result = json.loads(handle_cron_tool({"action": "list"}, store))
+        result = json.loads(handle_cron_tool({"action": "list"}, mgr))
         assert result["count"] == 0
 
 

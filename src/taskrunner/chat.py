@@ -40,9 +40,11 @@ class ChatServer:
         confirm_fn: object | None = None,
         # Backward compat alias
         imessage_channel: object | None = None,
+        cron_manager: object | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
+        self._cron_manager = cron_manager
         self._start_time = datetime.now(timezone.utc)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
@@ -239,6 +241,7 @@ class ChatServer:
                 on_text_delta=on_text_delta,
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
+                cron_manager=self._cron_manager,
             )
 
         logger.info(
@@ -360,10 +363,12 @@ class ChatServer:
     def inject_system_event(self, sender_id: str, text: str) -> None:
         """Inject a system event into a sender's active session.
 
-        The event is added as a user message so the agent sees it on the
-        next turn.  Used by the cron subsystem for main-session jobs.
+        The event is wrapped with a [SYSTEM EVENT] prefix so the LLM can
+        distinguish it from real user input.  Used by the cron subsystem
+        for main-session jobs.
         """
-        self._session_mgr.add_user_message(sender_id, text)
+        wrapped = f"[SYSTEM EVENT]\n{text}"
+        self._session_mgr.add_user_message(sender_id, wrapped)
         logger.info("Injected system event into session for %s", sender_id)
 
     def get_or_create_session(self, sender_id: str):

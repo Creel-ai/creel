@@ -168,7 +168,7 @@ def run_agent_loop(
     allowed_tools: list[str] | None = None,
     bridge_config: object | None = None,
     session_state: dict | None = None,
-    cron_store: object | None = None,
+    cron_manager: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -183,7 +183,7 @@ def run_agent_loop(
         on_text_delta: Optional streaming callback passed to call_llm().
         allowed_tools: Optional per-task tool whitelist. If set, only these
             tools may be called regardless of global policy.
-        cron_store: Optional JobStore for cron scheduling tool.
+        cron_manager: Optional CronManager for cron scheduling tool.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -192,7 +192,7 @@ def run_agent_loop(
     include_workspace = bool(
         tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
     )
-    include_cron = cron_store is not None
+    include_cron = cron_manager is not None
     tool_defs = build_tool_definitions(
         tools_config,
         include_memory_tools=include_memory,
@@ -454,7 +454,7 @@ def run_agent_loop(
                     memory_manager=memory_manager,
                     bridge_config=bridge_config,
                     session_state=session_state,
-                    cron_store=cron_store,
+                    cron_manager=cron_manager,
                 )
                 is_error = False
                 elapsed_ms = (time.perf_counter() - t0) * 1000

@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import enum
+import ipaddress
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Literal
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Shared callback type for channel delivery.
+# Receives (channel_name, message_text).
+ChannelSendFn = Callable[[str, str], None]
 
 
 class Schedule(BaseModel):
@@ -23,6 +31,18 @@ class Schedule(BaseModel):
     expr: str
     tz: str = "UTC"
 
+    @field_validator("tz")
+    @classmethod
+    def validate_tz(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except (KeyError, Exception):
+            raise ValueError(
+                f"Unknown timezone: '{v}'. "
+                "Use IANA timezone names like 'America/Denver' or 'UTC'."
+            )
+        return v
+
     @field_validator("expr")
     @classmethod
     def validate_expr(cls, v: str, info) -> str:
@@ -33,6 +53,12 @@ class Schedule(BaseModel):
                 raise ValueError(
                     f"cron expression must have 5 parts, got {len(parts)}"
                 )
+            try:
+                from apscheduler.triggers.cron import CronTrigger
+
+                CronTrigger.from_crontab(v)
+            except ValueError as e:
+                raise ValueError(f"Invalid cron expression '{v}': {e}")
         elif kind == "every":
             try:
                 seconds = int(v)
@@ -86,8 +112,10 @@ class Delivery(BaseModel):
     def check_required_fields(self) -> Delivery:
         if self.mode == "announce" and not self.channel:
             raise ValueError("channel is required when delivery mode is 'announce'")
-        if self.mode == "webhook" and not self.url:
-            raise ValueError("url is required when delivery mode is 'webhook'")
+        if self.mode == "webhook":
+            if not self.url:
+                raise ValueError("url is required when delivery mode is 'webhook'")
+            _validate_webhook_url(self.url)
         return self
 
 
@@ -123,9 +151,35 @@ def _generate_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def _now_iso() -> str:
+def now_iso() -> str:
     """Current time as an ISO 8601 string."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _validate_webhook_url(url: str) -> None:
+    """Validate a webhook URL for safety (SSRF protection)."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(
+            "Webhook URL must use HTTPS"
+        )
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Webhook URL must have a hostname")
+    # Block obvious private/reserved IPs.
+    # Note: DNS rebinding (domain resolving to private IP) is not caught here;
+    # that would require resolution-time checks in the HTTP client.
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            raise ValueError(
+                "Webhook URL must not target private or internal addresses"
+            )
+    except ValueError as exc:
+        # Re-raise our own validation errors
+        if "private" in str(exc) or "HTTPS" in str(exc):
+            raise
+        # hostname is a domain name, not an IP — that's fine
 
 
 class CronJob(BaseModel):
@@ -138,6 +192,6 @@ class CronJob(BaseModel):
     payload: Payload
     delivery: Delivery = Field(default_factory=lambda: Delivery(mode="none"))
     enabled: bool = True
-    created_at: str = Field(default_factory=_now_iso)
-    updated_at: str = Field(default_factory=_now_iso)
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
     source: Literal["user", "yaml_import"] = "user"

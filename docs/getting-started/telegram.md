@@ -46,10 +46,10 @@ Encrypt your bot token with age (same pattern as all other secrets):
 
 ```bash
 echo "TELEGRAM_BOT_TOKEN=123456:ABC-DEF..." > secrets/telegram.env
-./scripts/encrypt-secret.sh secrets/telegram.env
+creel encrypt secrets/telegram.env --delete
 ```
 
-This produces `secrets/telegram.env.enc` and deletes the plaintext file. The token is decrypted at startup and never stored in plaintext.
+This produces `secrets/telegram.env.enc` and removes the plaintext file. The token is decrypted at startup and never stored in plaintext.
 
 ## 4. Polling vs Webhook
 
@@ -95,6 +95,10 @@ If both lists are empty, all senders and chats are allowed.
 **Privacy mode:** By default, Telegram bots in groups only receive messages that mention them or start with `/`. This is the desired behavior for Creel. If you need the bot to see all messages, disable privacy mode via BotFather (`/setprivacy`).
 
 ## 8. Test It
+
+> **Important:** You must send a message to your bot first before it can reply.
+> Telegram bots cannot initiate conversations — open a chat with your bot
+> and send any message (even "hi") to establish the conversation.
 
 ```bash
 creel daemon start

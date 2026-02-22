@@ -61,6 +61,13 @@ channels:
     listen_to:
       - "$PHONE"
     poll_interval: 3
+  telegram:
+    bot_token: "$TELEGRAM_BOT_TOKEN"
+    mode: polling           # "polling" or "webhook"
+    poll_timeout: 30
+    send_typing: true
+    allowed_senders:
+      - "123456789"         # Telegram user ID
 ```
 
 ## Sessions

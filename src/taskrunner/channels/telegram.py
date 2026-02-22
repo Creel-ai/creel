@@ -52,6 +52,12 @@ class TelegramChannel(WebhookChannelMixin, Channel):
         self._callback: Callable[[str, str], str] | None = None
         self._bot_username: str = ""
 
+        # Build allowed outbound recipients from numeric sender IDs + chat IDs
+        self._allowed_recipients: set[str] = set(allowed_chats or [])
+        for s in (allowed_senders or []):
+            if not s.startswith("@"):
+                self._allowed_recipients.add(s)
+
     # --- Channel interface ---
 
     def listen(self, callback: Callable[[str, str], str]) -> None:
@@ -74,6 +80,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
         logger.info("Telegram channel stopped")
 
     def send(self, recipient: str, text: str) -> None:
+        if recipient not in self._allowed_recipients:
+            logger.warning("Blocked outbound message to %s — not in allowed recipients", recipient)
+            return
         self._bridge.send_message(recipient, text)
         logger.info("Sent Telegram message to %s (%d chars)", recipient, len(text))
 
@@ -98,6 +107,8 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
                     if not self._is_allowed(msg):
                         continue
+
+                    self._allowed_recipients.add(msg.chat_id)
 
                     text = self._extract_text(msg)
                     if text is None:
@@ -125,14 +136,16 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
     def _is_allowed(self, msg) -> bool:
         """Check if a message passes sender/chat access control."""
-        if self._allowed_senders:
-            sender_ok = (
-                msg.sender_id in self._allowed_senders
-                or msg.sender_username in self._allowed_senders
-                or f"@{msg.sender_username}" in self._allowed_senders
-            )
-            if not sender_ok:
-                return False
+        if not self._allowed_senders:
+            return False
+
+        sender_ok = (
+            msg.sender_id in self._allowed_senders
+            or msg.sender_username in self._allowed_senders
+            or f"@{msg.sender_username}" in self._allowed_senders
+        )
+        if not sender_ok:
+            return False
 
         if self._allowed_chats and msg.is_group:
             if msg.chat_id not in self._allowed_chats:
@@ -218,6 +231,8 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
         if not self._is_allowed(msg):
             return {"status": "ok"}
+
+        self._allowed_recipients.add(msg.chat_id)
 
         processed_text = self._extract_text(msg)
         if processed_text is None:

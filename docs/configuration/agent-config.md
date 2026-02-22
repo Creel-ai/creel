@@ -66,7 +66,7 @@ channels:
     mode: polling           # "polling" or "webhook"
     poll_timeout: 30
     send_typing: true
-    allowed_senders:
+    allowed_senders:          # required — at least one entry
       - "123456789"         # Telegram user ID
 ```
 

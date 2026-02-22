@@ -86,6 +86,7 @@ class TestPollingMode:
             bridge=bridge,
             mode="polling",
             poll_timeout=1,
+            allowed_senders=["42"],
         )
 
         responses = []
@@ -176,6 +177,7 @@ class TestPollingMode:
             bridge=bridge,
             mode="polling",
             poll_timeout=1,
+            allowed_senders=["1", "2"],
             allowed_chats=["-100"],
         )
 
@@ -203,6 +205,7 @@ class TestPollingMode:
             mode="polling",
             poll_timeout=1,
             send_typing=True,
+            allowed_senders=["42"],
         )
 
         def callback(sender, text):
@@ -224,6 +227,7 @@ class TestPollingMode:
             mode="polling",
             poll_timeout=1,
             send_typing=False,
+            allowed_senders=["42"],
         )
 
         def callback(sender, text):
@@ -243,6 +247,7 @@ class TestPollingMode:
             bridge=bridge,
             mode="polling",
             poll_timeout=1,
+            allowed_senders=["42"],
         )
 
         def callback(sender, text):
@@ -268,6 +273,7 @@ class TestGroupChat:
             bridge=bridge,
             mode="polling",
             poll_timeout=1,
+            allowed_senders=["42"],
         )
 
         processed = []
@@ -296,6 +302,7 @@ class TestGroupChat:
             bridge=bridge,
             mode="polling",
             poll_timeout=1,
+            allowed_senders=["42"],
         )
 
         processed = []
@@ -332,6 +339,7 @@ class TestGroupChat:
             bridge=bridge,
             mode="polling",
             poll_timeout=1,
+            allowed_senders=["42"],
         )
 
         processed = []
@@ -356,6 +364,7 @@ class TestWebhookMode:
             bridge=bridge,
             mode="webhook",
             webhook_path="/webhooks/tg",
+            allowed_senders=["42"],
         )
         routes = channel.get_webhook_routes()
         assert routes is not None
@@ -368,6 +377,7 @@ class TestWebhookMode:
         channel = TelegramChannel(
             bridge=bridge,
             mode="polling",
+            allowed_senders=["42"],
         )
         assert channel.get_webhook_routes() is None
 
@@ -375,14 +385,14 @@ class TestWebhookMode:
 class TestHealthCheck:
     def test_healthy_state(self):
         bridge = MockBridge()
-        channel = TelegramChannel(bridge=bridge)
+        channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
         health = channel.health_check()
         assert health["healthy"] is True
         assert health["mode"] == "polling"
 
     def test_unhealthy_when_stopped(self):
         bridge = MockBridge()
-        channel = TelegramChannel(bridge=bridge)
+        channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
         channel.stop()
         health = channel.health_check()
         assert health["healthy"] is False
@@ -391,7 +401,7 @@ class TestHealthCheck:
 class TestSend:
     def test_send_delegates_to_bridge(self):
         bridge = MockBridge()
-        channel = TelegramChannel(bridge=bridge)
+        channel = TelegramChannel(bridge=bridge, allowed_senders=["12345"])
         channel.send("12345", "test message")
         assert bridge.sent == [("12345", "test message")]
 
@@ -406,6 +416,7 @@ class TestWebhookSecretToken:
             bridge=bridge,
             mode="webhook",
             webhook_secret="my-secret",
+            allowed_senders=["42"],
         )
         channel.set_webhook_callback(lambda s, t: "ok")
 
@@ -435,6 +446,7 @@ class TestWebhookSecretToken:
             bridge=bridge,
             mode="webhook",
             webhook_secret="my-secret",
+            allowed_senders=["42"],
         )
 
         payload = {"update_id": 1, "message": {
@@ -465,6 +477,7 @@ class TestWebhookSecretToken:
             bridge=bridge,
             mode="webhook",
             webhook_secret="my-secret",
+            allowed_senders=["42"],
         )
 
         payload = {"update_id": 1, "message": {
@@ -496,6 +509,7 @@ class TestWebhookSecretToken:
             bridge=bridge,
             mode="webhook",
             webhook_secret="",
+            allowed_senders=["42"],
         )
         channel.set_webhook_callback(lambda s, t: "ok")
 
@@ -527,6 +541,7 @@ class TestWebhookSecretRequired:
                 bot_token="fake-token",
                 mode="webhook",
                 webhook_secret="",
+                allowed_senders=["123"],
             )
 
     def test_polling_mode_allows_empty_secret(self):
@@ -536,6 +551,7 @@ class TestWebhookSecretRequired:
             bot_token="fake-token",
             mode="polling",
             webhook_secret="",
+            allowed_senders=["123"],
         )
         assert cfg.mode == "polling"
 
@@ -560,6 +576,7 @@ class TestRegisterPlugin:
         channel = factory({
             "bot_token": "fake-token",
             "mode": "polling",
+            "allowed_senders": ["123"],
         })
         assert isinstance(channel, TelegramChannel)
 
@@ -576,7 +593,77 @@ class TestRegisterPlugin:
             channel = factory({
                 "secrets": "secrets/telegram.env.enc",
                 "mode": "polling",
+                "allowed_senders": ["123"],
             })
         mock_decrypt.assert_called_once_with("secrets/telegram.env.enc")
         assert isinstance(channel, TelegramChannel)
         assert os.environ.get("TELEGRAM_BOT_TOKEN") == "decrypted-token-123"
+
+
+class TestOutboundFiltering:
+    def test_send_blocks_unknown_recipient(self):
+        bridge = MockBridge()
+        channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
+        channel.send("99999", "should not arrive")
+        assert bridge.sent == []
+
+    def test_send_allows_known_sender_id(self):
+        bridge = MockBridge()
+        channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
+        channel.send("42", "hello")
+        assert bridge.sent == [("42", "hello")]
+
+    def test_send_allows_known_chat_id(self):
+        bridge = MockBridge()
+        channel = TelegramChannel(
+            bridge=bridge,
+            allowed_senders=["42"],
+            allowed_chats=["-100"],
+        )
+        channel.send("-100", "group msg")
+        assert bridge.sent == [("-100", "group msg")]
+
+    def test_send_allows_verified_sender_via_username(self):
+        """@username-only config: inbound passes by username, then reply uses numeric chat_id."""
+        msg = _make_msg(sender_id="55", sender_username="alice", chat_id="55", text="hi")
+        bridge = MockBridge(messages=[msg])
+
+        channel = TelegramChannel(
+            bridge=bridge,
+            mode="polling",
+            poll_timeout=1,
+            allowed_senders=["@alice"],
+        )
+
+        def callback(sender, text):
+            channel.stop()
+            return "ok"
+
+        import threading
+        t = threading.Thread(target=channel.listen, args=(callback,))
+        t.start()
+        t.join(timeout=5)
+
+        # After inbound processing, chat_id "55" is dynamically registered
+        bridge.sent.clear()
+        channel.send("55", "reply")
+        assert bridge.sent == [("55", "reply")]
+
+
+class TestDenyByDefault:
+    def test_denies_all_when_no_allowed_senders(self):
+        bridge = MockBridge()
+        channel = TelegramChannel(bridge=bridge, allowed_senders=[])
+        msg = _make_msg(sender_id="42", text="hello")
+        assert channel._is_allowed(msg) is False
+
+    def test_empty_allowed_senders_raises(self):
+        from pydantic import ValidationError
+        from taskrunner.models import TelegramChannelConfig
+
+        with pytest.raises(ValidationError, match="allowed_senders"):
+            TelegramChannelConfig(
+                bot_token="fake-token",
+                mode="polling",
+                allowed_senders=[],
+            )

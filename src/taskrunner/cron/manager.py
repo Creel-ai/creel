@@ -208,13 +208,20 @@ class CronManager:
         """Add a job to the APScheduler."""
         try:
             trigger = _make_trigger(job.schedule)
-            self._scheduler.add_job(
-                self._on_job_fire,
-                trigger,
+            kwargs: dict[str, object] = dict(
                 args=[job.id],
                 id=job.id,
                 name=job.name,
                 replace_existing=True,
+            )
+            # One-shot `at` jobs: allow unlimited misfire grace so past
+            # timestamps fire immediately instead of being skipped.
+            if job.schedule.kind == "at":
+                kwargs["misfire_grace_time"] = None
+            self._scheduler.add_job(
+                self._on_job_fire,
+                trigger,
+                **kwargs,
             )
         except Exception:
             logger.exception("Failed to schedule job '%s' (%s)", job.name, job.id)

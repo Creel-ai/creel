@@ -198,8 +198,8 @@ src/taskrunner/cron/
 
 ### Core scheduling
 - [x] Create a cron job via CLI → it runs at the specified time
-- [ ] Create an `at` job 1 minute in the future → it fires once and auto-deletes
-- [ ] Create an `every` job with 60s interval → it fires repeatedly
+- [x] Create an `at` job 1 minute in the future → it fires once and auto-deletes
+- [x] Create an `every` job with 60s interval → it fires repeatedly
 - [x] Restart the daemon → all jobs survive and resume on schedule
 - [x] Disable a job → it stops firing; re-enable → it resumes
 
@@ -234,7 +234,7 @@ src/taskrunner/cron/
 - [x] `creel cron import tasks/` converts YAML tasks to managed cron jobs
 
 ### Edge cases
-- [ ] Job scheduled for a time in the past (one-shot) → fires immediately
+- [x] Job scheduled for a time in the past (one-shot) → fires immediately
 - [x] Two jobs scheduled at the same time → both run
 - [x] Job payload fails → error logged, job stays enabled for next run
 - [x] Daemon starts with corrupt `jobs.json` → logs error, starts empty
@@ -247,3 +247,4 @@ src/taskrunner/cron/
 - [x] Phase 4: CLI Commands — argparse `cron` subparser group wired into main() with list/add/edit/remove/run/runs/import subcommands, all schedule types (cron/every/at), system-event and agent-turn payloads, delivery modes, enable/disable, YAML import, 47 new tests (tests/test_cron_cli.py), all 1548 tests passing
 - [x] Phase 5: Agent Tool — `cron` agent tool in `src/taskrunner/cron/tool.py` with actions list/add/update/remove/run/runs, Anthropic-compatible tool schema (CRON_TOOL_DEFINITION), handler dispatched via `execute_tool_call()` with lazy imports to avoid circular dependency, registered in `build_tool_definitions()` via `include_cron_tools` flag, `run_agent_loop()` passes `cron_store` through to tool dispatch, 55 new tests (tests/test_cron_tool.py), all 1603 tests passing
 - [x] Phase 6: Daemon Integration — CronManager wired into DaemonService: JobStore/JobExecutor/CronManager created on init, `start_cron_manager()` loads legacy YAML tasks and starts scheduler, `stop_cron_manager()` for graceful shutdown, `inject_system_event()` added to ChatServer for main-session job event injection, `_channel_send()` routes delivery to registered channels, `shutdown()` stops cron manager alongside scheduler/channels, `status()` includes cron section (running/managed_jobs/legacy_jobs), jobs persist across daemon restart, 28 new tests (tests/test_daemon_cron.py), all 1631 tests passing
+- [x] Phase 7: Acceptance Testing — 28 end-to-end acceptance tests in tests/test_cron_acceptance.py covering all acceptance criteria: `at` job fires via APScheduler DateTrigger and auto-deletes on success (preserves history), `every` job fires multiple times and persists, past one-shot fires immediately (fixed `misfire_grace_time=None` for `at` jobs in manager.py), CLI add → trigger → delivery routing (announce/webhook/none) → history recorded, agent tool CRUD lifecycle + trigger + session injection, main-session event injection, isolated agent turn with model override, legacy YAML tasks coexist with managed jobs, enable/disable toggle, persistence across restart, run history capping, failed payload doesn't disable job, corrupt JSON recovery. All 1659 tests passing

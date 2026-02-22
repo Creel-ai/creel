@@ -172,6 +172,7 @@ def build_tool_definitions(
     tools_config: dict[str, ToolConfig],
     include_memory_tools: bool = False,
     include_workspace_tools: bool = False,
+    include_cron_tools: bool = False,
 ) -> list[dict]:
     """Convert YAML tool configs to Anthropic API tool definitions.
 
@@ -180,6 +181,7 @@ def build_tool_definitions(
         include_memory_tools: If True, include built-in memory tools.
         include_workspace_tools: If True, include built-in workspace tools
             (set_workspace).
+        include_cron_tools: If True, include built-in cron scheduling tool.
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
@@ -190,6 +192,10 @@ def build_tool_definitions(
         tool_defs.extend(BUILTIN_MEMORY_TOOLS)
     if include_workspace_tools:
         tool_defs.extend(BUILTIN_WORKSPACE_TOOLS)
+    if include_cron_tools:
+        from taskrunner.cron.tool import CRON_TOOL_DEFINITION
+
+        tool_defs.append(CRON_TOOL_DEFINITION)
     for name, cfg in tools_config.items():
         properties: dict[str, dict] = {}
         required: list[str] = []
@@ -265,6 +271,7 @@ def execute_tool_call(
     memory_manager: object | None = None,
     bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
+    cron_store: object | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -281,6 +288,7 @@ def execute_tool_call(
         bridge_config: Optional bridge configuration.
         session_state: Optional per-session state dict. Used to store/read
             workspace path for file_ops tools.
+        cron_store: Optional JobStore for cron tool.
 
     Returns:
         The executor output as a string.
@@ -335,6 +343,11 @@ def execute_tool_call(
 
     if tool_name == "list_memory_files" and memory_manager is not None:
         return memory_manager.list_memory_files()
+
+    if tool_name == "cron" and cron_store is not None:
+        from taskrunner.cron.tool import handle_cron_tool
+
+        return handle_cron_tool(tool_input, cron_store)
 
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")

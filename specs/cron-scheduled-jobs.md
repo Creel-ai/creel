@@ -220,10 +220,10 @@ src/taskrunner/cron/
 - [ ] Agent can trigger a job immediately via `run`
 
 ### CLI
-- [ ] `creel cron list` shows all jobs with status, schedule, last run
-- [ ] `creel cron add` creates a job with all schedule types
-- [ ] `creel cron run <id>` triggers immediately
-- [ ] `creel cron runs <id>` shows run history with timestamps and status
+- [x] `creel cron list` shows all jobs with status, schedule, last run
+- [x] `creel cron add` creates a job with all schedule types
+- [x] `creel cron run <id>` triggers immediately
+- [x] `creel cron runs <id>` shows run history with timestamps and status
 
 ### Run history
 - [ ] Each run records: job ID, start time, end time, status, error message if failed
@@ -231,7 +231,7 @@ src/taskrunner/cron/
 
 ### Backward compatibility
 - [ ] Existing YAML tasks in `tasks/` still run on their schedules
-- [ ] `creel cron import tasks/` converts YAML tasks to managed cron jobs
+- [x] `creel cron import tasks/` converts YAML tasks to managed cron jobs
 
 ### Edge cases
 - [ ] Job scheduled for a time in the past (one-shot) → fires immediately
@@ -244,3 +244,4 @@ src/taskrunner/cron/
 - [x] Phase 1: Data Models & Job Store — models.py, store.py, tests passing (52 tests)
 - [x] Phase 2: Cron Manager & Scheduler Integration — manager.py wraps JobStore + APScheduler BackgroundScheduler, CRUD + enable/disable/trigger, one-shot auto-delete, legacy YAML task loading (read-only), store.py updated with keep_history option, 45 new tests (tests/test_cron_manager.py), all 1470 tests passing
 - [x] Phase 3: Job Execution & Delivery — executor.py with JobExecutor class (main-session event injection via callback, isolated mode via run_agent_loop, model override support), delivery.py with announce/webhook/none routing and best_effort flag, 31 new tests (tests/test_cron_executor.py, tests/test_cron_delivery.py), all 1501 tests passing
+- [x] Phase 4: CLI Commands — argparse `cron` subparser group wired into main() with list/add/edit/remove/run/runs/import subcommands, all schedule types (cron/every/at), system-event and agent-turn payloads, delivery modes, enable/disable, YAML import, 47 new tests (tests/test_cron_cli.py), all 1548 tests passing

@@ -985,6 +985,295 @@ def cmd_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cron_store(args: argparse.Namespace):
+    """Create a JobStore from default or overridden paths."""
+    from taskrunner.cron.store import JobStore
+
+    cron_dir = Path(getattr(args, "cron_dir", _CREEL_STATE_DIR / "cron"))
+    return JobStore(
+        jobs_path=cron_dir / "jobs.json",
+        runs_path=cron_dir / "runs.json",
+    )
+
+
+def _format_schedule(schedule) -> str:
+    """Format a Schedule model for display."""
+    if schedule.kind == "cron":
+        return f"cron: {schedule.expr}"
+    elif schedule.kind == "every":
+        return f"every {schedule.expr}s"
+    elif schedule.kind == "at":
+        return f"at {schedule.expr}"
+    return str(schedule.expr)
+
+
+def cmd_cron_list(args: argparse.Namespace) -> int:
+    """List all cron jobs."""
+    store = _cron_store(args)
+    jobs = store.list()
+
+    if not jobs:
+        print("No cron jobs.")
+        return 0
+
+    print(f"{'ID':<14} {'Name':<25} {'Schedule':<22} {'Target':<10} {'Enabled'}")
+    print("-" * 80)
+    for job in jobs:
+        sched_str = _format_schedule(job.schedule)
+        enabled = "yes" if job.enabled else "no"
+        print(f"{job.id:<14} {job.name:<25} {sched_str:<22} {job.target:<10} {enabled}")
+
+    print(f"\n{len(jobs)} job(s).")
+    return 0
+
+
+def cmd_cron_add(args: argparse.Namespace) -> int:
+    """Add a new cron job."""
+    from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
+
+    store = _cron_store(args)
+    tz = getattr(args, "tz", "UTC") or "UTC"
+
+    # Determine schedule
+    if getattr(args, "cron", None):
+        schedule = Schedule(kind="cron", expr=args.cron, tz=tz)
+    elif getattr(args, "every", None):
+        schedule = Schedule(kind="every", expr=str(args.every), tz=tz)
+    elif getattr(args, "at", None):
+        schedule = Schedule(kind="at", expr=args.at, tz=tz)
+    else:
+        print("Error: must specify --cron, --every, or --at", file=sys.stderr)
+        return 1
+
+    # Determine payload
+    message = getattr(args, "message", None)
+    system_event = getattr(args, "system_event", None)
+    if message:
+        payload = Payload(kind="agentTurn", message=message)
+    elif system_event:
+        payload = Payload(kind="systemEvent", message=system_event)
+    else:
+        print("Error: must specify --message or --system-event", file=sys.stderr)
+        return 1
+
+    if getattr(args, "model", None):
+        payload.model = args.model
+    timeout = getattr(args, "timeout_seconds", None)
+    if timeout is not None:
+        payload.timeout_seconds = timeout
+
+    # Determine target
+    target = getattr(args, "target", "isolated") or "isolated"
+    if system_event:
+        target = "main"
+
+    # Determine delivery
+    delivery_mode = getattr(args, "delivery_mode", "none") or "none"
+    delivery = Delivery(
+        mode=delivery_mode,
+        channel=getattr(args, "delivery_channel", None),
+        url=getattr(args, "delivery_url", None),
+    )
+
+    try:
+        job = CronJob(
+            name=args.name,
+            schedule=schedule,
+            target=target,
+            payload=payload,
+            delivery=delivery,
+            enabled=not getattr(args, "disabled", False),
+        )
+        store.add(job)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Created job '{job.name}' ({job.id}).")
+    return 0
+
+
+def cmd_cron_edit(args: argparse.Namespace) -> int:
+    """Edit an existing cron job."""
+    from taskrunner.cron.models import Schedule
+
+    store = _cron_store(args)
+    job = store.get(args.job_id)
+    if job is None:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    fields: dict = {}
+
+    if getattr(args, "name", None):
+        fields["name"] = args.name
+
+    # Schedule update
+    tz = getattr(args, "tz", None) or job.schedule.tz
+    if getattr(args, "cron", None):
+        fields["schedule"] = Schedule(kind="cron", expr=args.cron, tz=tz).model_dump()
+    elif getattr(args, "every", None):
+        fields["schedule"] = Schedule(
+            kind="every", expr=str(args.every), tz=tz
+        ).model_dump()
+    elif getattr(args, "at", None):
+        fields["schedule"] = Schedule(kind="at", expr=args.at, tz=tz).model_dump()
+
+    if getattr(args, "enable", False):
+        fields["enabled"] = True
+    elif getattr(args, "disable", False):
+        fields["enabled"] = False
+
+    if not fields:
+        print("No changes specified.")
+        return 0
+
+    try:
+        updated = store.update(args.job_id, **fields)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Updated job '{updated.name}' ({updated.id}).")
+    return 0
+
+
+def cmd_cron_remove(args: argparse.Namespace) -> int:
+    """Remove a cron job."""
+    store = _cron_store(args)
+    try:
+        job = store.remove(args.job_id)
+    except KeyError:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    print(f"Removed job '{job.name}' ({job.id}).")
+    return 0
+
+
+def cmd_cron_run(args: argparse.Namespace) -> int:
+    """Trigger a cron job immediately."""
+    from taskrunner.cron.executor import JobExecutor
+    from taskrunner.cron.manager import CronManager
+    from taskrunner.cron.models import RunStatus
+
+    store = _cron_store(args)
+    job = store.get(args.job_id)
+    if job is None:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    # Set up executor: main-session jobs print to stdout, isolated need agent config
+    def cli_inject_event(text: str) -> None:
+        print(text)
+
+    agent_def = None
+    try:
+        agent_def = _load_agent_def(args)
+    except Exception:
+        pass
+
+    executor = JobExecutor(
+        agent_def=agent_def,
+        inject_event=cli_inject_event,
+    )
+    manager = CronManager(store=store, executor=executor)
+
+    print(f"Running job '{job.name}' ({args.job_id})...")
+    manager.trigger_job(args.job_id)
+
+    # Check latest run record for status
+    runs = store.get_runs(args.job_id)
+    if runs:
+        latest = runs[-1]
+        if latest.status == RunStatus.FAILURE:
+            print(f"Job failed: {latest.error}", file=sys.stderr)
+            return 1
+
+    print(f"Job '{job.name}' completed successfully.")
+    return 0
+
+
+def cmd_cron_runs(args: argparse.Namespace) -> int:
+    """Show run history for a cron job."""
+    store = _cron_store(args)
+    job = store.get(args.job_id)
+    if job is None:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    runs = store.get_runs(args.job_id)
+    if not runs:
+        print(f"No runs recorded for '{job.name}' ({args.job_id}).")
+        return 0
+
+    tail = getattr(args, "tail", 20)
+    if tail and tail < len(runs):
+        runs = runs[-tail:]
+
+    print(f"Run history for '{job.name}' ({args.job_id}):")
+    print(f"{'Started':<28} {'Status':<10} {'Duration':<12} {'Error'}")
+    print("-" * 70)
+    for run in runs:
+        duration = ""
+        if run.ended_at and run.started_at:
+            from datetime import datetime
+
+            try:
+                start = datetime.fromisoformat(run.started_at)
+                end = datetime.fromisoformat(run.ended_at)
+                secs = (end - start).total_seconds()
+                duration = f"{secs:.1f}s"
+            except ValueError:
+                pass
+        error = run.error or ""
+        print(f"{run.started_at:<28} {run.status.value:<10} {duration:<12} {error}")
+
+    print(f"\n{len(runs)} run(s) shown.")
+    return 0
+
+
+def cmd_cron_import(args: argparse.Namespace) -> int:
+    """Import YAML task files as managed cron jobs."""
+    from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
+
+    store = _cron_store(args)
+    tasks_dir = Path(args.tasks_path)
+
+    if not tasks_dir.is_dir():
+        print(f"Error: Tasks directory not found: {tasks_dir}", file=sys.stderr)
+        return 1
+
+    tasks = load_all_tasks(tasks_dir)
+    if not tasks:
+        print("No tasks found to import.")
+        return 0
+
+    imported = 0
+    for task in tasks:
+        job = CronJob(
+            name=task.name,
+            schedule=Schedule(kind="cron", expr=task.schedule),
+            target="isolated",
+            payload=Payload(
+                kind="agentTurn",
+                message=task.prompt,
+            ),
+            delivery=Delivery(mode="none"),
+            enabled=True,
+            source="yaml_import",
+        )
+        try:
+            store.add(job)
+            print(f"  Imported '{task.name}' as job {job.id}")
+            imported += 1
+        except ValueError as e:
+            print(f"  Skipped '{task.name}': {e}", file=sys.stderr)
+
+    print(f"\n{imported} task(s) imported.")
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Query the guardian audit log."""
     from guardian.audit import read_audit_log
@@ -1278,6 +1567,104 @@ def main() -> int:
         help="Auto-approve Guardian REVIEW actions instead of queuing them",
     )
 
+    # cron command group
+    cron_parser = subparsers.add_parser("cron", help="Manage scheduled cron jobs")
+    cron_subparsers = cron_parser.add_subparsers(
+        dest="cron_command",
+        metavar="{list,add,edit,remove,run,runs,import}",
+    )
+
+    # cron list
+    cron_subparsers.add_parser("list", help="List all cron jobs")
+
+    # cron add
+    cron_add_parser = cron_subparsers.add_parser("add", help="Add a new cron job")
+    cron_add_parser.add_argument("--name", required=True, help="Job name")
+    cron_add_parser.add_argument(
+        "--cron", help="Cron expression (e.g., '0 8 * * *')"
+    )
+    cron_add_parser.add_argument("--every", type=int, help="Interval in seconds")
+    cron_add_parser.add_argument("--at", help="One-shot ISO 8601 timestamp")
+    cron_add_parser.add_argument("--message", help="Agent turn message")
+    cron_add_parser.add_argument(
+        "--system-event", help="System event message (main session)"
+    )
+    cron_add_parser.add_argument("--model", help="Model override")
+    cron_add_parser.add_argument(
+        "--timeout-seconds", type=int, help="Timeout in seconds"
+    )
+    cron_add_parser.add_argument(
+        "--target",
+        choices=["main", "isolated"],
+        default="isolated",
+        help="Execution target (default: isolated)",
+    )
+    cron_add_parser.add_argument(
+        "--delivery-mode",
+        choices=["announce", "webhook", "none"],
+        default="none",
+        help="Delivery mode (default: none)",
+    )
+    cron_add_parser.add_argument(
+        "--delivery-channel", help="Channel name for announce delivery"
+    )
+    cron_add_parser.add_argument(
+        "--delivery-url", help="URL for webhook delivery"
+    )
+    cron_add_parser.add_argument(
+        "--tz", default="UTC", help="Timezone (default: UTC)"
+    )
+    cron_add_parser.add_argument(
+        "--disabled", action="store_true", help="Create job in disabled state"
+    )
+
+    # cron edit
+    cron_edit_parser = cron_subparsers.add_parser("edit", help="Edit a cron job")
+    cron_edit_parser.add_argument("job_id", help="Job ID to edit")
+    cron_edit_parser.add_argument("--name", help="New name")
+    cron_edit_parser.add_argument("--cron", help="New cron expression")
+    cron_edit_parser.add_argument(
+        "--every", type=int, help="New interval in seconds"
+    )
+    cron_edit_parser.add_argument("--at", help="New one-shot timestamp")
+    cron_edit_parser.add_argument("--tz", help="New timezone")
+    cron_edit_parser.add_argument(
+        "--enable", action="store_true", help="Enable job"
+    )
+    cron_edit_parser.add_argument(
+        "--disable", action="store_true", help="Disable job"
+    )
+
+    # cron remove
+    cron_remove_parser = cron_subparsers.add_parser(
+        "remove", help="Remove a cron job"
+    )
+    cron_remove_parser.add_argument("job_id", help="Job ID to remove")
+
+    # cron run
+    cron_run_parser = cron_subparsers.add_parser(
+        "run", help="Trigger a job immediately"
+    )
+    cron_run_parser.add_argument("job_id", help="Job ID to run")
+
+    # cron runs
+    cron_runs_parser = cron_subparsers.add_parser(
+        "runs", help="Show run history for a job"
+    )
+    cron_runs_parser.add_argument("job_id", help="Job ID to show runs for")
+    cron_runs_parser.add_argument(
+        "--tail", type=int, default=20,
+        help="Show last N runs (default: 20)",
+    )
+
+    # cron import
+    cron_import_parser = cron_subparsers.add_parser(
+        "import", help="Import YAML tasks as managed cron jobs"
+    )
+    cron_import_parser.add_argument(
+        "tasks_path", help="Path to tasks directory"
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -1309,6 +1696,21 @@ def main() -> int:
             daemon_parser.print_help()
             return 1
         return daemon_commands[args.daemon_command](args)
+
+    if args.command == "cron":
+        cron_commands = {
+            "list": cmd_cron_list,
+            "add": cmd_cron_add,
+            "edit": cmd_cron_edit,
+            "remove": cmd_cron_remove,
+            "run": cmd_cron_run,
+            "runs": cmd_cron_runs,
+            "import": cmd_cron_import,
+        }
+        if args.cron_command not in cron_commands:
+            cron_parser.print_help()
+            return 1
+        return cron_commands[args.cron_command](args)
 
     commands = {
         "run": cmd_run,

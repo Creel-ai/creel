@@ -243,3 +243,4 @@ src/taskrunner/cron/
 
 - [x] Phase 1: Data Models & Job Store — models.py, store.py, tests passing (52 tests)
 - [x] Phase 2: Cron Manager & Scheduler Integration — manager.py wraps JobStore + APScheduler BackgroundScheduler, CRUD + enable/disable/trigger, one-shot auto-delete, legacy YAML task loading (read-only), store.py updated with keep_history option, 45 new tests (tests/test_cron_manager.py), all 1470 tests passing
+- [x] Phase 3: Job Execution & Delivery — executor.py with JobExecutor class (main-session event injection via callback, isolated mode via run_agent_loop, model override support), delivery.py with announce/webhook/none routing and best_effort flag, 31 new tests (tests/test_cron_executor.py, tests/test_cron_delivery.py), all 1501 tests passing

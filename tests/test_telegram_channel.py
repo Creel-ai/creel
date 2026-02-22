@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from unittest.mock import MagicMock
 
@@ -561,3 +562,21 @@ class TestRegisterPlugin:
             "mode": "polling",
         })
         assert isinstance(channel, TelegramChannel)
+
+    def test_factory_decrypts_secrets(self, monkeypatch):
+        """Factory decrypts secrets/*.env.enc and loads env before config expansion."""
+        from unittest.mock import patch
+
+        from taskrunner.channels.telegram import register_plugin
+
+        _, factory = register_plugin()
+
+        fake_env = {"TELEGRAM_BOT_TOKEN": "decrypted-token-123"}
+        with patch("taskrunner.secrets.decrypt_env_file", return_value=fake_env) as mock_decrypt:
+            channel = factory({
+                "secrets": "secrets/telegram.env.enc",
+                "mode": "polling",
+            })
+        mock_decrypt.assert_called_once_with("secrets/telegram.env.enc")
+        assert isinstance(channel, TelegramChannel)
+        assert os.environ.get("TELEGRAM_BOT_TOKEN") == "decrypted-token-123"

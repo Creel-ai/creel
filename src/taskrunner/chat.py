@@ -357,6 +357,15 @@ class ChatServer:
             except Exception:
                 logger.exception("Failed to send message via reply channel")
 
+    def inject_system_event(self, sender_id: str, text: str) -> None:
+        """Inject a system event into a sender's active session.
+
+        The event is added as a user message so the agent sees it on the
+        next turn.  Used by the cron subsystem for main-session jobs.
+        """
+        self._session_mgr.add_user_message(sender_id, text)
+        logger.info("Injected system event into session for %s", sender_id)
+
     def get_or_create_session(self, sender_id: str):
         """Get the active session for a sender, creating one if needed."""
         return self._session_mgr.get_or_create(sender_id)

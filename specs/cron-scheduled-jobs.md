@@ -197,22 +197,22 @@ src/taskrunner/cron/
 ## Acceptance Criteria
 
 ### Core scheduling
-- [ ] Create a cron job via CLI → it runs at the specified time
+- [x] Create a cron job via CLI → it runs at the specified time
 - [ ] Create an `at` job 1 minute in the future → it fires once and auto-deletes
 - [ ] Create an `every` job with 60s interval → it fires repeatedly
-- [ ] Restart the daemon → all jobs survive and resume on schedule
-- [ ] Disable a job → it stops firing; re-enable → it resumes
+- [x] Restart the daemon → all jobs survive and resume on schedule
+- [x] Disable a job → it stops firing; re-enable → it resumes
 
 ### Execution modes
-- [ ] Main session job injects a system event into the agent's conversation
-- [ ] Isolated job runs a fresh agent turn without polluting main session history
-- [ ] Isolated job with `model` override uses the specified model
+- [x] Main session job injects a system event into the agent's conversation
+- [x] Isolated job runs a fresh agent turn without polluting main session history
+- [x] Isolated job with `model` override uses the specified model
 
 ### Delivery
-- [ ] Isolated job with `announce` delivery sends output to the configured channel
-- [ ] Isolated job with `webhook` delivery POSTs output to the URL
-- [ ] Isolated job with `none` delivery runs silently
-- [ ] If delivery fails and `best_effort` is true, job still succeeds
+- [x] Isolated job with `announce` delivery sends output to the configured channel
+- [x] Isolated job with `webhook` delivery POSTs output to the URL
+- [x] Isolated job with `none` delivery runs silently
+- [x] If delivery fails and `best_effort` is true, job still succeeds
 
 ### Agent tool
 - [x] Agent can create a job via the cron tool
@@ -226,18 +226,18 @@ src/taskrunner/cron/
 - [x] `creel cron runs <id>` shows run history with timestamps and status
 
 ### Run history
-- [ ] Each run records: job ID, start time, end time, status, error message if failed
-- [ ] History is capped (configurable, default 50 per job)
+- [x] Each run records: job ID, start time, end time, status, error message if failed
+- [x] History is capped (configurable, default 50 per job)
 
 ### Backward compatibility
-- [ ] Existing YAML tasks in `tasks/` still run on their schedules
+- [x] Existing YAML tasks in `tasks/` still run on their schedules
 - [x] `creel cron import tasks/` converts YAML tasks to managed cron jobs
 
 ### Edge cases
 - [ ] Job scheduled for a time in the past (one-shot) → fires immediately
-- [ ] Two jobs scheduled at the same time → both run
-- [ ] Job payload fails → error logged, job stays enabled for next run
-- [ ] Daemon starts with corrupt `jobs.json` → logs error, starts empty
+- [x] Two jobs scheduled at the same time → both run
+- [x] Job payload fails → error logged, job stays enabled for next run
+- [x] Daemon starts with corrupt `jobs.json` → logs error, starts empty
 
 ## Progress
 
@@ -246,3 +246,4 @@ src/taskrunner/cron/
 - [x] Phase 3: Job Execution & Delivery — executor.py with JobExecutor class (main-session event injection via callback, isolated mode via run_agent_loop, model override support), delivery.py with announce/webhook/none routing and best_effort flag, 31 new tests (tests/test_cron_executor.py, tests/test_cron_delivery.py), all 1501 tests passing
 - [x] Phase 4: CLI Commands — argparse `cron` subparser group wired into main() with list/add/edit/remove/run/runs/import subcommands, all schedule types (cron/every/at), system-event and agent-turn payloads, delivery modes, enable/disable, YAML import, 47 new tests (tests/test_cron_cli.py), all 1548 tests passing
 - [x] Phase 5: Agent Tool — `cron` agent tool in `src/taskrunner/cron/tool.py` with actions list/add/update/remove/run/runs, Anthropic-compatible tool schema (CRON_TOOL_DEFINITION), handler dispatched via `execute_tool_call()` with lazy imports to avoid circular dependency, registered in `build_tool_definitions()` via `include_cron_tools` flag, `run_agent_loop()` passes `cron_store` through to tool dispatch, 55 new tests (tests/test_cron_tool.py), all 1603 tests passing
+- [x] Phase 6: Daemon Integration — CronManager wired into DaemonService: JobStore/JobExecutor/CronManager created on init, `start_cron_manager()` loads legacy YAML tasks and starts scheduler, `stop_cron_manager()` for graceful shutdown, `inject_system_event()` added to ChatServer for main-session job event injection, `_channel_send()` routes delivery to registered channels, `shutdown()` stops cron manager alongside scheduler/channels, `status()` includes cron section (running/managed_jobs/legacy_jobs), jobs persist across daemon restart, 28 new tests (tests/test_daemon_cron.py), all 1631 tests passing

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from taskrunner.cron.manager import CronManager
 from taskrunner.cron.models import (
     CronJob,
     Delivery,
@@ -29,6 +30,11 @@ def _make_store(tmp_path: Path) -> JobStore:
     )
 
 
+def _make_manager(tmp_path: Path) -> CronManager:
+    store = _make_store(tmp_path)
+    return CronManager(store=store)
+
+
 def _make_job(name: str = "test job", **kwargs) -> CronJob:
     defaults = dict(
         name=name,
@@ -39,9 +45,9 @@ def _make_job(name: str = "test job", **kwargs) -> CronJob:
     return CronJob(**defaults)
 
 
-def _call(store: JobStore, **tool_input) -> dict:
+def _call(manager: CronManager, **tool_input) -> dict:
     """Call handle_cron_tool and parse the JSON result."""
-    raw = handle_cron_tool(tool_input, store)
+    raw = handle_cron_tool(tool_input, manager)
     return json.loads(raw)
 
 
@@ -84,14 +90,14 @@ class TestCronToolDefinition:
 
 class TestUnknownAction:
     def test_unknown_action_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="explode")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="explode")
         assert "error" in result
         assert "Unknown action" in result["error"]
 
     def test_missing_action_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store)
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr)
         assert "error" in result
 
 
@@ -102,36 +108,36 @@ class TestUnknownAction:
 
 class TestActionList:
     def test_empty_list(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="list")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="list")
         assert result["count"] == 0
         assert result["jobs"] == []
 
     def test_list_with_jobs(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        store.add(_make_job("Job A"))
-        store.add(_make_job("Job B"))
+        mgr = _make_manager(tmp_path)
+        mgr.store.add(_make_job("Job A"))
+        mgr.store.add(_make_job("Job B"))
 
-        result = _call(store, action="list")
+        result = _call(mgr, action="list")
         assert result["count"] == 2
         names = {j["name"] for j in result["jobs"]}
         assert names == {"Job A", "Job B"}
 
     def test_list_includes_schedule_info(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        store.add(_make_job("Daily", schedule=Schedule(kind="cron", expr="0 8 * * *")))
+        mgr = _make_manager(tmp_path)
+        mgr.store.add(_make_job("Daily", schedule=Schedule(kind="cron", expr="0 8 * * *")))
 
-        result = _call(store, action="list")
+        result = _call(mgr, action="list")
         job = result["jobs"][0]
         assert "cron" in job["schedule"]
         assert "0 8 * * *" in job["schedule"]
 
     def test_list_includes_enabled_status(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        store.add(_make_job("Active", enabled=True))
-        store.add(_make_job("Paused", enabled=False))
+        mgr = _make_manager(tmp_path)
+        mgr.store.add(_make_job("Active", enabled=True))
+        mgr.store.add(_make_job("Paused", enabled=False))
 
-        result = _call(store, action="list")
+        result = _call(mgr, action="list")
         statuses = {j["name"]: j["enabled"] for j in result["jobs"]}
         assert statuses["Active"] is True
         assert statuses["Paused"] is False
@@ -144,9 +150,9 @@ class TestActionList:
 
 class TestActionAdd:
     def test_add_cron_job(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Morning briefing",
             schedule_kind="cron",
@@ -155,12 +161,12 @@ class TestActionAdd:
         )
         assert result["status"] == "created"
         assert result["job"]["name"] == "Morning briefing"
-        assert store.list()[0].name == "Morning briefing"
+        assert mgr.store.list()[0].name == "Morning briefing"
 
     def test_add_every_job(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Health check",
             schedule_kind="every",
@@ -168,14 +174,14 @@ class TestActionAdd:
             message="Check system health",
         )
         assert result["status"] == "created"
-        job = store.list()[0]
+        job = mgr.store.list()[0]
         assert job.schedule.kind == "every"
         assert job.schedule.expr == "300"
 
     def test_add_at_job(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Reminder",
             schedule_kind="at",
@@ -183,13 +189,13 @@ class TestActionAdd:
             message="Time to go",
         )
         assert result["status"] == "created"
-        job = store.list()[0]
+        job = mgr.store.list()[0]
         assert job.schedule.kind == "at"
 
     def test_add_with_timezone(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Denver time",
             schedule_kind="cron",
@@ -198,12 +204,12 @@ class TestActionAdd:
             tz="America/Denver",
         )
         assert result["status"] == "created"
-        assert store.list()[0].schedule.tz == "America/Denver"
+        assert mgr.store.list()[0].schedule.tz == "America/Denver"
 
     def test_add_system_event_forces_main(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Event",
             schedule_kind="cron",
@@ -213,14 +219,14 @@ class TestActionAdd:
             target="isolated",  # should be overridden
         )
         assert result["status"] == "created"
-        job = store.list()[0]
+        job = mgr.store.list()[0]
         assert job.target == "main"
         assert job.payload.kind == "systemEvent"
 
     def test_add_with_model_override(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Heavy task",
             schedule_kind="cron",
@@ -229,12 +235,12 @@ class TestActionAdd:
             model="claude-opus-4-20250514",
         )
         assert result["status"] == "created"
-        assert store.list()[0].payload.model == "claude-opus-4-20250514"
+        assert mgr.store.list()[0].payload.model == "claude-opus-4-20250514"
 
     def test_add_with_announce_delivery(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Announced",
             schedule_kind="cron",
@@ -244,14 +250,14 @@ class TestActionAdd:
             delivery_channel="whatsapp",
         )
         assert result["status"] == "created"
-        job = store.list()[0]
+        job = mgr.store.list()[0]
         assert job.delivery.mode == "announce"
         assert job.delivery.channel == "whatsapp"
 
     def test_add_with_webhook_delivery(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Webhook",
             schedule_kind="cron",
@@ -261,14 +267,14 @@ class TestActionAdd:
             delivery_url="https://example.com/hook",
         )
         assert result["status"] == "created"
-        job = store.list()[0]
+        job = mgr.store.list()[0]
         assert job.delivery.mode == "webhook"
         assert job.delivery.url == "https://example.com/hook"
 
     def test_add_missing_name_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             schedule_kind="cron",
             schedule_expr="0 8 * * *",
@@ -278,9 +284,9 @@ class TestActionAdd:
         assert "name" in result["error"]
 
     def test_add_missing_schedule_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="No schedule",
             message="do stuff",
@@ -289,9 +295,9 @@ class TestActionAdd:
         assert "schedule" in result["error"]
 
     def test_add_missing_message_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="No message",
             schedule_kind="cron",
@@ -301,9 +307,9 @@ class TestActionAdd:
         assert "message" in result["error"]
 
     def test_add_invalid_cron_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Bad cron",
             schedule_kind="cron",
@@ -313,9 +319,9 @@ class TestActionAdd:
         assert "error" in result
 
     def test_add_persists_to_disk(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         _call(
-            store,
+            mgr,
             action="add",
             name="Persistent",
             schedule_kind="cron",
@@ -329,29 +335,29 @@ class TestActionAdd:
         assert store2.list()[0].name == "Persistent"
 
     def test_add_default_delivery_is_none(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         _call(
-            store,
+            mgr,
             action="add",
             name="Default delivery",
             schedule_kind="cron",
             schedule_expr="0 8 * * *",
             message="hello",
         )
-        job = store.list()[0]
+        job = mgr.store.list()[0]
         assert job.delivery.mode == "none"
 
     def test_add_default_target_is_isolated(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         _call(
-            store,
+            mgr,
             action="add",
             name="Default target",
             schedule_kind="cron",
             schedule_expr="0 8 * * *",
             message="hello",
         )
-        job = store.list()[0]
+        job = mgr.store.list()[0]
         assert job.target == "isolated"
 
 
@@ -362,78 +368,78 @@ class TestActionAdd:
 
 class TestActionUpdate:
     def test_update_name(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Original")
-        store.add(job)
+        mgr.store.add(job)
 
-        result = _call(store, action="update", job_id=job.id, name="Renamed")
+        result = _call(mgr, action="update", job_id=job.id, name="Renamed")
         assert result["status"] == "updated"
         assert result["job"]["name"] == "Renamed"
-        assert store.get(job.id).name == "Renamed"
+        assert mgr.store.get(job.id).name == "Renamed"
 
     def test_update_enabled(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Active", enabled=True)
-        store.add(job)
+        mgr.store.add(job)
 
-        result = _call(store, action="update", job_id=job.id, enabled=False)
+        result = _call(mgr, action="update", job_id=job.id, enabled=False)
         assert result["status"] == "updated"
-        assert store.get(job.id).enabled is False
+        assert mgr.store.get(job.id).enabled is False
 
     def test_update_schedule(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Reschedule")
-        store.add(job)
+        mgr.store.add(job)
 
         result = _call(
-            store,
+            mgr,
             action="update",
             job_id=job.id,
             schedule_kind="every",
             schedule_expr="600",
         )
         assert result["status"] == "updated"
-        updated = store.get(job.id)
+        updated = mgr.store.get(job.id)
         assert updated.schedule.kind == "every"
         assert updated.schedule.expr == "600"
 
     def test_update_no_changes(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Unchanged")
-        store.add(job)
+        mgr.store.add(job)
 
-        result = _call(store, action="update", job_id=job.id)
+        result = _call(mgr, action="update", job_id=job.id)
         assert result["status"] == "no_changes"
 
     def test_update_missing_job_id(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="update", name="Oops")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="update", name="Oops")
         assert "error" in result
         assert "job_id" in result["error"]
 
     def test_update_not_found(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="update", job_id="nonexistent", name="X")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="update", job_id="nonexistent", name="X")
         assert "error" in result
         assert "not found" in result["error"]
 
     def test_update_preserves_timezone(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job(
             "TZ job",
             schedule=Schedule(kind="cron", expr="0 8 * * *", tz="America/Denver"),
         )
-        store.add(job)
+        mgr.store.add(job)
 
         result = _call(
-            store,
+            mgr,
             action="update",
             job_id=job.id,
             schedule_kind="cron",
             schedule_expr="30 9 * * *",
         )
         assert result["status"] == "updated"
-        assert store.get(job.id).schedule.tz == "America/Denver"
+        assert mgr.store.get(job.id).schedule.tz == "America/Denver"
 
 
 # ---------------------------------------------------------------------------
@@ -443,33 +449,33 @@ class TestActionUpdate:
 
 class TestActionRemove:
     def test_remove_existing(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Deletable")
-        store.add(job)
+        mgr.store.add(job)
 
-        result = _call(store, action="remove", job_id=job.id)
+        result = _call(mgr, action="remove", job_id=job.id)
         assert result["status"] == "removed"
         assert result["job"]["name"] == "Deletable"
-        assert store.get(job.id) is None
+        assert mgr.store.get(job.id) is None
 
     def test_remove_not_found(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="remove", job_id="nonexistent")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="remove", job_id="nonexistent")
         assert "error" in result
         assert "not found" in result["error"]
 
     def test_remove_missing_job_id(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="remove")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="remove")
         assert "error" in result
         assert "job_id" in result["error"]
 
     def test_remove_persists(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("To delete")
-        store.add(job)
+        mgr.store.add(job)
 
-        _call(store, action="remove", job_id=job.id)
+        _call(mgr, action="remove", job_id=job.id)
 
         store2 = _make_store(tmp_path)
         assert store2.get(job.id) is None
@@ -482,23 +488,23 @@ class TestActionRemove:
 
 class TestActionRun:
     def test_run_existing_job(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Triggerable")
-        store.add(job)
+        mgr.store.add(job)
 
-        result = _call(store, action="run", job_id=job.id)
+        result = _call(mgr, action="run", job_id=job.id)
         assert result["status"] == "triggered"
         assert result["job"]["name"] == "Triggerable"
 
     def test_run_not_found(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="run", job_id="nonexistent")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="run", job_id="nonexistent")
         assert "error" in result
         assert "not found" in result["error"]
 
     def test_run_missing_job_id(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="run")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="run")
         assert "error" in result
         assert "job_id" in result["error"]
 
@@ -510,27 +516,27 @@ class TestActionRun:
 
 class TestActionRuns:
     def test_no_runs(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("No runs")
-        store.add(job)
+        mgr.store.add(job)
 
-        result = _call(store, action="runs", job_id=job.id)
+        result = _call(mgr, action="runs", job_id=job.id)
         assert result["count"] == 0
         assert result["runs"] == []
         assert result["job_name"] == "No runs"
 
     def test_with_runs(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Has runs")
-        store.add(job)
+        mgr.store.add(job)
 
-        store.add_run(RunRecord(
+        mgr.store.add_run(RunRecord(
             job_id=job.id,
             started_at="2026-01-15T08:00:00+00:00",
             ended_at="2026-01-15T08:00:05+00:00",
             status=RunStatus.SUCCESS,
         ))
-        store.add_run(RunRecord(
+        mgr.store.add_run(RunRecord(
             job_id=job.id,
             started_at="2026-01-16T08:00:00+00:00",
             ended_at="2026-01-16T08:00:03+00:00",
@@ -538,37 +544,37 @@ class TestActionRuns:
             error="timeout",
         ))
 
-        result = _call(store, action="runs", job_id=job.id)
+        result = _call(mgr, action="runs", job_id=job.id)
         assert result["count"] == 2
         assert result["runs"][0]["status"] == "success"
         assert result["runs"][1]["status"] == "failure"
         assert result["runs"][1]["error"] == "timeout"
 
     def test_runs_not_found(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="runs", job_id="nonexistent")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="runs", job_id="nonexistent")
         assert "error" in result
         assert "not found" in result["error"]
 
     def test_runs_missing_job_id(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
-        result = _call(store, action="runs")
+        mgr = _make_manager(tmp_path)
+        result = _call(mgr, action="runs")
         assert "error" in result
         assert "job_id" in result["error"]
 
     def test_success_runs_no_error_field(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         job = _make_job("Clean runs")
-        store.add(job)
+        mgr.store.add(job)
 
-        store.add_run(RunRecord(
+        mgr.store.add_run(RunRecord(
             job_id=job.id,
             started_at="2026-01-15T08:00:00+00:00",
             ended_at="2026-01-15T08:00:05+00:00",
             status=RunStatus.SUCCESS,
         ))
 
-        result = _call(store, action="runs", job_id=job.id)
+        result = _call(mgr, action="runs", job_id=job.id)
         assert "error" not in result["runs"][0]
 
 
@@ -578,23 +584,23 @@ class TestActionRuns:
 
 
 class TestExecuteToolCallCronDispatch:
-    def test_dispatch_with_cron_store(self, tmp_path: Path) -> None:
+    def test_dispatch_with_cron_manager(self, tmp_path: Path) -> None:
         from taskrunner.tools import execute_tool_call
 
-        store = _make_store(tmp_path)
-        store.add(_make_job("Dispatched"))
+        mgr = _make_manager(tmp_path)
+        mgr.store.add(_make_job("Dispatched"))
 
         result_str = execute_tool_call(
             tool_name="cron",
             tool_input={"action": "list"},
             tools_config={},
-            cron_store=store,
+            cron_manager=mgr,
         )
         result = json.loads(result_str)
         assert result["count"] == 1
         assert result["jobs"][0]["name"] == "Dispatched"
 
-    def test_dispatch_without_cron_store_raises(self, tmp_path: Path) -> None:
+    def test_dispatch_without_cron_manager_raises(self, tmp_path: Path) -> None:
         from taskrunner.tools import execute_tool_call
 
         with pytest.raises(ValueError, match="Unknown tool"):
@@ -602,13 +608,13 @@ class TestExecuteToolCallCronDispatch:
                 tool_name="cron",
                 tool_input={"action": "list"},
                 tools_config={},
-                cron_store=None,
+                cron_manager=None,
             )
 
     def test_add_via_dispatch(self, tmp_path: Path) -> None:
         from taskrunner.tools import execute_tool_call
 
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result_str = execute_tool_call(
             tool_name="cron",
             tool_input={
@@ -619,11 +625,11 @@ class TestExecuteToolCallCronDispatch:
                 "message": "hello",
             },
             tools_config={},
-            cron_store=store,
+            cron_manager=mgr,
         )
         result = json.loads(result_str)
         assert result["status"] == "created"
-        assert len(store.list()) == 1
+        assert len(mgr.store.list()) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -666,9 +672,9 @@ class TestBuildToolDefinitionsCron:
 
 class TestErrorResilience:
     def test_invalid_schedule_expr_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Bad expr",
             schedule_kind="every",
@@ -678,9 +684,9 @@ class TestErrorResilience:
         assert "error" in result
 
     def test_invalid_at_expr_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="Bad at",
             schedule_kind="at",
@@ -690,9 +696,9 @@ class TestErrorResilience:
         assert "error" in result
 
     def test_announce_without_channel_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="No channel",
             schedule_kind="cron",
@@ -703,9 +709,9 @@ class TestErrorResilience:
         assert "error" in result
 
     def test_webhook_without_url_returns_error(self, tmp_path: Path) -> None:
-        store = _make_store(tmp_path)
+        mgr = _make_manager(tmp_path)
         result = _call(
-            store,
+            mgr,
             action="add",
             name="No url",
             schedule_kind="cron",

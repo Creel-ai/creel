@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from taskrunner.agent import run_agent_loop
 from taskrunner.cron.delivery import deliver
-from taskrunner.cron.models import CronJob
+from taskrunner.cron.models import ChannelSendFn, CronJob
 from taskrunner.orchestrator import _load_secrets_to_env
 
 logger = logging.getLogger(__name__)
@@ -15,10 +15,6 @@ logger = logging.getLogger(__name__)
 # Callback to inject a system event message into the main session.
 # Receives the formatted event text.
 InjectEventFn = Callable[[str], None]
-
-# Callback to send output to a named channel.
-# Receives (channel_name, message_text).
-ChannelSendFn = Callable[[str, str], None]
 
 
 class JobExecutor:

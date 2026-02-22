@@ -40,7 +40,6 @@ class DaemonService:
     ) -> None:
         self._agent_def = agent_def
         self._use_containers = use_containers
-        self._server = server or ChatServer(agent_def, use_containers=use_containers)
         self._now_fn = now_fn
         self._started_at = self._now_fn()
         self._lock = threading.RLock()
@@ -68,6 +67,13 @@ class DaemonService:
         self._cron_manager = CronManager(
             store=self._cron_store,
             executor=self._cron_executor,
+        )
+
+        # Create ChatServer with cron_manager wired in.
+        self._server = server or ChatServer(
+            agent_def,
+            use_containers=use_containers,
+            cron_manager=self._cron_manager,
         )
 
     # --- Message and session API ---
@@ -481,7 +487,7 @@ class DaemonService:
         cron_info = {
             "running": cron_running,
             "managed_jobs": len(managed_jobs),
-            "legacy_jobs": len(self._cron_manager._legacy_jobs),
+            "legacy_jobs": self._cron_manager.legacy_job_count,
         }
 
         return {

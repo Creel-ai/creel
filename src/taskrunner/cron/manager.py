@@ -20,7 +20,7 @@ from taskrunner.cron.models import (
     RunRecord,
     RunStatus,
     Schedule,
-    _now_iso,
+    now_iso,
 )
 from taskrunner.cron.store import JobStore
 
@@ -70,17 +70,33 @@ class CronManager:
     def running(self) -> bool:
         return self._scheduler.running
 
+    @property
+    def legacy_job_count(self) -> int:
+        return len(self._legacy_jobs)
+
     # -- Lifecycle --
 
     def start(self) -> None:
         """Load all enabled jobs into the scheduler and start it."""
         for job in self._store.list():
             if job.enabled:
-                self._schedule_job(job)
+                try:
+                    self._schedule_job(job)
+                except Exception:
+                    logger.exception(
+                        "Failed to schedule job '%s' (%s) on startup — skipping",
+                        job.name, job.id,
+                    )
 
         for job in self._legacy_jobs.values():
             if job.enabled:
-                self._schedule_job(job)
+                try:
+                    self._schedule_job(job)
+                except Exception:
+                    logger.exception(
+                        "Failed to schedule legacy job '%s' (%s) on startup — skipping",
+                        job.name, job.id,
+                    )
 
         self._scheduler.start()
         logger.info(
@@ -98,10 +114,18 @@ class CronManager:
     # -- CRUD for managed jobs --
 
     def add_job(self, job: CronJob) -> CronJob:
-        """Add a new job to the store and schedule it if enabled."""
+        """Add a new job to the store and schedule it if enabled.
+
+        Raises if the job cannot be scheduled (invalid cron/timezone/etc.).
+        """
         self._store.add(job)
         if job.enabled and self._scheduler.running:
-            self._schedule_job(job)
+            try:
+                self._schedule_job(job)
+            except Exception:
+                # Roll back: don't leave an unschedulable job in the store
+                self._store.remove(job.id)
+                raise
         return job
 
     def get_job(self, job_id: str) -> CronJob | None:
@@ -205,26 +229,26 @@ class CronManager:
     # -- Internal scheduling helpers --
 
     def _schedule_job(self, job: CronJob) -> None:
-        """Add a job to the APScheduler."""
-        try:
-            trigger = _make_trigger(job.schedule)
-            kwargs: dict[str, object] = dict(
-                args=[job.id],
-                id=job.id,
-                name=job.name,
-                replace_existing=True,
-            )
-            # One-shot `at` jobs: allow unlimited misfire grace so past
-            # timestamps fire immediately instead of being skipped.
-            if job.schedule.kind == "at":
-                kwargs["misfire_grace_time"] = None
-            self._scheduler.add_job(
-                self._on_job_fire,
-                trigger,
-                **kwargs,
-            )
-        except Exception:
-            logger.exception("Failed to schedule job '%s' (%s)", job.name, job.id)
+        """Add a job to the APScheduler.
+
+        Raises on failure so callers can handle or propagate the error.
+        """
+        trigger = _make_trigger(job.schedule)
+        kwargs: dict[str, object] = dict(
+            args=[job.id],
+            id=job.id,
+            name=job.name,
+            replace_existing=True,
+        )
+        # One-shot `at` jobs: allow unlimited misfire grace so past
+        # timestamps fire immediately instead of being skipped.
+        if job.schedule.kind == "at":
+            kwargs["misfire_grace_time"] = None
+        self._scheduler.add_job(
+            self._on_job_fire,
+            trigger,
+            **kwargs,
+        )
 
     def _unschedule_job(self, job_id: str) -> None:
         """Remove a job from APScheduler (if scheduled)."""
@@ -248,7 +272,7 @@ class CronManager:
 
     def _execute_job(self, job: CronJob) -> None:
         """Run a job: call executor, record run, handle one-shot cleanup."""
-        started_at = _now_iso()
+        started_at = now_iso()
         status = RunStatus.SUCCESS
         error_msg: str | None = None
 
@@ -270,7 +294,7 @@ class CronManager:
         record = RunRecord(
             job_id=job.id,
             started_at=started_at,
-            ended_at=_now_iso(),
+            ended_at=now_iso(),
             status=status,
             error=error_msg,
         )

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
+import threading
 from pathlib import Path
 
 from taskrunner.cron.models import CronJob, RunRecord
@@ -32,6 +35,7 @@ class JobStore:
         self._jobs_path = Path(jobs_path)
         self._runs_path = Path(runs_path)
         self._max_runs_per_job = max_runs_per_job
+        self._lock = threading.Lock()
 
         self._jobs: dict[str, CronJob] = {}
         self._runs: dict[str, list[RunRecord]] = {}
@@ -42,44 +46,48 @@ class JobStore:
 
     def add(self, job: CronJob) -> CronJob:
         """Add a new job. Raises ValueError if ID already exists."""
-        if job.id in self._jobs:
-            raise ValueError(f"Job with id '{job.id}' already exists")
-        self._jobs[job.id] = job
-        self._save_jobs()
-        return job
+        with self._lock:
+            if job.id in self._jobs:
+                raise ValueError(f"Job with id '{job.id}' already exists")
+            self._jobs[job.id] = job
+            self._save_jobs()
+            return job
 
     def get(self, job_id: str) -> CronJob | None:
         """Get a job by ID, or None if not found."""
-        return self._jobs.get(job_id)
+        with self._lock:
+            return self._jobs.get(job_id)
 
     def list(self) -> list[CronJob]:
         """Return all jobs, ordered by created_at."""
-        return sorted(self._jobs.values(), key=lambda j: j.created_at)
+        with self._lock:
+            return sorted(self._jobs.values(), key=lambda j: j.created_at)
 
     def update(self, job_id: str, **fields: object) -> CronJob:
         """Update fields on an existing job. Returns the updated job.
 
         Raises KeyError if job not found.
         """
-        job = self._jobs.get(job_id)
-        if job is None:
-            raise KeyError(f"Job '{job_id}' not found")
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise KeyError(f"Job '{job_id}' not found")
 
-        data = job.model_dump()
-        for key, value in fields.items():
-            if key == "id":
-                raise ValueError("Cannot change job ID")
-            if key not in data:
-                raise ValueError(f"Unknown field '{key}'")
-            data[key] = value
+            data = job.model_dump()
+            for key, value in fields.items():
+                if key == "id":
+                    raise ValueError("Cannot change job ID")
+                if key not in data:
+                    raise ValueError(f"Unknown field '{key}'")
+                data[key] = value
 
-        from taskrunner.cron.models import _now_iso
+            from taskrunner.cron.models import now_iso
 
-        data["updated_at"] = _now_iso()
-        updated = CronJob(**data)
-        self._jobs[job_id] = updated
-        self._save_jobs()
-        return updated
+            data["updated_at"] = now_iso()
+            updated = CronJob(**data)
+            self._jobs[job_id] = updated
+            self._save_jobs()
+            return updated
 
     def remove(self, job_id: str, *, keep_history: bool = False) -> CronJob:
         """Remove a job by ID. Returns the removed job.
@@ -90,44 +98,49 @@ class JobStore:
 
         Raises KeyError if job not found.
         """
-        job = self._jobs.pop(job_id, None)
-        if job is None:
-            raise KeyError(f"Job '{job_id}' not found")
-        self._save_jobs()
-        if not keep_history:
-            self._runs.pop(job_id, None)
-            self._save_runs()
-        return job
+        with self._lock:
+            job = self._jobs.pop(job_id, None)
+            if job is None:
+                raise KeyError(f"Job '{job_id}' not found")
+            self._save_jobs()
+            if not keep_history:
+                self._runs.pop(job_id, None)
+                self._save_runs()
+            return job
 
     # -- Public API: run history --
 
     def add_run(self, record: RunRecord) -> RunRecord:
         """Append a run record, capping history at max_runs_per_job."""
-        runs = self._runs.setdefault(record.job_id, [])
-        runs.append(record)
-        # Keep only the most recent N runs
-        if len(runs) > self._max_runs_per_job:
-            self._runs[record.job_id] = runs[-self._max_runs_per_job :]
-        self._save_runs()
-        return record
+        with self._lock:
+            runs = self._runs.setdefault(record.job_id, [])
+            runs.append(record)
+            # Keep only the most recent N runs
+            if len(runs) > self._max_runs_per_job:
+                self._runs[record.job_id] = runs[-self._max_runs_per_job :]
+            self._save_runs()
+            return record
 
     def get_runs(self, job_id: str) -> list[RunRecord]:
         """Get run history for a job, ordered oldest first."""
-        return list(self._runs.get(job_id, []))
+        with self._lock:
+            return list(self._runs.get(job_id, []))
 
     # -- Persistence --
 
     def load(self) -> None:
         """Load jobs and runs from disk. Tolerates corrupt files."""
-        self._jobs = {}
-        self._runs = {}
-        self._load_jobs()
-        self._load_runs()
+        with self._lock:
+            self._jobs = {}
+            self._runs = {}
+            self._load_jobs()
+            self._load_runs()
 
     def save(self) -> None:
         """Write both jobs and runs to disk."""
-        self._save_jobs()
-        self._save_runs()
+        with self._lock:
+            self._save_jobs()
+            self._save_runs()
 
     def _load_jobs(self) -> None:
         if not self._jobs_path.exists():
@@ -159,7 +172,7 @@ class JobStore:
     def _save_jobs(self) -> None:
         self._jobs_path.parent.mkdir(parents=True, exist_ok=True)
         data = [job.model_dump() for job in self._jobs.values()]
-        self._jobs_path.write_text(json.dumps(data, indent=2) + "\n")
+        self._atomic_write(self._jobs_path, json.dumps(data, indent=2) + "\n")
 
     def _save_runs(self) -> None:
         self._runs_path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,4 +180,24 @@ class JobStore:
             job_id: [r.model_dump() for r in records]
             for job_id, records in self._runs.items()
         }
-        self._runs_path.write_text(json.dumps(data, indent=2) + "\n")
+        self._atomic_write(self._runs_path, json.dumps(data, indent=2) + "\n")
+
+    @staticmethod
+    def _atomic_write(path: Path, content: str) -> None:
+        """Write content to a file atomically via temp file + rename."""
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        closed = False
+        try:
+            os.write(fd, content.encode())
+            os.fsync(fd)
+            os.close(fd)
+            closed = True
+            os.replace(tmp, path)
+        except BaseException:
+            if not closed:
+                os.close(fd)
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise

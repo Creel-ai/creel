@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 
 import httpx
 
-from taskrunner.cron.models import CronJob, Delivery
+from taskrunner.cron.models import ChannelSendFn, CronJob, Delivery
 
 logger = logging.getLogger(__name__)
-
-# Callback to send a message to a named channel.
-# Receives (channel_name, message_text).
-ChannelSendFn = Callable[[str, str], None]
 
 
 def deliver(

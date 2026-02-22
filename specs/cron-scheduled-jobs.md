@@ -215,9 +215,9 @@ src/taskrunner/cron/
 - [ ] If delivery fails and `best_effort` is true, job still succeeds
 
 ### Agent tool
-- [ ] Agent can create a job via the cron tool
-- [ ] Agent can list, update, and delete jobs
-- [ ] Agent can trigger a job immediately via `run`
+- [x] Agent can create a job via the cron tool
+- [x] Agent can list, update, and delete jobs
+- [x] Agent can trigger a job immediately via `run`
 
 ### CLI
 - [x] `creel cron list` shows all jobs with status, schedule, last run
@@ -245,3 +245,4 @@ src/taskrunner/cron/
 - [x] Phase 2: Cron Manager & Scheduler Integration — manager.py wraps JobStore + APScheduler BackgroundScheduler, CRUD + enable/disable/trigger, one-shot auto-delete, legacy YAML task loading (read-only), store.py updated with keep_history option, 45 new tests (tests/test_cron_manager.py), all 1470 tests passing
 - [x] Phase 3: Job Execution & Delivery — executor.py with JobExecutor class (main-session event injection via callback, isolated mode via run_agent_loop, model override support), delivery.py with announce/webhook/none routing and best_effort flag, 31 new tests (tests/test_cron_executor.py, tests/test_cron_delivery.py), all 1501 tests passing
 - [x] Phase 4: CLI Commands — argparse `cron` subparser group wired into main() with list/add/edit/remove/run/runs/import subcommands, all schedule types (cron/every/at), system-event and agent-turn payloads, delivery modes, enable/disable, YAML import, 47 new tests (tests/test_cron_cli.py), all 1548 tests passing
+- [x] Phase 5: Agent Tool — `cron` agent tool in `src/taskrunner/cron/tool.py` with actions list/add/update/remove/run/runs, Anthropic-compatible tool schema (CRON_TOOL_DEFINITION), handler dispatched via `execute_tool_call()` with lazy imports to avoid circular dependency, registered in `build_tool_definitions()` via `include_cron_tools` flag, `run_agent_loop()` passes `cron_store` through to tool dispatch, 55 new tests (tests/test_cron_tool.py), all 1603 tests passing

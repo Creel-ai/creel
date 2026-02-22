@@ -62,7 +62,7 @@ channels:
       - "$PHONE"
     poll_interval: 3
   telegram:
-    bot_token: "$TELEGRAM_BOT_TOKEN"
+    secrets: secrets/telegram.env.enc
     mode: polling           # "polling" or "webhook"
     poll_timeout: 30
     send_typing: true

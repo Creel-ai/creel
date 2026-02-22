@@ -211,7 +211,8 @@ class WhatsAppChannelConfig(BaseModel):
 class TelegramChannelConfig(BaseModel):
     """Telegram Bot API channel settings."""
 
-    bot_token: str
+    bot_token: str = "$TELEGRAM_BOT_TOKEN"
+    secrets: str | None = None
     mode: str = "polling"  # "polling" or "webhook"
     poll_timeout: int = 30
     webhook_path: str = "/webhooks/telegram"

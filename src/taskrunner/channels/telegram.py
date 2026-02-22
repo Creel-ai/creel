@@ -6,6 +6,7 @@ import asyncio
 import hmac
 import json
 import logging
+import os
 import time
 from typing import Any, Callable
 
@@ -261,6 +262,14 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
     )
 
     def factory(config: dict[str, Any]) -> TelegramChannel:
+        # Decrypt secrets into env before config expansion (same pattern as tools/LLM)
+        secrets_path = config.get("secrets")
+        if secrets_path:
+            from taskrunner.secrets import decrypt_env_file
+
+            for k, v in decrypt_env_file(secrets_path).items():
+                os.environ[k] = v
+
         cfg = TelegramChannelConfig(**config)
         bridge = HttpTelegramBridge(cfg.bot_token)
         return TelegramChannel(

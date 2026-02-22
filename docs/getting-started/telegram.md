@@ -18,7 +18,7 @@ Add a `telegram` section under `channels` in your `agent.yaml`:
 ```yaml
 channels:
   telegram:
-    bot_token: "$TELEGRAM_BOT_TOKEN"
+    secrets: secrets/telegram.env.enc
     mode: polling
     poll_timeout: 30
     send_typing: true
@@ -31,7 +31,7 @@ channels:
 ```yaml
 channels:
   telegram:
-    bot_token: "$TELEGRAM_BOT_TOKEN"
+    secrets: secrets/telegram.env.enc
     mode: webhook
     webhook_path: /webhooks/telegram
     webhook_secret: "$TELEGRAM_WEBHOOK_SECRET"
@@ -42,17 +42,14 @@ channels:
 
 ## 3. Store the Token
 
-Encrypt your bot token with age:
+Encrypt your bot token with age (same pattern as all other secrets):
 
 ```bash
-echo "TELEGRAM_BOT_TOKEN=123456:ABC-DEF..." | age -R ~/.age/key.txt.pub > secrets/telegram.env.enc
+echo "TELEGRAM_BOT_TOKEN=123456:ABC-DEF..." > secrets/telegram.env
+./scripts/encrypt-secret.sh secrets/telegram.env
 ```
 
-Or set it as an environment variable for development:
-
-```bash
-export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
-```
+This produces `secrets/telegram.env.enc` and deletes the plaintext file. The token is decrypted at startup and never stored in plaintext.
 
 ## 4. Polling vs Webhook
 

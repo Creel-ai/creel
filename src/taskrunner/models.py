@@ -222,6 +222,14 @@ class TelegramChannelConfig(BaseModel):
     send_typing: bool = True
 
     @model_validator(mode="after")
+    def check_allowed_senders_required(self) -> TelegramChannelConfig:
+        if not self.allowed_senders:
+            raise ValueError(
+                "allowed_senders must not be empty — Telegram channel requires an explicit allow list"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_webhook_secret(self) -> TelegramChannelConfig:
         if self.mode == "webhook" and not self.webhook_secret:
             raise ValueError(

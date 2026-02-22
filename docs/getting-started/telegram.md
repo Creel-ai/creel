@@ -77,14 +77,14 @@ If using webhook mode:
 Configure access:
 
 ```yaml
-allowed_senders:
+allowed_senders:          # required — at least one entry
   - "123456789"          # numeric user ID
   - "@yourusername"      # @username (case-sensitive)
 allowed_chats:
   - "-1001234567890"     # group chat ID (negative number)
 ```
 
-If both lists are empty, all senders and chats are allowed.
+`allowed_senders` is mandatory — the channel will refuse to start without at least one entry. Outbound messages are also restricted to verified senders and listed chats.
 
 ## 7. Group Chat
 

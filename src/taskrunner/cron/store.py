@@ -81,8 +81,12 @@ class JobStore:
         self._save_jobs()
         return updated
 
-    def remove(self, job_id: str) -> CronJob:
+    def remove(self, job_id: str, *, keep_history: bool = False) -> CronJob:
         """Remove a job by ID. Returns the removed job.
+
+        Args:
+            job_id: The job to remove.
+            keep_history: If True, preserve run history for the job.
 
         Raises KeyError if job not found.
         """
@@ -90,9 +94,9 @@ class JobStore:
         if job is None:
             raise KeyError(f"Job '{job_id}' not found")
         self._save_jobs()
-        # Also clean up run history for this job
-        self._runs.pop(job_id, None)
-        self._save_runs()
+        if not keep_history:
+            self._runs.pop(job_id, None)
+            self._save_runs()
         return job
 
     # -- Public API: run history --

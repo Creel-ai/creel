@@ -778,6 +778,70 @@ class TestCmdSendNonStreaming:
 
 
 # ---------------------------------------------------------------------------
+# cmd_encrypt tests
+# ---------------------------------------------------------------------------
+
+
+class TestCmdEncrypt:
+    def test_encrypt_basic(self, cli_args, tmp_path, age_keypair, capsys) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("SECRET=hunter2\n")
+
+        args = cli_args(env_file=str(env_file), recipient=str(pub_file), output=None, delete=False)
+        rc = cli.cmd_encrypt(args)
+        assert rc == 0
+        assert (tmp_path / "test.env.enc").exists()
+        assert env_file.exists()  # not deleted
+        out = capsys.readouterr().out
+        assert "Encrypted:" in out
+        assert "Delete the plaintext" in out
+
+    def test_encrypt_delete(self, cli_args, tmp_path, age_keypair, capsys) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("SECRET=hunter2\n")
+
+        args = cli_args(env_file=str(env_file), recipient=str(pub_file), output=None, delete=True)
+        rc = cli.cmd_encrypt(args)
+        assert rc == 0
+        assert (tmp_path / "test.env.enc").exists()
+        assert not env_file.exists()  # deleted
+        out = capsys.readouterr().out
+        assert "Deleted plaintext" in out
+
+    def test_encrypt_custom_output(self, cli_args, tmp_path, age_keypair) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("KEY=val\n")
+        custom_out = tmp_path / "custom.enc"
+
+        args = cli_args(env_file=str(env_file), recipient=str(pub_file), output=str(custom_out), delete=False)
+        rc = cli.cmd_encrypt(args)
+        assert rc == 0
+        assert custom_out.exists()
+
+    def test_encrypt_missing_file(self, cli_args, tmp_path, capsys) -> None:
+        args = cli_args(env_file=str(tmp_path / "missing.env"), recipient=None, output=None, delete=False)
+        rc = cli.cmd_encrypt(args)
+        assert rc == 1
+        assert "not found" in capsys.readouterr().err.lower()
+
+    def test_encrypt_via_main(self, monkeypatch, tmp_path, age_keypair, capsys) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("TOK=abc\n")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["creel", "encrypt", str(env_file), "--recipient", str(pub_file)],
+        )
+        rc = cli.main()
+        assert rc == 0
+        assert (tmp_path / "test.env.enc").exists()
+
+
+# ---------------------------------------------------------------------------
 # main() dispatcher tests
 # ---------------------------------------------------------------------------
 

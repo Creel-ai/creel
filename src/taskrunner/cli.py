@@ -1051,6 +1051,35 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_encrypt(args: argparse.Namespace) -> int:
+    """Encrypt a plaintext .env file with age."""
+    from taskrunner.secrets import encrypt_env_file
+
+    env_path = Path(args.env_file)
+    try:
+        output_path = encrypt_env_file(
+            env_path=env_path,
+            recipient_path=args.recipient,
+            output_path=args.output,
+        )
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Error encrypting: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Encrypted: {env_path} -> {output_path}")
+
+    if args.delete:
+        env_path.unlink()
+        print(f"Deleted plaintext: {env_path}")
+    else:
+        print(f"\nIMPORTANT: Delete the plaintext file:\n  rm {env_path}")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -1149,6 +1178,22 @@ def main() -> int:
     audit_parser.add_argument(
         "--since", type=str, default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
+    )
+
+    # encrypt command
+    encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
+    encrypt_parser.add_argument("env_file", help="Path to plaintext .env file")
+    encrypt_parser.add_argument(
+        "--recipient", default=None,
+        help="Age recipient (public key) file (default: ~/.age/key.pub or AGE_RECIPIENT_FILE)",
+    )
+    encrypt_parser.add_argument(
+        "--output", default=None,
+        help="Output file path (default: <env_file>.enc)",
+    )
+    encrypt_parser.add_argument(
+        "--delete", action="store_true",
+        help="Delete the plaintext file after encryption",
     )
 
     # --- Shared daemon parent parsers (to avoid option duplication) ---
@@ -1318,6 +1363,7 @@ def main() -> int:
         "attach": cmd_attach,
         "audit": cmd_audit,
         "send": cmd_send,
+        "encrypt": cmd_encrypt,
     }
 
     return commands[args.command](args)

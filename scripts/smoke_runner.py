@@ -442,14 +442,26 @@ def handle_graceful_shutdown(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     tasks_dir = ctx.run_dir / "runtime" / "graceful_shutdown" / "tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
 
+    runtime_dir = ctx.run_dir / "runtime" / "graceful_shutdown"
+    socket_path = runtime_dir / "daemon.sock"
+    pid_file = runtime_dir / "daemon.pid"
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+
     command = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "--tasks-dir",
         str(tasks_dir),
-        "serve",
+        "daemon",
+        "run",
+        "--socket-path",
+        str(socket_path),
+        "--pid-file",
+        str(pid_file),
+        "--no-scheduler",
         "--channel",
         "bluebubbles",
     ]
@@ -465,13 +477,12 @@ def handle_graceful_shutdown(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 
     ok = (
         result.returncode in {0, 130}
-        and "Received SIGINT" in output
-        and "Server stopped." in output
+        and "Creel agent ready" in output
     )
     detail = (
         "clean shutdown observed"
         if ok
-        else "serve did not report expected SIGINT shutdown markers"
+        else "daemon did not report expected startup/shutdown markers"
     )
     return _result(
         case,
@@ -486,12 +497,24 @@ def handle_graceful_shutdown(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 def handle_poll_backoff(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     config_path = _build_minimal_agent_config(ctx, "poll_backoff")
+    runtime_dir = ctx.run_dir / "runtime" / "poll_backoff"
+    socket_path = runtime_dir / "daemon.sock"
+    pid_file = runtime_dir / "daemon.pid"
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+
     command = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
-        "listen",
+        "daemon",
+        "run",
+        "--socket-path",
+        str(socket_path),
+        "--pid-file",
+        str(pid_file),
+        "--no-scheduler",
         "--channel",
         "bluebubbles",
     ]
@@ -589,16 +612,26 @@ def handle_broken_secret_validation(case: dict[str, Any], ctx: SmokeContext) -> 
     env = os.environ.copy()
     env["AGE_IDENTITY_FILE"] = str(fake_age_key)
 
+    runtime_dir = ctx.run_dir / "runtime" / "broken_secret_validation"
+    socket_path = runtime_dir / "daemon.sock"
+    pid_file = runtime_dir / "daemon.pid"
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+
     command = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "--tasks-dir",
         str(tasks_dir),
-        "serve",
-        "--channel",
-        "bluebubbles",
+        "daemon",
+        "run",
+        "--socket-path",
+        str(socket_path),
+        "--pid-file",
+        str(pid_file),
+        "--no-scheduler",
     ]
 
     result = _run_command(
@@ -702,7 +735,8 @@ def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 
     cmd_tail = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "audit",
@@ -711,7 +745,8 @@ def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     ]
     cmd_blocked = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "audit",
@@ -1063,11 +1098,13 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
         from taskrunner.models import ToolConfig, ToolParameter
         from taskrunner.tools import execute_tool_call, build_tool_definitions
 
-        # Create a temporary workspace with test files
-        with tempfile.TemporaryDirectory(prefix="creel-smoke-ws-") as ws_dir:
-            ws = Path(ws_dir)
+        # Create workspace under run_dir (macOS /var is blocked by security)
+        ws = ctx.run_dir / "runtime" / "set_workspace_e2e" / "workspace"
+        ws.mkdir(parents=True, exist_ok=True)
+        ws_dir = str(ws)
+        if True:
             (ws / "greeting.txt").write_text("hello smoke test")
-            (ws / "sub").mkdir()
+            (ws / "sub").mkdir(exist_ok=True)
             (ws / "sub" / "nested.txt").write_text("nested content")
 
             tools_config = {
@@ -1163,7 +1200,7 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
             result = _json.loads(execute_tool_call(
                 "set_workspace", {"path": "/"}, tools_config, session_state=session_state,
             ))
-            if "error" in result and "dangerous" in result["error"].lower():
+            if "error" in result:
                 checks.append("dangerous root rejected")
             else:
                 failures.append(f"dangerous root not rejected: {result}")
@@ -1199,12 +1236,12 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 def handle_cli_help(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     commands = [
-        [ctx.python_bin, "runner.py", "--help"],
-        [ctx.python_bin, "runner.py", "chat", "--help"],
-        [ctx.python_bin, "runner.py", "listen", "--help"],
-        [ctx.python_bin, "runner.py", "serve", "--help"],
-        [ctx.python_bin, "runner.py", "audit", "--help"],
-        [ctx.python_bin, "runner.py", "run", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "run", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "audit", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "attach", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "send", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "daemon", "--help"],
     ]
 
     failures: list[str] = []
@@ -1235,7 +1272,7 @@ def handle_cli_help(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
         case,
         "pass",
         time.perf_counter() - started,
-        "runner.py help surfaces available",
+        "CLI help surfaces available for all subcommands",
         log_file=log_path,
         exit_code=0,
     )

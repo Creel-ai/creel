@@ -296,7 +296,8 @@ class TestChannelDelivery:
         daemon_service._channel_send("whatsapp", "Hello from cron!")
 
         assert len(channel.sent) == 1
-        assert channel.sent[0] == ("whatsapp", "Hello from cron!")
+        # Recipient should be the cron_sender_id ("main"), not the channel name
+        assert channel.sent[0] == ("main", "Hello from cron!")
 
     def test_channel_send_unknown_channel_raises(
         self, daemon_service: DaemonService

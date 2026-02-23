@@ -1212,13 +1212,13 @@ def cmd_cron_runs(args: argparse.Namespace) -> int:
         runs = runs[-tail:]
 
     print(f"Run history for '{job.name}' ({args.job_id}):")
+    from datetime import datetime
+
     print(f"{'Started':<28} {'Status':<10} {'Duration':<12} {'Error'}")
     print("-" * 70)
     for run in runs:
         duration = ""
         if run.ended_at and run.started_at:
-            from datetime import datetime
-
             try:
                 start = datetime.fromisoformat(run.started_at)
                 end = datetime.fromisoformat(run.ended_at)

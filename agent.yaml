@@ -416,7 +416,6 @@ tools:
   exec:
     executor: exec
     description: "Run shell commands in a sandboxed environment"
-    image: creel-exec:minimal
     parameters:
       command:
         type: string
@@ -642,7 +641,7 @@ tools:
 
 llm:
   model: claude-sonnet-4-20250514
-  max_tokens: 80000
+  max_tokens: 4096
   secrets: secrets/anthropic.env.enc
 
 agent:

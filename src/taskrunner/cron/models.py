@@ -171,15 +171,12 @@ def _validate_webhook_url(url: str) -> None:
     # that would require resolution-time checks in the HTTP client.
     try:
         addr = ipaddress.ip_address(hostname)
-        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-            raise ValueError(
-                "Webhook URL must not target private or internal addresses"
-            )
-    except ValueError as exc:
-        # Re-raise our own validation errors
-        if "private" in str(exc) or "HTTPS" in str(exc):
-            raise
-        # hostname is a domain name, not an IP — that's fine
+    except ValueError:
+        return  # hostname is a domain name, not an IP — that's fine
+    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+        raise ValueError(
+            "Webhook URL must not target private or internal addresses"
+        )
 
 
 class CronJob(BaseModel):

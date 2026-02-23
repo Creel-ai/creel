@@ -252,9 +252,11 @@ class CronManager:
 
     def _unschedule_job(self, job_id: str) -> None:
         """Remove a job from APScheduler (if scheduled)."""
+        from apscheduler.jobstores.base import JobLookupError
+
         try:
             self._scheduler.remove_job(job_id)
-        except Exception:
+        except JobLookupError:
             pass  # Job may not be scheduled
 
     def _on_job_fire(self, job_id: str) -> None:

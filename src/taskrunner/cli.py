@@ -521,6 +521,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         pass
     finally:
         service.shutdown()
+        print("Daemon stopped.")
         pid_path.unlink(missing_ok=True)
         socket_path.unlink(missing_ok=True)
 

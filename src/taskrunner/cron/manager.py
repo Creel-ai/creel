@@ -78,7 +78,8 @@ class CronManager:
 
     def start(self) -> None:
         """Load all enabled jobs into the scheduler and start it."""
-        for job in self._store.list():
+        managed_jobs = self._store.list()
+        for job in managed_jobs:
             if job.enabled:
                 try:
                     self._schedule_job(job)
@@ -101,7 +102,7 @@ class CronManager:
         self._scheduler.start()
         logger.info(
             "CronManager started with %d managed + %d legacy jobs",
-            len(self._store.list()),
+            len(managed_jobs),
             len(self._legacy_jobs),
         )
 

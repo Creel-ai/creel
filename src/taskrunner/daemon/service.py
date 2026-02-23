@@ -339,12 +339,20 @@ class DaemonService:
         self._server.inject_system_event(self._cron_sender_id, text)
 
     def _channel_send(self, channel_name: str, text: str) -> None:
-        """Callback for cron job delivery — routes to a registered channel."""
+        """Callback for cron job delivery — routes to a registered channel.
+
+        The channel reference is fetched under the lock but send() is called
+        outside it to avoid holding the lock during potentially blocking I/O.
+        This is a benign TOCTOU: the channel object remains valid in memory
+        even if concurrently unregistered.
+        """
         with self._lock:
             channel = self._channels.get(channel_name)
         if channel is None:
             raise ValueError(f"Channel '{channel_name}' not found for cron delivery")
-        channel.send(channel_name, text)
+        # Use cron_sender_id as the recipient — channel_name identifies the
+        # channel, not the message recipient.
+        channel.send(self._cron_sender_id, text)
 
     # --- Channel/plugin lifecycle ---
 

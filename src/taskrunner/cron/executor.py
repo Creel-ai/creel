@@ -3,18 +3,46 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
+from contextlib import contextmanager
 
 from taskrunner.agent import run_agent_loop
 from taskrunner.cron.delivery import deliver
 from taskrunner.cron.models import ChannelSendFn, CronJob
-from taskrunner.orchestrator import _load_secrets_to_env
+from taskrunner.secrets import decrypt_env_file
 
 logger = logging.getLogger(__name__)
 
 # Callback to inject a system event message into the main session.
 # Receives the formatted event text.
 InjectEventFn = Callable[[str], None]
+
+
+@contextmanager
+def _temporary_secrets(secrets_path: str):
+    """Load secrets into os.environ and restore originals on exit.
+
+    This prevents secrets from leaking to concurrent threads after the
+    job finishes.  It's still not fully thread-safe (another thread can
+    see the secrets while this job runs), but it's a best-effort cleanup.
+    """
+    secrets = decrypt_env_file(secrets_path)
+    originals: dict[str, str | None] = {}
+    for key in secrets:
+        originals[key] = os.environ.get(key)
+    # Inject
+    for key, value in secrets.items():
+        os.environ[key] = value
+    try:
+        yield
+    finally:
+        # Restore originals or remove injected keys
+        for key, original in originals.items():
+            if original is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original
 
 
 class JobExecutor:
@@ -66,19 +94,23 @@ class JobExecutor:
         if job.payload.model:
             llm_config.model = job.payload.model
 
-        # Load LLM secrets if configured
-        if llm_config.secrets:
-            _load_secrets_to_env(llm_config.secrets)
-
         messages: list[dict] = [{"role": "user", "content": job.payload.message}]
 
-        result = run_agent_loop(
-            messages=messages,
-            llm_config=llm_config,
-            tools_config=self._agent_def.tools,
-            agent_config=self._agent_def.agent,
-            use_containers=self._use_containers,
-        )
+        def _run() -> object:
+            return run_agent_loop(
+                messages=messages,
+                llm_config=llm_config,
+                tools_config=self._agent_def.tools,
+                agent_config=self._agent_def.agent,
+                use_containers=self._use_containers,
+            )
+
+        # Load secrets with cleanup to avoid leaking to concurrent threads
+        if llm_config.secrets:
+            with _temporary_secrets(llm_config.secrets):
+                result = _run()
+        else:
+            result = _run()
 
         logger.info(
             "Isolated job '%s' (%s) completed: %d turns, %d tool calls, stop=%s",

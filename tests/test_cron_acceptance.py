@@ -350,7 +350,7 @@ class TestEndToEndCLIFlow:
 
         posted: list[dict] = []
 
-        def fake_post(url, json, timeout):
+        def fake_post(url, json, timeout, **kwargs):
             posted.append({"url": url, "json": json})
             resp = MagicMock()
             resp.status_code = 200

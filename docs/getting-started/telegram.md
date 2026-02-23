@@ -23,7 +23,7 @@ channels:
     poll_timeout: 30
     send_typing: true
     allowed_senders:
-      - "123456789"        # your Telegram user ID
+      - "$TELEGRAM_ALLOWED_SENDER"
 ```
 
 **Webhook mode** (recommended for production):
@@ -37,7 +37,13 @@ channels:
     webhook_secret: "$TELEGRAM_WEBHOOK_SECRET"
     send_typing: true
     allowed_senders:
-      - "@yourusername"
+      - "$TELEGRAM_ALLOWED_SENDER"
+```
+
+Add the allowed sender to your `.env` file (user ID or @username):
+
+```bash
+TELEGRAM_ALLOWED_SENDER=@yourusername
 ```
 
 ## 3. Store the Token
@@ -70,11 +76,13 @@ If using webhook mode:
 
 ## 6. Access Control
 
+`allowed_senders` controls both **who the bot listens to** (inbound) and **who it can reply to** (outbound). Unlike the iMessage channel, there is no separate `listen_to` field — Telegram bots receive all messages sent to them via the API, and `allowed_senders` filters them.
+
 **Finding your user ID:** Send a message to `@userinfobot` on Telegram — it will reply with your numeric user ID.
 
 **Finding a chat ID:** Add the bot to a group, then check the bot's `getUpdates` output for the `chat.id` field.
 
-Configure access:
+Configure access in `agent.yaml`:
 
 ```yaml
 allowed_senders:          # required — at least one entry
@@ -84,7 +92,18 @@ allowed_chats:
   - "-1001234567890"     # group chat ID (negative number)
 ```
 
-`allowed_senders` is mandatory — the channel will refuse to start without at least one entry. Outbound messages are also restricted to verified senders and listed chats.
+Or use an env var in your `.env` file:
+
+```bash
+TELEGRAM_ALLOWED_SENDER=@yourusername
+```
+
+```yaml
+allowed_senders:
+  - "$TELEGRAM_ALLOWED_SENDER"
+```
+
+`allowed_senders` is mandatory — the channel will refuse to start without at least one entry. Outbound messages are also restricted to verified senders and listed chats. When a sender is identified by `@username`, their numeric chat ID is dynamically registered on first inbound message so that replies work.
 
 ## 7. Group Chat
 

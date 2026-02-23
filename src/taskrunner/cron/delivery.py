@@ -82,7 +82,9 @@ def _deliver_webhook(
         "job_name": job.name,
         "output": output,
     }
-    response = httpx.post(delivery.url, json=payload, timeout=30)
+    response = httpx.post(
+        delivery.url, json=payload, timeout=30, follow_redirects=False
+    )
     response.raise_for_status()
     logger.info(
         "Delivered output for job '%s' to webhook %s (status=%d)",

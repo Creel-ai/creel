@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,6 +91,10 @@ class ChatServer:
 
         # Per-sender session state (e.g. workspace path for file_ops)
         self._session_states: dict[str, dict] = {}
+
+        # Rate limiter for inject_system_event: per-sender list of timestamps.
+        self._event_injection_times: dict[str, list[float]] = {}
+        self._max_events_per_minute: int = 10
 
         # Initialize approval queue
         # Keep approval state scoped with session storage by default so tests
@@ -366,7 +371,24 @@ class ChatServer:
         The event is wrapped with a [SYSTEM EVENT] prefix so the LLM can
         distinguish it from real user input.  Used by the cron subsystem
         for main-session jobs.
+
+        Rate-limited to _max_events_per_minute per sender to prevent
+        misfiring cron jobs from flooding a session.
         """
+        now = time.monotonic()
+        window = self._event_injection_times.setdefault(sender_id, [])
+        # Prune entries older than 60s
+        cutoff = now - 60
+        window[:] = [t for t in window if t > cutoff]
+        if len(window) >= self._max_events_per_minute:
+            logger.warning(
+                "Rate limit hit: dropping system event for %s (%d events in last 60s)",
+                sender_id,
+                len(window),
+            )
+            return
+        window.append(now)
+
         wrapped = f"[SYSTEM EVENT]\n{text}"
         self._session_mgr.add_user_message(sender_id, wrapped)
         logger.info("Injected system event into session for %s", sender_id)

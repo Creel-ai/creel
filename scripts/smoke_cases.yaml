@@ -6,7 +6,7 @@ cases:
     title: LLM Retry Wrapper
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_llm_retry.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: foundation-2-graceful-shutdown
     order: 20
@@ -34,7 +34,7 @@ cases:
     title: Smart Trimming Preserves Tool Pairs
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_smart_trimming.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: foundation-6-session-save-api
     order: 60
@@ -47,7 +47,7 @@ cases:
       - "pytest"
       - "tests/test_integration.py::TestFullPipeline::test_session_persists_across_messages"
       - "-v"
-    timeout: 900
+    timeout: 120
 
   - id: foundation-7-secrets-validation
     order: 70
@@ -61,7 +61,7 @@ cases:
     title: Integration Test Suite
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_integration.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: security-9-fast-classifier
     order: 90
@@ -69,7 +69,7 @@ cases:
     title: Fast Classifier Coverage
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_fast_classifier.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: security-10-llm-judge
     order: 100
@@ -83,7 +83,7 @@ cases:
       - "tests/test_llm_judge.py"
       - "tests/test_llm_judge_extended.py"
       - "-v"
-    timeout: 900
+    timeout: 120
 
   - id: security-11-no-judge-flag
     order: 110
@@ -97,7 +97,7 @@ cases:
     title: Contextual Policy Rules (deny_when)
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_contextual_policies.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: security-13-auto-approve
     order: 130
@@ -105,7 +105,7 @@ cases:
     title: Per-tool auto_approve
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_per_tool_review.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: security-14-coherence
     order: 140
@@ -113,7 +113,7 @@ cases:
     title: Coherence Check
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_coherence.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: security-15-audit-rotation
     order: 150
@@ -121,7 +121,7 @@ cases:
     title: Audit Log Rotation
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_audit_rotation.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: security-16-audit-cli
     order: 160
@@ -143,7 +143,7 @@ cases:
     title: Injection Fixture Matrix
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_injection_fixtures.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: quick-critical-path
     order: 190
@@ -196,7 +196,7 @@ cases:
     requires_live_llm: true
     task_name: container_weather_smoke
     verify_token: SIMPLE_CONTAINER_OK
-    timeout: 900
+    timeout: 120
 
   - id: extras-1-session-commands
     order: 300
@@ -204,7 +204,7 @@ cases:
     title: Session Command Surface
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_session.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: extras-2-review-approval
     order: 310
@@ -212,7 +212,7 @@ cases:
     title: REVIEW Approval Queue Flow
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_review_approval.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: extras-3-quiet-hours
     order: 320
@@ -220,7 +220,7 @@ cases:
     title: Quiet-hours Suppression
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_quiet_hours.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: extras-4-bridge-security
     order: 330
@@ -228,7 +228,7 @@ cases:
     title: Bridge Auth + Injection Safety
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_bridge.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: extras-5-cli-help-contract
     order: 340
@@ -249,7 +249,7 @@ cases:
       - "-v"
       - "-m"
       - "smoke"
-    timeout: 900
+    timeout: 120
 
   - id: extras-7-set-workspace-unit
     order: 360
@@ -257,7 +257,7 @@ cases:
     title: set_workspace Unit Tests
     handler: command
     command: ["{python}", "-m", "pytest", "tests/test_set_workspace.py", "-v"]
-    timeout: 900
+    timeout: 120
 
   - id: extras-8-file-ops-inline
     order: 370
@@ -270,10 +270,464 @@ cases:
       - "pytest"
       - "tests/test_file_ops_executor.py::TestExecFileOpsInline"
       - "-v"
-    timeout: 900
+    timeout: 120
 
   - id: extras-9-set-workspace-e2e
     order: 380
     phase: extras
     title: set_workspace End-to-End Behavioral
     handler: set_workspace_e2e
+
+  # --- Tier 1: Security gaps ---
+
+  - id: security-19-drift-detection
+    order: 185
+    phase: security
+    title: Drift Detection
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_drift.py", "-v"]
+    timeout: 120
+
+  - id: security-20-credential-scanner
+    order: 186
+    phase: security
+    title: Credential Scanner
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_credential_scanner.py", "-v"]
+    timeout: 120
+
+  # --- Tier 1: Foundation gaps ---
+
+  - id: foundation-9-memory-system
+    order: 81
+    phase: foundation
+    title: Memory System
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_memory.py"
+      - "tests/test_memory_guardian.py"
+      - "-v"
+    timeout: 120
+
+  - id: foundation-10-chat-server
+    order: 82
+    phase: foundation
+    title: Chat Server
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_chat.py", "-v"]
+    timeout: 120
+
+  - id: foundation-11-streaming
+    order: 83
+    phase: foundation
+    title: Streaming
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_streaming.py", "-v"]
+    timeout: 120
+
+  - id: foundation-12-scheduler
+    order: 84
+    phase: foundation
+    title: Scheduler
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_scheduler.py", "-v"]
+    timeout: 120
+
+  # --- Tier 2: Daemon ---
+
+  - id: extras-10-daemon-service
+    order: 390
+    phase: extras
+    title: Daemon Service + API
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_daemon_service.py"
+      - "tests/test_daemon_api.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-11-daemon-client
+    order: 400
+    phase: extras
+    title: Daemon Client + Send CLI
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_daemon_client.py"
+      - "tests/test_daemon_send_cli.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-12-daemon-launchd
+    order: 410
+    phase: extras
+    title: Daemon launchd Integration
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_daemon_launchd.py", "-v"]
+    timeout: 120
+
+  # --- Tier 2: Channels ---
+
+  - id: extras-13-channels-imessage
+    order: 420
+    phase: extras
+    title: iMessage Bridge Executor
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_imessage_bridge_executor.py", "-v"]
+    timeout: 120
+
+  - id: extras-14-channels-whatsapp
+    order: 430
+    phase: extras
+    title: WhatsApp Bridge + Channel
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_whatsapp_bridge.py"
+      - "tests/test_whatsapp_channel.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-15-channels-bluebubbles
+    order: 440
+    phase: extras
+    title: BlueBubbles Channel
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_bluebubbles.py", "-v"]
+    timeout: 120
+
+  # --- Tier 2: Browser, TUI, Infra ---
+
+  - id: extras-16-browser-unit
+    order: 450
+    phase: extras
+    title: Browser Unit Tests
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_browser_bridge.py"
+      - "tests/test_browser_executor.py"
+      - "tests/test_browser_native.py"
+      - "tests/test_browser_relay.py"
+      - "tests/test_browser_resilience.py"
+      - "tests/test_browser_smoke.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-17-tui
+    order: 460
+    phase: extras
+    title: TUI Tests
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_tui.py", "-v"]
+    timeout: 120
+
+  - id: extras-18-docker-content-hash
+    order: 470
+    phase: extras
+    title: Docker Content Hash
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_docker_content_hash.py", "-v"]
+    timeout: 120
+
+  # --- Foundation: additional unit coverage ---
+
+  - id: foundation-13-agent-loop
+    order: 85
+    phase: foundation
+    title: Agent Loop
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_agent.py", "-v"]
+    timeout: 120
+
+  - id: foundation-14-orchestrator
+    order: 86
+    phase: foundation
+    title: Orchestrator
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_orchestrator.py", "-v"]
+    timeout: 120
+
+  - id: foundation-15-llm-client
+    order: 87
+    phase: foundation
+    title: LLM Client
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_llm.py", "-v"]
+    timeout: 120
+
+  - id: foundation-16-cli-unit
+    order: 88
+    phase: foundation
+    title: CLI Unit Tests
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_cli.py", "-v"]
+    timeout: 120
+
+  - id: foundation-17-models-prompts
+    order: 89
+    phase: foundation
+    title: Models + Prompt Builder
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_models.py"
+      - "tests/test_prompt_builder.py"
+      - "-v"
+    timeout: 120
+
+  - id: foundation-18-tools-outputs
+    order: 90
+    phase: foundation
+    title: Tools + Outputs
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_tools.py"
+      - "tests/test_outputs.py"
+      - "-v"
+    timeout: 120
+
+  - id: foundation-19-logging-startup
+    order: 91
+    phase: foundation
+    title: Logging + Startup Validation
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_logging.py"
+      - "tests/test_startup_validation.py"
+      - "-v"
+    timeout: 120
+
+  # --- Security: additional unit coverage ---
+
+  - id: security-21-policy-engine
+    order: 187
+    phase: security
+    title: Policy Engine
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_policy.py", "-v"]
+    timeout: 120
+
+  - id: security-22-guardian-integration
+    order: 188
+    phase: security
+    title: Guardian Integration
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_guardian_integration.py", "-v"]
+    timeout: 120
+
+  - id: security-23-guardian-improvements
+    order: 189
+    phase: security
+    title: Guardian Improvements
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_guardian_improvements.py", "-v"]
+    timeout: 120
+
+  - id: security-24-audit-unit
+    order: 190
+    phase: security
+    title: Audit Unit Tests
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_audit.py"
+      - "tests/test_audit_cli.py"
+      - "-v"
+    timeout: 120
+
+  - id: security-25-session-security
+    order: 191
+    phase: security
+    title: Session Security
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_session_security.py", "-v"]
+    timeout: 120
+
+  - id: security-26-exec-blocklist
+    order: 192
+    phase: security
+    title: Exec Blocklist
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_exec_blocklist.py", "-v"]
+    timeout: 120
+
+  - id: security-27-pipeline-integration
+    order: 193
+    phase: security
+    title: Pipeline Integration
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_pipeline_integration.py", "-v"]
+    timeout: 120
+
+  # --- Extras: additional unit coverage ---
+
+  - id: extras-19-git-executor
+    order: 475
+    phase: extras
+    title: Git Executor
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_git_executor.py", "-v"]
+    timeout: 120
+
+  - id: extras-20-exec-executor
+    order: 480
+    phase: extras
+    title: Exec Executor + Logging
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_exec_executor.py"
+      - "tests/test_executor_logging.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-21-secrets-oauth
+    order: 485
+    phase: extras
+    title: Secrets + OAuth
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_secrets.py"
+      - "tests/test_oauth.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-22-session-scoping
+    order: 490
+    phase: extras
+    title: Session Scoping + TTL
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_session_ttl.py"
+      - "tests/test_per_task_scoping.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-23-weather
+    order: 495
+    phase: extras
+    title: Weather Executor
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_weather.py", "-v"]
+    timeout: 120
+
+  - id: extras-24-gmail
+    order: 500
+    phase: extras
+    title: Gmail Executor
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_gmail_executor.py", "-v"]
+    timeout: 120
+
+  - id: extras-25-apple-executors
+    order: 505
+    phase: extras
+    title: Apple Notes + Reminders Executors
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_apple_notes_executor.py"
+      - "tests/test_apple_reminders_executor.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-26-things
+    order: 510
+    phase: extras
+    title: Things Executor
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_things_executor.py", "-v"]
+    timeout: 120
+
+  - id: extras-27-search-fetch
+    order: 515
+    phase: extras
+    title: Brave Search + Fetch URL
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_brave_search.py"
+      - "tests/test_fetch_url.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-28-notion-unit
+    order: 520
+    phase: extras
+    title: Notion Executor Unit Tests
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_notion_executor.py", "-v"]
+    timeout: 120
+
+  - id: extras-29-channel-plugins
+    order: 525
+    phase: extras
+    title: Channel Plugin Meta + Registry
+    handler: command
+    command:
+      - "{python}"
+      - "-m"
+      - "pytest"
+      - "tests/test_channel_plugin_meta.py"
+      - "tests/test_channel_registry.py"
+      - "-v"
+    timeout: 120
+
+  - id: extras-30-tool-config
+    order: 530
+    phase: extras
+    title: Tool Config Smoke
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_tool_config_smoke.py", "-v"]
+    timeout: 120
+
+  - id: extras-31-openclaw-migration
+    order: 535
+    phase: extras
+    title: OpenClaw Migration
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_openclaw_migration.py", "-v"]
+    timeout: 120
+
+  - id: extras-32-onnx-unit
+    order: 540
+    phase: extras
+    title: ONNX Export Unit Tests
+    handler: command
+    command: ["{python}", "-m", "pytest", "tests/test_export_onnx.py", "-v"]
+    timeout: 120

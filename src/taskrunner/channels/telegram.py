@@ -49,6 +49,12 @@ class TelegramChannel(WebhookChannelMixin, Channel):
         self._webhook_path = webhook_path
         self._webhook_secret = webhook_secret
         self._send_typing = send_typing
+
+        if mode == "webhook" and not webhook_secret:
+            logger.warning(
+                "Telegram webhook mode with no secret — "
+                "any sender can push updates to the webhook endpoint"
+            )
         self._callback: Callable[[str, str], str] | None = None
         self._bot_username: str = ""
 
@@ -114,7 +120,8 @@ class TelegramChannel(WebhookChannelMixin, Channel):
                     if text is None:
                         continue
 
-                    logger.info("Telegram from %s (@%s): %s", msg.sender_id, msg.sender_username, text[:80])
+                    logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
+                    logger.debug("Telegram message text: %s", text[:80])
 
                     if self._send_typing:
                         self._bridge.send_typing(msg.chat_id)

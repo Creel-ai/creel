@@ -50,8 +50,8 @@ class MockBridge(TelegramBridge):
     def delete_webhook(self):
         self._webhook_deleted = True
 
-    def get_file_url(self, file_id):
-        return f"https://example.com/{file_id}"
+    def download_file(self, file_id):
+        return b"fake-file-content"
 
     def health(self):
         return {"healthy": True}

@@ -104,10 +104,9 @@ def main() -> None:
     try:
         result = run_command(command, workdir)
         print(json.dumps(result, indent=2))
-        
-        # Exit with the original command's exit code
-        sys.exit(result["exit_code"])
-        
+        # Always exit 0 — the JSON result carries the command's exit code.
+        # A non-zero inner command is not an executor infrastructure failure.
+
     except Exception as e:
         result = {
             "error": str(e),

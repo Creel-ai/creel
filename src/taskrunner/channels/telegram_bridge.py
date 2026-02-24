@@ -64,8 +64,13 @@ class TelegramBridge(ABC):
         """Remove the current webhook."""
 
     @abstractmethod
-    def get_file_url(self, file_id: str) -> str:
-        """Return a download URL for a file by file_id."""
+    def download_file(self, file_id: str) -> bytes:
+        """Download a file by file_id and return its contents.
+
+        The download URL contains the bot token, so this method fetches the
+        file server-side and returns raw bytes — the URL is never exposed to
+        callers (and must never be passed to the LLM).
+        """
 
     def health(self) -> dict:
         """Return bridge health status."""
@@ -131,10 +136,15 @@ class HttpTelegramBridge(TelegramBridge):
         self._call("deleteWebhook")
         logger.info("Telegram webhook deleted")
 
-    def get_file_url(self, file_id: str) -> str:
+    def download_file(self, file_id: str) -> bytes:
+        import httpx
+
         result = self._call("getFile", file_id=file_id)
         file_path = result.get("file_path", "")
-        return f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+        url = f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+        resp = httpx.get(url, timeout=30)
+        resp.raise_for_status()
+        return resp.content
 
     def health(self) -> dict:
         try:

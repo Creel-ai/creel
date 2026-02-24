@@ -7,6 +7,7 @@ Configured via environment variables: ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY,
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -40,10 +41,33 @@ def main() -> None:
     model = os.environ.get("MODEL", "claude-sonnet-4-20250514")
     max_tokens = int(os.environ.get("MAX_TOKENS", "300"))
 
-    prompt = sys.stdin.read().strip()
+    # Try to read a JSON line first (keepalive protocol).
+    # Fall back to raw stdin read for backward compatibility.
+    first_line = sys.stdin.readline()
+    if not first_line:
+        print("Error: No input provided on stdin", file=sys.stderr)
+        sys.exit(1)
+
+    first_line = first_line.strip()
+
+    # Detect JSON protocol mode
+    try:
+        msg = json.loads(first_line)
+        if isinstance(msg, dict) and "type" in msg:
+            _run_keepalive(client, model, max_tokens, auth_token, msg)
+            return
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Legacy mode: first line is the start of a raw prompt.
+    # Read the rest of stdin and combine.
+    rest = sys.stdin.read()
+    prompt = (first_line + "\n" + rest).strip() if rest else first_line
+
     if not prompt:
         print("Error: No prompt provided on stdin", file=sys.stderr)
         sys.exit(1)
+
     create_kwargs: dict = {
         "model": model,
         "max_tokens": max_tokens,
@@ -57,6 +81,85 @@ def main() -> None:
     for block in message.content:
         if block.type == "text":
             print(block.text)
+
+
+def _send(obj: dict) -> None:
+    """Write a JSON line to stdout."""
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def _recv() -> dict:
+    """Read a JSON line from stdin."""
+    line = sys.stdin.readline()
+    if not line:
+        raise EOFError("stdin closed")
+    return json.loads(line)
+
+
+def _run_keepalive(
+    client: anthropic.Anthropic,
+    model: str,
+    max_tokens: int,
+    auth_token: str | None,
+    first_msg: dict,
+) -> None:
+    """Run in keepalive mode: process JSON-line requests in a loop."""
+
+    def _handle(msg: dict) -> bool:
+        """Handle a single message. Returns False to exit."""
+        msg_type = msg.get("type")
+
+        if msg_type == "ping":
+            _send({"type": "pong"})
+            return True
+
+        if msg_type == "shutdown":
+            return False
+
+        if msg_type == "reset":
+            _send({"type": "ready"})
+            return True
+
+        if msg_type == "request":
+            prompt = msg.get("prompt", "")
+            req_model = msg.get("model", model)
+            req_max_tokens = msg.get("max_tokens", max_tokens)
+
+            create_kwargs: dict = {
+                "model": req_model,
+                "max_tokens": req_max_tokens,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if auth_token and "sk-ant-oat" in auth_token:
+                create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
+
+            try:
+                message = client.messages.create(**create_kwargs)
+                text_parts = []
+                for block in message.content:
+                    if block.type == "text":
+                        text_parts.append(block.text)
+                _send({"type": "response", "text": "\n".join(text_parts)})
+            except Exception as e:
+                _send({"type": "error", "message": str(e)})
+            return True
+
+        _send({"type": "error", "message": f"Unknown message type: {msg_type}"})
+        return True
+
+    # Handle the first message that was already read
+    if not _handle(first_msg):
+        return
+
+    # Continue reading messages
+    while True:
+        try:
+            msg = _recv()
+        except EOFError:
+            break
+        if not _handle(msg):
+            break
 
 
 if __name__ == "__main__":

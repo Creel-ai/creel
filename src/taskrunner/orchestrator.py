@@ -478,7 +478,7 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
     """Run Apple Notes executor inline via bridge."""
     import os
     from executors.apple_notes.executor import main as apple_notes_main
-    
+
     # Set environment variables for the bridge-calling executor
     old_env = {}
     env_vars = {
@@ -488,24 +488,24 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
         "TITLE": config.args.get("title", ""),
         "BODY": config.args.get("body", ""),
     }
-    
+
     for key, value in env_vars.items():
         if value:  # Only set non-empty values
             old_env[key] = os.environ.get(key)
             os.environ[key] = str(value)
-    
+
     try:
         # Capture stdout from the bridge executor
         import sys
         from io import StringIO
         old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
-        
+
         apple_notes_main()
-        
+
         result = captured_output.getvalue()
         return result.strip() or "{}"
-        
+
     finally:
         # Restore environment
         sys.stdout = old_stdout
@@ -520,35 +520,35 @@ def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
     """Run Apple Reminders executor inline via bridge."""
     import os
     from executors.apple_reminders.executor import main as apple_reminders_main
-    
+
     # Set environment variables for the bridge-calling executor
     old_env = {}
     env_vars = {
         "ACTION": config.args.get("action", "list"),
-        "FILTER": config.args.get("filter", "all"), 
+        "FILTER": config.args.get("filter", "all"),
         "TITLE": config.args.get("title", ""),
         "LIST": config.args.get("list_name", ""),
         "DUE": config.args.get("due_date", ""),
         "ID": config.args.get("id", ""),
     }
-    
+
     for key, value in env_vars.items():
         if value:  # Only set non-empty values
             old_env[key] = os.environ.get(key)
             os.environ[key] = str(value)
-    
+
     try:
         # Capture stdout from the bridge executor
         import sys
         from io import StringIO
         old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
-        
+
         apple_reminders_main()
-        
+
         result = captured_output.getvalue()
         return result.strip() or "{}"
-        
+
     finally:
         # Restore environment
         sys.stdout = old_stdout
@@ -801,7 +801,7 @@ def _build_image(
 
 
 def _run_executor_container(
-    config: ExecutorConfig, 
+    config: ExecutorConfig,
     tool_config: "ToolConfig | None" = None,
     bridge_config: BridgeConfig | None = None
 ) -> str:
@@ -811,7 +811,7 @@ def _run_executor_container(
     always logged at DEBUG on success and ERROR on failure. The
     request_id is passed into the container as ``CREEL_REQUEST_ID``
     for log correlation.
-    
+
     Args:
         config: Executor configuration
         tool_config: Optional tool configuration with mount/network/image overrides
@@ -822,7 +822,7 @@ def _run_executor_container(
     # Determine image to use - tool config overrides executor config
     image = tool_config.image if (tool_config and tool_config.image) else config.image
     image = _ensure_image(image)
-    
+
     env_vars: dict[str, str] = {}
 
     # Decrypt and inject secrets
@@ -833,14 +833,13 @@ def _run_executor_container(
     for key, value in config.args.items():
         env_vars[key.upper()] = value
 
-    # Never pass refresh-token JSON into executor containers.
     _replace_google_credentials_with_access_token(env_vars)
 
     # Pass request ID for correlation
     rid = request_id_var.get(None)
     if rid:
         env_vars["CREEL_REQUEST_ID"] = rid
-    
+
     # Add bridge configuration if enabled
     if bridge_config and bridge_config.enabled:
         import os
@@ -908,7 +907,7 @@ def _run_executor_container(
         # Add network isolation if disabled
         if tool_config and not tool_config.network:
             docker_cmd.extend(["--network=none"])
-        
+
         # Add image name
         docker_cmd.append(image)
 

@@ -214,18 +214,26 @@ def summarize_messages(
     return run_llm(prompt, config, use_container=use_container)
 
 
-def run_llm(prompt: str, config: LLMConfig, use_container: bool = False) -> str:
+def run_llm(
+    prompt: str,
+    config: LLMConfig,
+    use_container: bool = False,
+    container_pool: object | None = None,
+) -> str:
     """Send a prompt to the LLM and return the response text.
 
     Args:
         prompt: The fully-rendered prompt to send.
         config: LLM configuration (model, max_tokens, secrets path).
         use_container: If True, run via Docker container. Otherwise call API directly.
+        container_pool: Optional ContainerPool for warm container reuse.
 
     Returns:
         The LLM response text.
     """
     if use_container:
+        if container_pool is not None and hasattr(container_pool, "enabled") and container_pool.enabled:
+            return _run_llm_pooled(prompt, config, container_pool)
         return _run_llm_container(prompt, config)
     return _run_llm_direct(prompt, config)
 
@@ -289,3 +297,58 @@ def _run_llm_container(prompt: str, config: LLMConfig) -> str:
             check=True,
         )
     return result.stdout.strip()
+
+
+def _run_llm_pooled(prompt: str, config: LLMConfig, pool: object) -> str:
+    """Run LLM call using a warm container from the pool."""
+    import json
+
+    from taskrunner.orchestrator import _ensure_image
+    _ensure_image("llm-runner:latest")
+
+    env_vars: dict[str, str] = {}
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+    if auth_token:
+        env_vars["ANTHROPIC_AUTH_TOKEN"] = auth_token
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        env_vars["ANTHROPIC_API_KEY"] = api_key
+    env_vars["MODEL"] = config.model
+    env_vars["MAX_TOKENS"] = str(config.max_tokens)
+
+    docker_flags = [
+        "--read-only",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--memory=256m",
+        "--cpus=0.5",
+    ]
+
+    container = pool.acquire(
+        image="llm-runner:latest",
+        entrypoint="runner.py",
+        docker_flags=docker_flags,
+        env_vars=env_vars,
+    )
+
+    try:
+        container.send({
+            "type": "request",
+            "prompt": prompt,
+            "model": config.model,
+            "max_tokens": config.max_tokens,
+        })
+        msg = container.recv(timeout=120)
+
+        if msg.get("type") == "response":
+            pool.release(container)
+            return msg["text"]
+        elif msg.get("type") == "error":
+            pool.release(container)
+            raise RuntimeError(f"LLM container error: {msg.get('message', 'unknown')}")
+        else:
+            raise RuntimeError(f"Unexpected message type: {msg.get('type')}")
+    except Exception:
+        container._force_kill()
+        raise

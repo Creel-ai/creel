@@ -128,7 +128,7 @@ class TestWrapperFunctions:
     @patch("executors.browser.executor.call_bridge")
     def test_connect_relay_with_cdp_url(self, mock_bridge):
         mock_bridge.return_value = {"ok": True, "session_id": "s1"}
-        result = executor.connect(mode="relay", cdp_url="http://localhost:9222")
+        executor.connect(mode="relay", cdp_url="http://localhost:9222")
         mock_bridge.assert_called_once_with(
             "/browser/connect",
             {"mode": "relay", "headless": True, "cdp_url": "http://localhost:9222"},
@@ -198,26 +198,20 @@ class TestWrapperFunctions:
     def test_get_links(self, mock_bridge):
         mock_bridge.return_value = {"ok": True, "links": []}
         executor.get_links("s1")
-        mock_bridge.assert_called_once_with(
-            "/browser/links", {"session_id": "s1"}
-        )
+        mock_bridge.assert_called_once_with("/browser/links", {"session_id": "s1"})
 
     @patch("executors.browser.executor.call_bridge")
     def test_close_session(self, mock_bridge):
         mock_bridge.return_value = {"ok": True}
         executor.close_session("s1")
-        mock_bridge.assert_called_once_with(
-            "/browser/close", {"session_id": "s1"}
-        )
+        mock_bridge.assert_called_once_with("/browser/close", {"session_id": "s1"})
 
     @patch("executors.browser.executor.call_bridge")
     def test_sessions(self, mock_bridge):
         mock_bridge.return_value = {"ok": True, "sessions": []}
         result = executor.sessions()
         assert result["ok"] is True
-        mock_bridge.assert_called_once_with(
-            "/browser/sessions", method="GET", timeout=10
-        )
+        mock_bridge.assert_called_once_with("/browser/sessions", method="GET", timeout=10)
 
 
 class TestMain:
@@ -271,7 +265,6 @@ class TestMain:
         assert output["title"] == "Test"
 
     def test_main_navigate_missing_session_id(self):
-        import sys
 
         with patch.dict(os.environ, {"ACTION": "navigate", "URL": "https://test.com"}):
             os.environ.pop("SESSION_ID", None)
@@ -279,7 +272,6 @@ class TestMain:
                 executor.main()
 
     def test_main_navigate_missing_url(self):
-        import sys
 
         with patch.dict(os.environ, {"ACTION": "navigate", "SESSION_ID": "s1"}):
             os.environ.pop("URL", None)

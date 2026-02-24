@@ -14,6 +14,7 @@ class WebhookChannelMixin:
     """
 
     _webhook_callback: Callable[[str, str], str] | None = None
+    _stop_requested: bool = False
 
     def set_webhook_callback(self, callback: Callable[[str, str], str]) -> None:
         """Store the message callback for use by webhook handlers."""

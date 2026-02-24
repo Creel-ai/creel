@@ -17,46 +17,46 @@ import requests
 
 def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
     """Make an HTTP call to the bridge server.
-    
+
     Args:
         endpoint: Bridge endpoint path (e.g., '/notes/list')
         data: Request body data (optional)
         timeout: Request timeout in seconds
-    
+
     Returns:
         Bridge response as dict
-        
+
     Raises:
         RuntimeError: If bridge call fails or returns error
     """
     bridge_url = os.environ.get("BRIDGE_URL")
     bridge_token = os.environ.get("BRIDGE_TOKEN")
-    
+
     if not bridge_url:
         raise RuntimeError("BRIDGE_URL environment variable not set")
     if not bridge_token:
         raise RuntimeError("BRIDGE_TOKEN environment variable not set")
-    
+
     url = f"{bridge_url}{endpoint}"
     headers = {
         "Authorization": f"Bearer {bridge_token}",
         "Content-Type": "application/json",
     }
-    
+
     try:
         if data is not None:
             response = requests.post(url, json=data, headers=headers, timeout=timeout)
         else:
             response = requests.post(url, json={}, headers=headers, timeout=timeout)
-        
+
         response.raise_for_status()
         result = response.json()
-        
+
         if not result.get("ok"):
             raise RuntimeError(f"Bridge error: {result.get('error', 'Unknown error')}")
-        
+
         return result
-    
+
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Bridge request failed: {e}") from e
 
@@ -66,7 +66,7 @@ def list_notes(folder: str | None = None) -> dict[str, Any]:
     data = {}
     if folder:
         data["folder"] = folder
-    
+
     return call_bridge("/notes/list", data if data else None)
 
 
@@ -80,46 +80,46 @@ def create_note(title: str, body: str = "", folder: str | None = None) -> dict[s
     data = {"title": title, "body": body}
     if folder:
         data["folder"] = folder
-    
+
     return call_bridge("/notes/create", data)
 
 
 def main() -> None:
     """Main executor entry point."""
     action = os.environ.get("ACTION", "list")
-    
+
     try:
         if action == "list":
             folder = os.environ.get("FOLDER")
             result = list_notes(folder)
-        
+
         elif action == "search":
             query = os.environ.get("QUERY")
             if not query:
                 raise ValueError("QUERY environment variable required for search action")
             result = search_notes(query)
-        
+
         elif action == "create":
             title = os.environ.get("TITLE")
             body = os.environ.get("BODY", "")
             folder = os.environ.get("FOLDER")
-            
+
             if not title:
                 raise ValueError("TITLE environment variable required for create action")
-            
+
             result = create_note(title, body, folder)
-        
+
         elif action == "read":
             # Note: memo CLI doesn't have a direct read by ID function,
             # so we'd need to implement this differently or use search
             raise NotImplementedError("Read action not implemented - use search instead")
-        
+
         else:
             raise ValueError(f"Unknown action: {action}")
-        
+
         # Output the bridge response output
         print(result.get("output", ""))
-        
+
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)

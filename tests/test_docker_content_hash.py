@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from hashlib import sha256
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from taskrunner.orchestrator import _compute_executor_hash, _ensure_image
-
 
 # ---------------------------------------------------------------------------
 # _compute_executor_hash

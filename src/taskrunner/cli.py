@@ -19,6 +19,7 @@ from __future__ import annotations
 # Use OS certificate store for HTTPS (fixes uv-managed Python SSL issues)
 try:
     import truststore
+
     truststore.inject_into_ssl()
 except ImportError:
     pass
@@ -30,12 +31,12 @@ import sys
 import threading
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from taskrunner.models import load_all_tasks, load_task
 from taskrunner.orchestrator import run_task
-from taskrunner.secrets import parse_env_file
 from taskrunner.scheduler import start_scheduler
+from taskrunner.secrets import parse_env_file
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TASKS_DIR = Path("tasks")
 DEFAULT_AGENT_CONFIG = Path("agent.yaml")
@@ -136,7 +137,9 @@ def _allow_launchd_bootstrap_failure(output: str) -> bool:
     return "already loaded" in output.lower()
 
 
-def _build_daemon_run_command(args: argparse.Namespace, socket_path: Path, pid_path: Path) -> list[str]:
+def _build_daemon_run_command(
+    args: argparse.Namespace, socket_path: Path, pid_path: Path
+) -> list[str]:
     cmd = [
         sys.executable,
         "-m",
@@ -193,7 +196,7 @@ def _print_log_errors(log_path: Path, offset: int = 0) -> None:
             f.seek(offset)
             new_text = f.read()
         lines = new_text.splitlines()
-        error_lines = [l for l in lines if l.startswith("Error:")]
+        error_lines = [line for line in lines if line.startswith("Error:")]
         if error_lines:
             for line in error_lines[-3:]:
                 print(f"  {line}", file=sys.stderr)
@@ -246,6 +249,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"Error running task '{args.task_name}': {e}", file=sys.stderr)
         if args.verbose:
             import traceback
+
             traceback.print_exc()
         return 1
 
@@ -282,7 +286,9 @@ def cmd_list(args: argparse.Namespace) -> int:
     print("-" * 90)
     for task in tasks:
         executors_list = ", ".join(task.executors.keys())
-        print(f"{task.name:<25} {task.schedule:<20} {executors_list:<30} {task.output.type}:{task.output.to}")
+        print(
+            f"{task.name:<25} {task.schedule:<20} {executors_list:<30} {task.output.type}:{task.output.to}"
+        )
 
     return 0
 
@@ -385,8 +391,8 @@ def _build_daemon_channel(agent_def, channel_type: str):
     if channel_type == "none":
         return None, None
 
-    from taskrunner.channels.registry import ChannelRegistry
     from taskrunner.channels.plugin import ChannelCapability
+    from taskrunner.channels.registry import ChannelRegistry
 
     registry = ChannelRegistry()
     registry.discover()
@@ -400,11 +406,7 @@ def _build_daemon_channel(agent_def, channel_type: str):
     if entry is not None:
         channel = registry.create_channel(channel_type, config)
         # Return channel as reply_channel if it can send messages
-        reply_channel = (
-            channel
-            if ChannelCapability.SEND in entry.meta.capabilities
-            else None
-        )
+        reply_channel = channel if ChannelCapability.SEND in entry.meta.capabilities else None
         return channel, reply_channel
 
     raise ValueError(
@@ -421,16 +423,19 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     use them.
     """
     import secrets as _secrets
-    import uvicorn as _uvicorn
 
     # Parse host/port from bridge URL
     from urllib.parse import urlparse
+
+    import uvicorn as _uvicorn
+
     parsed = urlparse(bridge_config.url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 8099
 
     # Pre-generate scoped tokens so orchestrator can inject them into containers
     from taskrunner.orchestrator import _EXECUTOR_TO_BRIDGE_SCOPE
+
     scopes = sorted(set(_EXECUTOR_TO_BRIDGE_SCOPE.values()))
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -440,6 +445,7 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     def _run_bridge():
         try:
             from bridge.server import app as bridge_app
+
             logger.info("Starting bridge server on %s:%d", host, port)
             _uvicorn.run(
                 bridge_app,
@@ -522,9 +528,8 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
 
     # Start host bridge server if enabled
-    bridge_thread = None
     if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
-        bridge_thread = _start_bridge_server(agent_def.bridge)
+        _start_bridge_server(agent_def.bridge)
 
     app = create_daemon_app(service)
 
@@ -641,7 +646,10 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
             print(f"Log: {log_path}")
             return 0
 
-    print(f"Daemon did not become healthy within {wait_seconds:.1f}s. See {log_path}.", file=sys.stderr)
+    print(
+        f"Daemon did not become healthy within {wait_seconds:.1f}s. See {log_path}.",
+        file=sys.stderr,
+    )
     _print_log_errors(log_path, log_offset)
     return 1
 
@@ -832,8 +840,7 @@ def cmd_daemon_stop(args: argparse.Namespace) -> int:
         time.sleep(0.1)
 
     print(
-        f"Timed out waiting for daemon {pid} to stop. "
-        f"You can force-kill it with: kill -9 {pid}",
+        f"Timed out waiting for daemon {pid} to stop. You can force-kill it with: kill -9 {pid}",
         file=sys.stderr,
     )
     return 1
@@ -916,6 +923,7 @@ def cmd_daemon_status(args: argparse.Namespace) -> int:
         agent_def = _load_agent_def(args)
         if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
             import httpx
+
             bridge_url = agent_def.bridge.url.rstrip("/")
             try:
                 br = httpx.get(f"{bridge_url}/health", timeout=1.0)
@@ -1011,8 +1019,8 @@ def cmd_send(args: argparse.Namespace) -> int:
 
 def cmd_audit(args: argparse.Namespace) -> int:
     """Query the guardian audit log."""
+
     from guardian.audit import read_audit_log
-    from datetime import datetime
 
     try:
         agent_def = _load_agent_def(args)
@@ -1109,25 +1117,25 @@ def main() -> int:
         prog="creel",
         description="LLM Task Runner - secure, scheduled LLM task execution",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument(
         "--containers", action="store_true", help="Run executors/LLM in Docker containers"
     )
+    parser.add_argument("--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory")
     parser.add_argument(
-        "--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory"
-    )
-    parser.add_argument(
-        "--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG,
+        "--agent-config",
+        type=Path,
+        default=DEFAULT_AGENT_CONFIG,
         help="Path to agent.yaml config",
     )
     parser.add_argument(
-        "--json-logs", action="store_true",
+        "--json-logs",
+        action="store_true",
         help="Output structured JSON log lines (for production)",
     )
     parser.add_argument(
-        "--no-judge", action="store_true",
+        "--no-judge",
+        action="store_true",
         help="Disable the LLM judge (Stage 2) to save API calls during development",
     )
 
@@ -1136,9 +1144,7 @@ def main() -> int:
     # run command
     run_parser = subparsers.add_parser("run", help="Run a task immediately")
     run_parser.add_argument("task_name", help="Name of the task to run")
-    run_parser.add_argument(
-        "--dry", action="store_true", help="Dry run (render prompt only)"
-    )
+    run_parser.add_argument("--dry", action="store_true", help="Dry run (render prompt only)")
 
     # schedule command
     subparsers.add_parser("schedule", help="Start scheduler for all tasks")
@@ -1176,7 +1182,6 @@ def main() -> int:
         help="Request timeout in seconds (default: 300)",
     )
 
-
     # audit command
     audit_parser = subparsers.add_parser("audit", help="Query the guardian audit log")
     audit_parser.add_argument(
@@ -1189,73 +1194,89 @@ def main() -> int:
         "--denied", action="store_true", help="Show only denied action events"
     )
     audit_parser.add_argument(
-        "--event", type=str, default=None,
-        help="Filter by event type (screen_input, validate_action, tool_result)"
+        "--event",
+        type=str,
+        default=None,
+        help="Filter by event type (screen_input, validate_action, tool_result)",
     )
+    audit_parser.add_argument("--all", action="store_true", help="Show all entries (no tail limit)")
+    audit_parser.add_argument("--tool", type=str, default=None, help="Filter by tool name")
     audit_parser.add_argument(
-        "--all", action="store_true", help="Show all entries (no tail limit)"
-    )
-    audit_parser.add_argument(
-        "--tool", type=str, default=None,
-        help="Filter by tool name"
-    )
-    audit_parser.add_argument(
-        "--since", type=str, default=None,
-        help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
+        "--since",
+        type=str,
+        default=None,
+        help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     )
 
     # encrypt command
     encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
     encrypt_parser.add_argument("env_file", help="Path to plaintext .env file")
     encrypt_parser.add_argument(
-        "--recipient", default=None,
+        "--recipient",
+        default=None,
         help="Age recipient (public key) file (default: ~/.age/key.pub or AGE_RECIPIENT_FILE)",
     )
     encrypt_parser.add_argument(
-        "--output", default=None,
+        "--output",
+        default=None,
         help="Output file path (default: <env_file>.enc)",
     )
     encrypt_parser.add_argument(
-        "--delete", action="store_true",
+        "--delete",
+        action="store_true",
         help="Delete the plaintext file after encryption",
     )
 
     # --- Shared daemon parent parsers (to avoid option duplication) ---
     _daemon_paths_parent = argparse.ArgumentParser(add_help=False)
     _daemon_paths_parent.add_argument(
-        "--socket-path", type=Path, default=DEFAULT_DAEMON_SOCKET,
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
         help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
     )
     _daemon_paths_parent.add_argument(
-        "--pid-file", type=Path, default=DEFAULT_DAEMON_PID_FILE,
+        "--pid-file",
+        type=Path,
+        default=DEFAULT_DAEMON_PID_FILE,
         help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
     )
 
     _daemon_launchd_parent = argparse.ArgumentParser(add_help=False)
     _daemon_launchd_parent.add_argument(
-        "--label", default=DEFAULT_DAEMON_LABEL,
+        "--label",
+        default=DEFAULT_DAEMON_LABEL,
         help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
     )
     _daemon_launchd_parent.add_argument(
-        "--plist-path", type=Path, default=DEFAULT_DAEMON_PLIST_FILE,
+        "--plist-path",
+        type=Path,
+        default=DEFAULT_DAEMON_PLIST_FILE,
         help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
     )
 
     _daemon_runtime_parent = argparse.ArgumentParser(add_help=False)
     _daemon_runtime_parent.add_argument(
-        "--log-file", type=Path, default=DEFAULT_DAEMON_LOG_FILE,
+        "--log-file",
+        type=Path,
+        default=DEFAULT_DAEMON_LOG_FILE,
         help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
     )
     _daemon_runtime_parent.add_argument(
-        "--channel", dest="channel_type", default="imessage",
+        "--channel",
+        dest="channel_type",
+        default="imessage",
         help="Channel plugin to run inside daemon (default: imessage). Use 'none' to disable.",
     )
     _daemon_runtime_parent.add_argument(
-        "--no-scheduler", action="store_true",
+        "--no-scheduler",
+        action="store_true",
         help="Disable scheduler in daemon runtime",
     )
     _daemon_runtime_parent.add_argument(
-        "--wait-seconds", type=float, default=8.0,
+        "--wait-seconds",
+        type=float,
+        default=8.0,
         help="Seconds to wait for daemon health check (default: 8)",
     )
 
@@ -1267,41 +1288,51 @@ def main() -> int:
     )
 
     daemon_subparsers.add_parser(
-        "start", help="Start the background daemon",
+        "start",
+        help="Start the background daemon",
         parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
     )
 
     daemon_stop = daemon_subparsers.add_parser(
-        "stop", help="Stop the background daemon",
+        "stop",
+        help="Stop the background daemon",
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
     daemon_stop.add_argument(
-        "--timeout", type=float, default=10.0,
+        "--timeout",
+        type=float,
+        default=10.0,
         help="Stop timeout in seconds (default: 10)",
     )
 
     daemon_subparsers.add_parser(
-        "status", help="Show daemon status",
+        "status",
+        help="Show daemon status",
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
 
     daemon_subparsers.add_parser(
-        "install", help="Install daemon as a launchd service",
+        "install",
+        help="Install daemon as a launchd service",
         parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
     )
 
     daemon_subparsers.add_parser(
-        "uninstall", help="Uninstall daemon launchd service",
+        "uninstall",
+        help="Uninstall daemon launchd service",
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
 
     # Internal foreground command used by `daemon start`
     daemon_run = daemon_subparsers.add_parser(
-        "run", help=argparse.SUPPRESS,
+        "run",
+        help=argparse.SUPPRESS,
         parents=[_daemon_paths_parent],
     )
     daemon_run.add_argument(
-        "--channel", dest="channel_type", default="imessage",
+        "--channel",
+        dest="channel_type",
+        default="imessage",
     )
     daemon_run.add_argument("--no-scheduler", action="store_true")
     daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]

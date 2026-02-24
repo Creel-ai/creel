@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,10 +34,20 @@ def _mock_response(results):
 @patch("executors.brave_search.executor.requests.get")
 def test_search_parses_results(mock_get):
     """search should parse title, url, and snippet from results."""
-    mock_get.return_value = _mock_response([
-        {"title": "Python Tutorial", "url": "https://example.com/python", "description": "Learn Python"},
-        {"title": "Async IO", "url": "https://example.com/async", "description": "Async tutorial"},
-    ])
+    mock_get.return_value = _mock_response(
+        [
+            {
+                "title": "Python Tutorial",
+                "url": "https://example.com/python",
+                "description": "Learn Python",
+            },
+            {
+                "title": "Async IO",
+                "url": "https://example.com/async",
+                "description": "Async tutorial",
+            },
+        ]
+    )
 
     results = search("python tutorial")
 
@@ -100,9 +108,11 @@ def test_search_missing_api_key(monkeypatch):
 @patch("executors.brave_search.executor.requests.get")
 def test_search_handles_missing_fields(mock_get):
     """search should handle results with missing optional fields."""
-    mock_get.return_value = _mock_response([
-        {"title": "Partial", "url": "https://example.com"},
-    ])
+    mock_get.return_value = _mock_response(
+        [
+            {"title": "Partial", "url": "https://example.com"},
+        ]
+    )
     results = search("test")
     assert len(results) == 1
     assert results[0]["snippet"] == ""

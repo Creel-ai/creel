@@ -47,9 +47,7 @@ def test_dry_run(tmp_path: Path) -> None:
     """Dry run should render the prompt without calling LLM or output."""
     task_path = _make_task(tmp_path)
 
-    with patch(
-        "taskrunner.orchestrator._run_executor_inline"
-    ) as mock_fetch:
+    with patch("taskrunner.orchestrator._run_executor_inline") as mock_fetch:
         mock_fetch.return_value = '{"temp_f": "72", "condition": "sunny"}'
         result = run_task(task_path, dry_run=True)
 
@@ -105,9 +103,11 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
         patch("taskrunner.orchestrator.run_llm") as mock_llm,
         patch("taskrunner.orchestrator.send_output"),
     ):
-        mock_gmail.return_value = json.dumps([
-            {"subject": "Important", "from": "boss@example.com", "snippet": "Need reply"},
-        ])
+        mock_gmail.return_value = json.dumps(
+            [
+                {"subject": "Important", "from": "boss@example.com", "snippet": "Need reply"},
+            ]
+        )
         mock_llm.return_value = "You have 1 email from your boss."
 
         result = run_task(path)
@@ -199,9 +199,7 @@ class TestRunExecutorInline:
 
     def test_dispatch_exec(self) -> None:
         cfg = self._cfg(command="echo hi")
-        with patch(
-            "taskrunner.orchestrator._exec_exec_inline", return_value="hi"
-        ) as mock_fn:
+        with patch("taskrunner.orchestrator._exec_exec_inline", return_value="hi") as mock_fn:
             result = _run_executor_inline("exec", cfg)
         assert result == "hi"
         mock_fn.assert_called_once_with(cfg)
@@ -439,7 +437,7 @@ class TestAgentMode:
         os.environ["AGE_IDENTITY_FILE"] = str(key_file)
         try:
             with (
-                patch("taskrunner.orchestrator._run_executor_inline", return_value='{}'),
+                patch("taskrunner.orchestrator._run_executor_inline", return_value="{}"),
                 patch("taskrunner.orchestrator.run_llm", return_value="ok"),
                 patch("taskrunner.orchestrator.send_output"),
             ):

@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Host bridge server for macOS-native tools.
 
-Lightweight FastAPI server that runs on the host (not in containers) and 
+Lightweight FastAPI server that runs on the host (not in containers) and
 executes CLI commands like memo and remindctl on behalf of containerized executors.
 """
 
 from __future__ import annotations
 
 import hmac
-import json
 import logging
 import os
 import re
@@ -17,11 +16,10 @@ import subprocess
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import PurePosixPath
-from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
 from bridge.browser import SessionDead
@@ -38,7 +36,7 @@ security = HTTPBearer()
 
 class BridgeResponse(BaseModel):
     """Standard bridge response format."""
-    
+
     ok: bool
     output: str = ""
     error: str = ""
@@ -47,19 +45,19 @@ class BridgeResponse(BaseModel):
 
 class NotesListRequest(BaseModel):
     """Request for listing notes."""
-    
+
     folder: str | None = None
 
 
 class NotesSearchRequest(BaseModel):
     """Request for searching notes."""
-    
+
     query: str
 
 
 class NotesCreateRequest(BaseModel):
     """Request for creating a note."""
-    
+
     title: str
     body: str
     folder: str | None = None
@@ -67,13 +65,13 @@ class NotesCreateRequest(BaseModel):
 
 class RemindersListRequest(BaseModel):
     """Request for listing reminders."""
-    
+
     filter: str | None = "all"  # today|week|overdue|all
 
 
 class RemindersAddRequest(BaseModel):
     """Request for adding a reminder."""
-    
+
     title: str
     list: str | None = None
     due: str | None = None
@@ -81,26 +79,26 @@ class RemindersAddRequest(BaseModel):
 
 class RemindersCompleteRequest(BaseModel):
     """Request for completing a reminder."""
-    
+
     id: str
 
 
 # Things 3 request models
 class ThingsInboxRequest(BaseModel):
     """Request for Things 3 inbox."""
-    
+
     limit: int = 50
 
 
 class ThingsSearchRequest(BaseModel):
     """Request for searching Things 3."""
-    
+
     query: str
 
 
 class ThingsAddRequest(BaseModel):
     """Request for adding a Things 3 item."""
-    
+
     title: str
     notes: str | None = None
     tags: str | None = None
@@ -111,7 +109,7 @@ class ThingsAddRequest(BaseModel):
 
 class ThingsUpdateRequest(BaseModel):
     """Request for updating a Things 3 item."""
-    
+
     id: str
     completed: bool | None = None
     title: str | None = None
@@ -289,31 +287,31 @@ def get_required_scope(request_path: str) -> str:
 
 def create_scoped_authenticator(required_scope: str):
     """Create a scoped authenticator for a specific tool group."""
+
     def authenticate_scope(credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
         """Validate the scoped bearer token."""
         if not SCOPED_TOKENS:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Bridge server not properly initialized"
+                detail="Bridge server not properly initialized",
             )
-        
+
         expected_token = SCOPED_TOKENS.get(required_scope)
         if not expected_token:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"No token configured for scope {required_scope}"
+                detail=f"No token configured for scope {required_scope}",
             )
-        
+
         if not hmac.compare_digest(credentials.credentials, expected_token):
             logger.warning("Invalid auth token attempted for scope %s", required_scope)
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token"
             )
-        
+
         logger.debug("Authenticated request for scope %s", required_scope)
         return True
-    
+
     return authenticate_scope
 
 
@@ -347,50 +345,42 @@ def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> Br
             text=True,
             timeout=timeout,
             cwd=cwd,
-            check=False  # Don't raise on non-zero exit codes
+            check=False,  # Don't raise on non-zero exit codes
         )
-        
+
         if result.returncode == 0:
             logger.info("Command succeeded (execution_id=%s)", execution_id)
             stdout = result.stdout.strip()
             if len(stdout) > MAX_OUTPUT_BYTES:
                 stdout = stdout[:MAX_OUTPUT_BYTES] + "\n...[output truncated]"
-            return BridgeResponse(
-                ok=True,
-                output=stdout,
-                execution_id=execution_id
-            )
+            return BridgeResponse(ok=True, output=stdout, execution_id=execution_id)
         else:
             logger.warning(
                 "Command failed with exit code %d (execution_id=%s): %s",
-                result.returncode, execution_id, result.stderr.strip()
+                result.returncode,
+                execution_id,
+                result.stderr.strip(),
             )
             return BridgeResponse(
                 ok=False,
                 error=f"Command failed with exit code {result.returncode}: {result.stderr.strip()}",
-                execution_id=execution_id
+                execution_id=execution_id,
             )
-    
+
     except subprocess.TimeoutExpired:
         logger.error("Command timed out after %ds (execution_id=%s)", timeout, execution_id)
         return BridgeResponse(
-            ok=False,
-            error=f"Command timed out after {timeout} seconds",
-            execution_id=execution_id
+            ok=False, error=f"Command timed out after {timeout} seconds", execution_id=execution_id
         )
     except FileNotFoundError:
         logger.error("Command not found: %s (execution_id=%s)", cmd[0], execution_id)
         return BridgeResponse(
-            ok=False,
-            error=f"Command not found: {cmd[0]}",
-            execution_id=execution_id
+            ok=False, error=f"Command not found: {cmd[0]}", execution_id=execution_id
         )
     except Exception as e:
         logger.error("Unexpected error running command (execution_id=%s): %s", execution_id, e)
         return BridgeResponse(
-            ok=False,
-            error=f"Unexpected error: {str(e)}",
-            execution_id=execution_id
+            ok=False, error=f"Unexpected error: {str(e)}", execution_id=execution_id
         )
 
 
@@ -398,7 +388,7 @@ def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> Br
 async def lifespan(app: FastAPI):
     """FastAPI lifespan manager."""
     global SCOPED_TOKENS
-    
+
     # Generate scoped auth tokens
     scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT"]
 
@@ -408,16 +398,20 @@ async def lifespan(app: FastAPI):
         if not token:
             token = secrets.token_urlsafe(32)
             logger.info("Generated %s bridge token: %s", scope.lower(), token)
-            logger.warning("Consider setting %s environment variable to persist this token", env_var)
+            logger.warning(
+                "Consider setting %s environment variable to persist this token", env_var
+            )
         else:
             logger.info("Using configured %s bridge token", scope.lower())
-        
+
         SCOPED_TOKENS[scope] = token
-    
-    logger.info("Bridge server ready on %s:%s with %d scoped tokens",
-               os.environ.get("BRIDGE_HOST", "127.0.0.1"),
-               os.environ.get("BRIDGE_PORT", "8099"),
-               len(SCOPED_TOKENS))
+
+    logger.info(
+        "Bridge server ready on %s:%s with %d scoped tokens",
+        os.environ.get("BRIDGE_HOST", "127.0.0.1"),
+        os.environ.get("BRIDGE_PORT", "8099"),
+        len(SCOPED_TOKENS),
+    )
 
     # Initialize BrowserRelay if playwright is available
     browser_relay = None
@@ -435,7 +429,8 @@ async def lifespan(app: FastAPI):
             container_tmpfs_size=os.environ.get("BROWSER_CONTAINER_TMPFS_SIZE", "128M"),
             navigate_timeout_ms=int(os.environ.get("BROWSER_NAVIGATE_TIMEOUT_MS", "30000")),
             snapshot_timeout_ms=int(os.environ.get("BROWSER_SNAPSHOT_TIMEOUT_MS", "15000")),
-            block_heavy_resources=os.environ.get("BROWSER_BLOCK_HEAVY_RESOURCES", "true").lower() in ("true", "1", "yes"),
+            block_heavy_resources=os.environ.get("BROWSER_BLOCK_HEAVY_RESOURCES", "true").lower()
+            in ("true", "1", "yes"),
         )
         await browser_relay.start()
         app.state.browser_relay = browser_relay
@@ -458,7 +453,7 @@ app = FastAPI(
     title="Creel Host Bridge",
     description="HTTP bridge for macOS-native tools",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
@@ -472,21 +467,19 @@ async def health_check():
 # Notes endpoints (via memo CLI)
 @app.post("/notes/list", response_model=BridgeResponse)
 async def notes_list(
-    request: NotesListRequest = NotesListRequest(),
-    _: bool = Depends(authenticate_notes)
+    request: NotesListRequest = NotesListRequest(), _: bool = Depends(authenticate_notes)
 ) -> BridgeResponse:
     """List notes via memo CLI."""
     cmd = ["memo", "notes"]
     if request.folder:
         cmd.extend(["-f", request.folder])
-    
+
     return run_command(cmd)
 
 
 @app.post("/notes/search", response_model=BridgeResponse)
 async def notes_search(
-    request: NotesSearchRequest,
-    _: bool = Depends(authenticate_notes)
+    request: NotesSearchRequest, _: bool = Depends(authenticate_notes)
 ) -> BridgeResponse:
     """Search notes via memo CLI."""
     cmd = ["memo", "notes", "-s", request.query]
@@ -495,8 +488,7 @@ async def notes_search(
 
 @app.post("/notes/create", response_model=BridgeResponse)
 async def notes_create(
-    request: NotesCreateRequest,
-    _: bool = Depends(authenticate_notes)
+    request: NotesCreateRequest, _: bool = Depends(authenticate_notes)
 ) -> BridgeResponse:
     """Create a note via memo CLI."""
     cmd = ["memo", "add", request.title]
@@ -504,7 +496,7 @@ async def notes_create(
         cmd.extend(["-b", request.body])
     if request.folder:
         cmd.extend(["-f", request.folder])
-    
+
     return run_command(cmd)
 
 
@@ -512,7 +504,7 @@ async def notes_create(
 @app.post("/reminders/list", response_model=BridgeResponse)
 async def reminders_list(
     request: RemindersListRequest = RemindersListRequest(),
-    _: bool = Depends(authenticate_reminders)
+    _: bool = Depends(authenticate_reminders),
 ) -> BridgeResponse:
     """List reminders via remindctl CLI."""
     if request.filter == "all":
@@ -526,22 +518,19 @@ async def reminders_list(
     else:
         # Default to plain remindctl
         cmd = ["remindctl"]
-    
+
     return run_command(cmd)
 
 
 @app.post("/reminders/lists", response_model=BridgeResponse)
-async def reminders_lists(
-    _: bool = Depends(authenticate_reminders)
-) -> BridgeResponse:
+async def reminders_lists(_: bool = Depends(authenticate_reminders)) -> BridgeResponse:
     """List available reminder lists via remindctl CLI."""
     return run_command(["remindctl", "list"])
 
 
 @app.post("/reminders/add", response_model=BridgeResponse)
 async def reminders_add(
-    request: RemindersAddRequest,
-    _: bool = Depends(authenticate_reminders)
+    request: RemindersAddRequest, _: bool = Depends(authenticate_reminders)
 ) -> BridgeResponse:
     """Add a reminder via remindctl CLI."""
     cmd = ["remindctl", "add", request.title]
@@ -549,14 +538,13 @@ async def reminders_add(
         cmd.extend(["-l", request.list])
     if request.due:
         cmd.extend(["-d", request.due])
-    
+
     return run_command(cmd)
 
 
 @app.post("/reminders/complete", response_model=BridgeResponse)
 async def reminders_complete(
-    request: RemindersCompleteRequest,
-    _: bool = Depends(authenticate_reminders)
+    request: RemindersCompleteRequest, _: bool = Depends(authenticate_reminders)
 ) -> BridgeResponse:
     """Complete a reminder via remindctl CLI."""
     cmd = ["remindctl", "complete", request.id]
@@ -566,8 +554,7 @@ async def reminders_complete(
 # Things 3 endpoints (via things CLI)
 @app.post("/things/inbox", response_model=BridgeResponse)
 async def things_inbox(
-    request: ThingsInboxRequest = ThingsInboxRequest(),
-    _: bool = Depends(authenticate_things)
+    request: ThingsInboxRequest = ThingsInboxRequest(), _: bool = Depends(authenticate_things)
 ) -> BridgeResponse:
     """Get Things 3 inbox via things CLI."""
     cmd = ["things", "inbox", "--limit", str(request.limit)]
@@ -575,18 +562,14 @@ async def things_inbox(
 
 
 @app.post("/things/today", response_model=BridgeResponse)
-async def things_today(
-    _: bool = Depends(authenticate_things)
-) -> BridgeResponse:
+async def things_today(_: bool = Depends(authenticate_things)) -> BridgeResponse:
     """Get Things 3 today list via things CLI."""
     cmd = ["things", "today"]
     return run_command(cmd)
 
 
 @app.post("/things/upcoming", response_model=BridgeResponse)
-async def things_upcoming(
-    _: bool = Depends(authenticate_things)
-) -> BridgeResponse:
+async def things_upcoming(_: bool = Depends(authenticate_things)) -> BridgeResponse:
     """Get Things 3 upcoming list via things CLI."""
     cmd = ["things", "upcoming"]
     return run_command(cmd)
@@ -594,8 +577,7 @@ async def things_upcoming(
 
 @app.post("/things/search", response_model=BridgeResponse)
 async def things_search(
-    request: ThingsSearchRequest,
-    _: bool = Depends(authenticate_things)
+    request: ThingsSearchRequest, _: bool = Depends(authenticate_things)
 ) -> BridgeResponse:
     """Search Things 3 via things CLI."""
     cmd = ["things", "search", request.query]
@@ -603,9 +585,7 @@ async def things_search(
 
 
 @app.post("/things/projects", response_model=BridgeResponse)
-async def things_projects(
-    _: bool = Depends(authenticate_things)
-) -> BridgeResponse:
+async def things_projects(_: bool = Depends(authenticate_things)) -> BridgeResponse:
     """Get Things 3 projects via things CLI."""
     cmd = ["things", "projects"]
     return run_command(cmd)
@@ -613,12 +593,11 @@ async def things_projects(
 
 @app.post("/things/add", response_model=BridgeResponse)
 async def things_add(
-    request: ThingsAddRequest,
-    _: bool = Depends(authenticate_things)
+    request: ThingsAddRequest, _: bool = Depends(authenticate_things)
 ) -> BridgeResponse:
     """Add item to Things 3 via things CLI."""
     cmd = ["things", "add", request.title]
-    
+
     if request.notes:
         cmd.extend(["--notes", request.notes])
     if request.tags:
@@ -629,18 +608,17 @@ async def things_add(
         cmd.extend(["--list", request.list])
     if request.heading:
         cmd.extend(["--heading", request.heading])
-    
+
     return run_command(cmd)
 
 
 @app.post("/things/update", response_model=BridgeResponse)
 async def things_update(
-    request: ThingsUpdateRequest,
-    _: bool = Depends(authenticate_things)
+    request: ThingsUpdateRequest, _: bool = Depends(authenticate_things)
 ) -> BridgeResponse:
     """Update Things 3 item via things CLI."""
     cmd = ["things", "update", "--id", request.id]
-    
+
     if request.completed is not None:
         cmd.extend(["--completed", "true" if request.completed else "false"])
     if request.title:
@@ -649,7 +627,7 @@ async def things_update(
         cmd.extend(["--notes", request.notes])
     if request.tags:
         cmd.extend(["--tags", request.tags])
-    
+
     return run_command(cmd)
 
 
@@ -657,52 +635,41 @@ async def things_update(
 def _check_imsg_available() -> bool:
     """Check if imsg CLI is available."""
     import os
+
     return os.path.exists("/opt/homebrew/bin/imsg")
 
 
 @app.post("/imessage/recent", response_model=BridgeResponse)
 async def imessage_recent(
     request: IMessageRecentRequest = IMessageRecentRequest(),
-    _: bool = Depends(authenticate_imessage)
+    _: bool = Depends(authenticate_imessage),
 ) -> BridgeResponse:
     """Get recent iMessages via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(
-            ok=False,
-            error="imsg CLI not found at /opt/homebrew/bin/imsg"
-        )
-    
+        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
+
     cmd = ["/opt/homebrew/bin/imsg", "recent", "--limit", str(request.limit)]
     return run_command(cmd)
 
 
 @app.post("/imessage/send", response_model=BridgeResponse)
 async def imessage_send(
-    request: IMessageSendRequest,
-    _: bool = Depends(authenticate_imessage)
+    request: IMessageSendRequest, _: bool = Depends(authenticate_imessage)
 ) -> BridgeResponse:
     """Send iMessage via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(
-            ok=False,
-            error="imsg CLI not found at /opt/homebrew/bin/imsg"
-        )
-    
+        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
+
     cmd = ["/opt/homebrew/bin/imsg", "send", "--to", request.to, "--text", request.text]
     return run_command(cmd)
 
 
 @app.post("/imessage/chats", response_model=BridgeResponse)
-async def imessage_chats(
-    _: bool = Depends(authenticate_imessage)
-) -> BridgeResponse:
+async def imessage_chats(_: bool = Depends(authenticate_imessage)) -> BridgeResponse:
     """Get iMessage chats via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(
-            ok=False,
-            error="imsg CLI not found at /opt/homebrew/bin/imsg"
-        )
-    
+        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
+
     cmd = ["/opt/homebrew/bin/imsg", "chats"]
     return run_command(cmd)
 
@@ -973,32 +940,31 @@ async def git_push(
 def main():
     """Run the bridge server."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Creel Host Bridge Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8099, help="Port to bind to")
     parser.add_argument("--log-level", default="INFO", help="Log level")
-    
+
     args = parser.parse_args()
-    
+
     # Set up logging
     logging.basicConfig(
-        level=args.log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=args.log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    
+
     # Store host/port in env for lifespan
     os.environ["BRIDGE_HOST"] = args.host
     os.environ["BRIDGE_PORT"] = str(args.port)
-    
+
     logger.info("Starting Creel Host Bridge Server on %s:%d", args.host, args.port)
-    
+
     uvicorn.run(
         "bridge.server:app",
         host=args.host,
         port=args.port,
         log_level=args.log_level.lower(),
-        access_log=True
+        access_log=True,
     )
 
 

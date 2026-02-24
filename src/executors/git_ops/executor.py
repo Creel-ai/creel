@@ -104,7 +104,9 @@ def branch(name: str | None = None, delete: bool = False, list_all: bool = False
     return call_bridge("/git/branch", data)
 
 
-def push(remote: str = "origin", branch_name: str | None = None, set_upstream: bool = False) -> dict[str, Any]:
+def push(
+    remote: str = "origin", branch_name: str | None = None, set_upstream: bool = False
+) -> dict[str, Any]:
     """Push to remote via bridge."""
     data = {"remote": remote}
     if branch_name:

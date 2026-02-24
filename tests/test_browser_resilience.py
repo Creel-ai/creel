@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bridge.browser import (
+    BLOCKED_RESOURCE_TYPES,
     BrowserRelay,
     BrowserSession,
     SessionDead,
-    BLOCKED_RESOURCE_TYPES,
     _start_chromium_container,
 )
 
@@ -85,6 +85,7 @@ class TestNavigateTimeout:
         page.inner_text = AsyncMock(return_value="Some fallback text")
 
         locator = MagicMock()
+
         # Make aria_snapshot hang
         async def hang_snapshot():
             await asyncio.sleep(999)
@@ -156,9 +157,7 @@ class TestDeadSessionDetection:
         )
         relay._sessions["dead-1"] = session
 
-        with patch.object(
-            BrowserRelay, "_is_container_running", return_value=False
-        ):
+        with patch.object(BrowserRelay, "_is_container_running", return_value=False):
             with pytest.raises(SessionDead, match="dead"):
                 relay._get_session("dead-1")
 
@@ -171,9 +170,7 @@ class TestDeadSessionDetection:
         )
         relay._sessions["dead-2"] = session
 
-        with patch.object(
-            BrowserRelay, "_is_container_running", return_value=False
-        ):
+        with patch.object(BrowserRelay, "_is_container_running", return_value=False):
             with pytest.raises(SessionDead):
                 relay._get_session("dead-2")
 
@@ -188,9 +185,7 @@ class TestDeadSessionDetection:
         )
         relay._sessions["alive-1"] = session
 
-        with patch.object(
-            BrowserRelay, "_is_container_running", return_value=True
-        ):
+        with patch.object(BrowserRelay, "_is_container_running", return_value=True):
             result = relay._get_session("alive-1")
             assert result is session
 
@@ -202,9 +197,7 @@ class TestDeadSessionDetection:
         )
         relay._sessions["relay-1"] = session
 
-        with patch.object(
-            BrowserRelay, "_is_container_running"
-        ) as mock_check:
+        with patch.object(BrowserRelay, "_is_container_running") as mock_check:
             result = relay._get_session("relay-1")
             assert result is session
             mock_check.assert_not_called()
@@ -326,9 +319,7 @@ class TestCleanupLoop:
         # Run one cleanup cycle manually
         now = time.time()
         expired = [
-            sid
-            for sid, s in relay._sessions.items()
-            if now - s.last_used > relay._session_timeout
+            sid for sid, s in relay._sessions.items() if now - s.last_used > relay._session_timeout
         ]
         for sid in expired:
             await relay.close_session(sid)
@@ -353,9 +344,7 @@ class TestCleanupLoop:
         # Run one cleanup cycle manually
         now = time.time()
         expired = [
-            sid
-            for sid, s in relay._sessions.items()
-            if now - s.last_used > relay._session_timeout
+            sid for sid, s in relay._sessions.items() if now - s.last_used > relay._session_timeout
         ]
         for sid in expired:
             await relay.close_session(sid)

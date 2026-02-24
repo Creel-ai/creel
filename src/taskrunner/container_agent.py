@@ -12,7 +12,7 @@ import logging
 import subprocess
 import tempfile
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from guardian.types import ActionVerdict
 from taskrunner.agent import (
@@ -21,7 +21,7 @@ from taskrunner.agent import (
     _ensure_tool_call_integrity,
     _extract_prior_tools,
 )
-from taskrunner.models import AgentConfig, LLMConfig, ToolConfig
+from taskrunner.models import AgentConfig, BridgeConfig, LLMConfig, ToolConfig
 from taskrunner.orchestrator import _ensure_image
 from taskrunner.tools import build_tool_definitions, execute_tool_call
 
@@ -42,10 +42,10 @@ def run_agent_loop_container(
     agent_config: AgentConfig,
     system_prompt: str | None = None,
     use_containers: bool = False,
-    guardian: object | None = None,
+    guardian: Any | None = None,
     confirm_action: Callable[[str, dict, str], bool] | None = None,
-    memory_manager: object | None = None,
-    bridge_config: object | None = None,
+    memory_manager: Any | None = None,
+    bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
 ) -> AgentResult:
     """Run the agent loop inside an isolated Docker container.
@@ -61,11 +61,15 @@ def run_agent_loop_container(
     include_workspace = bool(
         tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
     )
-    tool_defs = build_tool_definitions(
-        tools_config,
-        include_memory_tools=include_memory,
-        include_workspace_tools=include_workspace,
-    ) if tools_config else []
+    tool_defs = (
+        build_tool_definitions(
+            tools_config,
+            include_memory_tools=include_memory,
+            include_workspace_tools=include_workspace,
+        )
+        if tools_config
+        else []
+    )
 
     # Build the start message
     start_msg = {
@@ -98,14 +102,19 @@ def run_agent_loop_container(
 
         proc = subprocess.Popen(
             [
-                "docker", "run", "--rm", "-i",
+                "docker",
+                "run",
+                "--rm",
+                "-i",
                 "--read-only",
-                "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,size=16M",
                 "--cap-drop=ALL",
                 "--security-opt=no-new-privileges",
                 "--memory=512m",
                 "--cpus=1.0",
-                "--env-file", env_file.name,
+                "--env-file",
+                env_file.name,
                 _IMAGE,
                 "agent_runner.py",
             ],
@@ -117,8 +126,15 @@ def run_agent_loop_container(
 
         try:
             return _run_protocol(
-                proc, start_msg, messages, tools_config, use_containers,
-                guardian, confirm_action, memory_manager, bridge_config,
+                proc,
+                start_msg,
+                messages,
+                tools_config,
+                use_containers,
+                guardian,
+                confirm_action,
+                memory_manager,
+                bridge_config,
                 session_state,
             )
         except Exception as e:
@@ -134,36 +150,37 @@ def run_agent_loop_container(
             )
 
 
-def _send_to_container(proc: subprocess.Popen, msg: dict) -> None:
+def _send_to_container(proc: subprocess.Popen[str], msg: dict) -> None:
     """Write a JSON line to the container's stdin."""
+    assert proc.stdin is not None
     proc.stdin.write(json.dumps(msg) + "\n")
     proc.stdin.flush()
 
 
-def _recv_from_container(proc: subprocess.Popen) -> dict:
+def _recv_from_container(proc: subprocess.Popen[str]) -> dict:
     """Read a JSON line from the container's stdout."""
+    assert proc.stdout is not None
     line = proc.stdout.readline()
     if not line:
         # Check if process died
         retcode = proc.poll()
         stderr = proc.stderr.read() if proc.stderr else ""
         raise RuntimeError(
-            f"Container exited unexpectedly (code={retcode}). "
-            f"stderr: {stderr[:500]}"
+            f"Container exited unexpectedly (code={retcode}). stderr: {stderr[:500]}"
         )
     return json.loads(line)
 
 
 def _run_protocol(
-    proc: subprocess.Popen,
+    proc: subprocess.Popen[str],
     start_msg: dict,
     messages: list[dict],
     tools_config: dict[str, ToolConfig],
     use_containers: bool,
-    guardian: object | None,
+    guardian: Any | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
-    memory_manager: object | None,
-    bridge_config: object | None = None,
+    memory_manager: Any | None,
+    bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
@@ -181,11 +198,14 @@ def _run_protocol(
                 messages.extend(msg["messages"])
             elif msg.get("text"):
                 # Fallback: at least save the final response
-                messages.append({
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": msg["text"]}],
-                })
-            proc.stdin.close()
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": msg["text"]}],
+                    }
+                )
+            if proc.stdin is not None:
+                proc.stdin.close()
             proc.wait(timeout=10)
             return AgentResult(
                 text=msg["text"],
@@ -197,7 +217,8 @@ def _run_protocol(
             )
 
         elif msg_type == "error":
-            proc.stdin.close()
+            if proc.stdin is not None:
+                proc.stdin.close()
             proc.wait(timeout=10)
             return AgentResult(
                 text=msg["message"],
@@ -208,8 +229,13 @@ def _run_protocol(
 
         elif msg_type == "tool_request":
             results, pending_result = _handle_tool_request(
-                msg["calls"], tools_config, use_containers,
-                guardian, confirm_action, memory_manager, messages,
+                msg["calls"],
+                tools_config,
+                use_containers,
+                guardian,
+                confirm_action,
+                memory_manager,
+                messages,
                 bridge_config=bridge_config,
                 session_state=session_state,
             )
@@ -219,6 +245,7 @@ def _run_protocol(
                 # approval_required — we need to bail out
                 proc.kill()
                 proc.wait(timeout=5)
+                assert pending_result is not None
                 return pending_result
 
             _send_to_container(proc, {"type": "tool_results", "results": results})
@@ -239,11 +266,11 @@ def _handle_tool_request(
     calls: list[dict],
     tools_config: dict[str, ToolConfig],
     use_containers: bool,
-    guardian: object | None,
+    guardian: Any | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
-    memory_manager: object | None,
+    memory_manager: Any | None,
     messages: list[dict],
-    bridge_config: object | None = None,
+    bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
 ) -> tuple[list[dict] | None, AgentResult | None]:
     """Process tool calls from the container, applying Guardian checks.
@@ -264,11 +291,13 @@ def _handle_tool_request(
             if decision.verdict == ActionVerdict.DENY:
                 logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
                 guardian.log_action_outcome(tool_name, "deny", "denied_by_policy")
-                results.append({
-                    "tool_use_id": tool_id,
-                    "content": f"Action denied by security policy: {decision.reason}",
-                    "is_error": True,
-                })
+                results.append(
+                    {
+                        "tool_use_id": tool_id,
+                        "content": f"Action denied by security policy: {decision.reason}",
+                        "is_error": True,
+                    }
+                )
                 continue
 
             if decision.verdict == ActionVerdict.REVIEW:
@@ -276,11 +305,13 @@ def _handle_tool_request(
                 if confirm_action is not None:
                     if not confirm_action(tool_name, tool_input, decision.reason):
                         guardian.log_action_outcome(tool_name, "review", "denied_by_user")
-                        results.append({
-                            "tool_use_id": tool_id,
-                            "content": f"Action denied by user: {decision.reason}",
-                            "is_error": True,
-                        })
+                        results.append(
+                            {
+                                "tool_use_id": tool_id,
+                                "content": f"Action denied by user: {decision.reason}",
+                                "is_error": True,
+                            }
+                        )
                         continue
                     guardian.log_action_outcome(tool_name, "review", "approved_by_user")
                 else:
@@ -289,30 +320,38 @@ def _handle_tool_request(
                     assistant_tool_use = []
                     synthetic_results = []
                     for c in calls:
-                        assistant_tool_use.append({
-                            "type": "tool_use",
-                            "id": c["id"],
-                            "name": c["name"],
-                            "input": c["input"],
-                        })
+                        assistant_tool_use.append(
+                            {
+                                "type": "tool_use",
+                                "id": c["id"],
+                                "name": c["name"],
+                                "input": c["input"],
+                            }
+                        )
                         if c["id"] == tool_id:
-                            msg = f"Action requires approval: {decision.reason}"
+                            approval_msg = f"Action requires approval: {decision.reason}"
                         else:
-                            msg = "Action skipped — another tool in this batch requires approval."
-                        synthetic_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": c["id"],
-                            "content": msg,
-                            "is_error": True,
-                        })
+                            approval_msg = (
+                                "Action skipped — another tool in this batch requires approval."
+                            )
+                        synthetic_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": c["id"],
+                                "content": approval_msg,
+                                "is_error": True,
+                            }
+                        )
 
                     # Persist the blocked tool call + synthetic results into
                     # host-side session history before returning.
                     messages.append({"role": "assistant", "content": assistant_tool_use})
-                    messages.append({
-                        "role": "user",
-                        "content": synthetic_results,
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": synthetic_results,
+                        }
+                    )
                     pending_result = AgentResult(
                         text="This action requires approval before proceeding.",
                         turns_used=0,
@@ -329,14 +368,16 @@ def _handle_tool_request(
         # Guardian coherence check
         if guardian is not None and hasattr(guardian, "check_coherence"):
             user_request = ""
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    content = msg.get("content", "")
+            for message in reversed(messages):
+                if message.get("role") == "user":
+                    content = message.get("content", "")
                     if isinstance(content, str):
                         user_request = content
                     elif isinstance(content, list):
                         user_request = " ".join(
-                            b.get("text", "") for b in content if b.get("type") == "text"
+                            str(block_item.get("text", ""))
+                            for block_item in content
+                            if isinstance(block_item, dict) and block_item.get("type") == "text"
                         )
                     break
 
@@ -344,17 +385,22 @@ def _handle_tool_request(
                 prior_tools = _extract_prior_tools(messages)
                 if prior_tools:
                     logger.info("Coherence context: prior_tools=%s for %s", prior_tools, tool_name)
-                coherence = guardian.check_coherence(user_request, tool_name, tool_input, prior_tools=prior_tools)
+                coherence = guardian.check_coherence(
+                    user_request, tool_name, tool_input, prior_tools=prior_tools
+                )
                 if not coherence.coherent:
                     logger.warning(
                         "Guardian coherence check failed for %s: %s",
-                        tool_name, coherence.reasoning,
+                        tool_name,
+                        coherence.reasoning,
                     )
-                    results.append({
-                        "tool_use_id": tool_id,
-                        "content": f"Action blocked — not coherent with user request: {coherence.reasoning}",
-                        "is_error": True,
-                    })
+                    results.append(
+                        {
+                            "tool_use_id": tool_id,
+                            "content": f"Action blocked — not coherent with user request: {coherence.reasoning}",
+                            "is_error": True,
+                        }
+                    )
                     continue
 
         # Screen memory write content through Guardian before execution
@@ -371,14 +417,16 @@ def _handle_tool_request(
                         if screen_result.classifier_result
                         else 0.0,
                     )
-                    results.append({
-                        "tool_use_id": tool_id,
-                        "content": (
-                            "[Guardian] Memory write blocked — content may contain "
-                            "prompt injection."
-                        ),
-                        "is_error": True,
-                    })
+                    results.append(
+                        {
+                            "tool_use_id": tool_id,
+                            "content": (
+                                "[Guardian] Memory write blocked — content may contain "
+                                "prompt injection."
+                            ),
+                            "is_error": True,
+                        }
+                    )
                     continue
 
         # Execute the tool
@@ -435,11 +483,7 @@ def _handle_tool_request(
                 is_error = True
 
         # Screen search_memory results for stored injection payloads
-        if (
-            not is_error
-            and guardian is not None
-            and tool_name == "search_memory"
-        ):
+        if not is_error and guardian is not None and tool_name == "search_memory":
             screen_result = guardian.screen_tool_result(tool_name, result)
             if screen_result.blocked:
                 logger.warning(
@@ -455,10 +499,12 @@ def _handle_tool_request(
                 )
                 is_error = True
 
-        results.append({
-            "tool_use_id": tool_id,
-            "content": result,
-            "is_error": is_error,
-        })
+        results.append(
+            {
+                "tool_use_id": tool_id,
+                "content": result,
+                "is_error": is_error,
+            }
+        )
 
     return results, None

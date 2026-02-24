@@ -35,11 +35,13 @@ def search(query: str, count: int = 5) -> list[dict]:
 
     results = []
     for item in data.get("web", {}).get("results", []):
-        results.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("description", ""),
-        })
+        results.append(
+            {
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "snippet": item.get("description", ""),
+            }
+        )
 
     return results
 

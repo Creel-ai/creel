@@ -305,17 +305,13 @@ class BrowserRelay:
                         timeout=self._navigate_timeout_ms,
                     )
                     try:
-                        await session.page.wait_for_load_state(
-                            "networkidle", timeout=10000
-                        )
+                        await session.page.wait_for_load_state("networkidle", timeout=10000)
                     except Exception:
                         pass  # Continue with whatever has loaded; SPAs may never idle
 
                     title = await session.page.title()
                     current_url = session.page.url
-                    content, was_partial = await self._get_accessibility_tree(
-                        session.page
-                    )
+                    content, was_partial = await self._get_accessibility_tree(session.page)
                     partial = was_partial
                     return title, current_url, content
 
@@ -327,9 +323,7 @@ class BrowserRelay:
                 # Navigation itself timed out — return what we can
                 title = ""
                 try:
-                    title = await asyncio.wait_for(
-                        session.page.title(), timeout=2
-                    )
+                    title = await asyncio.wait_for(session.page.title(), timeout=2)
                 except Exception:
                     pass
                 current_url = session.page.url
@@ -345,9 +339,7 @@ class BrowserRelay:
             result["partial"] = True
         return result
 
-    async def get_content(
-        self, session_id: str, selector: str | None = None
-    ) -> dict[str, Any]:
+    async def get_content(self, session_id: str, selector: str | None = None) -> dict[str, Any]:
         """Get the current page content as an accessibility tree.
 
         Args:
@@ -364,9 +356,7 @@ class BrowserRelay:
             session.last_used = time.time()
             title = await session.page.title()
             current_url = session.page.url
-            content, partial = await self._get_accessibility_tree(
-                session.page, selector
-            )
+            content, partial = await self._get_accessibility_tree(session.page, selector)
 
         result: dict[str, Any] = {
             "title": title,
@@ -412,9 +402,7 @@ class BrowserRelay:
                 "url": current_url,
             }
 
-    async def type_text(
-        self, session_id: str, selector: str, text: str
-    ) -> dict[str, Any]:
+    async def type_text(self, session_id: str, selector: str, text: str) -> dict[str, Any]:
         """Type text into an input element.
 
         Args:
@@ -446,9 +434,7 @@ class BrowserRelay:
 
             return {"ok": True, "url": current_url}
 
-    async def screenshot(
-        self, session_id: str, full_page: bool = False
-    ) -> dict[str, Any]:
+    async def screenshot(self, session_id: str, full_page: bool = False) -> dict[str, Any]:
         """Take a screenshot of the current page.
 
         Args:
@@ -515,7 +501,9 @@ class BrowserRelay:
                     session.process.terminate()
                     session.process.wait(timeout=5)
                 except Exception as e:
-                    logger.warning("Error terminating native Chrome for session %s: %s", session_id, e)
+                    logger.warning(
+                        "Error terminating native Chrome for session %s: %s", session_id, e
+                    )
             if session.temp_profile_dir:
                 shutil.rmtree(session.temp_profile_dir, ignore_errors=True)
 
@@ -542,9 +530,7 @@ class BrowserRelay:
         hostname = parsed.hostname or ""
         allowed = {"localhost", "127.0.0.1", "::1"}
         if hostname not in allowed:
-            raise ValueError(
-                f"CDP URL must point to localhost, got '{hostname}'"
-            )
+            raise ValueError(f"CDP URL must point to localhost, got '{hostname}'")
 
     async def _install_page_handlers(self, page: Any) -> None:
         """Register handlers for dialogs, popups, downloads, and resource blocking.
@@ -570,8 +556,7 @@ class BrowserRelay:
     def _check_session_limit(self) -> None:
         if len(self._sessions) >= self._max_sessions:
             raise RuntimeError(
-                f"Maximum sessions ({self._max_sessions}) reached. "
-                "Close an existing session first."
+                f"Maximum sessions ({self._max_sessions}) reached. Close an existing session first."
             )
 
     def _get_session(self, session_id: str) -> BrowserSession:
@@ -669,9 +654,7 @@ class BrowserRelay:
             if is_timeout:
                 logger.warning("aria_snapshot timed out, falling back to inner_text")
             try:
-                body_text = await asyncio.wait_for(
-                    page.inner_text("body"), timeout=5
-                )
+                body_text = await asyncio.wait_for(page.inner_text("body"), timeout=5)
                 if body_text:
                     truncated = body_text[: self._max_content_chars]
                     return [{"role": "text", "value": truncated}], True
@@ -689,11 +672,11 @@ class BrowserRelay:
         # Indentation (number of leading spaces) determines depth.
         # Name may contain escaped quotes (e.g., "Say \"Hello\"").
         line_re = re.compile(
-            r'^(?P<indent>\s*)-\s+'
-            r'(?P<role>\w+)'
+            r"^(?P<indent>\s*)-\s+"
+            r"(?P<role>\w+)"
             r'(?:\s+"(?P<name>(?:[^"\\]|\\.)*)")?'
-            r'(?:\s+\[(?P<attrs>[^\]]*)\])?'
-            r'(?::\s*(?P<value>.+))?$'
+            r"(?:\s+\[(?P<attrs>[^\]]*)\])?"
+            r"(?::\s*(?P<value>.+))?$"
         )
 
         for line in snapshot.splitlines():
@@ -714,7 +697,7 @@ class BrowserRelay:
             attrs_str = m.group("attrs") or ""
             level_from_attrs = None
             if attrs_str:
-                level_match = re.search(r'level=(\d+)', attrs_str)
+                level_match = re.search(r"level=(\d+)", attrs_str)
                 if level_match:
                     level_from_attrs = int(level_match.group(1))
 
@@ -731,12 +714,17 @@ class BrowserRelay:
                 entry["level"] = depth
 
             # Only include nodes that have meaningful content
-            if entry.get("name") or entry.get("value") or role in (
-                "heading",
-                "link",
-                "button",
-                "textbox",
-                "img",
+            if (
+                entry.get("name")
+                or entry.get("value")
+                or role
+                in (
+                    "heading",
+                    "link",
+                    "button",
+                    "textbox",
+                    "img",
+                )
             ):
                 nodes.append(entry)
 
@@ -757,9 +745,7 @@ class BrowserRelay:
                     pass
                 await asyncio.sleep(0.5)
 
-        raise TimeoutError(
-            f"CDP endpoint {cdp_url} did not become available within {timeout}s"
-        )
+        raise TimeoutError(f"CDP endpoint {cdp_url} did not become available within {timeout}s")
 
     async def _cleanup_loop(self) -> None:
         """Periodically clean up idle and dead sessions."""
@@ -926,9 +912,9 @@ def _find_chrome_binary() -> str:
                 return path
     elif system == "Linux":
         for name in ("google-chrome", "google-chrome-stable", "chromium-browser", "chromium"):
-            path = shutil.which(name)
-            if path:
-                return path
+            found_path = shutil.which(name)
+            if found_path:
+                return found_path
 
     raise FileNotFoundError(
         f"No Chrome/Chromium installation found on {system}. "
@@ -936,9 +922,7 @@ def _find_chrome_binary() -> str:
     )
 
 
-def _start_native_chrome(
-    chrome_binary: str, headless: bool = True
-) -> tuple[Any, int, str]:
+def _start_native_chrome(chrome_binary: str, headless: bool = True) -> tuple[Any, int, str]:
     """Launch Chrome as a subprocess with a fresh temp profile.
 
     Args:
@@ -970,6 +954,7 @@ def _start_native_chrome(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+    assert process.stderr is not None
 
     # Chrome prints "DevTools listening on ws://127.0.0.1:PORT/..." to stderr
     port = None

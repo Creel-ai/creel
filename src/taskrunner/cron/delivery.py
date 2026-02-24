@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
 from taskrunner.cron.models import ChannelSendFn, CronJob, Delivery
 
 logger = logging.getLogger(__name__)
@@ -77,6 +75,8 @@ def _deliver_webhook(
     job: CronJob,
 ) -> None:
     """POST output to a webhook URL."""
+    import httpx
+
     payload = {
         "job_id": job.id,
         "job_name": job.name,

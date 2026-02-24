@@ -260,14 +260,14 @@ class TestExecuteIsolatedDelivery:
 
         channel_send.assert_called_once_with("whatsapp", "Agent says hello")
 
-    @patch("taskrunner.cron.delivery.httpx")
+    @patch("httpx.post")
     @patch("taskrunner.cron.executor.run_agent_loop")
-    def test_isolated_webhook_delivery(self, mock_agent_loop, mock_httpx):
+    def test_isolated_webhook_delivery(self, mock_agent_loop, mock_post):
         """Isolated job with 'webhook' delivery should POST output to the URL."""
         mock_agent_loop.return_value = FakeAgentResult(text="result payload")
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_httpx.post.return_value = mock_response
+        mock_post.return_value = mock_response
 
         agent_def = FakeAgentDef()
         executor = JobExecutor(agent_def=agent_def)
@@ -279,8 +279,8 @@ class TestExecuteIsolatedDelivery:
         )
         executor(job)
 
-        mock_httpx.post.assert_called_once()
-        call_args = mock_httpx.post.call_args
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
         assert call_args[1]["json"]["output"] == "result payload"
 
     @patch("taskrunner.cron.executor.run_agent_loop")

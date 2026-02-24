@@ -186,16 +186,13 @@ class JobStore:
     def _atomic_write(path: Path, content: str) -> None:
         """Write content to a file atomically via temp file + rename."""
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        closed = False
         try:
-            os.write(fd, content.encode())
-            os.fsync(fd)
-            os.close(fd)
-            closed = True
+            with os.fdopen(fd, "w") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, path)
         except BaseException:
-            if not closed:
-                os.close(fd)
             try:
                 os.unlink(tmp)
             except OSError:

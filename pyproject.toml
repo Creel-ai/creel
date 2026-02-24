@@ -58,6 +58,7 @@ creel = "taskrunner.cli:main"
 imessage = "taskrunner.channels.imessage:register_plugin"
 bluebubbles = "taskrunner.channels.bluebubbles:register_plugin"
 whatsapp = "taskrunner.channels.whatsapp:register_plugin"
+telegram = "taskrunner.channels.telegram:register_plugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/taskrunner", "src/guardian", "src/bridge"]

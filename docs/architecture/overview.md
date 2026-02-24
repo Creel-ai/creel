@@ -44,7 +44,9 @@ flowchart TD
 
     subgraph channels["Channels"]
         cli["TUI / CLI"]
-        imsg["iMessage"]
+        imsg["iMessage / BlueBubbles"]
+        tg["Telegram"]
+        wa["WhatsApp"]
     end
 
     channels -- "message" --> orch

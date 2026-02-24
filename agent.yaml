@@ -416,7 +416,6 @@ tools:
   exec:
     executor: exec
     description: "Run shell commands in a sandboxed environment"
-    image: creel-exec:minimal
     parameters:
       command:
         type: string
@@ -808,7 +807,7 @@ tools:
 
 llm:
   model: claude-sonnet-4-20250514
-  max_tokens: 1024
+  max_tokens: 4096
   secrets: secrets/anthropic.env.enc
 
 agent:
@@ -848,15 +847,22 @@ workspace:
   max_long_term_lines: 500
 
 channels:
-  imessage:
-    listen_to: "$PHONE"
-    poll_interval: 3
+  # imessage:
+  #   listen_to: "$PHONE"
+  #   poll_interval: 3
   # bluebubbles:
   #   server_url: "$BLUEBUBBLES_URL"
   #   password: "$BLUEBUBBLES_PASSWORD"
   #   listen_to:
   #     - "$PHONE"
-    poll_interval: 3
+  #   poll_interval: 3
+  telegram:
+    secrets: secrets/telegram.env.enc
+    mode: polling
+    poll_timeout: 30
+    send_typing: true
+    allowed_senders:
+      - "$TELEGRAM_ALLOWED_SENDER"
 
 guardian:
   enabled: true

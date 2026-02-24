@@ -36,6 +36,12 @@ def validate_secrets(agent_def) -> None:
         if tool_cfg.secrets:
             secrets_paths.append((f"tools.{tool_name}.secrets", tool_cfg.secrets))
 
+    # Check channel secrets (e.g. telegram)
+    for channel_id in agent_def.channels.configured_channels():
+        channel_cfg = agent_def.channels.get_channel_config(channel_id)
+        if channel_cfg and channel_cfg.get("secrets"):
+            secrets_paths.append((f"channels.{channel_id}.secrets", channel_cfg["secrets"]))
+
     if not secrets_paths:
         logger.debug("No secrets files referenced, skipping validation")
         return

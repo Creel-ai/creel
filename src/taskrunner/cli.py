@@ -186,6 +186,24 @@ def _build_daemon_env(repo_root: Path) -> dict[str, str]:
     return env
 
 
+def _print_log_errors(log_path: Path, offset: int = 0) -> None:
+    """Print recent error lines from the daemon log (only from bytes after *offset*)."""
+    try:
+        with log_path.open(encoding="utf-8") as f:
+            f.seek(offset)
+            new_text = f.read()
+        lines = new_text.splitlines()
+        error_lines = [l for l in lines if l.startswith("Error:")]
+        if error_lines:
+            for line in error_lines[-3:]:
+                print(f"  {line}", file=sys.stderr)
+        elif lines:
+            for line in lines[-3:]:
+                print(f"  {line}", file=sys.stderr)
+    except OSError:
+        pass
+
+
 def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
     import time
 
@@ -381,10 +399,10 @@ def _build_daemon_channel(agent_def, channel_type: str):
     entry = registry.get(channel_type)
     if entry is not None:
         channel = registry.create_channel(channel_type, config)
-        # Return channel as reply_channel if it supports WAIT_FOR_REPLY
+        # Return channel as reply_channel if it can send messages
         reply_channel = (
             channel
-            if ChannelCapability.WAIT_FOR_REPLY in entry.meta.capabilities
+            if ChannelCapability.SEND in entry.meta.capabilities
             else None
         )
         return channel, reply_channel
@@ -541,6 +559,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
 
     # If a launchd service is installed, use it as the startup path.
     if sys.platform == "darwin" and plist_path.exists():
+        launchd_log_offset = log_path.stat().st_size if log_path.exists() else 0
         launch_target = _daemon_launchd_target()
         existing = subprocess.run(
             ["launchctl", "bootstrap", launch_target, str(plist_path)],
@@ -582,6 +601,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
             f"Launchd service {label} did not become healthy within {wait_seconds:.1f}s. See {log_path}.",
             file=sys.stderr,
         )
+        _print_log_errors(log_path, launchd_log_offset)
         return 1
 
     pid = _read_pid(pid_path)
@@ -596,6 +616,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
     env = _build_daemon_env(repo_root)
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_offset = log_path.stat().st_size if log_path.exists() else 0
     with log_path.open("a", encoding="utf-8") as log_file:
         proc = subprocess.Popen(
             cmd,
@@ -611,6 +632,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
     while time.time() < deadline:
         if proc.poll() is not None:
             print(f"Daemon failed to start. See log: {log_path}", file=sys.stderr)
+            _print_log_errors(log_path, log_offset)
             return 1
         if _wait_for_daemon_health(socket_path, 0.2):
             daemon_pid = _read_pid(pid_path) or proc.pid
@@ -620,6 +642,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
             return 0
 
     print(f"Daemon did not become healthy within {wait_seconds:.1f}s. See {log_path}.", file=sys.stderr)
+    _print_log_errors(log_path, log_offset)
     return 1
 
 
@@ -1052,6 +1075,35 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_encrypt(args: argparse.Namespace) -> int:
+    """Encrypt a plaintext .env file with age."""
+    from taskrunner.secrets import encrypt_env_file
+
+    env_path = Path(args.env_file)
+    try:
+        output_path = encrypt_env_file(
+            env_path=env_path,
+            recipient_path=args.recipient,
+            output_path=args.output,
+        )
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Error encrypting: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Encrypted: {env_path} -> {output_path}")
+
+    if args.delete:
+        env_path.unlink()
+        print(f"Deleted plaintext: {env_path}")
+    else:
+        print(f"\nIMPORTANT: Delete the plaintext file:\n  rm {env_path}")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -1150,6 +1202,22 @@ def main() -> int:
     audit_parser.add_argument(
         "--since", type=str, default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
+    )
+
+    # encrypt command
+    encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
+    encrypt_parser.add_argument("env_file", help="Path to plaintext .env file")
+    encrypt_parser.add_argument(
+        "--recipient", default=None,
+        help="Age recipient (public key) file (default: ~/.age/key.pub or AGE_RECIPIENT_FILE)",
+    )
+    encrypt_parser.add_argument(
+        "--output", default=None,
+        help="Output file path (default: <env_file>.enc)",
+    )
+    encrypt_parser.add_argument(
+        "--delete", action="store_true",
+        help="Delete the plaintext file after encryption",
     )
 
     # --- Shared daemon parent parsers (to avoid option duplication) ---
@@ -1319,6 +1387,7 @@ def main() -> int:
         "attach": cmd_attach,
         "audit": cmd_audit,
         "send": cmd_send,
+        "encrypt": cmd_encrypt,
     }
 
     return commands[args.command](args)

@@ -50,11 +50,10 @@ class ChatServer:
         # Initialize warm container pool if using containers
         self._container_pool = None
         if use_containers:
-            from taskrunner.container_pool import ContainerPool
-            from taskrunner.container_pool import ContainerPoolConfig as PoolCfg
+            from taskrunner.container_pool import ContainerPool, ContainerPoolConfig
 
             pool_config = agent_def.llm.container_pool
-            self._container_pool = ContainerPool(PoolCfg(
+            self._container_pool = ContainerPool(ContainerPoolConfig(
                 enabled=pool_config.enabled,
                 idle_timeout_seconds=pool_config.idle_timeout_seconds,
                 max_containers=pool_config.max_containers,

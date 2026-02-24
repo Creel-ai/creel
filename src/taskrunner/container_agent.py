@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import tempfile
 import time
@@ -52,8 +53,6 @@ _AGENT_DOCKER_FLAGS = [
 
 def _get_llm_env_vars() -> dict[str, str]:
     """Collect LLM credential env vars from the current environment."""
-    import os
-
     env_vars: dict[str, str] = {}
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
     if auth_token:
@@ -162,8 +161,11 @@ def _run_with_pool(
         return result
     except Exception as e:
         logger.exception("Pooled container agent protocol error")
-        # Don't return broken containers to the pool
-        container._force_kill()
+        # Don't return broken containers to the pool — kill and remove
+        # from pool tracking so it doesn't leak.
+        container.force_kill()
+        with pool._lock:
+            pool._remove_container(container)
         return AgentResult(
             text=f"Container agent error: {e}",
             turns_used=0,

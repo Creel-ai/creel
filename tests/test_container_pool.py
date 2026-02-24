@@ -47,7 +47,7 @@ def _make_container(
     container.ping = MagicMock(return_value=ping_ok)
     container.reset = MagicMock(return_value=reset_ok)
     container.shutdown = MagicMock()
-    container._force_kill = MagicMock()
+    container.force_kill = MagicMock()
 
     return container
 
@@ -348,28 +348,58 @@ class TestAgentRunnerKeepAlive:
     """Test the keepalive protocol extensions in agent_runner.py."""
 
     def test_ping_pong(self):
-        """Agent runner should respond to ping with pong."""
-        from llm.agent_runner import _recv, _send
+        """Agent runner main loop responds to ping with pong."""
+        from io import StringIO
 
-        # We test the protocol logic by simulating the message flow
-        # The actual container test is an integration test
-        # Here we just verify the message format
-        ping_msg = {"type": "ping"}
-        pong_msg = {"type": "pong"}
-        assert ping_msg["type"] == "ping"
-        assert pong_msg["type"] == "pong"
+        from llm.agent_runner import main
+
+        stdin_data = json.dumps({"type": "ping"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
+        stdout = StringIO()
+
+        with patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)), \
+             patch("llm.agent_runner.sys.stdout", stdout), \
+             patch("llm.agent_runner._get_client"):
+            main()
+
+        stdout.seek(0)
+        msg = json.loads(stdout.readline())
+        assert msg["type"] == "pong"
 
     def test_reset_ready(self):
-        """Agent runner should respond to reset with ready."""
-        reset_msg = {"type": "reset"}
-        ready_msg = {"type": "ready"}
-        assert reset_msg["type"] == "reset"
-        assert ready_msg["type"] == "ready"
+        """Agent runner main loop responds to reset with ready."""
+        from io import StringIO
 
-    def test_shutdown_message(self):
-        """Shutdown message should cause clean exit."""
-        shutdown_msg = {"type": "shutdown"}
-        assert shutdown_msg["type"] == "shutdown"
+        from llm.agent_runner import main
+
+        stdin_data = json.dumps({"type": "reset"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
+        stdout = StringIO()
+
+        with patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)), \
+             patch("llm.agent_runner.sys.stdout", stdout), \
+             patch("llm.agent_runner._get_client"):
+            main()
+
+        stdout.seek(0)
+        msg = json.loads(stdout.readline())
+        assert msg["type"] == "ready"
+
+    def test_shutdown_exits_cleanly(self):
+        """Shutdown message causes main loop to exit."""
+        from io import StringIO
+
+        from llm.agent_runner import main
+
+        stdin_data = json.dumps({"type": "shutdown"}) + "\n"
+        stdout = StringIO()
+
+        with patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)), \
+             patch("llm.agent_runner.sys.stdout", stdout), \
+             patch("llm.agent_runner._get_client"):
+            main()
+
+        # No output expected — shutdown just exits
+        stdout.seek(0)
+        assert stdout.read() == ""
 
 
 # ---------------------------------------------------------------------------
@@ -380,17 +410,43 @@ class TestAgentRunnerKeepAlive:
 class TestRunnerKeepAlive:
     """Test the keepalive protocol in runner.py."""
 
-    def test_request_response_format(self):
-        """Verify request/response message shapes."""
-        request = {
-            "type": "request",
-            "prompt": "Hello",
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 100,
-        }
-        response = {"type": "response", "text": "Hi there!"}
-        assert request["type"] == "request"
-        assert response["type"] == "response"
+    def test_ping_pong(self):
+        """Runner keepalive loop responds to ping with pong."""
+        from io import StringIO
+
+        from llm.runner import main
+
+        stdin_data = json.dumps({"type": "ping"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
+        stdout = StringIO()
+
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}), \
+             patch("llm.runner.anthropic.Anthropic"), \
+             patch("llm.runner.sys.stdin", StringIO(stdin_data)), \
+             patch("llm.runner.sys.stdout", stdout):
+            main()
+
+        stdout.seek(0)
+        msg = json.loads(stdout.readline())
+        assert msg["type"] == "pong"
+
+    def test_reset_ready(self):
+        """Runner keepalive loop responds to reset with ready."""
+        from io import StringIO
+
+        from llm.runner import main
+
+        stdin_data = json.dumps({"type": "reset"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
+        stdout = StringIO()
+
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}), \
+             patch("llm.runner.anthropic.Anthropic"), \
+             patch("llm.runner.sys.stdin", StringIO(stdin_data)), \
+             patch("llm.runner.sys.stdout", stdout):
+            main()
+
+        stdout.seek(0)
+        msg = json.loads(stdout.readline())
+        assert msg["type"] == "ready"
 
 
 # ---------------------------------------------------------------------------
@@ -468,4 +524,4 @@ class TestContainerAgentPoolIntegration:
 
         assert result.stop_reason == "error"
         pool.release.assert_not_called()
-        container._force_kill.assert_called_once()
+        container.force_kill.assert_called_once()

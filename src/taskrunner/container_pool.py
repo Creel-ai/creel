@@ -15,7 +15,6 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import IO
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +115,9 @@ class ManagedContainer:
                 self.proc.wait(timeout=5)
         except Exception:
             logger.debug("Graceful shutdown failed for %s, killing", self.id)
-            self._force_kill()
+            self.force_kill()
 
-    def _force_kill(self) -> None:
+    def force_kill(self) -> None:
         """Force-kill the container process."""
         try:
             if self.alive:
@@ -137,7 +136,7 @@ class ContainerPool:
 
     def __init__(self, config: ContainerPoolConfig | None = None):
         self._config = config or ContainerPoolConfig()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         # Key: (image, entrypoint) -> list of idle ManagedContainers
         self._idle: dict[tuple[str, str], list[ManagedContainer]] = {}
         self._all: list[ManagedContainer] = []
@@ -171,22 +170,31 @@ class ContainerPool:
         """
         key = (image, entrypoint)
 
+        # Pop all idle candidates under the lock, then health-check outside
+        # to avoid blocking the pool during slow pings.
         with self._lock:
-            # Try to reuse an idle container
-            idle_list = self._idle.get(key, [])
-            while idle_list:
-                container = idle_list.pop()
-                if container.alive and container.ping():
-                    container.last_used = time.monotonic()
-                    logger.info(
-                        "Reusing warm container %s (%s/%s)",
-                        container.id, image, entrypoint,
-                    )
-                    return container
-                else:
-                    logger.debug(
-                        "Discarding dead idle container %s", container.id
-                    )
+            candidates = list(self._idle.get(key, []))
+            if key in self._idle:
+                self._idle[key].clear()
+
+        for i, container in enumerate(candidates):
+            if container.alive and container.ping():
+                container.last_used = time.monotonic()
+                # Return remaining candidates to idle under lock
+                remaining = candidates[i + 1:]
+                if remaining:
+                    with self._lock:
+                        self._idle.setdefault(key, []).extend(remaining)
+                logger.info(
+                    "Reusing warm container %s (%s/%s)",
+                    container.id, image, entrypoint,
+                )
+                return container
+            else:
+                logger.debug(
+                    "Discarding dead idle container %s", container.id
+                )
+                with self._lock:
                     self._remove_container(container)
 
         # No reusable container — start a fresh one
@@ -282,7 +290,7 @@ class ContainerPool:
             env_file.write(f"{key}={sanitized}\n")
         env_file.flush()
         env_file_path = env_file.name
-        # Keep the file open — it will be cleaned up when the container is removed
+        env_file.close()
 
         docker_cmd = [
             "docker", "run", "-i",
@@ -340,7 +348,11 @@ class ContainerPool:
                 timeout=10,
             )
         except Exception:
-            pass
+            logger.warning(
+                "Failed to remove Docker container creel-llm-%s; "
+                "it may be orphaned",
+                container.id,
+            )
 
         # Clean up env file
         try:

@@ -810,7 +810,7 @@ llm:
   max_tokens: 4096
   secrets: secrets/anthropic.env.enc
   container_pool:
-    enabled: true
+    enabled: false
     idle_timeout_seconds: 300
     max_containers: 2
 

@@ -241,6 +241,8 @@ def main() -> None:
             _run_session(client, msg)
             continue
 
+        # Unknown message type — send an error but keep looping so a single
+        # bad message doesn't tear down a warm container.
         _send({"type": "error", "message": f"Expected 'start', got '{msg_type}'"})
 
 

@@ -60,7 +60,11 @@ def main() -> None:
         pass
 
     # Legacy mode: first line is the start of a raw prompt.
-    # Read the rest of stdin and combine.
+    # Read the rest of stdin and combine. The readline()/read() split is
+    # intentional for backward compatibility: the first line was already
+    # consumed to detect JSON protocol mode, so we recombine it with any
+    # remaining input. Single-line prompts (no trailing newline) produce
+    # empty `rest`, handled by the ternary.
     rest = sys.stdin.read()
     prompt = (first_line + "\n" + rest).strip() if rest else first_line
 

@@ -85,9 +85,17 @@ class ImageBuildCache:
         assert event is not None
         event.wait()
         with self._lock:
-            _, result, error = self._builds[key]
+            entry = self._builds.get(key)
+            if entry is None or entry[0] is not event:
+                # Our build was superseded by a retry; re-enter from the top
+                superseded = True
+            else:
+                superseded = False
+                _, result, error = entry
+        if superseded:
+            return self.ensure_image(image)
         if error is not None:
-            raise error
+            raise RuntimeError(str(error)) from error
         return result  # type: ignore[return-value]
 
     def start_prebuild(self, images: list[str]) -> list[threading.Thread]:
@@ -125,6 +133,8 @@ class ImageBuildCache:
         """
         base = image.split(":")[0]
         if base.startswith("executor-"):
+            # Content hash is computed inside the build, so different tags
+            # (e.g. :latest vs :abc123) map to the same build work.
             return base
         return image
 

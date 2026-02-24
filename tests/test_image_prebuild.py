@@ -215,6 +215,47 @@ class TestImageBuildCache:
         assert r2 == "built-llm-runner:latest"
         assert mock_build.call_count == 2
 
+    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    def test_waiter_handles_superseded_entry(self, mock_build):
+        """Waiter re-enters ensure_image when its entry is superseded.
+
+        Simulates the TOCTOU race: waiter blocks on event_a.wait(), a
+        retry thread removes the entry, then event_a fires.  The waiter
+        should detect that its entry is gone and re-enter rather than
+        reading stale state.
+        """
+        import time
+
+        mock_build.return_value = "built-executor-weather:latest"
+
+        # Place an in-progress entry; the waiter will block on this event
+        event_a = threading.Event()
+        self.cache._builds["executor-weather"] = (event_a, None, None)
+
+        results = [None]
+        errors = [None]
+
+        def waiter():
+            try:
+                results[0] = self.cache.ensure_image("executor-weather:latest")
+            except Exception as e:
+                errors[0] = e
+
+        t = threading.Thread(target=waiter)
+        t.start()
+        time.sleep(0.1)  # Let waiter reach event_a.wait()
+
+        # Simulate retry thread removing the failed entry while waiter is blocked
+        with self.cache._lock:
+            del self.cache._builds["executor-weather"]
+
+        event_a.set()  # Wake the waiter
+        t.join(timeout=10)
+
+        # Waiter should have re-entered and built successfully
+        assert errors[0] is None
+        assert results[0] == "built-executor-weather:latest"
+
     def test_clear(self):
         """clear() removes all entries."""
         self.cache._builds["test"] = (threading.Event(), "result", None)

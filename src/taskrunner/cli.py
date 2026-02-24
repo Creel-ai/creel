@@ -525,7 +525,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     if args.containers:
         from taskrunner.orchestrator import prebuild_images
 
-        prebuild_images(agent_def)
+        prebuild_images(agent_def)  # fire-and-forget; daemon threads
 
     # Start host bridge server if enabled
     bridge_thread = None

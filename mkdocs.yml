@@ -39,6 +39,7 @@ nav:
   - Architecture:
     - Overview: architecture/overview.md
     - Agent Mode: architecture/agent-mode.md
+    - Channels: architecture/channels.md
     - Guardian Security: architecture/guardian.md
   - Configuration:
     - Task Definitions: configuration/tasks.md

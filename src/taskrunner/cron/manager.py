@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -15,8 +14,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from taskrunner.cron.models import (
     CronJob,
-    Delivery,
-    Payload,
     RunRecord,
     RunStatus,
     Schedule,
@@ -59,8 +56,6 @@ class CronManager:
         self._store = store
         self._executor = executor
         self._scheduler = BackgroundScheduler()
-        # Legacy YAML jobs: loaded in-memory only, not persisted to jobs.json
-        self._legacy_jobs: dict[str, CronJob] = {}
 
     @property
     def store(self) -> JobStore:
@@ -69,10 +64,6 @@ class CronManager:
     @property
     def running(self) -> bool:
         return self._scheduler.running
-
-    @property
-    def legacy_job_count(self) -> int:
-        return len(self._legacy_jobs)
 
     # -- Lifecycle --
 
@@ -89,21 +80,10 @@ class CronManager:
                         job.name, job.id,
                     )
 
-        for job in self._legacy_jobs.values():
-            if job.enabled:
-                try:
-                    self._schedule_job(job)
-                except Exception:
-                    logger.exception(
-                        "Failed to schedule legacy job '%s' (%s) on startup — skipping",
-                        job.name, job.id,
-                    )
-
         self._scheduler.start()
         logger.info(
-            "CronManager started with %d managed + %d legacy jobs",
+            "CronManager started with %d managed jobs",
             len(managed_jobs),
-            len(self._legacy_jobs),
         )
 
     def shutdown(self, wait: bool = True) -> None:
@@ -130,29 +110,15 @@ class CronManager:
         return job
 
     def get_job(self, job_id: str) -> CronJob | None:
-        """Get a job by ID (managed or legacy)."""
-        job = self._store.get(job_id)
-        if job is not None:
-            return job
-        return self._legacy_jobs.get(job_id)
+        """Get a job by ID."""
+        return self._store.get(job_id)
 
     def list_jobs(self) -> list[CronJob]:
-        """Return all jobs (managed + legacy), sorted by created_at."""
-        all_jobs = self._store.list() + sorted(
-            self._legacy_jobs.values(), key=lambda j: j.created_at
-        )
-        return sorted(all_jobs, key=lambda j: j.created_at)
+        """Return all jobs, sorted by created_at."""
+        return sorted(self._store.list(), key=lambda j: j.created_at)
 
     def update_job(self, job_id: str, **fields: Any) -> CronJob:
-        """Update fields on a managed job and reschedule.
-
-        Legacy jobs cannot be updated — raises ValueError.
-        """
-        if job_id in self._legacy_jobs:
-            raise ValueError(
-                f"Job '{job_id}' is a legacy YAML job and cannot be updated. "
-                "Use 'creel cron import' to convert it first."
-            )
+        """Update fields on a job and reschedule."""
         updated = self._store.update(job_id, **fields)
         self._unschedule_job(job_id)
         if updated.enabled and self._scheduler.running:
@@ -160,15 +126,7 @@ class CronManager:
         return updated
 
     def remove_job(self, job_id: str) -> CronJob:
-        """Remove a managed job from store and unschedule it.
-
-        Legacy jobs cannot be removed — raises ValueError.
-        """
-        if job_id in self._legacy_jobs:
-            raise ValueError(
-                f"Job '{job_id}' is a legacy YAML job and cannot be removed. "
-                "Use 'creel cron import' to convert it first."
-            )
+        """Remove a job from store and unschedule it."""
         self._unschedule_job(job_id)
         return self._store.remove(job_id)
 
@@ -190,42 +148,6 @@ class CronManager:
     def get_runs(self, job_id: str) -> list[RunRecord]:
         """Get run history for a job."""
         return self._store.get_runs(job_id)
-
-    # -- Legacy YAML task loading --
-
-    def load_legacy_tasks(self, tasks_dir: str | Path) -> int:
-        """Load YAML task files as read-only legacy jobs.
-
-        Returns the number of tasks loaded.
-        """
-        from taskrunner.models import load_all_tasks
-
-        tasks_dir = Path(tasks_dir)
-        if not tasks_dir.is_dir():
-            logger.warning("Tasks directory not found: %s", tasks_dir)
-            return 0
-
-        tasks = load_all_tasks(tasks_dir)
-        count = 0
-        for task in tasks:
-            job = CronJob(
-                id=f"legacy-{task.name}",
-                name=task.name,
-                schedule=Schedule(kind="cron", expr=task.schedule),
-                target="isolated",
-                payload=Payload(
-                    kind="agentTurn",
-                    message=task.prompt,
-                ),
-                delivery=Delivery(mode="none"),
-                enabled=True,
-                source="yaml_import",
-            )
-            self._legacy_jobs[job.id] = job
-            count += 1
-            logger.info("Loaded legacy YAML task '%s' as job '%s'", task.name, job.id)
-
-        return count
 
     # -- Internal scheduling helpers --
 
@@ -307,7 +229,6 @@ class CronManager:
         if (
             job.schedule.kind == "at"
             and status == RunStatus.SUCCESS
-            and job.id not in self._legacy_jobs
         ):
             try:
                 self._store.remove(job.id, keep_history=True)

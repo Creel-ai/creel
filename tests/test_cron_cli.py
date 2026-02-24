@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 
 from taskrunner import cli
 from taskrunner.cron.models import (
@@ -733,75 +732,6 @@ class TestCmdCronRuns:
 
 
 # ---------------------------------------------------------------------------
-# cmd_cron_import
-# ---------------------------------------------------------------------------
-
-
-class TestCmdCronImport:
-    def test_import_tasks(self, tmp_path: Path, capsys) -> None:
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        task = {
-            "name": "weather_check",
-            "schedule": "0 7 * * *",
-            "executors": {"weather": {"args": {"location": "denver"}}},
-            "prompt": "Weather: {weather}",
-            "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
-        }
-        (tasks_dir / "weather_check.yaml").write_text(yaml.dump(task))
-
-        args = _cron_args(tmp_path, tasks_path=str(tasks_dir))
-        rc = cli.cmd_cron_import(args)
-        assert rc == 0
-        out = capsys.readouterr().out
-        assert "Imported 'weather_check'" in out
-        assert "1 task(s) imported" in out
-
-        store = _make_store(tmp_path)
-        jobs = store.list()
-        assert len(jobs) == 1
-        assert jobs[0].name == "weather_check"
-        assert jobs[0].source == "yaml_import"
-
-    def test_import_multiple_tasks(self, tmp_path: Path, capsys) -> None:
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        for name in ["task_a", "task_b"]:
-            task = {
-                "name": name,
-                "schedule": "0 7 * * *",
-                "executors": {"weather": {"args": {"location": "denver"}}},
-                "prompt": f"{name}: {{weather}}",
-                "output": {"type": "stdout", "to": ""},
-                "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
-            }
-            (tasks_dir / f"{name}.yaml").write_text(yaml.dump(task))
-
-        args = _cron_args(tmp_path, tasks_path=str(tasks_dir))
-        rc = cli.cmd_cron_import(args)
-        assert rc == 0
-        assert "2 task(s) imported" in capsys.readouterr().out
-
-    def test_import_dir_not_found(self, tmp_path: Path, capsys) -> None:
-        args = _cron_args(
-            tmp_path, tasks_path=str(tmp_path / "nonexistent")
-        )
-        rc = cli.cmd_cron_import(args)
-        assert rc == 1
-        assert "not found" in capsys.readouterr().err
-
-    def test_import_empty_dir(self, tmp_path: Path, capsys) -> None:
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        args = _cron_args(tmp_path, tasks_path=str(tasks_dir))
-        rc = cli.cmd_cron_import(args)
-        assert rc == 0
-        assert "No tasks found" in capsys.readouterr().out
-
-
-# ---------------------------------------------------------------------------
 # main() integration — verify argparse wiring
 # ---------------------------------------------------------------------------
 
@@ -889,30 +819,6 @@ class TestCronMainDispatch:
             rc = cli.main()
         assert rc == 0
         assert "No runs recorded" in capsys.readouterr().out
-
-    def test_cron_import_via_main(
-        self, monkeypatch, tmp_path: Path, sample_task_yaml, capsys
-    ) -> None:
-        p = sample_task_yaml()
-        monkeypatch.setattr(
-            "sys.argv",
-            [
-                "creel",
-                "--tasks-dir",
-                str(p.parent),
-                "cron",
-                "import",
-                str(p.parent),
-            ],
-        )
-        with patch.object(
-            cli,
-            "_cron_store",
-            return_value=_make_store(tmp_path),
-        ):
-            rc = cli.main()
-        assert rc == 0
-        assert "imported" in capsys.readouterr().out
 
     def test_cron_no_subcommand_shows_help(
         self, monkeypatch, tmp_path: Path, capsys

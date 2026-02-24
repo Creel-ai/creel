@@ -93,7 +93,6 @@ CronJob
 ├── payload: Payload {kind, message, model?, timeout_seconds}
 ├── delivery: Delivery {mode, channel?, url?, best_effort}
 ├── enabled: bool
-├── source: "user" | "yaml_import"
 ├── created_at / updated_at: ISO 8601
 ```
 
@@ -113,7 +112,6 @@ flowchart TD
     daemon --> cs["ChatServer"]
     cm --> store["JobStore"]
     cm --> sched["APScheduler"]
-    cm --> legacy["Legacy YAML Tasks\n(read-only, in-memory)"]
     sched -- "fire" --> exec["JobExecutor"]
     exec -- "main" --> cs
     exec -- "isolated" --> agent["run_agent_loop()"]
@@ -128,14 +126,9 @@ On startup, `DaemonService`:
 1. Creates `JobStore` (loads `jobs.json` + `runs.json`)
 2. Creates `JobExecutor` with agent definition, event injector, and channel sender
 3. Creates `CronManager` with store + executor
-4. Loads legacy YAML tasks as read-only in-memory jobs
-5. Starts the scheduler — enabled jobs begin firing
+4. Starts the scheduler — enabled jobs begin firing
 
 On shutdown, the cron manager is stopped before channels to ensure in-flight deliveries complete.
-
-## Backward Compatibility
-
-Existing YAML task files in `tasks/` continue to work. They're loaded as read-only legacy jobs on daemon startup. Legacy jobs cannot be updated or deleted through the CLI or agent tool — use `creel cron import tasks/` to convert them to managed jobs first.
 
 ## CLI
 
@@ -147,7 +140,6 @@ creel cron edit <job-id> --disable
 creel cron remove <job-id>
 creel cron run <job-id>                  # trigger immediately
 creel cron runs <job-id>                 # show run history
-creel cron import tasks/                 # convert YAML tasks to managed jobs
 ```
 
 ## Agent Tool

@@ -151,7 +151,6 @@ class TestCronJob:
         assert len(job.id) == 12
         assert job.target == "isolated"
         assert job.enabled is True
-        assert job.source == "user"
         assert job.delivery.mode == "none"
 
     def test_full_job(self):
@@ -167,7 +166,6 @@ class TestCronJob:
             ),
             delivery=Delivery(mode="announce", channel="whatsapp"),
             enabled=True,
-            source="user",
         )
         assert job.delivery.mode == "announce"
         assert job.delivery.channel == "whatsapp"

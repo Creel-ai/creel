@@ -1233,47 +1233,6 @@ def cmd_cron_runs(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_cron_import(args: argparse.Namespace) -> int:
-    """Import YAML task files as managed cron jobs."""
-    from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
-
-    store = _cron_store(args)
-    tasks_dir = Path(args.tasks_path)
-
-    if not tasks_dir.is_dir():
-        print(f"Error: Tasks directory not found: {tasks_dir}", file=sys.stderr)
-        return 1
-
-    tasks = load_all_tasks(tasks_dir)
-    if not tasks:
-        print("No tasks found to import.")
-        return 0
-
-    imported = 0
-    for task in tasks:
-        job = CronJob(
-            name=task.name,
-            schedule=Schedule(kind="cron", expr=task.schedule),
-            target="isolated",
-            payload=Payload(
-                kind="agentTurn",
-                message=task.prompt,
-            ),
-            delivery=Delivery(mode="none"),
-            enabled=True,
-            source="yaml_import",
-        )
-        try:
-            store.add(job)
-            print(f"  Imported '{task.name}' as job {job.id}")
-            imported += 1
-        except ValueError as e:
-            print(f"  Skipped '{task.name}': {e}", file=sys.stderr)
-
-    print(f"\n{imported} task(s) imported.")
-    return 0
-
-
 def cmd_audit(args: argparse.Namespace) -> int:
     """Query the guardian audit log."""
     from guardian.audit import read_audit_log
@@ -1571,7 +1530,7 @@ def main() -> int:
     cron_parser = subparsers.add_parser("cron", help="Manage scheduled cron jobs")
     cron_subparsers = cron_parser.add_subparsers(
         dest="cron_command",
-        metavar="{list,add,edit,remove,run,runs,import}",
+        metavar="{list,add,edit,remove,run,runs}",
     )
 
     # cron list
@@ -1657,14 +1616,6 @@ def main() -> int:
         help="Show last N runs (default: 20)",
     )
 
-    # cron import
-    cron_import_parser = cron_subparsers.add_parser(
-        "import", help="Import YAML tasks as managed cron jobs"
-    )
-    cron_import_parser.add_argument(
-        "tasks_path", help="Path to tasks directory"
-    )
-
     args = parser.parse_args()
 
     # Set up logging
@@ -1705,7 +1656,6 @@ def main() -> int:
             "remove": cmd_cron_remove,
             "run": cmd_cron_run,
             "runs": cmd_cron_runs,
-            "import": cmd_cron_import,
         }
         if args.cron_command not in cron_commands:
             cron_parser.print_help()

@@ -191,4 +191,3 @@ class CronJob(BaseModel):
     enabled: bool = True
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
-    source: Literal["user", "yaml_import"] = "user"

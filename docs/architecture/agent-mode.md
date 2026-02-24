@@ -52,8 +52,12 @@ Creel supports multiple input/output channels:
 
 | Channel | Description | Usage |
 |---------|-------------|-------|
-| **stdin** | Interactive CLI (default) | `./runner.py chat` |
-| **iMessage** | Polls local `chat.db` | `./runner.py listen` |
-| **BlueBubbles** | REST API for iMessage | `./runner.py listen --channel bluebubbles` |
+| **stdin** | Interactive CLI (default) | `creel chat` |
+| **iMessage** | Polls local `chat.db` | `creel daemon start` |
+| **BlueBubbles** | REST API for iMessage | `creel daemon start --channel bluebubbles` |
+| **Telegram** | Polling or webhook | `creel daemon start --channel telegram` |
+| **WhatsApp** | Polling or webhook | `creel daemon start --channel whatsapp` |
 
-The TUI (`./runner.py chat`) provides a rich interactive interface with commands like `/help`, `/new`, `/sessions`, and `/resume`.
+See [Channels](channels.md) for architecture details.
+
+The TUI (`creel attach`) provides a rich interactive interface with commands like `/help`, `/new`, `/sessions`, and `/resume`.

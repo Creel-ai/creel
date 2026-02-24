@@ -84,6 +84,15 @@ class _StubChatServer:
         self._session_mgr.add_user_message(sender_id, text)
 
 
+def _poll_until(predicate, timeout=5, interval=0.1):
+    """Poll until predicate() is truthy or timeout is reached."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(interval)
+
+
 class _StubChannel(Channel):
     """Controllable channel that records sends."""
 
@@ -120,9 +129,7 @@ class TestAtJobFiresOnceAndAutoDeletes:
         mgr.add_job(job)
         mgr.start()
 
-        # Wait for the DateTrigger to fire
-        time.sleep(4)
-
+        _poll_until(lambda: executor.call_count >= 1, timeout=6)
         mgr.shutdown()
 
         # Executor should have been called exactly once
@@ -152,7 +159,7 @@ class TestAtJobFiresOnceAndAutoDeletes:
         mgr.add_job(job)
         mgr.start()
 
-        time.sleep(4)
+        _poll_until(lambda: executor.call_count >= 1, timeout=6)
         mgr.shutdown()
 
         # Job should still exist (failure prevents auto-delete)
@@ -181,7 +188,7 @@ class TestEveryJobFiresRepeatedly:
         mgr.add_job(job)
         mgr.start()
 
-        time.sleep(3.5)
+        _poll_until(lambda: executor.call_count >= 2, timeout=5)
         mgr.shutdown()
 
         # Should have fired at least twice
@@ -205,7 +212,7 @@ class TestEveryJobFiresRepeatedly:
         mgr.add_job(job)
         mgr.start()
 
-        time.sleep(2.5)
+        _poll_until(lambda: executor.call_count >= 2, timeout=5)
         mgr.shutdown()
 
         # Job should still exist
@@ -230,8 +237,7 @@ class TestPastOneShotFiresImmediately:
         mgr.add_job(job)
         mgr.start()
 
-        # Past jobs should fire nearly instantly; give it a moment
-        time.sleep(2)
+        _poll_until(lambda: executor.call_count >= 1, timeout=5)
         mgr.shutdown()
 
         # Should have fired
@@ -259,7 +265,7 @@ class TestPastOneShotFiresImmediately:
         mgr.add_job(job)
         mgr.start()
 
-        time.sleep(2)
+        _poll_until(lambda: executor.call_count >= 1, timeout=5)
         mgr.shutdown()
 
         # Should have attempted execution
@@ -335,7 +341,7 @@ class TestEndToEndCLIFlow:
             return resp
 
         def executor_fn(job: CronJob) -> None:
-            with patch("taskrunner.cron.delivery.httpx.post", side_effect=fake_post):
+            with patch("httpx.post", side_effect=fake_post):
                 deliver(
                     delivery=job.delivery,
                     output="webhook output",
@@ -498,7 +504,7 @@ class TestEndToEndAgentToolFlow:
         job_id = result["job"]["id"]
 
         mgr.start()
-        time.sleep(4)
+        _poll_until(lambda: executor.call_count >= 1, timeout=6)
         mgr.shutdown()
 
         # Should have fired
@@ -780,7 +786,7 @@ class TestEnableDisableAcceptance:
         mgr.start()
 
         # Let it fire once
-        time.sleep(1.5)
+        _poll_until(lambda: executor.call_count >= 1, timeout=5)
         first_count = executor.call_count
         assert first_count >= 1
 
@@ -813,7 +819,7 @@ class TestEnableDisableAcceptance:
 
         # Re-enable
         mgr.enable_job(job.id)
-        time.sleep(2)
+        _poll_until(lambda: executor.call_count >= 1, timeout=5)
 
         # Should fire after re-enable
         assert executor.call_count >= 1
@@ -885,7 +891,7 @@ class TestEdgeCasesAcceptance:
         mgr.add_job(j2)
         mgr.start()
 
-        time.sleep(2.5)
+        _poll_until(lambda: len(store.get_runs(j1.id)) >= 1 and len(store.get_runs(j2.id)) >= 1, timeout=5)
         mgr.shutdown()
 
         # Both should have history entries

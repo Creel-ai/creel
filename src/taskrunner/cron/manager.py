@@ -36,6 +36,9 @@ def _make_trigger(schedule: Schedule) -> CronTrigger | IntervalTrigger | DateTri
         return IntervalTrigger(seconds=int(schedule.expr))
     elif schedule.kind == "at":
         run_date = datetime.fromisoformat(schedule.expr)
+        # If run_date already has tzinfo (e.g., "+00:00"), APScheduler uses
+        # that offset directly and the timezone param is only used as a
+        # fallback for naive datetimes. This is the desired behavior.
         return DateTrigger(run_date=run_date, timezone=schedule.tz)
     else:
         raise ValueError(f"Unknown schedule kind: {schedule.kind}")
@@ -183,7 +186,15 @@ class CronManager:
             pass  # Job may not be scheduled
 
     def _on_job_fire(self, job_id: str) -> None:
-        """Called by APScheduler when a job's trigger fires."""
+        """Called by APScheduler when a job's trigger fires.
+
+        NOTE: This runs in an APScheduler thread-pool thread. Long-running
+        executors (e.g., full agent loops) will block the thread for the
+        duration. APScheduler's default pool is limited (~10-20 threads),
+        so many concurrent long-running jobs could exhaust it and delay
+        other jobs from firing. Consider offloading to a dedicated executor
+        if this becomes a bottleneck.
+        """
         job = self.get_job(job_id)
         if job is None:
             logger.warning("Fired job '%s' not found — skipping", job_id)

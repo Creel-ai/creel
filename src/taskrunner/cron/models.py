@@ -36,7 +36,7 @@ class Schedule(BaseModel):
     def validate_tz(cls, v: str) -> str:
         try:
             ZoneInfo(v)
-        except (KeyError, Exception):
+        except Exception:
             raise ValueError(
                 f"Unknown timezone: '{v}'. "
                 "Use IANA timezone names like 'America/Denver' or 'UTC'."
@@ -167,8 +167,11 @@ def _validate_webhook_url(url: str) -> None:
     if not hostname:
         raise ValueError("Webhook URL must have a hostname")
     # Block obvious private/reserved IPs.
-    # Note: DNS rebinding (domain resolving to private IP) is not caught here;
-    # that would require resolution-time checks in the HTTP client.
+    # WARNING: This only catches literal IP addresses in the URL. Domain names
+    # that resolve to private IPs (e.g., metadata.google.internal, DNS rebinding
+    # attacks) are NOT caught here. Full protection would require resolution-time
+    # checks in the HTTP client (e.g., a custom transport that validates the
+    # resolved address before connecting).
     try:
         addr = ipaddress.ip_address(hostname)
     except ValueError:

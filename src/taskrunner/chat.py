@@ -93,6 +93,10 @@ class ChatServer:
         self._session_states: dict[str, dict] = {}
 
         # Rate limiter for inject_system_event: per-sender list of timestamps.
+        # Note: stale sender entries are never pruned from this dict. This is
+        # fine because only cron_sender_id typically injects events, so the
+        # dict stays small. If many unique senders start injecting events,
+        # consider periodic cleanup.
         self._event_injection_times: dict[str, list[float]] = {}
         self._max_events_per_minute: int = 10
 

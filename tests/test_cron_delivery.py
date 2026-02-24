@@ -131,12 +131,12 @@ class TestDeliverAnnounce:
 
 
 class TestDeliverWebhook:
-    @patch("taskrunner.cron.delivery.httpx")
-    def test_webhook_posts_json(self, mock_httpx):
+    @patch("httpx.post")
+    def test_webhook_posts_json(self, mock_post):
         """Webhook mode should POST job output as JSON to the URL."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_httpx.post.return_value = mock_response
+        mock_post.return_value = mock_response
 
         job = _make_job(
             delivery_mode="webhook",
@@ -149,20 +149,20 @@ class TestDeliverWebhook:
             job=job,
         )
 
-        mock_httpx.post.assert_called_once()
-        call_args = mock_httpx.post.call_args
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
         assert call_args[0][0] == "https://hooks.example.com/notify"
         payload = call_args[1]["json"]
         assert payload["job_id"] == job.id
         assert payload["job_name"] == "test job"
         assert payload["output"] == "Job completed successfully"
 
-    @patch("taskrunner.cron.delivery.httpx")
-    def test_webhook_calls_raise_for_status(self, mock_httpx):
+    @patch("httpx.post")
+    def test_webhook_calls_raise_for_status(self, mock_post):
         """Webhook should call raise_for_status() on the response."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_httpx.post.return_value = mock_response
+        mock_post.return_value = mock_response
 
         job = _make_job(
             delivery_mode="webhook",
@@ -173,10 +173,10 @@ class TestDeliverWebhook:
 
         mock_response.raise_for_status.assert_called_once()
 
-    @patch("taskrunner.cron.delivery.httpx")
-    def test_webhook_failure_best_effort_swallowed(self, mock_httpx):
+    @patch("httpx.post")
+    def test_webhook_failure_best_effort_swallowed(self, mock_post):
         """If webhook POST fails and best_effort is True, no exception propagates."""
-        mock_httpx.post.side_effect = ConnectionError("network error")
+        mock_post.side_effect = ConnectionError("network error")
 
         job = _make_job(
             delivery_mode="webhook",
@@ -187,10 +187,10 @@ class TestDeliverWebhook:
         # Should not raise
         deliver(delivery=job.delivery, output="hello", job=job)
 
-    @patch("taskrunner.cron.delivery.httpx")
-    def test_webhook_failure_not_best_effort_raises(self, mock_httpx):
+    @patch("httpx.post")
+    def test_webhook_failure_not_best_effort_raises(self, mock_post):
         """If webhook POST fails and best_effort is False, exception propagates."""
-        mock_httpx.post.side_effect = ConnectionError("network error")
+        mock_post.side_effect = ConnectionError("network error")
 
         job = _make_job(
             delivery_mode="webhook",
@@ -201,12 +201,12 @@ class TestDeliverWebhook:
         with pytest.raises(ConnectionError, match="network error"):
             deliver(delivery=job.delivery, output="hello", job=job)
 
-    @patch("taskrunner.cron.delivery.httpx")
-    def test_webhook_timeout(self, mock_httpx):
+    @patch("httpx.post")
+    def test_webhook_timeout(self, mock_post):
         """Webhook POST should use a 30-second timeout."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_httpx.post.return_value = mock_response
+        mock_post.return_value = mock_response
 
         job = _make_job(
             delivery_mode="webhook",
@@ -215,7 +215,7 @@ class TestDeliverWebhook:
 
         deliver(delivery=job.delivery, output="ok", job=job)
 
-        call_args = mock_httpx.post.call_args
+        call_args = mock_post.call_args
         assert call_args[1]["timeout"] == 30
 
 
@@ -228,10 +228,10 @@ class TestBestEffort:
         d = Delivery(mode="none")
         assert d.best_effort is True
 
-    @patch("taskrunner.cron.delivery.httpx")
-    def test_best_effort_true_swallows_webhook_error(self, mock_httpx):
+    @patch("httpx.post")
+    def test_best_effort_true_swallows_webhook_error(self, mock_post):
         """best_effort=True should swallow delivery errors."""
-        mock_httpx.post.side_effect = RuntimeError("boom")
+        mock_post.side_effect = RuntimeError("boom")
 
         job = _make_job(
             delivery_mode="webhook",

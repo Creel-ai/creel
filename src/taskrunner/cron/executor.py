@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections.abc import Callable
 from contextlib import contextmanager
 
@@ -18,31 +19,34 @@ logger = logging.getLogger(__name__)
 # Receives the formatted event text.
 InjectEventFn = Callable[[str], None]
 
+# Serialize secret loading so concurrent isolated jobs don't race on os.environ.
+_secrets_lock = threading.Lock()
+
 
 @contextmanager
 def _temporary_secrets(secrets_path: str):
     """Load secrets into os.environ and restore originals on exit.
 
-    This prevents secrets from leaking to concurrent threads after the
-    job finishes.  It's still not fully thread-safe (another thread can
-    see the secrets while this job runs), but it's a best-effort cleanup.
+    Acquires _secrets_lock to prevent concurrent isolated jobs from
+    seeing each other's secrets or corrupting os.environ state.
     """
-    secrets = decrypt_env_file(secrets_path)
-    originals: dict[str, str | None] = {}
-    for key in secrets:
-        originals[key] = os.environ.get(key)
-    # Inject
-    for key, value in secrets.items():
-        os.environ[key] = value
-    try:
-        yield
-    finally:
-        # Restore originals or remove injected keys
-        for key, original in originals.items():
-            if original is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = original
+    with _secrets_lock:
+        secrets = decrypt_env_file(secrets_path)
+        originals: dict[str, str | None] = {}
+        for key in secrets:
+            originals[key] = os.environ.get(key)
+        # Inject
+        for key, value in secrets.items():
+            os.environ[key] = value
+        try:
+            yield
+        finally:
+            # Restore originals or remove injected keys
+            for key, original in originals.items():
+                if original is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = original
 
 
 class JobExecutor:

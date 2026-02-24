@@ -105,6 +105,10 @@ CRON_TOOL_DEFINITION = {
                 "type": "string",
                 "description": "URL for 'webhook' delivery mode.",
             },
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Timeout in seconds for the job payload (default: 120).",
+            },
             "enabled": {
                 "type": "boolean",
                 "description": "Whether the job is enabled (for update).",
@@ -184,11 +188,15 @@ def _action_add(tool_input: dict[str, Any], manager: CronManager) -> str:
     if payload_kind == "systemEvent":
         target = "main"
 
-    payload = Payload(
-        kind=payload_kind,
-        message=message,
-        model=tool_input.get("model"),
-    )
+    payload_kwargs: dict[str, Any] = {
+        "kind": payload_kind,
+        "message": message,
+        "model": tool_input.get("model"),
+    }
+    timeout = tool_input.get("timeout_seconds")
+    if timeout is not None:
+        payload_kwargs["timeout_seconds"] = timeout
+    payload = Payload(**payload_kwargs)
 
     delivery_mode = tool_input.get("delivery_mode", "none")
     delivery = Delivery(

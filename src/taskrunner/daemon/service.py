@@ -56,6 +56,9 @@ class DaemonService:
         self._channel_state: dict[str, dict[str, Any]] = {}
 
         # Cron manager lifecycle state.
+        # Callers (especially tests) should pass an explicit cron_store to
+        # avoid touching the real ~/.creel/cron/ directory. The default is
+        # only appropriate for production daemon startup.
         self._cron_sender_id = cron_sender_id
         self._cron_store = cron_store or JobStore()
         self._cron_executor = JobExecutor(

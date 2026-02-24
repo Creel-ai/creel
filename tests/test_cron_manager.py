@@ -6,7 +6,6 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 
 from taskrunner.cron.manager import CronManager, _make_trigger
 from taskrunner.cron.models import (
@@ -37,28 +36,6 @@ def _make_job(name: str = "test job", **kwargs) -> CronJob:
     )
     defaults.update(kwargs)
     return CronJob(**defaults)
-
-
-def _make_tasks_dir(tmp_path, tasks: list[dict] | None = None):
-    """Create a tasks directory with YAML files for legacy loading."""
-    tasks_dir = tmp_path / "tasks"
-    tasks_dir.mkdir()
-    if tasks:
-        for task in tasks:
-            path = tasks_dir / f"{task['name']}.yaml"
-            path.write_text(yaml.dump(task))
-    return tasks_dir
-
-
-def _sample_task(name: str = "test_task", schedule: str = "0 7 * * *") -> dict:
-    return {
-        "name": name,
-        "schedule": schedule,
-        "executors": {"weather": {"args": {"location": "denver"}}},
-        "prompt": "Weather: {weather}",
-        "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
-    }
 
 
 # -- _make_trigger tests --
@@ -456,119 +433,6 @@ class TestOneShotAutoDelete:
 
         mgr._execute_job(job)
         assert store.get(job.id) is not None
-
-
-# -- Legacy YAML task loading --
-
-
-class TestLegacyTaskLoading:
-    def test_load_legacy_tasks(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-
-        count = mgr.load_legacy_tasks(tasks_dir)
-        assert count == 1
-
-    def test_legacy_tasks_appear_in_list(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-        mgr.load_legacy_tasks(tasks_dir)
-
-        jobs = mgr.list_jobs()
-        assert len(jobs) == 1
-        assert jobs[0].name == "alpha"
-        assert jobs[0].id == "legacy-alpha"
-        assert jobs[0].source == "yaml_import"
-
-    def test_legacy_tasks_findable_by_id(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-        mgr.load_legacy_tasks(tasks_dir)
-
-        job = mgr.get_job("legacy-alpha")
-        assert job is not None
-        assert job.name == "alpha"
-
-    def test_legacy_tasks_scheduled_on_start(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-        mgr.load_legacy_tasks(tasks_dir)
-        mgr.start()
-
-        scheduled_ids = {j.id for j in mgr._scheduler.get_jobs()}
-        assert "legacy-alpha" in scheduled_ids
-
-        mgr.shutdown()
-
-    def test_legacy_task_cannot_be_updated(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-        mgr.load_legacy_tasks(tasks_dir)
-
-        with pytest.raises(ValueError, match="legacy YAML job"):
-            mgr.update_job("legacy-alpha", name="renamed")
-
-    def test_legacy_task_cannot_be_removed(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-        mgr.load_legacy_tasks(tasks_dir)
-
-        with pytest.raises(ValueError, match="legacy YAML job"):
-            mgr.remove_job("legacy-alpha")
-
-    def test_legacy_task_can_be_triggered(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        executor = MagicMock()
-        mgr = CronManager(store, executor=executor)
-        mgr.load_legacy_tasks(tasks_dir)
-
-        mgr.trigger_job("legacy-alpha")
-
-        executor.assert_called_once()
-        called_job = executor.call_args[0][0]
-        assert called_job.name == "alpha"
-
-    def test_legacy_tasks_coexist_with_managed(self, tmp_path):
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("legacy_one")])
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-        mgr.load_legacy_tasks(tasks_dir)
-
-        managed = _make_job("managed_one")
-        store.add(managed)
-
-        jobs = mgr.list_jobs()
-        names = {j.name for j in jobs}
-        assert names == {"legacy_one", "managed_one"}
-
-    def test_load_nonexistent_dir_returns_zero(self, tmp_path):
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-        count = mgr.load_legacy_tasks(tmp_path / "nonexistent")
-        assert count == 0
-
-    def test_legacy_at_job_not_auto_deleted(self, tmp_path):
-        """Legacy jobs should never be auto-deleted, even if one-shot."""
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha")])
-        store = _make_store(tmp_path)
-        executor = MagicMock()
-        mgr = CronManager(store, executor=executor)
-        mgr.load_legacy_tasks(tasks_dir)
-
-        # Legacy jobs won't actually be "at" type from YAML, but
-        # verify the auto-delete guard works for legacy IDs
-        legacy_job = mgr.get_job("legacy-alpha")
-        mgr._execute_job(legacy_job)
-
-        # Should still be in legacy jobs
-        assert mgr.get_job("legacy-alpha") is not None
 
 
 # -- Run history via manager --

@@ -304,8 +304,8 @@ class DaemonService:
         """Access the cron manager (e.g. for agent tool dispatch)."""
         return self._cron_manager
 
-    def start_cron_manager(self, tasks_dir: str | Path = "tasks") -> bool:
-        """Load legacy YAML tasks, start the cron manager scheduler.
+    def start_cron_manager(self) -> bool:
+        """Start the cron manager scheduler.
 
         Returns:
             True if started, False if already running.
@@ -313,10 +313,6 @@ class DaemonService:
         with self._lock:
             if self._cron_manager.running:
                 return False
-
-            tasks_path = Path(tasks_dir)
-            count = self._cron_manager.load_legacy_tasks(tasks_path)
-            logger.info("Loaded %d legacy YAML tasks into cron manager", count)
 
             self._cron_manager.start()
             return True
@@ -495,7 +491,6 @@ class DaemonService:
         cron_info = {
             "running": cron_running,
             "managed_jobs": len(managed_jobs),
-            "legacy_jobs": self._cron_manager.legacy_job_count,
         }
 
         return {

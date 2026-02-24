@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 
 from taskrunner.channels.base import Channel
 from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
@@ -135,36 +133,27 @@ class TestCronManagerInit:
 
 
 class TestCronManagerLifecycle:
-    def test_start_cron_manager(self, daemon_service: DaemonService, tmp_path: Path) -> None:
+    def test_start_cron_manager(self, daemon_service: DaemonService) -> None:
         """start_cron_manager should start the scheduler."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        result = daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        result = daemon_service.start_cron_manager()
         assert result is True
         assert daemon_service.cron_manager.running
 
         daemon_service.stop_cron_manager()
 
     def test_start_cron_manager_already_running(
-        self, daemon_service: DaemonService, tmp_path: Path
+        self, daemon_service: DaemonService
     ) -> None:
         """start_cron_manager returns False if already running."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
-        result = daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
+        result = daemon_service.start_cron_manager()
         assert result is False
 
         daemon_service.stop_cron_manager()
 
-    def test_stop_cron_manager(self, daemon_service: DaemonService, tmp_path: Path) -> None:
+    def test_stop_cron_manager(self, daemon_service: DaemonService) -> None:
         """stop_cron_manager should stop the scheduler."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
         result = daemon_service.stop_cron_manager()
         assert result is True
         assert not daemon_service.cron_manager.running
@@ -173,49 +162,6 @@ class TestCronManagerLifecycle:
         """stop_cron_manager returns False when not running."""
         result = daemon_service.stop_cron_manager()
         assert result is False
-
-
-# -- Legacy YAML task loading --
-
-
-class TestLegacyTaskLoading:
-    def test_loads_yaml_tasks_on_start(
-        self, daemon_service: DaemonService, tmp_path: Path
-    ) -> None:
-        """start_cron_manager should load YAML tasks from the tasks dir."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        (tasks_dir / "morning.yaml").write_text(
-            yaml.dump({
-                "name": "morning",
-                "schedule": "0 8 * * *",
-                "executors": {"weather": {"args": {"location": "denver"}}},
-                "prompt": "Good morning! Here is the weather.",
-                "output": {"type": "stdout", "to": ""},
-            })
-        )
-
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
-
-        jobs = daemon_service.cron_manager.list_jobs()
-        legacy_names = [j.name for j in jobs if j.source == "yaml_import"]
-        assert "morning" in legacy_names
-
-        daemon_service.stop_cron_manager()
-
-    def test_loads_no_tasks_when_dir_empty(
-        self, daemon_service: DaemonService, tmp_path: Path
-    ) -> None:
-        """An empty tasks dir should result in no legacy jobs."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
-
-        legacy_count = daemon_service.cron_manager.legacy_job_count
-        assert legacy_count == 0
-
-        daemon_service.stop_cron_manager()
 
 
 # -- Event injection (main-session jobs) --
@@ -259,15 +205,13 @@ class TestEventInjection:
         assert "Reminder!" in history[0]["content"]
 
     def test_main_session_job_triggers_injection(
-        self, daemon_service: DaemonService, tmp_path: Path
+        self, daemon_service: DaemonService
     ) -> None:
         """A main-session cron job should inject its event into the chat server."""
         job = _make_job(name="reminder", target="main")
         daemon_service.cron_manager.store.add(job)
 
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
 
         # Trigger the job manually
         daemon_service.cron_manager.trigger_job(job.id)
@@ -334,9 +278,7 @@ class TestChannelDelivery:
         )
         daemon_service.cron_manager.store.add(job)
 
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
 
         daemon_service.cron_manager.trigger_job(job.id)
 
@@ -351,13 +293,10 @@ class TestChannelDelivery:
 
 class TestGracefulShutdown:
     def test_shutdown_stops_cron_manager(
-        self, daemon_service: DaemonService, tmp_path: Path
+        self, daemon_service: DaemonService
     ) -> None:
         """shutdown() should stop the cron manager."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
         assert daemon_service.cron_manager.running
 
         daemon_service.shutdown()
@@ -386,7 +325,6 @@ class TestCronStatus:
         assert "cron" in status
         assert status["cron"]["running"] is False
         assert status["cron"]["managed_jobs"] == 0
-        assert status["cron"]["legacy_jobs"] == 0
 
     def test_status_counts_managed_jobs(
         self, daemon_service: DaemonService
@@ -398,38 +336,11 @@ class TestCronStatus:
         status = daemon_service.status()
         assert status["cron"]["managed_jobs"] == 1
 
-    def test_status_counts_legacy_jobs(
-        self, daemon_service: DaemonService, tmp_path: Path
-    ) -> None:
-        """Status should reflect the number of legacy jobs after loading."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        (tasks_dir / "weather.yaml").write_text(
-            yaml.dump({
-                "name": "weather",
-                "schedule": "0 9 * * *",
-                "executors": {"weather": {"args": {"location": "denver"}}},
-                "prompt": "What is the weather?",
-                "output": {"type": "stdout", "to": ""},
-            })
-        )
-
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
-
-        status = daemon_service.status()
-        assert status["cron"]["running"] is True
-        assert status["cron"]["legacy_jobs"] == 1
-
-        daemon_service.stop_cron_manager()
-
     def test_status_cron_running_after_start(
-        self, daemon_service: DaemonService, tmp_path: Path
+        self, daemon_service: DaemonService
     ) -> None:
         """Status should show cron as running after start_cron_manager."""
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
         status = daemon_service.status()
         assert status["cron"]["running"] is True
 
@@ -484,9 +395,7 @@ class TestRunHistoryRecording:
         job = _make_job(name="tracked-job", target="main")
         daemon_service.cron_manager.store.add(job)
 
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
 
         daemon_service.cron_manager.trigger_job(job.id)
 
@@ -507,9 +416,7 @@ class TestRunHistoryRecording:
         job = _make_job(name="flaky-job", target="isolated")
         daemon_service.cron_manager.store.add(job)
 
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
 
         daemon_service.cron_manager.trigger_job(job.id)
 
@@ -547,9 +454,7 @@ class TestEdgeCases:
 
         assert len(svc.cron_manager.store.list()) == 0
 
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        result = svc.start_cron_manager(tasks_dir=tasks_dir)
+        result = svc.start_cron_manager()
         assert result is True
 
         svc.stop_cron_manager()
@@ -563,9 +468,7 @@ class TestEdgeCases:
         daemon_service.cron_manager.store.add(job1)
         daemon_service.cron_manager.store.add(job2)
 
-        tasks_dir = tmp_path / "tasks"
-        tasks_dir.mkdir()
-        daemon_service.start_cron_manager(tasks_dir=tasks_dir)
+        daemon_service.start_cron_manager()
 
         daemon_service.cron_manager.trigger_job(job1.id)
         daemon_service.cron_manager.trigger_job(job2.id)

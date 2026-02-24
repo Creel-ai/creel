@@ -19,7 +19,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 
 from taskrunner.channels.base import Channel
 from taskrunner.cron.delivery import deliver
@@ -96,28 +95,6 @@ class _StubChannel(Channel):
 
     def send(self, recipient: str, text: str) -> None:
         self.sent.append((recipient, text))
-
-
-def _make_tasks_dir(tmp_path: Path, tasks: list[dict] | None = None) -> Path:
-    """Create a tasks directory with YAML files."""
-    tasks_dir = tmp_path / "tasks"
-    tasks_dir.mkdir(exist_ok=True)
-    if tasks:
-        for task in tasks:
-            path = tasks_dir / f"{task['name']}.yaml"
-            path.write_text(yaml.dump(task))
-    return tasks_dir
-
-
-def _sample_task(name: str = "test_task", schedule: str = "0 7 * * *") -> dict:
-    return {
-        "name": name,
-        "schedule": schedule,
-        "executors": {"weather": {"args": {"location": "denver"}}},
-        "prompt": "Weather: {weather}",
-        "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
-    }
 
 
 # =============================================================================
@@ -581,60 +558,6 @@ class TestEndToEndAgentToolFlow:
         # List should be empty
         result = json.loads(handle_cron_tool({"action": "list"}, mgr))
         assert result["count"] == 0
-
-
-# =============================================================================
-# Acceptance Criteria: Legacy Compatibility
-# =============================================================================
-
-
-class TestLegacyCompatibility:
-    """Existing YAML tasks work alongside managed cron jobs."""
-
-    def test_legacy_and_managed_coexist(self, tmp_path: Path):
-        """Legacy YAML tasks and managed jobs should all appear in list_jobs
-        and both fire when triggered."""
-        store = _make_store(tmp_path)
-        executor = MagicMock()
-        mgr = CronManager(store, executor=executor)
-
-        # Load legacy tasks
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("morning_weather")])
-        mgr.load_legacy_tasks(tasks_dir)
-
-        # Add a managed job
-        managed = _make_job("custom job")
-        mgr.add_job(managed)
-
-        mgr.start()
-
-        # Both should be listed
-        jobs = mgr.list_jobs()
-        names = {j.name for j in jobs}
-        assert "morning_weather" in names
-        assert "custom job" in names
-
-        # Both should be triggerable
-        mgr.trigger_job("legacy-morning_weather")
-        mgr.trigger_job(managed.id)
-
-        mgr.shutdown()
-
-        assert executor.call_count == 2
-
-    def test_legacy_jobs_cannot_be_modified(self, tmp_path: Path):
-        """Legacy jobs should be read-only (update/remove raise ValueError)."""
-        store = _make_store(tmp_path)
-        mgr = CronManager(store)
-
-        tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("protected")])
-        mgr.load_legacy_tasks(tasks_dir)
-
-        with pytest.raises(ValueError, match="legacy YAML job"):
-            mgr.update_job("legacy-protected", name="hacked")
-
-        with pytest.raises(ValueError, match="legacy YAML job"):
-            mgr.remove_job("legacy-protected")
 
 
 # =============================================================================

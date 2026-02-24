@@ -7,8 +7,7 @@ import hashlib
 import hmac
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from taskrunner.channels.base import Channel
 from taskrunner.channels.webhook import WebhookChannelMixin
@@ -17,6 +16,9 @@ from taskrunner.channels.whatsapp_bridge import (
     NeonizeWhatsAppBridge,
     WhatsAppBridge,
 )
+
+if TYPE_CHECKING:
+    from taskrunner.channels.plugin import ChannelPluginMeta
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +101,7 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
 
             except Exception:
                 consecutive_errors += 1
-                backoff = min(
-                    self._poll_interval * (2 ** consecutive_errors), max_backoff
-                )
+                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
                 logger.exception(
                     "Error polling WhatsApp (consecutive=%d, backoff=%.1fs)",
                     consecutive_errors,
@@ -156,13 +156,16 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
             if not signature_header.startswith("sha256="):
                 raise HTTPException(status_code=403, detail="Missing signature")
             expected = hmac.new(
-                self._webhook_secret.encode(), raw_body, hashlib.sha256,
+                self._webhook_secret.encode(),
+                raw_body,
+                hashlib.sha256,
             ).hexdigest()
-            received = signature_header[len("sha256="):]
+            received = signature_header[len("sha256=") :]
             if not hmac.compare_digest(expected, received):
                 raise HTTPException(status_code=403, detail="Invalid signature")
 
         import json
+
         body = json.loads(raw_body)
 
         # Extract messages from the webhook payload (Meta/Cloud API format)
@@ -212,9 +215,7 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
         id="whatsapp",
         label="WhatsApp",
         capabilities=(
-            ChannelCapability.POLLING
-            | ChannelCapability.WEBHOOK
-            | ChannelCapability.SEND
+            ChannelCapability.POLLING | ChannelCapability.WEBHOOK | ChannelCapability.SEND
         ),
         config_schema=WhatsAppChannelConfig,
         extras=["whatsapp"],

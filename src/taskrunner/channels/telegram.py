@@ -8,14 +8,17 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from taskrunner.channels.base import Channel
-from taskrunner.channels.webhook import WebhookChannelMixin
 from taskrunner.channels.telegram_bridge import (
     HttpTelegramBridge,
     TelegramBridge,
 )
+from taskrunner.channels.webhook import WebhookChannelMixin
+
+if TYPE_CHECKING:
+    from taskrunner.channels.plugin import ChannelPluginMeta
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
         # Build allowed outbound recipients from numeric sender IDs + chat IDs
         self._allowed_recipients: set[str] = set(allowed_chats or [])
-        for s in (allowed_senders or []):
+        for s in allowed_senders or []:
             if not s.startswith("@"):
                 self._allowed_recipients.add(s)
 
@@ -114,7 +117,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
                     if text is None:
                         continue
 
-                    logger.info("Telegram from %s (@%s): %s", msg.sender_id, msg.sender_username, text[:80])
+                    logger.info(
+                        "Telegram from %s (@%s): %s", msg.sender_id, msg.sender_username, text[:80]
+                    )
 
                     if self._send_typing:
                         self._bridge.send_typing(msg.chat_id)
@@ -124,7 +129,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
             except Exception:
                 consecutive_errors += 1
-                backoff = min(2 ** consecutive_errors, max_backoff)
+                backoff = min(2**consecutive_errors, max_backoff)
                 logger.exception(
                     "Error polling Telegram (consecutive=%d, backoff=%.1fs)",
                     consecutive_errors,
@@ -171,6 +176,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
                 return None
             # Strip the mention (case-insensitive)
             import re
+
             text = re.sub(re.escape(mention), "", text, flags=re.IGNORECASE).strip()
 
         return text if text else None

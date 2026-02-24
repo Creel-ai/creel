@@ -281,7 +281,6 @@ class DaemonService:
 
     def start_configured_channels(self, agent_def: AgentDefinition) -> None:
         """Discover and start all channels configured in agent.yaml."""
-        from taskrunner.channels.plugin import ChannelCapability
         from taskrunner.channels.registry import ChannelRegistry
 
         registry = ChannelRegistry()
@@ -388,9 +387,7 @@ class DaemonService:
             mgr = self._server._session_mgr
             stats = mgr.session_stats()
 
-            scheduler_running = bool(
-                self._scheduler_thread and self._scheduler_thread.is_alive()
-            )
+            scheduler_running = bool(self._scheduler_thread and self._scheduler_thread.is_alive())
 
             channels: list[dict[str, Any]] = []
             for name in sorted(self._channel_state):

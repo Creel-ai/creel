@@ -10,12 +10,12 @@ import logging
 import subprocess
 import tempfile
 import threading
-from hashlib import sha256
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 
 from taskrunner.llm import run_llm
-from taskrunner.models import BridgeConfig, ExecutorConfig, TaskDefinition, load_task
+from taskrunner.models import BridgeConfig, ExecutorConfig, TaskDefinition, ToolConfig, load_task
 from taskrunner.outputs import send_output
 from taskrunner.secrets import decrypt_env_file
 
@@ -39,20 +39,10 @@ def _compute_executor_hash(executor_dir: Path) -> str:
     """
     h = sha256()
     # Executor-specific files
-    paths = sorted(
-        p
-        for pattern in _HASH_GLOBS
-        for p in executor_dir.glob(pattern)
-        if p.is_file()
-    )
+    paths = sorted(p for pattern in _HASH_GLOBS for p in executor_dir.glob(pattern) if p.is_file())
     # Shared files in the build context (src/executors/)
     context_dir = executor_dir.parent
-    shared = sorted(
-        p
-        for pattern in _HASH_GLOBS
-        for p in context_dir.glob(pattern)
-        if p.is_file()
-    )
+    shared = sorted(p for pattern in _HASH_GLOBS for p in context_dir.glob(pattern) if p.is_file())
     for p in paths:
         h.update(p.relative_to(executor_dir).as_posix().encode())
         h.update(p.read_bytes())
@@ -89,7 +79,9 @@ def _replace_google_credentials_with_access_token(env_vars: dict[str, str]) -> N
             force_refresh=False,
         )
     except Exception:
-        logger.exception("Failed to mint Google access token; executor will not receive credentials")
+        logger.exception(
+            "Failed to mint Google access token; executor will not receive credentials"
+        )
         raise
 
 
@@ -214,19 +206,19 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
         env_overrides = decrypt_env_file(config.secrets)
         _replace_google_credentials_with_access_token(env_overrides)
 
-    import os
-
     with _ENV_LOCK:
         return _run_executor_inline_locked(name, config, env_overrides)
 
 
 def _run_executor_inline_locked(
-    name: str, config: ExecutorConfig, env_overrides: dict[str, str],
+    name: str,
+    config: ExecutorConfig,
+    env_overrides: dict[str, str],
 ) -> str:
     """Inner executor dispatch, called under _ENV_LOCK."""
     import os
 
-    old_env = {}
+    old_env: dict[str, str | None] = {}
     for k, v in env_overrides.items():
         old_env[k] = os.environ.get(k)
         os.environ[k] = v
@@ -290,11 +282,11 @@ def _run_executor_inline_locked(
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
         # Restore original env
-        for k, v in old_env.items():
-            if v is None:
+        for k, old_value in old_env.items():
+            if old_value is None:
                 os.environ.pop(k, None)
             else:
-                os.environ[k] = v
+                os.environ[k] = old_value
 
 
 def _exec_weather_inline(config: ExecutorConfig) -> str:
@@ -371,10 +363,8 @@ def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
 
         add_raw = config.args.get("add_labels", "")
         remove_raw = config.args.get("remove_labels", "")
-        add_labels = [l.strip() for l in add_raw.split(",") if l.strip()] or None
-        remove_labels = (
-            [l.strip() for l in remove_raw.split(",") if l.strip()] or None
-        )
+        add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
+        remove_labels = [label.strip() for label in remove_raw.split(",") if label.strip()] or None
         result = modify_message(message_id, add_labels, remove_labels)
     elif action == "trash":
         from executors.gmail_modify.executor import trash_message
@@ -415,6 +405,7 @@ def _exec_drive_write_inline(config: ExecutorConfig) -> str:
 def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     """Run BlueBubbles executor inline."""
     import os
+
     from executors.bluebubbles.executor import (
         get_chats,
         get_recent_messages,
@@ -425,16 +416,11 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     server_url = os.environ.get("BLUEBUBBLES_URL", "")
     password = os.environ.get("BLUEBUBBLES_PASSWORD", "")
     allowed_recipients = {
-        v.strip()
-        for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",")
-        if v.strip()
+        v.strip() for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",") if v.strip()
     }
-    allowed_chats = {
-        v.strip()
-        for v in os.environ.get("ALLOWED_CHATS", "").split(",")
-        if v.strip()
-    }
+    allowed_chats = {v.strip() for v in os.environ.get("ALLOWED_CHATS", "").split(",") if v.strip()}
 
+    result: object
     if action == "get_recent_messages":
         result = get_recent_messages(
             server_url,
@@ -477,10 +463,11 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
 def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
     """Run Apple Notes executor inline via bridge."""
     import os
+
     from executors.apple_notes.executor import main as apple_notes_main
-    
+
     # Set environment variables for the bridge-calling executor
-    old_env = {}
+    old_env: dict[str, str | None] = {}
     env_vars = {
         "ACTION": config.args.get("action", "list"),
         "FOLDER": config.args.get("folder", ""),
@@ -488,30 +475,32 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
         "TITLE": config.args.get("title", ""),
         "BODY": config.args.get("body", ""),
     }
-    
+
     for key, value in env_vars.items():
         if value:  # Only set non-empty values
             old_env[key] = os.environ.get(key)
             os.environ[key] = str(value)
-    
+
     try:
         # Capture stdout from the bridge executor
         import sys
         from io import StringIO
+
         old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
-        
+
         apple_notes_main()
-        
+
         result = captured_output.getvalue()
         return result.strip() or "{}"
-        
+
     finally:
         # Restore environment
         sys.stdout = old_stdout
         for key in env_vars:
-            if old_env.get(key) is not None:
-                os.environ[key] = old_env[key]
+            old_value = old_env.get(key)
+            if old_value is not None:
+                os.environ[key] = old_value
             else:
                 os.environ.pop(key, None)
 
@@ -519,42 +508,45 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
 def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
     """Run Apple Reminders executor inline via bridge."""
     import os
+
     from executors.apple_reminders.executor import main as apple_reminders_main
-    
+
     # Set environment variables for the bridge-calling executor
-    old_env = {}
+    old_env: dict[str, str | None] = {}
     env_vars = {
         "ACTION": config.args.get("action", "list"),
-        "FILTER": config.args.get("filter", "all"), 
+        "FILTER": config.args.get("filter", "all"),
         "TITLE": config.args.get("title", ""),
         "LIST": config.args.get("list_name", ""),
         "DUE": config.args.get("due_date", ""),
         "ID": config.args.get("id", ""),
     }
-    
+
     for key, value in env_vars.items():
         if value:  # Only set non-empty values
             old_env[key] = os.environ.get(key)
             os.environ[key] = str(value)
-    
+
     try:
         # Capture stdout from the bridge executor
         import sys
         from io import StringIO
+
         old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
-        
+
         apple_reminders_main()
-        
+
         result = captured_output.getvalue()
         return result.strip() or "{}"
-        
+
     finally:
         # Restore environment
         sys.stdout = old_stdout
         for key in env_vars:
-            if old_env.get(key) is not None:
-                os.environ[key] = old_env[key]
+            old_value = old_env.get(key)
+            if old_value is not None:
+                os.environ[key] = old_value
             else:
                 os.environ.pop(key, None)
 
@@ -710,7 +702,9 @@ def _exec_file_ops_inline(config: ExecutorConfig) -> str:
             if old_env[env_key] is None:
                 os.environ.pop(env_key, None)
             else:
-                os.environ[env_key] = old_env[env_key]
+                old_value = old_env[env_key]
+                assert old_value is not None
+                os.environ[env_key] = old_value
 
 
 def _ensure_image(image: str) -> str:
@@ -801,9 +795,9 @@ def _build_image(
 
 
 def _run_executor_container(
-    config: ExecutorConfig, 
+    config: ExecutorConfig,
     tool_config: "ToolConfig | None" = None,
-    bridge_config: BridgeConfig | None = None
+    bridge_config: BridgeConfig | None = None,
 ) -> str:
     """Run an executor in an isolated Docker container.
 
@@ -811,7 +805,7 @@ def _run_executor_container(
     always logged at DEBUG on success and ERROR on failure. The
     request_id is passed into the container as ``CREEL_REQUEST_ID``
     for log correlation.
-    
+
     Args:
         config: Executor configuration
         tool_config: Optional tool configuration with mount/network/image overrides
@@ -822,7 +816,7 @@ def _run_executor_container(
     # Determine image to use - tool config overrides executor config
     image = tool_config.image if (tool_config and tool_config.image) else config.image
     image = _ensure_image(image)
-    
+
     env_vars: dict[str, str] = {}
 
     # Decrypt and inject secrets
@@ -840,10 +834,11 @@ def _run_executor_container(
     rid = request_id_var.get(None)
     if rid:
         env_vars["CREEL_REQUEST_ID"] = rid
-    
+
     # Add bridge configuration if enabled
     if bridge_config and bridge_config.enabled:
         import os
+
         # Rewrite localhost to host.docker.internal for container access
         bridge_url = bridge_config.url
         bridge_url = bridge_url.replace("://localhost", "://host.docker.internal")
@@ -861,6 +856,7 @@ def _run_executor_container(
     # Handle workspace mount for file_ops (must be before env_file write
     # so WORKSPACE=/workspace ends up in the env file, not the host path)
     import os
+
     _workspace_mount: tuple[str, str] | None = None
     workspace_path = config.args.get("workspace")
     if workspace_path and config.name in ("file_ops",):
@@ -884,14 +880,18 @@ def _run_executor_container(
 
         # Build docker run command
         docker_cmd = [
-            "docker", "run", "--rm",
+            "docker",
+            "run",
+            "--rm",
             "--read-only",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=16M",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--memory=256m",
             "--cpus=0.5",
-            "--env-file", env_file.name,
+            "--env-file",
+            env_file.name,
         ]
 
         # Add mount options from tool config
@@ -908,7 +908,7 @@ def _run_executor_container(
         # Add network isolation if disabled
         if tool_config and not tool_config.network:
             docker_cmd.extend(["--network=none"])
-        
+
         # Add image name
         docker_cmd.append(image)
 
@@ -924,11 +924,11 @@ def _run_executor_container(
             if stderr:
                 logger.error(
                     "Executor %s stderr (timeout after %ds):\n%s",
-                    config.name, config.timeout, stderr,
+                    config.name,
+                    config.timeout,
+                    stderr,
                 )
-            raise RuntimeError(
-                f"Executor '{config.name}' timed out after {config.timeout}s"
-            ) from e
+            raise RuntimeError(f"Executor '{config.name}' timed out after {config.timeout}s") from e
 
     # Log stderr regardless of exit code
     stderr = result.stderr.strip() if result.stderr else ""
@@ -936,14 +936,14 @@ def _run_executor_container(
         if result.returncode == 0:
             logger.debug("Executor %s stderr (success):\n%s", config.name, stderr)
         else:
-            logger.error("Executor %s stderr (exit %d):\n%s", config.name, result.returncode, stderr)
+            logger.error(
+                "Executor %s stderr (exit %d):\n%s", config.name, result.returncode, stderr
+            )
 
     if result.returncode != 0:
         # Include stderr in the error so it propagates to the LLM
         error_detail = stderr[:500] if stderr else f"exit code {result.returncode}"
-        raise RuntimeError(
-            f"Executor '{config.name}' failed: {error_detail}"
-        )
+        raise RuntimeError(f"Executor '{config.name}' failed: {error_detail}")
 
     return result.stdout.strip()
 

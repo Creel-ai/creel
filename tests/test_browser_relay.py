@@ -9,10 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bridge.browser import (
+    CREEL_CONTAINER_LABEL,
     BrowserRelay,
     BrowserSession,
-    ALLOWED_SCHEMES,
-    CREEL_CONTAINER_LABEL,
     _reap_orphaned_containers,
     _start_chromium_container,
     _stop_container,
@@ -189,11 +188,7 @@ class TestAccessibilityTree:
 
     @pytest.mark.asyncio
     async def test_basic_tree(self, relay):
-        snapshot = (
-            '- heading "Hello World" [level=1]\n'
-            '- link "Click me"\n'
-            '- textbox "Search": query'
-        )
+        snapshot = '- heading "Hello World" [level=1]\n- link "Click me"\n- textbox "Search": query'
         page = self._make_page_mock(snapshot)
         result, partial = await relay._get_accessibility_tree(page)
 
@@ -217,11 +212,7 @@ class TestAccessibilityTree:
     @pytest.mark.asyncio
     async def test_nested_indentation(self, relay):
         """Test that indentation is parsed as depth levels."""
-        snapshot = (
-            '- navigation "Main":\n'
-            '  - link "Home"\n'
-            '  - link "About"'
-        )
+        snapshot = '- navigation "Main":\n  - link "Home"\n  - link "About"'
         page = self._make_page_mock(snapshot)
         result, partial = await relay._get_accessibility_tree(page)
 
@@ -424,6 +415,7 @@ class TestPostNavigationValidation:
 
         page.go_back.assert_called_once()
 
+
 class TestNavigate:
     """Test the navigate method."""
 
@@ -494,7 +486,9 @@ class TestTypeText:
 
         assert result["ok"] is True
         assert result["url"] == "https://example.com"
-        page.fill.assert_called_once_with("input#search", "hello world", timeout=relay._navigate_timeout_ms)
+        page.fill.assert_called_once_with(
+            "input#search", "hello world", timeout=relay._navigate_timeout_ms
+        )
 
 
 class TestScreenshot:
@@ -567,9 +561,7 @@ class TestContainerManagement:
 
     @patch("bridge.browser.subprocess.run")
     def test_start_chromium_container_failure(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="image not found"
-        )
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="image not found")
 
         with pytest.raises(RuntimeError, match="Failed to start"):
             _start_chromium_container()
@@ -696,6 +688,7 @@ class TestReapOrphanedContainers:
     def test_docker_timeout(self, mock_run):
         """Should return 0 when docker ps times out."""
         import subprocess as sp
+
         mock_run.side_effect = sp.TimeoutExpired(cmd="docker", timeout=10)
 
         count = _reap_orphaned_containers()
@@ -846,8 +839,18 @@ class TestStartReapsOrphans:
         pw_context_manager = AsyncMock()
         pw_context_manager.start.return_value = pw_instance
 
-        with patch("bridge.browser._reap_orphaned_containers", return_value=2) as mock_reap, \
-             patch.dict("sys.modules", {"playwright": MagicMock(), "playwright.async_api": MagicMock(async_playwright=MagicMock(return_value=pw_context_manager))}):
+        with (
+            patch("bridge.browser._reap_orphaned_containers", return_value=2) as mock_reap,
+            patch.dict(
+                "sys.modules",
+                {
+                    "playwright": MagicMock(),
+                    "playwright.async_api": MagicMock(
+                        async_playwright=MagicMock(return_value=pw_context_manager)
+                    ),
+                },
+            ),
+        ):
             await relay.start()
 
         mock_reap.assert_called_once()

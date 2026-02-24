@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from typing import Any
 
 from taskrunner.models import BridgeConfig, ExecutorConfig, ToolConfig
 from taskrunner.orchestrator import _run_executor_container, _run_executor_inline
@@ -13,10 +14,20 @@ logger = logging.getLogger(__name__)
 
 # System directories that must never be used as workspaces.
 # Checked via both exact match and prefix match (e.g. /etc/nginx is also blocked).
-_SYSTEM_DIRS = frozenset({
-    "/etc", "/var", "/usr", "/bin", "/sbin", "/lib", "/boot",
-    "/dev", "/proc", "/sys",
-})
+_SYSTEM_DIRS = frozenset(
+    {
+        "/etc",
+        "/var",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/boot",
+        "/dev",
+        "/proc",
+        "/sys",
+    }
+)
 
 # User-sensitive directories (relative to home) that should be blocked.
 _SENSITIVE_HOME_DIRS = (".ssh", ".gnupg", ".age", ".aws")
@@ -212,11 +223,13 @@ def build_tool_definitions(
         if required:
             schema["required"] = required
 
-        tool_defs.append({
-            "name": name,
-            "description": cfg.description,
-            "input_schema": schema,
-        })
+        tool_defs.append(
+            {
+                "name": name,
+                "description": cfg.description,
+                "input_schema": schema,
+            }
+        )
 
     return tool_defs
 
@@ -262,7 +275,7 @@ def execute_tool_call(
     tool_input: dict,
     tools_config: dict[str, ToolConfig],
     use_containers: bool = False,
-    memory_manager: object | None = None,
+    memory_manager: Any | None = None,
     bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
 ) -> str:
@@ -305,15 +318,11 @@ def execute_tool_call(
 
     # Handle built-in tools
     if tool_name == "remember" and memory_manager is not None:
-        from taskrunner.memory import MemoryManager
-
         text = tool_input.get("text", "")
         category = tool_input.get("category", "general")
         return memory_manager.remember(text, category)
 
     if tool_name == "update_long_term_memory" and memory_manager is not None:
-        from taskrunner.memory import MemoryManager
-
         text = tool_input.get("text", "")
         return memory_manager.update_long_term(text)
 
@@ -354,7 +363,9 @@ def execute_tool_call(
         workspace = session_state["workspace"]
         # Re-validate: workspace may have been removed since set_workspace
         if not os.path.isdir(workspace):
-            return json.dumps({"error": "Workspace is no longer valid (directory removed or inaccessible)"})
+            return json.dumps(
+                {"error": "Workspace is no longer valid (directory removed or inaccessible)"}
+            )
         merged_args["workspace"] = workspace
 
     # Convert all values to strings (executors expect string args)

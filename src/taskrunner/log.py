@@ -37,9 +37,10 @@ class JSONFormatter(logging.Formatter):
 
         # Include any extra fields passed via `extra`
         for key in record.__dict__:
-            if key not in logging.LogRecord(
-                "", 0, "", 0, "", (), None
-            ).__dict__ and key not in ("message", "args"):
+            if key not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__ and key not in (
+                "message",
+                "args",
+            ):
                 entry[key] = record.__dict__[key]
 
         return json.dumps(entry, default=str)
@@ -52,9 +53,10 @@ _STANDARD_KEYS: set[str] | None = None
 def _standard_keys() -> set[str]:
     global _STANDARD_KEYS
     if _STANDARD_KEYS is None:
-        _STANDARD_KEYS = set(
-            logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
-        ) | {"message", "args"}
+        _STANDARD_KEYS = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()) | {
+            "message",
+            "args",
+        }
     return _STANDARD_KEYS
 
 
@@ -99,9 +101,11 @@ def setup_logging(json_mode: bool = False, level: str = "INFO") -> None:
     if json_mode:
         handler.setFormatter(_JSONFormatterOpt())
     else:
-        handler.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        ))
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
 
     root.addHandler(handler)

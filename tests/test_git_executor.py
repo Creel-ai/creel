@@ -1,11 +1,11 @@
 """Tests for the git_ops executor."""
 
-import json
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from executors.git_ops.executor import call_bridge, status, diff, log, commit, branch, push
+import pytest
+
+from executors.git_ops.executor import branch, call_bridge, commit, diff, log, push, status
 
 
 class TestBridgeClient:
@@ -19,10 +19,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": True, "output": "success"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             result = call_bridge("/git/status")
 
         assert result["ok"] is True
@@ -35,7 +34,7 @@ class TestBridgeClient:
                 "Authorization": "Bearer test-token",
                 "Content-Type": "application/json",
             },
-            timeout=30
+            timeout=30,
         )
 
     @patch("executors.git_ops.executor.requests.post")
@@ -46,10 +45,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": True, "output": "diff output"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             result = call_bridge("/git/diff", {"cached": True})
 
         assert result["ok"] is True
@@ -60,7 +58,7 @@ class TestBridgeClient:
                 "Authorization": "Bearer test-token",
                 "Content-Type": "application/json",
             },
-            timeout=30
+            timeout=30,
         )
 
     def test_call_bridge_missing_url(self):
@@ -83,10 +81,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": False, "error": "Command failed"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/git/status")
 
@@ -94,12 +91,12 @@ class TestBridgeClient:
     def test_call_bridge_request_exception(self, mock_post):
         """Test handling of request exceptions."""
         import requests as req
+
         mock_post.side_effect = req.exceptions.ConnectionError("Connection refused")
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             with pytest.raises(RuntimeError, match="Bridge request failed"):
                 call_bridge("/git/status")
 
@@ -195,7 +192,9 @@ class TestGitOperations:
         result = commit("Update all", all=True)
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/git/commit", {"message": "Update all", "all": True})
+        mock_call_bridge.assert_called_once_with(
+            "/git/commit", {"message": "Update all", "all": True}
+        )
 
     @patch("executors.git_ops.executor.call_bridge")
     def test_branch_list(self, mock_call_bridge):
@@ -235,7 +234,9 @@ class TestGitOperations:
         result = branch(name="old-branch", delete=True)
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/git/branch", {"name": "old-branch", "delete": True})
+        mock_call_bridge.assert_called_once_with(
+            "/git/branch", {"name": "old-branch", "delete": True}
+        )
 
     @patch("executors.git_ops.executor.call_bridge")
     def test_push_default(self, mock_call_bridge):
@@ -255,7 +256,9 @@ class TestGitOperations:
         result = push(branch_name="main")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/git/push", {"remote": "origin", "branch": "main"}, timeout=60)
+        mock_call_bridge.assert_called_once_with(
+            "/git/push", {"remote": "origin", "branch": "main"}, timeout=60
+        )
 
     @patch("executors.git_ops.executor.call_bridge")
     def test_push_set_upstream(self, mock_call_bridge):
@@ -268,7 +271,7 @@ class TestGitOperations:
         mock_call_bridge.assert_called_once_with(
             "/git/push",
             {"remote": "upstream", "branch": "feature", "set_upstream": True},
-            timeout=60
+            timeout=60,
         )
 
 
@@ -283,6 +286,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {}, clear=True):
             from executors.git_ops.executor import main
+
             main()
 
         mock_status.assert_called_once_with(False)
@@ -296,6 +300,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "status", "SHORT": "true"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_status.assert_called_once_with(True)
@@ -309,6 +314,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "diff"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_diff.assert_called_once_with(False, None)
@@ -320,8 +326,11 @@ class TestMainFunction:
         """Test main with diff action, cached and path."""
         mock_diff.return_value = {"ok": True, "output": "cached diff"}
 
-        with patch.dict(os.environ, {"ACTION": "diff", "CACHED": "true", "DIFF_PATH": "src/main.py"}):
+        with patch.dict(
+            os.environ, {"ACTION": "diff", "CACHED": "true", "DIFF_PATH": "src/main.py"}
+        ):
             from executors.git_ops.executor import main
+
             main()
 
         mock_diff.assert_called_once_with(True, "src/main.py")
@@ -335,6 +344,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "log"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_log.assert_called_once_with(10, True)
@@ -348,6 +358,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "log", "MAX_COUNT": "5", "ONELINE": "false"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_log.assert_called_once_with(5, False)
@@ -361,6 +372,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "commit", "MESSAGE": "Fix bug"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_commit.assert_called_once_with("Fix bug", False)
@@ -374,6 +386,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "commit", "MESSAGE": "Update", "ALL": "true"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_commit.assert_called_once_with("Update", True)
@@ -384,6 +397,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "commit"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.git_ops.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -396,6 +410,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "branch"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_branch.assert_called_once_with(None, False, False)
@@ -409,6 +424,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "branch", "BRANCH_NAME": "feature/new"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_branch.assert_called_once_with("feature/new", False, False)
@@ -421,6 +437,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "push"}):
             from executors.git_ops.executor import main
+
             main()
 
         mock_push.assert_called_once_with("origin", None, False)
@@ -432,13 +449,12 @@ class TestMainFunction:
         """Test main with push action and options."""
         mock_push.return_value = {"ok": True, "output": "pushed"}
 
-        with patch.dict(os.environ, {
-            "ACTION": "push",
-            "REMOTE": "upstream",
-            "BRANCH_NAME": "main",
-            "SET_UPSTREAM": "true"
-        }):
+        with patch.dict(
+            os.environ,
+            {"ACTION": "push", "REMOTE": "upstream", "BRANCH_NAME": "main", "SET_UPSTREAM": "true"},
+        ):
             from executors.git_ops.executor import main
+
             main()
 
         mock_push.assert_called_once_with("upstream", "main", True)
@@ -449,6 +465,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "unknown"}):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.git_ops.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -464,9 +481,11 @@ class TestBridgeEndpoints:
 
         # Set up scoped tokens before creating client
         from bridge.server import SCOPED_TOKENS
+
         SCOPED_TOKENS["GIT"] = "test-git-token"
 
         from bridge.server import app
+
         yield TestClient(app)
 
         SCOPED_TOKENS.pop("GIT", None)
@@ -480,9 +499,16 @@ class TestBridgeEndpoints:
         """Test /git/status endpoint."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="On branch main", error="",
+                ok=True,
+                output="On branch main",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "On branch main", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "On branch main",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/status", json={}, headers=auth_headers)
 
@@ -495,9 +521,16 @@ class TestBridgeEndpoints:
         """Test /git/status with short flag."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="M file.py", error="",
+                ok=True,
+                output="M file.py",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "M file.py", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "M file.py",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/status", json={"short": True}, headers=auth_headers)
 
@@ -509,9 +542,16 @@ class TestBridgeEndpoints:
         """Test /git/diff endpoint."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="", error="",
+                ok=True,
+                output="",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/diff", json={}, headers=auth_headers)
 
@@ -523,9 +563,16 @@ class TestBridgeEndpoints:
         """Test /git/diff with cached flag."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="staged", error="",
+                ok=True,
+                output="staged",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "staged", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "staged",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/diff", json={"cached": True}, headers=auth_headers)
 
@@ -537,9 +584,16 @@ class TestBridgeEndpoints:
         """Test /git/diff with path."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="diff", error="",
+                ok=True,
+                output="diff",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "diff", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "diff",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/diff", json={"path": "README.md"}, headers=auth_headers)
 
@@ -551,9 +605,16 @@ class TestBridgeEndpoints:
         """Test /git/log endpoint."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="abc1234 commit", error="",
+                ok=True,
+                output="abc1234 commit",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "abc1234 commit", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "abc1234 commit",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/log", json={}, headers=auth_headers)
 
@@ -565,9 +626,16 @@ class TestBridgeEndpoints:
         """Test /git/commit endpoint."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="1 file changed", error="",
+                ok=True,
+                output="1 file changed",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "1 file changed", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "1 file changed",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/commit", json={"message": "Fix bug"}, headers=auth_headers)
 
@@ -579,11 +647,20 @@ class TestBridgeEndpoints:
         """Test /git/commit with -a flag."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="committed", error="",
+                ok=True,
+                output="committed",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "committed", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "committed",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
-            response = client.post("/git/commit", json={"message": "Update", "all": True}, headers=auth_headers)
+            response = client.post(
+                "/git/commit", json={"message": "Update", "all": True}, headers=auth_headers
+            )
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -593,9 +670,16 @@ class TestBridgeEndpoints:
         """Test /git/branch endpoint."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="* main", error="",
+                ok=True,
+                output="* main",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "* main", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "* main",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/branch", json={}, headers=auth_headers)
 
@@ -607,11 +691,20 @@ class TestBridgeEndpoints:
         """Test /git/branch create."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="", error="",
+                ok=True,
+                output="",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
-            response = client.post("/git/branch", json={"name": "feature/new"}, headers=auth_headers)
+            response = client.post(
+                "/git/branch", json={"name": "feature/new"}, headers=auth_headers
+            )
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -621,11 +714,20 @@ class TestBridgeEndpoints:
         """Test /git/branch delete."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="Deleted", error="",
+                ok=True,
+                output="Deleted",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "Deleted", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "Deleted",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
-            response = client.post("/git/branch", json={"name": "old", "delete": True}, headers=auth_headers)
+            response = client.post(
+                "/git/branch", json={"name": "old", "delete": True}, headers=auth_headers
+            )
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -635,9 +737,16 @@ class TestBridgeEndpoints:
         """Test /git/push endpoint."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="pushed", error="",
+                ok=True,
+                output="pushed",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "pushed", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "pushed",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post("/git/push", json={}, headers=auth_headers)
 
@@ -649,11 +758,20 @@ class TestBridgeEndpoints:
         """Test /git/push with branch."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="pushed", error="",
+                ok=True,
+                output="pushed",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "pushed", "error": "", "execution_id": "test-id"}
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "pushed",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
-            response = client.post("/git/push", json={"branch": "main", "set_upstream": True}, headers=auth_headers)
+            response = client.post(
+                "/git/push", json={"branch": "main", "set_upstream": True}, headers=auth_headers
+            )
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -661,26 +779,17 @@ class TestBridgeEndpoints:
 
     def test_git_branch_rejects_flag_injection(self, client, auth_headers):
         """Test /git/branch rejects names starting with '-'."""
-        response = client.post(
-            "/git/branch", json={"name": "--delete"},
-            headers=auth_headers
-        )
+        response = client.post("/git/branch", json={"name": "--delete"}, headers=auth_headers)
         assert response.status_code == 422
 
     def test_git_push_rejects_flag_in_remote(self, client, auth_headers):
         """Test /git/push rejects remote names starting with '-'."""
-        response = client.post(
-            "/git/push", json={"remote": "--force"},
-            headers=auth_headers
-        )
+        response = client.post("/git/push", json={"remote": "--force"}, headers=auth_headers)
         assert response.status_code == 422
 
     def test_git_push_rejects_flag_in_branch(self, client, auth_headers):
         """Test /git/push rejects branch names starting with '-'."""
-        response = client.post(
-            "/git/push", json={"branch": "--all"},
-            headers=auth_headers
-        )
+        response = client.post("/git/push", json={"branch": "--all"}, headers=auth_headers)
         assert response.status_code == 422
 
     def test_git_endpoint_unauthorized(self, client):
@@ -691,8 +800,7 @@ class TestBridgeEndpoints:
     def test_git_endpoint_wrong_token(self, client):
         """Test git endpoint with wrong token."""
         response = client.post(
-            "/git/status", json={},
-            headers={"Authorization": "Bearer wrong-token"}
+            "/git/status", json={}, headers={"Authorization": "Bearer wrong-token"}
         )
         assert response.status_code == 401
 
@@ -707,7 +815,8 @@ class TestBridgeEndpoints:
             "ssh://user@host/repo",
         ]:
             response = client.post(
-                "/git/push", json={"remote": url},
+                "/git/push",
+                json={"remote": url},
                 headers=auth_headers,
             )
             assert response.status_code == 422, f"Should reject remote={url!r}"
@@ -717,12 +826,20 @@ class TestBridgeEndpoints:
         for name in ["origin", "upstream", "my-fork", "my_fork", "remote.v2"]:
             with patch("bridge.server.run_command") as mock_run:
                 mock_run.return_value = MagicMock(
-                    ok=True, output="pushed", error="",
+                    ok=True,
+                    output="pushed",
+                    error="",
                     execution_id="test-id",
-                    model_dump=lambda: {"ok": True, "output": "pushed", "error": "", "execution_id": "test-id"},
+                    model_dump=lambda: {
+                        "ok": True,
+                        "output": "pushed",
+                        "error": "",
+                        "execution_id": "test-id",
+                    },
                 )
                 response = client.post(
-                    "/git/push", json={"remote": name},
+                    "/git/push",
+                    json={"remote": name},
                     headers=auth_headers,
                 )
             assert response.status_code == 200, f"Should accept remote={name!r}"
@@ -731,7 +848,8 @@ class TestBridgeEndpoints:
         """Test /git/diff rejects paths with '..' traversal."""
         for bad_path in ["../etc/passwd", "src/../../secret", "foo/../../../bar"]:
             response = client.post(
-                "/git/diff", json={"path": bad_path},
+                "/git/diff",
+                json={"path": bad_path},
                 headers=auth_headers,
             )
             assert response.status_code == 422, f"Should reject path={bad_path!r}"
@@ -741,12 +859,20 @@ class TestBridgeEndpoints:
         for good_path in ["src/foo/bar.py", "README.md", "a/b/c/d.txt"]:
             with patch("bridge.server.run_command") as mock_run:
                 mock_run.return_value = MagicMock(
-                    ok=True, output="diff", error="",
+                    ok=True,
+                    output="diff",
+                    error="",
                     execution_id="test-id",
-                    model_dump=lambda: {"ok": True, "output": "diff", "error": "", "execution_id": "test-id"},
+                    model_dump=lambda: {
+                        "ok": True,
+                        "output": "diff",
+                        "error": "",
+                        "execution_id": "test-id",
+                    },
                 )
                 response = client.post(
-                    "/git/diff", json={"path": good_path},
+                    "/git/diff",
+                    json={"path": good_path},
                     headers=auth_headers,
                 )
             assert response.status_code == 200, f"Should accept path={good_path!r}"
@@ -754,7 +880,8 @@ class TestBridgeEndpoints:
     def test_git_log_rejects_max_count_over_500(self, client, auth_headers):
         """Test /git/log rejects max_count > 500."""
         response = client.post(
-            "/git/log", json={"max_count": 501},
+            "/git/log",
+            json={"max_count": 501},
             headers=auth_headers,
         )
         assert response.status_code == 422
@@ -763,12 +890,20 @@ class TestBridgeEndpoints:
         """Test /git/log accepts max_count=500."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="commits", error="",
+                ok=True,
+                output="commits",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "commits", "error": "", "execution_id": "test-id"},
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "commits",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post(
-                "/git/log", json={"max_count": 500},
+                "/git/log",
+                json={"max_count": 500},
                 headers=auth_headers,
             )
         assert response.status_code == 200
@@ -776,7 +911,8 @@ class TestBridgeEndpoints:
     def test_git_commit_rejects_overlong_message(self, client, auth_headers):
         """Test /git/commit rejects messages longer than 50,000 chars."""
         response = client.post(
-            "/git/commit", json={"message": "x" * 50_001},
+            "/git/commit",
+            json={"message": "x" * 50_001},
             headers=auth_headers,
         )
         assert response.status_code == 422
@@ -785,12 +921,20 @@ class TestBridgeEndpoints:
         """Test /git/commit accepts messages at the 50,000 char limit."""
         with patch("bridge.server.run_command") as mock_run:
             mock_run.return_value = MagicMock(
-                ok=True, output="committed", error="",
+                ok=True,
+                output="committed",
+                error="",
                 execution_id="test-id",
-                model_dump=lambda: {"ok": True, "output": "committed", "error": "", "execution_id": "test-id"},
+                model_dump=lambda: {
+                    "ok": True,
+                    "output": "committed",
+                    "error": "",
+                    "execution_id": "test-id",
+                },
             )
             response = client.post(
-                "/git/commit", json={"message": "x" * 50_000},
+                "/git/commit",
+                json={"message": "x" * 50_000},
                 headers=auth_headers,
             )
         assert response.status_code == 200
@@ -808,7 +952,8 @@ class TestOutputTruncation:
         mock_result.stderr = ""
         mock_run.return_value = mock_result
 
-        from bridge.server import run_command, MAX_OUTPUT_BYTES
+        from bridge.server import MAX_OUTPUT_BYTES, run_command
+
         result = run_command(["git", "log"])
 
         assert len(result.output) <= MAX_OUTPUT_BYTES + 50  # allow for suffix
@@ -825,6 +970,7 @@ class TestOutputTruncation:
         mock_run.return_value = mock_result
 
         from bridge.server import run_command
+
         result = run_command(["git", "status"])
 
         assert result.output == "short output"

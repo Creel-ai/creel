@@ -101,7 +101,9 @@ def click(session_id: str, selector: str) -> dict[str, Any]:
 
 def type_text(session_id: str, selector: str, text: str) -> dict[str, Any]:
     """Type text into an input via bridge."""
-    return call_bridge("/browser/type", {"session_id": session_id, "selector": selector, "text": text})
+    return call_bridge(
+        "/browser/type", {"session_id": session_id, "selector": selector, "text": text}
+    )
 
 
 def screenshot(session_id: str, full_page: bool = False) -> dict[str, Any]:

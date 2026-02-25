@@ -13,11 +13,15 @@ import threading
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from taskrunner.llm import run_llm
 from taskrunner.models import BridgeConfig, ExecutorConfig, TaskDefinition, ToolConfig, load_task
 from taskrunner.outputs import send_output
 from taskrunner.secrets import decrypt_env_file
+
+if TYPE_CHECKING:
+    from taskrunner.models import AgentDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -925,7 +929,6 @@ def collect_required_images(agent_def: "AgentDefinition") -> list[str]:
     The ``llm-runner:latest`` image is included when tools are present
     (agent mode requires the containerised LLM runner).
     """
-    from taskrunner.models import AgentDefinition  # noqa: F811 (TYPE_CHECKING)
 
     images: set[str] = set()
     for _tool_name, tool_config in agent_def.tools.items():

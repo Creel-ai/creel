@@ -204,6 +204,7 @@ class TestEnsureImage:
     @pytest.fixture(autouse=True)
     def _clear_cache(self):
         from taskrunner.orchestrator import _image_cache
+
         _image_cache.clear()
         yield
         _image_cache.clear()

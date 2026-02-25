@@ -219,9 +219,7 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
     agent_def = AgentDefinition(
         system_prompt="You are a test agent.",
         tools={
-            "send_email": ToolConfig(
-                executor="mock", description="Send an email"
-            ),
+            "send_email": ToolConfig(executor="mock", description="Send an email"),
         },
         session=SessionConfig(
             sessions_dir=str(tmp_path / "sessions"),

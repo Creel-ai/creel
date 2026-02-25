@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Notion executor - read-only access to pages and databases.
 
-Requires NOTION_API_KEY environment variable.
+Requires NOTION_API_KEY or NOTION_TOKEN environment variable.
 Outputs JSON to stdout.
 """
 
@@ -45,9 +45,9 @@ def _notion_request(
     *,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    api_key = os.environ.get("NOTION_API_KEY", "")
+    api_key = os.environ.get("NOTION_API_KEY") or os.environ.get("NOTION_TOKEN", "")
     if not api_key:
-        raise RuntimeError("NOTION_API_KEY is not set")
+        raise RuntimeError("NOTION_API_KEY or NOTION_TOKEN must be set")
 
     notion_version = os.environ.get("NOTION_VERSION", DEFAULT_NOTION_VERSION)
     headers = {

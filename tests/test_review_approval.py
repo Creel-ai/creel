@@ -207,39 +207,38 @@ def test_deny_still_denies(mock_llm, mock_exec):
 
 
 def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
-    """Create a ChatServer with minimal mocks."""
+    """Create a ChatServer with a real AgentDefinition so __init__ stays in sync."""
     from taskrunner.chat import ChatServer
+    from taskrunner.models import (
+        AgentDefinition,
+        SessionConfig,
+        ToolConfig,
+        WorkspaceConfig,
+    )
 
-    agent_def = MagicMock()
-    agent_def.session.sessions_dir = str(tmp_path / "sessions")
-    agent_def.session.max_history = 10
-    agent_def.guardian = None
-    agent_def.channels.imessage = None
-    agent_def.system_prompt = "You are a test agent."
-    agent_def.system_prompt_file = None
-    agent_def.workspace.path = str(tmp_path / "workspace")
-    agent_def.workspace.timezone = "UTC"
-    agent_def.workspace.memory_days = 2
-    agent_def.workspace.memory_max_chars = 1000
-    agent_def.workspace.max_chars_per_file = 500
-    agent_def.llm.secrets = None
-    agent_def.tools = {"send_email": MagicMock()}
+    agent_def = AgentDefinition(
+        system_prompt="You are a test agent.",
+        tools={
+            "send_email": ToolConfig(
+                executor="mock", description="Send an email"
+            ),
+        },
+        session=SessionConfig(
+            sessions_dir=str(tmp_path / "sessions"),
+            max_history=10,
+            summarize_on_trim=False,
+        ),
+        workspace=WorkspaceConfig(
+            # Non-existent dir so MemoryManager is not created
+            path=str(tmp_path / "workspace-does-not-exist"),
+        ),
+        guardian=guardian,
+    )
 
-    server = ChatServer.__new__(ChatServer)
-    server._agent_def = agent_def
-    server._use_containers = False
-    server._reply_channel = imessage_channel
-    server._guardian = guardian
-    server._confirm_fn = None
-    server._memory = None
-    server._session_states = {}
-    server._approval_queue = ApprovalQueue(approvals_dir=str(tmp_path / "approvals"))
-
-    from taskrunner.session import SessionManager
-
-    server._session_mgr = SessionManager(
-        sessions_dir=str(tmp_path / "sessions"),
-        max_history=10,
+    server = ChatServer(
+        agent_def,
+        use_containers=False,
+        reply_channel=imessage_channel,
     )
     return server
 

@@ -216,7 +216,7 @@ class CronManager:
             if self._executor is not None:
                 self._executor(job)
             else:
-                logger.info(
+                logger.error(
                     "Job '%s' (%s) fired but no executor configured — skipping",
                     job.name,
                     job.id,

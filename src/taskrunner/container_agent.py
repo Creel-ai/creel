@@ -20,6 +20,7 @@ from taskrunner.agent import (
     PendingApproval,
     _ensure_tool_call_integrity,
     _extract_prior_tools,
+    _extract_user_request_for_coherence,
 )
 from taskrunner.models import AgentConfig, LLMConfig, ToolConfig
 from taskrunner.orchestrator import _ensure_image
@@ -328,17 +329,7 @@ def _handle_tool_request(
 
         # Guardian coherence check
         if guardian is not None and hasattr(guardian, "check_coherence"):
-            user_request = ""
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    content = msg.get("content", "")
-                    if isinstance(content, str):
-                        user_request = content
-                    elif isinstance(content, list):
-                        user_request = " ".join(
-                            b.get("text", "") for b in content if b.get("type") == "text"
-                        )
-                    break
+            user_request = _extract_user_request_for_coherence(messages)
 
             if user_request:
                 prior_tools = _extract_prior_tools(messages)

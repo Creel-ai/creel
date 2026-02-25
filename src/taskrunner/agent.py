@@ -49,6 +49,55 @@ def _extract_prior_tools(messages: list[dict]) -> list[str]:
     return prior
 
 
+_RETRY_PHRASES = frozenset({
+    "try again", "try that again", "retry", "do that again",
+    "run that again", "one more time", "redo", "again please",
+    "can you retry", "please retry", "try it again",
+})
+
+
+def _extract_user_request_for_coherence(messages: list[dict]) -> str:
+    """Extract the user request for coherence checking.
+
+    If the latest user message is a short retry phrase (e.g. "try that again"),
+    prepend the previous substantive user message so the coherence checker
+    understands what "that" refers to.
+    """
+    user_messages: list[str] = []
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = " ".join(
+                b.get("text", "") for b in content if b.get("type") == "text"
+            )
+        else:
+            continue
+        if text.strip():
+            user_messages.append(text.strip())
+
+    if not user_messages:
+        return ""
+
+    latest = user_messages[-1]
+
+    # Check if the latest message is a short retry phrase
+    normalised = latest.lower().rstrip("!?.").strip()
+    is_retry = (
+        normalised in _RETRY_PHRASES
+        or any(normalised.startswith(p) for p in _RETRY_PHRASES)
+    )
+
+    if is_retry and len(user_messages) >= 2:
+        prior = user_messages[-2]
+        return f"{prior}\n\n(Follow-up: user said '{latest}', meaning retry the above)"
+
+    return latest
+
+
 def _ensure_tool_call_integrity(messages: list[dict]) -> int:
     """Repair orphaned tool_use/tool_result sequences in-place.
 

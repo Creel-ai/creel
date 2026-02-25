@@ -29,6 +29,119 @@ _ENV_LOCK = threading.Lock()
 _HASH_GLOBS = ("Dockerfile", "**/*.py", "**/*.txt")
 
 
+class ImageBuildCache:
+    """Coordinates Docker image builds, deduplicating concurrent requests.
+
+    The first thread to request a given image "claims" the build; other
+    threads wait on a ``threading.Event`` until the build finishes.  On
+    failure the error is stored but cleared on the next access so that
+    retries are possible (handles transient Docker daemon failures).
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        # key -> (event, result_or_none, error_or_none)
+        self._builds: dict[str, tuple[threading.Event, str | None, Exception | None]] = {}
+
+    def ensure_image(self, image: str) -> str:
+        """Build (or wait for) a Docker image.  Returns the usable image ref."""
+        key = self._cache_key(image)
+        event: threading.Event | None = None
+        claimed = False
+
+        with self._lock:
+            if key in self._builds:
+                ev, result, error = self._builds[key]
+                if ev.is_set():
+                    if error is None:
+                        return result  # type: ignore[return-value]
+                    # Previous build failed — clear so we can retry
+                    del self._builds[key]
+                else:
+                    # Another thread is building; we'll wait outside the lock
+                    event = ev
+
+            if event is None and key not in self._builds:
+                # Claim the build
+                event = threading.Event()
+                self._builds[key] = (event, None, None)
+                claimed = True
+
+        if claimed:
+            assert event is not None
+            try:
+                result = _ensure_image_uncached(image)
+                with self._lock:
+                    self._builds[key] = (event, result, None)
+                event.set()
+                return result
+            except Exception as exc:
+                with self._lock:
+                    self._builds[key] = (event, None, exc)
+                event.set()
+                raise
+
+        # Wait for another thread's in-progress build
+        assert event is not None
+        event.wait()
+        with self._lock:
+            entry = self._builds.get(key)
+            if entry is None or entry[0] is not event:
+                # Our build was superseded by a retry; re-enter from the top
+                superseded = True
+            else:
+                superseded = False
+                _, result, error = entry
+        if superseded:
+            return self.ensure_image(image)
+        if error is not None:
+            raise RuntimeError(str(error)) from error
+        return result  # type: ignore[return-value]
+
+    def start_prebuild(self, images: list[str]) -> list[threading.Thread]:
+        """Spawn daemon threads to pre-build each image."""
+        threads = []
+        for img in images:
+            t = threading.Thread(
+                target=self._prebuild_one,
+                args=(img,),
+                daemon=True,
+                name=f"prebuild-{img}",
+            )
+            t.start()
+            threads.append(t)
+        return threads
+
+    def _prebuild_one(self, image: str) -> None:
+        try:
+            self.ensure_image(image)
+        except Exception:
+            logger.warning("Pre-build failed for %s (will retry on demand)", image)
+
+    def clear(self) -> None:
+        """Reset the cache (primarily for testing)."""
+        with self._lock:
+            self._builds.clear()
+
+    @staticmethod
+    def _cache_key(image: str) -> str:
+        """Derive the cache key.
+
+        Executor images share a key by base name (``executor-weather``)
+        since the content-hash tag is computed inside the build.  Other
+        images use their full name.
+        """
+        base = image.split(":")[0]
+        if base.startswith("executor-"):
+            # Content hash is computed inside the build, so different tags
+            # (e.g. :latest vs :abc123) map to the same build work.
+            return base
+        return image
+
+
+_image_cache = ImageBuildCache()
+
+
 def _compute_executor_hash(executor_dir: Path) -> str:
     """Hash all source files in an executor directory and shared context files.
 
@@ -714,7 +827,16 @@ def _exec_file_ops_inline(config: ExecutorConfig) -> str:
 
 
 def _ensure_image(image: str) -> str:
-    """Build the Docker image if it doesn't already exist.
+    """Build the Docker image if needed, with build deduplication.
+
+    Delegates to :class:`ImageBuildCache` so concurrent and repeated
+    calls only trigger a single ``docker build``.
+    """
+    return _image_cache.ensure_image(image)
+
+
+def _ensure_image_uncached(image: str) -> str:
+    """Build the Docker image if it doesn't already exist (no caching).
 
     For executor images the tag is derived from a content hash of the
     executor source directory so that code changes automatically trigger
@@ -798,6 +920,39 @@ def _build_image(
         build_err = build_result.stderr.strip() if build_result.stderr else "unknown error"
         logger.error("Docker build failed for %s:\n%s", tags[0], build_err)
         raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
+
+
+def collect_required_images(agent_def: "AgentDefinition") -> list[str]:
+    """Derive the set of Docker images needed by an agent's tools.
+
+    Uses the same naming convention as :pyattr:`ExecutorConfig.image`:
+    ``executor-{name}:latest`` (underscores → hyphens).
+    ``ToolConfig.image`` overrides the derived name when set.
+    The ``llm-runner:latest`` image is included when tools are present
+    (agent mode requires the containerised LLM runner).
+    """
+    from taskrunner.models import AgentDefinition  # noqa: F811 (TYPE_CHECKING)
+
+    images: set[str] = set()
+    for _tool_name, tool_config in agent_def.tools.items():
+        if tool_config.image:
+            images.add(tool_config.image)
+        else:
+            image = f"executor-{tool_config.executor.replace('_', '-')}:latest"
+            images.add(image)
+    if agent_def.tools:
+        images.add("llm-runner:latest")
+    return sorted(images)
+
+
+def prebuild_images(agent_def: "AgentDefinition") -> list[threading.Thread]:
+    """Kick off background image builds for all tools in the agent definition.
+
+    Returns the list of spawned threads (callers are not expected to join).
+    """
+    images = collect_required_images(agent_def)
+    logger.info("Pre-building %d Docker image(s): %s", len(images), images)
+    return _image_cache.start_prebuild(images)
 
 
 def _run_executor_container(

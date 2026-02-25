@@ -521,6 +521,12 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     tool_count = len(agent_def.tools)
     print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
 
+    # Pre-build Docker images in background so they're ready before first use
+    if args.containers:
+        from taskrunner.orchestrator import prebuild_images
+
+        prebuild_images(agent_def)  # fire-and-forget; daemon threads
+
     # Start host bridge server if enabled
     bridge_thread = None
     if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:

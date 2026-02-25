@@ -201,6 +201,13 @@ class TestExecutorConfigTimeout:
 
 
 class TestEnsureImage:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        from taskrunner.orchestrator import _image_cache
+        _image_cache.clear()
+        yield
+        _image_cache.clear()
+
     @patch("taskrunner.orchestrator.subprocess.run")
     def test_build_failure_includes_stderr(self, mock_run, tmp_path):
         """Docker build failure should log and raise with stderr."""

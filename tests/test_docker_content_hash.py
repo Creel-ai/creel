@@ -7,7 +7,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.orchestrator import _compute_executor_hash, _ensure_image
+from taskrunner.orchestrator import _compute_executor_hash, _ensure_image, _image_cache
+
+
+@pytest.fixture(autouse=True)
+def _clear_image_cache():
+    """Reset the module-level image build cache between tests."""
+    _image_cache.clear()
+    yield
+    _image_cache.clear()
 
 # ---------------------------------------------------------------------------
 # _compute_executor_hash

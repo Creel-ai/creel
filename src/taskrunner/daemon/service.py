@@ -12,6 +12,9 @@ from typing import Any
 
 from taskrunner.channels.base import Channel
 from taskrunner.chat import ChatServer
+from taskrunner.cron.executor import JobExecutor
+from taskrunner.cron.manager import CronManager
+from taskrunner.cron.store import JobStore
 from taskrunner.models import AgentDefinition
 from taskrunner.scheduler import start_scheduler
 from taskrunner.session import Session
@@ -32,10 +35,11 @@ class DaemonService:
         use_containers: bool = False,
         server: ChatServer | None = None,
         now_fn: Callable[[], float] = time.time,
+        cron_store: JobStore | None = None,
+        cron_sender_id: str = "main",
     ) -> None:
         self._agent_def = agent_def
         self._use_containers = use_containers
-        self._server = server or ChatServer(agent_def, use_containers=use_containers)
         self._now_fn = now_fn
         self._started_at = self._now_fn()
         self._lock = threading.RLock()
@@ -50,6 +54,30 @@ class DaemonService:
         self._channels: dict[str, Channel] = {}
         self._channel_threads: dict[str, threading.Thread] = {}
         self._channel_state: dict[str, dict[str, Any]] = {}
+
+        # Cron manager lifecycle state.
+        # Callers (especially tests) should pass an explicit cron_store to
+        # avoid touching the real ~/.creel/cron/ directory. The default is
+        # only appropriate for production daemon startup.
+        self._cron_sender_id = cron_sender_id
+        self._cron_store = cron_store or JobStore()
+        self._cron_executor = JobExecutor(
+            agent_def=agent_def,
+            inject_event=self._inject_cron_event,
+            channel_send=self._channel_send,
+            use_containers=use_containers,
+        )
+        self._cron_manager = CronManager(
+            store=self._cron_store,
+            executor=self._cron_executor,
+        )
+
+        # Create ChatServer with cron_manager wired in.
+        self._server = server or ChatServer(
+            agent_def,
+            use_containers=use_containers,
+            cron_manager=self._cron_manager,
+        )
 
     # --- Message and session API ---
 
@@ -272,6 +300,59 @@ class DaemonService:
 
         return stopped
 
+    # --- Cron manager lifecycle ---
+
+    @property
+    def cron_manager(self) -> CronManager:
+        """Access the cron manager (e.g. for agent tool dispatch)."""
+        return self._cron_manager
+
+    def start_cron_manager(self) -> bool:
+        """Start the cron manager scheduler.
+
+        Returns:
+            True if started, False if already running.
+        """
+        with self._lock:
+            if self._cron_manager.running:
+                return False
+
+            self._cron_manager.start()
+            return True
+
+    def stop_cron_manager(self, wait: bool = True) -> bool:
+        """Stop the cron manager scheduler gracefully.
+
+        Returns:
+            True if stopped, False if not running.
+        """
+        with self._lock:
+            if not self._cron_manager.running:
+                return False
+
+            self._cron_manager.shutdown(wait=wait)
+            return True
+
+    def _inject_cron_event(self, text: str) -> None:
+        """Callback for main-session cron jobs — injects into the chat server."""
+        self._server.inject_system_event(self._cron_sender_id, text)
+
+    def _channel_send(self, channel_name: str, text: str) -> None:
+        """Callback for cron job delivery — routes to a registered channel.
+
+        The channel reference is fetched under the lock but send() is called
+        outside it to avoid holding the lock during potentially blocking I/O.
+        This is a benign TOCTOU: the channel object remains valid in memory
+        even if concurrently unregistered.
+        """
+        with self._lock:
+            channel = self._channels.get(channel_name)
+        if channel is None:
+            raise ValueError(f"Channel '{channel_name}' not found for cron delivery")
+        # Use cron_sender_id as the recipient — channel_name identifies the
+        # channel, not the message recipient.
+        channel.send(self._cron_sender_id, text)
+
     # --- Channel/plugin lifecycle ---
 
     def get_channels(self) -> dict[str, Channel]:
@@ -358,7 +439,7 @@ class DaemonService:
         return stopped
 
     def shutdown(self, timeout: float = 5.0) -> None:
-        """Gracefully stop scheduler and all registered channels.
+        """Gracefully stop scheduler, cron manager, and all registered channels.
 
         Safe to call multiple times; subsequent calls are no-ops.
         """
@@ -368,6 +449,7 @@ class DaemonService:
             self._shutdown_done = True
 
         self.stop_scheduler(timeout=timeout)
+        self.stop_cron_manager(wait=True)
 
         channel_names = []
         with self._lock:
@@ -403,6 +485,14 @@ class DaemonService:
 
         now = self._now_fn()
         guardian_active = self._server._guardian is not None
+
+        cron_running = self._cron_manager.running
+        managed_jobs = self._cron_manager.store.list()
+        cron_info = {
+            "running": cron_running,
+            "managed_jobs": len(managed_jobs),
+        }
+
         return {
             "started_at": self._started_at,
             "uptime_seconds": max(0, int(now - self._started_at)),
@@ -412,6 +502,7 @@ class DaemonService:
             "scheduler": {
                 "running": scheduler_running,
             },
+            "cron": cron_info,
             "channels": channels,
         }
 

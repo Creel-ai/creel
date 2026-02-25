@@ -375,6 +375,12 @@ def _run_executor_inline_locked(
             return _exec_drive_inline(config)
         elif name == "drive_write":
             return _exec_drive_write_inline(config)
+        elif name == "google_docs":
+            return _exec_google_docs_inline(config)
+        elif name == "google_sheets":
+            return _exec_google_sheets_inline(config)
+        elif name == "google_slides":
+            return _exec_google_slides_inline(config)
         elif name == "bluebubbles":
             return _exec_bluebubbles_inline(config, "get_recent_messages")
         elif name == "bluebubbles_send":
@@ -522,6 +528,123 @@ def _exec_drive_write_inline(config: ExecutorConfig) -> str:
     mime_type = config.args.get("mime_type", "text/plain")
     folder_id = config.args.get("folder_id", "")
     result = upload_file(name, content, mime_type, folder_id)
+    return json.dumps(result, indent=2)
+
+
+def _exec_google_docs_inline(config: ExecutorConfig) -> str:
+    """Run Google Docs executor inline."""
+    action = config.args.get("action", "")
+
+    if action == "read":
+        from executors.google_docs.executor import read_document
+
+        document_id = config.args.get("document_id", "")
+        result = read_document(document_id)
+    elif action == "create":
+        from executors.google_docs.executor import create_document
+
+        title = config.args.get("title", "")
+        body = config.args.get("body", "")
+        result = create_document(title, body)
+    elif action == "append":
+        from executors.google_docs.executor import append_text
+
+        document_id = config.args.get("document_id", "")
+        text = config.args.get("text", "")
+        result = append_text(document_id, text)
+    elif action == "replace":
+        from executors.google_docs.executor import replace_text
+
+        document_id = config.args.get("document_id", "")
+        find = config.args.get("find", "")
+        replace_with = config.args.get("replace_with", "")
+        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
+        result = replace_text(document_id, find, replace_with, match_case)
+    elif action == "insert":
+        from executors.google_docs.executor import insert_text
+
+        document_id = config.args.get("document_id", "")
+        text = config.args.get("text", "")
+        index = int(config.args.get("index", "1"))
+        result = insert_text(document_id, text, index)
+    else:
+        raise ValueError(f"google_docs: unknown action '{action}' (use read/create/append/replace/insert)")
+
+    return json.dumps(result, indent=2)
+
+
+def _exec_google_sheets_inline(config: ExecutorConfig) -> str:
+    """Run Google Sheets executor inline."""
+    action = config.args.get("action", "")
+
+    if action == "read":
+        from executors.google_sheets.executor import read_sheet
+
+        spreadsheet_id = config.args.get("spreadsheet_id", "")
+        range_ = config.args.get("range", "")
+        result = read_sheet(spreadsheet_id, range_)
+    elif action == "create":
+        from executors.google_sheets.executor import create_spreadsheet
+
+        title = config.args.get("title", "")
+        sheet_name = config.args.get("sheet_name", "")
+        data = config.args.get("data", "")
+        result = create_spreadsheet(title, sheet_name, data)
+    elif action == "write":
+        from executors.google_sheets.executor import write_to_sheet
+
+        spreadsheet_id = config.args.get("spreadsheet_id", "")
+        range_ = config.args.get("range", "")
+        data = config.args.get("data", "")
+        value_input_option = config.args.get("value_input_option", "USER_ENTERED")
+        result = write_to_sheet(spreadsheet_id, range_, data, value_input_option)
+    elif action == "append":
+        from executors.google_sheets.executor import append_to_sheet
+
+        spreadsheet_id = config.args.get("spreadsheet_id", "")
+        range_ = config.args.get("range", "")
+        data = config.args.get("data", "")
+        value_input_option = config.args.get("value_input_option", "USER_ENTERED")
+        result = append_to_sheet(spreadsheet_id, range_, data, value_input_option)
+    else:
+        raise ValueError(f"google_sheets: unknown action '{action}' (use read/create/write/append)")
+
+    return json.dumps(result, indent=2)
+
+
+def _exec_google_slides_inline(config: ExecutorConfig) -> str:
+    """Run Google Slides executor inline."""
+    action = config.args.get("action", "")
+
+    if action == "read":
+        from executors.google_slides.executor import read_presentation
+
+        presentation_id = config.args.get("presentation_id", "")
+        result = read_presentation(presentation_id)
+    elif action == "create":
+        from executors.google_slides.executor import create_presentation
+
+        title = config.args.get("title", "")
+        result = create_presentation(title)
+    elif action == "add_slide":
+        from executors.google_slides.executor import add_slide
+
+        presentation_id = config.args.get("presentation_id", "")
+        title = config.args.get("title", "")
+        body = config.args.get("body", "")
+        layout = config.args.get("layout", "BLANK")
+        result = add_slide(presentation_id, title, body, layout)
+    elif action == "replace_text":
+        from executors.google_slides.executor import replace_text
+
+        presentation_id = config.args.get("presentation_id", "")
+        find = config.args.get("find", "")
+        replace_with = config.args.get("replace_with", "")
+        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
+        result = replace_text(presentation_id, find, replace_with, match_case)
+    else:
+        raise ValueError(f"google_slides: unknown action '{action}' (use read/create/add_slide/replace_text)")
+
     return json.dumps(result, indent=2)
 
 

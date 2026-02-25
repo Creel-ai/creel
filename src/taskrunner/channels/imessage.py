@@ -89,8 +89,11 @@ class IMessageChannel(Channel):
 
         logger.info("iMessage listener stopped")
 
-    def send(self, recipient: str, text: str) -> None:
+    def send(self, recipient: str, text: str | None) -> None:
         """Send an iMessage via AppleScript."""
+        if not text:
+            logger.debug("Skipping empty message to %s", recipient)
+            return
         prefixed = f"{MESSAGE_PREFIX} {text}"
 
         # Escape for AppleScript

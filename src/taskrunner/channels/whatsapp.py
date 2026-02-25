@@ -70,6 +70,9 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
         logger.info("WhatsApp channel stopped")
 
     def send(self, recipient: str, text: str) -> None:
+        if not text:
+            logger.debug("Skipping empty message to %s", recipient)
+            return
         self._bridge.send_message(recipient, text)
         logger.info("Sent WhatsApp message to %s (%d chars)", recipient, len(text))
 

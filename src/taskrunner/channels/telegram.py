@@ -86,6 +86,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
         logger.info("Telegram channel stopped")
 
     def send(self, recipient: str, text: str) -> None:
+        if not text:
+            logger.debug("Skipping empty message to %s", recipient)
+            return
         if recipient not in self._allowed_recipients:
             logger.warning("Blocked outbound message to %s — not in allowed recipients", recipient)
             return

@@ -202,29 +202,6 @@ class TestExecuteIsolated:
         call_kwargs = mock_agent_loop.call_args[1]
         assert call_kwargs["use_containers"] is True
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
-    def test_isolated_loads_secrets_and_cleans_up(self, mock_agent_loop):
-        """Secrets should be loaded before the agent loop and cleaned up after."""
-        import os
-
-        mock_agent_loop.return_value = FakeAgentResult()
-        agent_def = FakeAgentDef(secrets="secrets/anthropic.env.enc")
-        executor = JobExecutor(agent_def=agent_def)
-
-        fake_secrets = {"CRON_TEST_SECRET_KEY": "supersecret"}
-        job = _make_job(target="isolated")
-        with patch(
-            "taskrunner.cron.executor.decrypt_env_file",
-            return_value=fake_secrets,
-        ) as mock_decrypt:
-            # Ensure the key is not set before
-            os.environ.pop("CRON_TEST_SECRET_KEY", None)
-            executor(job)
-            mock_decrypt.assert_called_once_with("secrets/anthropic.env.enc")
-
-        # Secret should be cleaned up after execution
-        assert "CRON_TEST_SECRET_KEY" not in os.environ
-
 
 # -- Isolated execution with delivery --
 

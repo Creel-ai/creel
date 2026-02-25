@@ -60,7 +60,7 @@ One-shot (`at`) jobs auto-delete after success (run history is preserved). Past 
 
 **Main session** — injects a system event into the active conversation via `ChatServer.inject_system_event()`. The agent sees it on its next turn. Rate-limited to 10 events per sender per 60 seconds.
 
-**Isolated** — runs a fresh agent turn via `run_agent_loop()` with its own session. Supports model override (`payload.model`). Output is routed through delivery. Secrets are loaded via a context manager that restores `os.environ` on exit to prevent leakage to concurrent threads.
+**Isolated** — runs a fresh agent turn via `run_agent_loop()` with its own session. Supports model override (`payload.model`). Output is routed through delivery. Credentials are inherited from the daemon process environment (same as the main session).
 
 ## Delivery (isolated jobs only)
 
@@ -152,7 +152,7 @@ The `cron` tool is registered as a built-in tool (like memory tools) with action
 
 - **Webhook SSRF protection**: HTTPS required, `ipaddress` module blocks private/loopback/link-local/reserved IPs, `follow_redirects=False` prevents redirect-based bypass. DNS rebinding not covered (would require resolution-time checks).
 - **Event injection rate limiting**: `ChatServer.inject_system_event()` caps at 10 events per sender per 60 seconds to prevent runaway main-session jobs from flooding the conversation.
-- **Secret isolation**: Isolated jobs load secrets via a context manager (`_temporary_secrets`) that restores original `os.environ` values on exit. Not fully thread-safe (concurrent threads can see secrets during execution) but prevents persistent leakage.
+- **Credentials**: Isolated jobs inherit credentials from the daemon process environment — no per-job secret loading needed.
 - **Timezone validation**: All timezones validated against `zoneinfo.ZoneInfo` (IANA database).
 - **Cron expression validation**: Validated via `APScheduler.CronTrigger.from_crontab()` at model construction time.
 

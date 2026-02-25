@@ -130,6 +130,8 @@ On startup, `DaemonService`:
 
 On shutdown, the cron manager is stopped before channels to ensure in-flight deliveries complete.
 
+**Thread pool caveat**: Job callbacks run in APScheduler's thread pool (~10-20 threads by default). Long-running executors (e.g., full agent loops) block their thread for the duration, so many concurrent long-running jobs could exhaust the pool and delay other jobs from firing. Consider offloading to a dedicated executor if this becomes a bottleneck.
+
 ## CLI
 
 ```

@@ -561,7 +561,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
     log_path = _daemon_log_path(args)
     plist_path = _daemon_plist_path(args)
     label = _daemon_label(args)
-    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 20.0))
 
     # If a launchd service is installed, use it as the startup path.
     if sys.platform == "darwin" and plist_path.exists():
@@ -667,7 +667,7 @@ def cmd_daemon_install(args: argparse.Namespace) -> int:
     log_path = _daemon_log_path(args)
     plist_path = _daemon_plist_path(args)
     label = _daemon_label(args)
-    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 20.0))
     launch_target = _daemon_launchd_target()
 
     cmd = _build_daemon_run_command(args, socket_path, pid_path)
@@ -1518,8 +1518,8 @@ def main() -> int:
         help="Disable scheduler in daemon runtime",
     )
     _daemon_runtime_parent.add_argument(
-        "--wait-seconds", type=float, default=8.0,
-        help="Seconds to wait for daemon health check (default: 8)",
+        "--wait-seconds", type=float, default=20.0,
+        help="Seconds to wait for daemon health check (default: 20)",
     )
 
     # daemon command

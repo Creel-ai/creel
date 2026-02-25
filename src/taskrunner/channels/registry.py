@@ -76,9 +76,9 @@ class ChannelRegistry:
                     "Failed to load channel plugin '%s' from entry point", ep.name
                 )
 
-        if not self._entries:
-            logger.info("No entry-point plugins found; falling back to built-in imports")
-            self._discover_builtins()
+        # Always attempt builtin imports for any channels not yet registered
+        # (covers stale egg-info, partial entry-point discovery, PYTHONPATH setups)
+        self._discover_builtins()
 
         if self._entries:
             logger.info(
@@ -89,7 +89,7 @@ class ChannelRegistry:
             logger.warning("Channel discovery found no plugins")
 
     def _discover_builtins(self) -> None:
-        """Import built-in channel modules directly."""
+        """Import built-in channel modules directly to fill any gaps."""
         import importlib
 
         for module_path in self._BUILTIN_CHANNELS:
@@ -99,7 +99,8 @@ class ChannelRegistry:
                 if register_fn is None:
                     continue
                 meta, factory = register_fn()
-                self.register(meta, factory)
+                if meta.id not in self._entries:
+                    self.register(meta, factory)
             except Exception:
                 logger.debug("Could not load built-in channel %s", module_path)
 

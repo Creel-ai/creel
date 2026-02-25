@@ -845,6 +845,15 @@ def cmd_daemon_stop(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_daemon_restart(args: argparse.Namespace) -> int:
+    """Stop then start the daemon."""
+    import time
+
+    cmd_daemon_stop(args)
+    time.sleep(0.5)
+    return cmd_daemon_start(args)
+
+
 def cmd_daemon_status(args: argparse.Namespace) -> int:
     """Show daemon process and API health status."""
     import subprocess
@@ -1517,7 +1526,7 @@ def main() -> int:
     daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
     daemon_subparsers = daemon_parser.add_subparsers(
         dest="daemon_command",
-        metavar="{start,stop,status,install,uninstall}",
+        metavar="{start,stop,restart,status,install,uninstall}",
     )
 
     daemon_subparsers.add_parser(
@@ -1530,6 +1539,15 @@ def main() -> int:
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
     daemon_stop.add_argument(
+        "--timeout", type=float, default=10.0,
+        help="Stop timeout in seconds (default: 10)",
+    )
+
+    daemon_restart = daemon_subparsers.add_parser(
+        "restart", help="Stop then start the daemon",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
+    )
+    daemon_restart.add_argument(
         "--timeout", type=float, default=10.0,
         help="Stop timeout in seconds (default: 10)",
     )
@@ -1713,6 +1731,7 @@ def main() -> int:
         daemon_commands = {
             "start": cmd_daemon_start,
             "stop": cmd_daemon_stop,
+            "restart": cmd_daemon_restart,
             "status": cmd_daemon_status,
             "install": cmd_daemon_install,
             "uninstall": cmd_daemon_uninstall,

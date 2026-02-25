@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,9 +41,11 @@ class ChatServer:
         confirm_fn: object | None = None,
         # Backward compat alias
         imessage_channel: object | None = None,
+        cron_manager: object | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
+        self._cron_manager = cron_manager
         self._start_time = datetime.now(timezone.utc)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
@@ -88,6 +91,14 @@ class ChatServer:
 
         # Per-sender session state (e.g. workspace path for file_ops)
         self._session_states: dict[str, dict] = {}
+
+        # Rate limiter for inject_system_event: per-sender list of timestamps.
+        # Note: stale sender entries are never pruned from this dict. This is
+        # fine because only cron_sender_id typically injects events, so the
+        # dict stays small. If many unique senders start injecting events,
+        # consider periodic cleanup.
+        self._event_injection_times: dict[str, list[float]] = {}
+        self._max_events_per_minute: int = 10
 
         # Initialize approval queue
         # Keep approval state scoped with session storage by default so tests
@@ -239,6 +250,7 @@ class ChatServer:
                 on_text_delta=on_text_delta,
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
+                cron_manager=self._cron_manager,
             )
 
         logger.info(
@@ -356,6 +368,34 @@ class ChatServer:
                 self._reply_channel.send(sender_id, msg)
             except Exception:
                 logger.exception("Failed to send message via reply channel")
+
+    def inject_system_event(self, sender_id: str, text: str) -> None:
+        """Inject a system event into a sender's active session.
+
+        The event is wrapped with a [SYSTEM EVENT] prefix so the LLM can
+        distinguish it from real user input.  Used by the cron subsystem
+        for main-session jobs.
+
+        Rate-limited to _max_events_per_minute per sender to prevent
+        misfiring cron jobs from flooding a session.
+        """
+        now = time.monotonic()
+        window = self._event_injection_times.setdefault(sender_id, [])
+        # Prune entries older than 60s
+        cutoff = now - 60
+        window[:] = [t for t in window if t > cutoff]
+        if len(window) >= self._max_events_per_minute:
+            logger.warning(
+                "Rate limit hit: dropping system event for %s (%d events in last 60s)",
+                sender_id,
+                len(window),
+            )
+            return
+        window.append(now)
+
+        wrapped = f"[SYSTEM EVENT]\n{text}"
+        self._session_mgr.add_user_message(sender_id, wrapped)
+        logger.info("Injected system event into session for %s", sender_id)
 
     def get_or_create_session(self, sender_id: str):
         """Get the active session for a sender, creating one if needed."""

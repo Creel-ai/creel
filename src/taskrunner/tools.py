@@ -284,7 +284,7 @@ def execute_tool_call(
     memory_manager: Any | None = None,
     bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
-    cron_manager: object | None = None,
+    cron_manager: Any | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 

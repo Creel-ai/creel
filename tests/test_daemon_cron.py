@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -12,7 +12,6 @@ from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
 from taskrunner.cron.store import JobStore
 from taskrunner.daemon.service import DaemonService
 from taskrunner.session import SessionManager
-
 
 # -- Stubs --
 
@@ -141,9 +140,7 @@ class TestCronManagerLifecycle:
 
         daemon_service.stop_cron_manager()
 
-    def test_start_cron_manager_already_running(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_start_cron_manager_already_running(self, daemon_service: DaemonService) -> None:
         """start_cron_manager returns False if already running."""
         daemon_service.start_cron_manager()
         result = daemon_service.start_cron_manager()
@@ -168,9 +165,7 @@ class TestCronManagerLifecycle:
 
 
 class TestEventInjection:
-    def test_inject_cron_event_calls_chat_server(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_inject_cron_event_calls_chat_server(self, daemon_service: DaemonService) -> None:
         """_inject_cron_event should call inject_system_event on the chat server."""
         daemon_service._inject_cron_event("[Scheduled: test]\nHello!")
 
@@ -193,9 +188,7 @@ class TestEventInjection:
         svc._inject_cron_event("Hello from scheduler")
         assert server.injected_events[0][0] == "scheduler"
 
-    def test_inject_event_adds_to_session_history(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_inject_event_adds_to_session_history(self, daemon_service: DaemonService) -> None:
         """Injected events should be visible in the session message history."""
         daemon_service._inject_cron_event("[Scheduled: test]\nReminder!")
 
@@ -204,9 +197,7 @@ class TestEventInjection:
         assert history[0]["role"] == "user"
         assert "Reminder!" in history[0]["content"]
 
-    def test_main_session_job_triggers_injection(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_main_session_job_triggers_injection(self, daemon_service: DaemonService) -> None:
         """A main-session cron job should inject its event into the chat server."""
         job = _make_job(name="reminder", target="main")
         daemon_service.cron_manager.store.add(job)
@@ -230,9 +221,7 @@ class TestEventInjection:
 
 
 class TestChannelDelivery:
-    def test_channel_send_routes_to_channel(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_channel_send_routes_to_channel(self, daemon_service: DaemonService) -> None:
         """_channel_send should forward to the registered channel."""
         channel = _StubChannel()
         daemon_service.register_channel("whatsapp", channel)
@@ -243,9 +232,7 @@ class TestChannelDelivery:
         # Recipient should be the cron_sender_id ("main"), not the channel name
         assert channel.sent[0] == ("main", "Hello from cron!")
 
-    def test_channel_send_unknown_channel_raises(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_channel_send_unknown_channel_raises(self, daemon_service: DaemonService) -> None:
         """_channel_send should raise ValueError for unknown channels."""
         with pytest.raises(ValueError, match="not found for cron delivery"):
             daemon_service._channel_send("nonexistent", "Hello!")
@@ -255,7 +242,8 @@ class TestChannelDelivery:
         self, mock_agent_loop, daemon_service: DaemonService, tmp_path: Path
     ) -> None:
         """An isolated job with announce delivery should route through the channel."""
-        from dataclasses import dataclass, field as dc_field
+        from dataclasses import dataclass
+        from dataclasses import field as dc_field
 
         @dataclass
         class FakeResult:
@@ -292,9 +280,7 @@ class TestChannelDelivery:
 
 
 class TestGracefulShutdown:
-    def test_shutdown_stops_cron_manager(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_shutdown_stops_cron_manager(self, daemon_service: DaemonService) -> None:
         """shutdown() should stop the cron manager."""
         daemon_service.start_cron_manager()
         assert daemon_service.cron_manager.running
@@ -307,9 +293,7 @@ class TestGracefulShutdown:
         daemon_service.shutdown()
         daemon_service.shutdown()  # no-op
 
-    def test_shutdown_without_cron_running(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_shutdown_without_cron_running(self, daemon_service: DaemonService) -> None:
         """shutdown() should work fine when cron manager was never started."""
         daemon_service.shutdown()
         assert not daemon_service.cron_manager.running
@@ -326,9 +310,7 @@ class TestCronStatus:
         assert status["cron"]["running"] is False
         assert status["cron"]["managed_jobs"] == 0
 
-    def test_status_counts_managed_jobs(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_status_counts_managed_jobs(self, daemon_service: DaemonService) -> None:
         """Status should reflect the number of managed jobs."""
         job = _make_job(name="job1")
         daemon_service.cron_manager.store.add(job)
@@ -336,9 +318,7 @@ class TestCronStatus:
         status = daemon_service.status()
         assert status["cron"]["managed_jobs"] == 1
 
-    def test_status_cron_running_after_start(
-        self, daemon_service: DaemonService
-    ) -> None:
+    def test_status_cron_running_after_start(self, daemon_service: DaemonService) -> None:
         """Status should show cron as running after start_cron_manager."""
         daemon_service.start_cron_manager()
         status = daemon_service.status()
@@ -353,9 +333,7 @@ class TestCronStatus:
 
 
 class TestJobPersistence:
-    def test_jobs_survive_restart(
-        self, minimal_agent_def, tmp_path: Path
-    ) -> None:
+    def test_jobs_survive_restart(self, minimal_agent_def, tmp_path: Path) -> None:
         """Jobs added via cron_manager should survive a DaemonService restart."""
         cron_dir = tmp_path / "cron"
         store1 = JobStore(
@@ -388,9 +366,7 @@ class TestJobPersistence:
 
 
 class TestRunHistoryRecording:
-    def test_trigger_records_run(
-        self, daemon_service: DaemonService, tmp_path: Path
-    ) -> None:
+    def test_trigger_records_run(self, daemon_service: DaemonService, tmp_path: Path) -> None:
         """Triggering a main-session job should record a run in history."""
         job = _make_job(name="tracked-job", target="main")
         daemon_service.cron_manager.store.add(job)
@@ -436,9 +412,7 @@ class TestRunHistoryRecording:
 
 
 class TestEdgeCases:
-    def test_corrupt_jobs_json_starts_empty(
-        self, minimal_agent_def, tmp_path: Path
-    ) -> None:
+    def test_corrupt_jobs_json_starts_empty(self, minimal_agent_def, tmp_path: Path) -> None:
         """A corrupt jobs.json should not prevent startup."""
         cron_dir = tmp_path / "cron"
         cron_dir.mkdir(parents=True)

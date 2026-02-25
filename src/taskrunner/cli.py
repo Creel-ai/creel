@@ -30,6 +30,7 @@ import os
 import sys
 import threading
 from pathlib import Path
+from typing import Literal, cast
 
 from taskrunner.models import load_all_tasks, load_task
 from taskrunner.orchestrator import run_task
@@ -1101,12 +1102,14 @@ def cmd_cron_add(args: argparse.Namespace) -> int:
         payload.timeout_seconds = timeout
 
     # Determine target
-    target = getattr(args, "target", "isolated") or "isolated"
+    target_raw = getattr(args, "target", "isolated") or "isolated"
     if system_event:
-        target = "main"
+        target_raw = "main"
+    target = cast(Literal["main", "isolated"], target_raw)
 
     # Determine delivery
-    delivery_mode = getattr(args, "delivery_mode", "none") or "none"
+    delivery_mode_raw = getattr(args, "delivery_mode", "none") or "none"
+    delivery_mode = cast(Literal["announce", "webhook", "none"], delivery_mode_raw)
     delivery = Delivery(
         mode=delivery_mode,
         channel=getattr(args, "delivery_channel", None),
@@ -1151,9 +1154,7 @@ def cmd_cron_edit(args: argparse.Namespace) -> int:
     if getattr(args, "cron", None):
         fields["schedule"] = Schedule(kind="cron", expr=args.cron, tz=tz).model_dump()
     elif getattr(args, "every", None):
-        fields["schedule"] = Schedule(
-            kind="every", expr=str(args.every), tz=tz
-        ).model_dump()
+        fields["schedule"] = Schedule(kind="every", expr=str(args.every), tz=tz).model_dump()
     elif getattr(args, "at", None):
         fields["schedule"] = Schedule(kind="at", expr=args.at, tz=tz).model_dump()
 
@@ -1645,19 +1646,13 @@ def main() -> int:
     # cron add
     cron_add_parser = cron_subparsers.add_parser("add", help="Add a new cron job")
     cron_add_parser.add_argument("--name", required=True, help="Job name")
-    cron_add_parser.add_argument(
-        "--cron", help="Cron expression (e.g., '0 8 * * *')"
-    )
+    cron_add_parser.add_argument("--cron", help="Cron expression (e.g., '0 8 * * *')")
     cron_add_parser.add_argument("--every", type=int, help="Interval in seconds")
     cron_add_parser.add_argument("--at", help="One-shot ISO 8601 timestamp")
     cron_add_parser.add_argument("--message", help="Agent turn message")
-    cron_add_parser.add_argument(
-        "--system-event", help="System event message (main session)"
-    )
+    cron_add_parser.add_argument("--system-event", help="System event message (main session)")
     cron_add_parser.add_argument("--model", help="Model override")
-    cron_add_parser.add_argument(
-        "--timeout-seconds", type=int, help="Timeout in seconds"
-    )
+    cron_add_parser.add_argument("--timeout-seconds", type=int, help="Timeout in seconds")
     cron_add_parser.add_argument(
         "--target",
         choices=["main", "isolated"],
@@ -1670,15 +1665,9 @@ def main() -> int:
         default="none",
         help="Delivery mode (default: none)",
     )
-    cron_add_parser.add_argument(
-        "--delivery-channel", help="Channel name for announce delivery"
-    )
-    cron_add_parser.add_argument(
-        "--delivery-url", help="URL for webhook delivery"
-    )
-    cron_add_parser.add_argument(
-        "--tz", default="UTC", help="Timezone (default: UTC)"
-    )
+    cron_add_parser.add_argument("--delivery-channel", help="Channel name for announce delivery")
+    cron_add_parser.add_argument("--delivery-url", help="URL for webhook delivery")
+    cron_add_parser.add_argument("--tz", default="UTC", help="Timezone (default: UTC)")
     cron_add_parser.add_argument(
         "--disabled", action="store_true", help="Create job in disabled state"
     )
@@ -1688,37 +1677,27 @@ def main() -> int:
     cron_edit_parser.add_argument("job_id", help="Job ID to edit")
     cron_edit_parser.add_argument("--name", help="New name")
     cron_edit_parser.add_argument("--cron", help="New cron expression")
-    cron_edit_parser.add_argument(
-        "--every", type=int, help="New interval in seconds"
-    )
+    cron_edit_parser.add_argument("--every", type=int, help="New interval in seconds")
     cron_edit_parser.add_argument("--at", help="New one-shot timestamp")
     cron_edit_parser.add_argument("--tz", help="New timezone")
-    cron_edit_parser.add_argument(
-        "--enable", action="store_true", help="Enable job"
-    )
-    cron_edit_parser.add_argument(
-        "--disable", action="store_true", help="Disable job"
-    )
+    cron_edit_parser.add_argument("--enable", action="store_true", help="Enable job")
+    cron_edit_parser.add_argument("--disable", action="store_true", help="Disable job")
 
     # cron remove
-    cron_remove_parser = cron_subparsers.add_parser(
-        "remove", help="Remove a cron job"
-    )
+    cron_remove_parser = cron_subparsers.add_parser("remove", help="Remove a cron job")
     cron_remove_parser.add_argument("job_id", help="Job ID to remove")
 
     # cron run
-    cron_run_parser = cron_subparsers.add_parser(
-        "run", help="Trigger a job immediately"
-    )
+    cron_run_parser = cron_subparsers.add_parser("run", help="Trigger a job immediately")
     cron_run_parser.add_argument("job_id", help="Job ID to run")
 
     # cron runs
-    cron_runs_parser = cron_subparsers.add_parser(
-        "runs", help="Show run history for a job"
-    )
+    cron_runs_parser = cron_subparsers.add_parser("runs", help="Show run history for a job")
     cron_runs_parser.add_argument("job_id", help="Job ID to show runs for")
     cron_runs_parser.add_argument(
-        "--tail", type=int, default=20,
+        "--tail",
+        type=int,
+        default=20,
         help="Show last N runs (default: 20)",
     )
 

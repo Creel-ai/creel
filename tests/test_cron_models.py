@@ -12,7 +12,6 @@ from taskrunner.cron.models import (
     Schedule,
 )
 
-
 # --- Schedule ---
 
 

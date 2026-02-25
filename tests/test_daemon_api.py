@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from taskrunner.daemon.api import create_daemon_app
-from taskrunner.daemon.service import DaemonService
-from taskrunner.session import SessionManager
+from creel.daemon.api import create_daemon_app
+from creel.daemon.service import DaemonService
+from creel.session import SessionManager
 
 
 class _StubChatServer:

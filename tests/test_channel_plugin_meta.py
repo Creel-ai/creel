@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
+from creel.channels.plugin import ChannelCapability, ChannelPluginMeta
 
 
 class _DummyConfig(BaseModel):

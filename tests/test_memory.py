@@ -4,7 +4,7 @@ import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from taskrunner.memory import MemoryManager
+from creel.memory import MemoryManager
 
 
 class TestMemoryManager:

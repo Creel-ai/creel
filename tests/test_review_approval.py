@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from guardian.types import ActionDecision, ActionVerdict
-from taskrunner.approvals import ApprovalQueue, PendingAction
+from creel.approvals import ApprovalQueue, PendingAction
 
 
 # ── ApprovalQueue tests ─────────────────────────────────────────────
@@ -136,12 +136,12 @@ class FakeTextResponse:
         self.content = [FakeTextBlock(text)]
 
 
-@patch("taskrunner.agent.execute_tool_call", return_value="ok")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call", return_value="ok")
+@patch("creel.agent.call_llm")
 def test_review_returns_approval_required(mock_llm, mock_exec):
     """REVIEW verdict → stop_reason='approval_required', tool NOT executed."""
-    from taskrunner.agent import run_agent_loop
-    from taskrunner.models import AgentConfig, LLMConfig
+    from creel.agent import run_agent_loop
+    from creel.models import AgentConfig, LLMConfig
 
     mock_llm.return_value = FakeResponse()
 
@@ -159,12 +159,12 @@ def test_review_returns_approval_required(mock_llm, mock_exec):
     mock_exec.assert_not_called()
 
 
-@patch("taskrunner.agent.execute_tool_call", return_value="ok")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call", return_value="ok")
+@patch("creel.agent.call_llm")
 def test_review_with_confirm_action_approves(mock_llm, mock_exec):
     """REVIEW verdict + confirm_action that returns True → tool executes."""
-    from taskrunner.agent import run_agent_loop
-    from taskrunner.models import AgentConfig, LLMConfig
+    from creel.agent import run_agent_loop
+    from creel.models import AgentConfig, LLMConfig
 
     mock_llm.side_effect = [FakeResponse(), FakeTextResponse()]
 
@@ -183,12 +183,12 @@ def test_review_with_confirm_action_approves(mock_llm, mock_exec):
     mock_exec.assert_called_once()
 
 
-@patch("taskrunner.agent.execute_tool_call", return_value="ok")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call", return_value="ok")
+@patch("creel.agent.call_llm")
 def test_deny_still_denies(mock_llm, mock_exec):
     """DENY verdict still denies inline."""
-    from taskrunner.agent import run_agent_loop
-    from taskrunner.models import AgentConfig, LLMConfig
+    from creel.agent import run_agent_loop
+    from creel.models import AgentConfig, LLMConfig
 
     mock_llm.side_effect = [FakeResponse(), FakeTextResponse()]
 
@@ -210,8 +210,8 @@ def test_deny_still_denies(mock_llm, mock_exec):
 
 def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
     """Create a ChatServer with a real AgentDefinition so __init__ stays in sync."""
-    from taskrunner.chat import ChatServer
-    from taskrunner.models import (
+    from creel.chat import ChatServer
+    from creel.models import (
         AgentDefinition,
         SessionConfig,
         ToolConfig,
@@ -245,10 +245,10 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
     return server
 
 
-@patch("taskrunner.chat.run_agent_loop")
+@patch("creel.chat.run_agent_loop")
 def test_chat_approval_required_queues_action(mock_run, tmp_path):
     """When agent returns approval_required, ChatServer queues it."""
-    from taskrunner.agent import AgentResult, PendingApproval
+    from creel.agent import AgentResult, PendingApproval
 
     mock_run.return_value = AgentResult(
         text="Needs approval",
@@ -267,7 +267,7 @@ def test_chat_approval_required_queues_action(mock_run, tmp_path):
     assert pending.tool_name == "send_email"
 
 
-@patch("taskrunner.chat.execute_tool_call", return_value="Email sent!")
+@patch("creel.chat.execute_tool_call", return_value="Email sent!")
 def test_chat_y_approves_and_executes(mock_exec, tmp_path):
     """Replying 'Y' resolves pending action and executes the tool."""
     server = _make_chat_server(tmp_path)
@@ -300,10 +300,10 @@ def test_chat_n_denies(tmp_path):
     assert resolved.status == "denied"
 
 
-@patch("taskrunner.chat.run_agent_loop")
+@patch("creel.chat.run_agent_loop")
 def test_chat_no_pending_passes_to_agent(mock_run, tmp_path):
     """'Y' with no pending action goes to normal agent flow."""
-    from taskrunner.agent import AgentResult
+    from creel.agent import AgentResult
 
     mock_run.return_value = AgentResult(
         text="I don't understand.",
@@ -319,10 +319,10 @@ def test_chat_no_pending_passes_to_agent(mock_run, tmp_path):
     mock_run.assert_called_once()
 
 
-@patch("taskrunner.chat.run_agent_loop")
+@patch("creel.chat.run_agent_loop")
 def test_chat_auto_approve_passes_confirm_action(mock_run, tmp_path):
     """auto_approve=True passes a confirm_action callback to agent loop."""
-    from taskrunner.agent import AgentResult
+    from creel.agent import AgentResult
 
     mock_run.return_value = AgentResult(
         text="Task created.",
@@ -343,10 +343,10 @@ def test_chat_auto_approve_passes_confirm_action(mock_run, tmp_path):
     assert confirm_fn("some_tool", {}, "test reason") is True
 
 
-@patch("taskrunner.chat.run_agent_loop")
+@patch("creel.chat.run_agent_loop")
 def test_chat_no_auto_approve_has_no_confirm(mock_run, tmp_path):
     """Without auto_approve, confirm_action is None (no _confirm_fn set)."""
-    from taskrunner.agent import AgentResult
+    from creel.agent import AgentResult
 
     mock_run.return_value = AgentResult(
         text="Done.",
@@ -363,7 +363,7 @@ def test_chat_no_auto_approve_has_no_confirm(mock_run, tmp_path):
     assert confirm_fn is None
 
 
-@patch("taskrunner.chat.run_agent_loop")
+@patch("creel.chat.run_agent_loop")
 def test_chat_pending_approval_blocks_new_message(mock_run, tmp_path):
     """A new non-approval message should be blocked while approval is pending."""
     server = _make_chat_server(tmp_path)
@@ -376,11 +376,11 @@ def test_chat_pending_approval_blocks_new_message(mock_run, tmp_path):
     mock_run.assert_not_called()
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
     """Agent loop should inject synthetic tool_result before the next user turn."""
-    from taskrunner.agent import run_agent_loop
-    from taskrunner.models import AgentConfig, LLMConfig
+    from creel.agent import run_agent_loop
+    from creel.models import AgentConfig, LLMConfig
 
     mock_llm.return_value = FakeTextResponse("Recovered")
     messages = [
@@ -416,7 +416,7 @@ def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
 
 def test_partial_tool_results_repaired():
     """When some tool_results are present but others missing, only missing ones are injected."""
-    from taskrunner.agent import _ensure_tool_call_integrity
+    from creel.agent import _ensure_tool_call_integrity
 
     messages = [
         {"role": "user", "content": "do two things"},
@@ -452,7 +452,7 @@ def test_chat_approval_sends_imessage(tmp_path):
     server = _make_chat_server(tmp_path, imessage_channel=mock_channel)
     server._agent_def.channels.imessage = agent_def.channels.imessage
 
-    from taskrunner.approvals import PendingAction
+    from creel.approvals import PendingAction
     action = server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
     server._send_approval_request("sender1", action)
 

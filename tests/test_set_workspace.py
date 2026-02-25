@@ -8,14 +8,14 @@ import tempfile
 
 import pytest
 
-from taskrunner.tools import (
+from creel.tools import (
     BUILTIN_WORKSPACE_TOOLS,
     _is_blocked_path,
     _validate_workspace_path,
     build_tool_definitions,
     execute_tool_call,
 )
-from taskrunner.models import ToolConfig, ToolParameter
+from creel.models import ToolConfig, ToolParameter
 
 
 # ---------------------------------------------------------------------------

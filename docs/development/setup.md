@@ -25,7 +25,7 @@ uv pip install -e ".[guardian]"
 pytest
 ```
 
-Coverage is configured automatically via `pyproject.toml` (`--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing`).
+Coverage is configured automatically via `pyproject.toml` (`--cov=creel --cov=guardian --cov=bridge --cov-report=term-missing`).
 
 ## Building Documentation
 

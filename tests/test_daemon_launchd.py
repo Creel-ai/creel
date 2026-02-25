@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-from taskrunner import cli
+from creel import cli
 
 
 def _make_args(tmp_path: Path) -> argparse.Namespace:
@@ -68,11 +68,13 @@ def test_daemon_install_writes_plist_and_calls_launchctl(tmp_path: Path, monkeyp
         payload = plistlib.load(f)
 
     assert payload["Label"] == args.label
-    assert payload["ProgramArguments"][0] == cli.sys.executable
     assert "daemon" in payload["ProgramArguments"]
     assert "run" in payload["ProgramArguments"]
     assert payload["StandardOutPath"] == str(args.log_file)
     assert payload["StandardErrorPath"] == str(args.log_file)
+    # Properly installed package doesn't need WorkingDirectory or PYTHONPATH
+    assert "WorkingDirectory" not in payload
+    assert "EnvironmentVariables" not in payload
 
     launchctl_cmds = [c for c in calls if c and c[0] == "launchctl"]
     assert any(c[1] == "bootstrap" for c in launchctl_cmds)

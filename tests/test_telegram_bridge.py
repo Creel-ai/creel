@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.telegram_bridge import (
+from creel.channels.telegram_bridge import (
     HttpTelegramBridge,
     TelegramMessage,
     _chunk_text,

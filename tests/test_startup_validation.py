@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.startup import SecretsValidationError, validate_secrets
+from creel.startup import SecretsValidationError, validate_secrets
 
 
 def _make_agent_def(llm_secrets=None, tools=None):
@@ -44,7 +44,7 @@ class TestValidateSecrets:
         with pytest.raises(SecretsValidationError, match="tools.my_tool.secrets"):
             validate_secrets(agent)
 
-    @patch("taskrunner.startup.decrypt_env_file")
+    @patch("creel.startup.decrypt_env_file")
     def test_valid_secrets_passes(self, mock_decrypt, tmp_path: Path, monkeypatch):
         enc = tmp_path / "secrets.enc"
         enc.write_text("encrypted data")
@@ -57,7 +57,7 @@ class TestValidateSecrets:
         validate_secrets(agent)  # should not raise
         mock_decrypt.assert_called_once_with(str(enc))
 
-    @patch("taskrunner.startup.decrypt_env_file")
+    @patch("creel.startup.decrypt_env_file")
     def test_decrypt_failure_raises(self, mock_decrypt, tmp_path: Path, monkeypatch):
         enc = tmp_path / "secrets.enc"
         enc.write_text("bad data")

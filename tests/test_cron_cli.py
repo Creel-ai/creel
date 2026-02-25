@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner import cli
-from taskrunner.cron.models import (
+from creel import cli
+from creel.cron.models import (
     CronJob,
     Delivery,
     Payload,
@@ -17,7 +17,7 @@ from taskrunner.cron.models import (
     RunStatus,
     Schedule,
 )
-from taskrunner.cron.store import JobStore
+from creel.cron.store import JobStore
 
 
 # -- Helpers --

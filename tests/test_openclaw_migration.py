@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from taskrunner.migrations.openclaw import OpenClawMigrator, OpenClawMigratorOptions
+from creel.migrations.openclaw import OpenClawMigrator, OpenClawMigratorOptions
 
 
 def _write(path: Path, content: str) -> None:

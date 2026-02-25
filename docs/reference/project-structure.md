@@ -8,7 +8,7 @@ creel/
 ├── .python-version        # pyenv Python version pin (3.12)
 ├── TESTING.md             # Testing guidelines and procedures
 ├── bridge/                # Host bridge server for macOS tool integration
-├── taskrunner/
+├── creel/
 │   ├── models.py          # Pydantic models (tasks, tools, agent config)
 │   ├── orchestrator.py    # Core loop: fetch -> LLM -> output (simple + agent)
 │   ├── agent.py           # Agent loop: LLM -> tool_use -> execute -> loop

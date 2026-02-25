@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from taskrunner.scheduler import _run_task_safe, start_scheduler
+from creel.scheduler import _run_task_safe, start_scheduler
 
 
 def _make_tasks_dir(tmp_path: Path, tasks: list[dict] | None = None) -> Path:
@@ -36,7 +36,7 @@ def _sample_task(name: str = "test_task", schedule: str = "0 7 * * *") -> dict:
 # --- start_scheduler tests ---
 
 
-@patch("taskrunner.scheduler.run_task")
+@patch("creel.scheduler.run_task")
 def test_start_scheduler_loads_and_schedules_tasks(mock_run_task, tmp_path):
     """Tasks loaded from YAML, add_job called per task, scheduler.start() called."""
     tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha"), _sample_task("beta", "30 8 * * *")])
@@ -51,7 +51,7 @@ def test_start_scheduler_loads_and_schedules_tasks(mock_run_task, tmp_path):
     assert len(jobs) == 2
 
 
-@patch("taskrunner.scheduler.run_task")
+@patch("creel.scheduler.run_task")
 def test_start_scheduler_no_tasks(mock_run_task, tmp_path):
     """Empty dir logs warning and returns empty scheduler."""
     tasks_dir = _make_tasks_dir(tmp_path, [])
@@ -61,7 +61,7 @@ def test_start_scheduler_no_tasks(mock_run_task, tmp_path):
     assert scheduler.get_jobs() == []
 
 
-@patch("taskrunner.scheduler.run_task")
+@patch("creel.scheduler.run_task")
 def test_shutdown_event_stops_scheduler(mock_run_task, tmp_path):
     """Setting event triggers scheduler.shutdown(wait=False)."""
     tasks_dir = _make_tasks_dir(tmp_path, [_sample_task()])
@@ -89,7 +89,7 @@ def test_shutdown_event_stops_scheduler(mock_run_task, tmp_path):
         mock_shutdown.assert_called_once_with(wait=False)
 
 
-@patch("taskrunner.scheduler.run_task")
+@patch("creel.scheduler.run_task")
 def test_keyboard_interrupt_stops_scheduler(mock_run_task, tmp_path):
     """start() raising KeyboardInterrupt calls shutdown()."""
     tasks_dir = _make_tasks_dir(tmp_path, [_sample_task()])
@@ -104,21 +104,21 @@ def test_keyboard_interrupt_stops_scheduler(mock_run_task, tmp_path):
 # --- _run_task_safe tests ---
 
 
-@patch("taskrunner.scheduler.run_task", return_value="ok result")
+@patch("creel.scheduler.run_task", return_value="ok result")
 def test_run_task_safe_success(mock_run_task):
     """Calls run_task, logs success."""
     _run_task_safe("tasks/test.yaml", False)
     mock_run_task.assert_called_once_with("tasks/test.yaml", use_containers=False)
 
 
-@patch("taskrunner.scheduler.run_task", side_effect=RuntimeError("boom"))
+@patch("creel.scheduler.run_task", side_effect=RuntimeError("boom"))
 def test_run_task_safe_failure(mock_run_task):
     """Exception caught, logged, no re-raise."""
     _run_task_safe("tasks/test.yaml", False)
     # Should not raise
 
 
-@patch("taskrunner.scheduler.run_task", side_effect=RuntimeError("boom"))
+@patch("creel.scheduler.run_task", side_effect=RuntimeError("boom"))
 def test_run_task_safe_calls_failure_callback(mock_run_task):
     """Callback invoked with task path + exception."""
     callback = MagicMock()
@@ -130,7 +130,7 @@ def test_run_task_safe_calls_failure_callback(mock_run_task):
     assert isinstance(args[1], RuntimeError)
 
 
-@patch("taskrunner.scheduler.run_task", return_value="ok")
+@patch("creel.scheduler.run_task", return_value="ok")
 def test_run_task_safe_no_callback_on_success(mock_run_task):
     """Callback not called on success."""
     callback = MagicMock()
@@ -138,7 +138,7 @@ def test_run_task_safe_no_callback_on_success(mock_run_task):
     callback.assert_not_called()
 
 
-@patch("taskrunner.scheduler.run_task", side_effect=RuntimeError("boom"))
+@patch("creel.scheduler.run_task", side_effect=RuntimeError("boom"))
 def test_failure_callback_exception_is_caught(mock_run_task):
     """Broken callback doesn't crash scheduler."""
     callback = MagicMock(side_effect=ValueError("callback broke"))
@@ -149,7 +149,7 @@ def test_failure_callback_exception_is_caught(mock_run_task):
 # --- heartbeat tests ---
 
 
-@patch("taskrunner.scheduler.run_task")
+@patch("creel.scheduler.run_task")
 def test_heartbeat_event_set_periodically(mock_run_task, tmp_path):
     """Heartbeat set at least once during short run."""
     tasks_dir = _make_tasks_dir(tmp_path, [_sample_task()])
@@ -170,7 +170,7 @@ def test_heartbeat_event_set_periodically(mock_run_task, tmp_path):
     assert heartbeat_event.is_set()
 
 
-@patch("taskrunner.scheduler.run_task")
+@patch("creel.scheduler.run_task")
 def test_heartbeat_without_event(mock_run_task, tmp_path):
     """Scheduler works fine without heartbeat."""
     tasks_dir = _make_tasks_dir(tmp_path, [_sample_task()])

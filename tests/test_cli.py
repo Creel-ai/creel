@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from taskrunner import cli
+from creel import cli
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,8 @@ class TestBuildDaemonRunCommand:
         cmd = cli._build_daemon_run_command(
             args, args.socket_path, args.pid_file
         )
-        assert cmd[0] == cli.sys.executable
+        # Accepts either console script or python -m creel
+        assert cmd[0].endswith("creel") or cmd[0] == cli.sys.executable
         assert "daemon" in cmd
         assert "run" in cmd
         assert "--socket-path" in cmd
@@ -122,24 +123,6 @@ class TestBuildDaemonRunCommand:
         assert "--json-logs" in cmd
         assert "--no-scheduler" in cmd
 
-
-class TestBuildDaemonEnv:
-    def test_sets_pythonpath(self, tmp_path: Path) -> None:
-        env = cli._build_daemon_env(tmp_path)
-        assert str(tmp_path / "src") in env["PYTHONPATH"]
-
-    def test_preserves_existing_pythonpath(self, tmp_path: Path, monkeypatch) -> None:
-        monkeypatch.setenv("PYTHONPATH", "/existing/path")
-        env = cli._build_daemon_env(tmp_path)
-        assert "/existing/path" in env["PYTHONPATH"]
-        assert str(tmp_path / "src") in env["PYTHONPATH"]
-
-    def test_no_duplicate_if_already_present(self, tmp_path: Path, monkeypatch) -> None:
-        src_str = str(tmp_path / "src")
-        monkeypatch.setenv("PYTHONPATH", src_str)
-        env = cli._build_daemon_env(tmp_path)
-        # Should not prepend a duplicate
-        assert env["PYTHONPATH"] == src_str
 
 
 class TestBuildDaemonChannel:
@@ -203,7 +186,7 @@ class TestCmdRun:
             tasks_dir=task_path.parent,
             dry=True,
         )
-        with patch("taskrunner.orchestrator._run_executor_inline") as mock_exec:
+        with patch("creel.orchestrator._run_executor_inline") as mock_exec:
             mock_exec.return_value = '{"temp": "72"}'
             rc = cli.cmd_run(args)
         assert rc == 0
@@ -218,9 +201,9 @@ class TestCmdRun:
             dry=False,
         )
         with (
-            patch("taskrunner.orchestrator._run_executor_inline") as mock_exec,
-            patch("taskrunner.orchestrator.run_llm") as mock_llm,
-            patch("taskrunner.orchestrator.send_output"),
+            patch("creel.orchestrator._run_executor_inline") as mock_exec,
+            patch("creel.orchestrator.run_llm") as mock_llm,
+            patch("creel.orchestrator.send_output"),
         ):
             mock_exec.return_value = '{"temp": "72"}'
             mock_llm.return_value = "Nice weather!"
@@ -237,9 +220,9 @@ class TestCmdRun:
             verbose=True,
         )
         with (
-            patch("taskrunner.orchestrator._run_executor_inline") as mock_exec,
-            patch("taskrunner.orchestrator.run_llm") as mock_llm,
-            patch("taskrunner.orchestrator.send_output"),
+            patch("creel.orchestrator._run_executor_inline") as mock_exec,
+            patch("creel.orchestrator.run_llm") as mock_llm,
+            patch("creel.orchestrator.send_output"),
         ):
             mock_exec.return_value = '{"temp": "72"}'
             mock_llm.return_value = "Nice weather!"
@@ -255,7 +238,7 @@ class TestCmdRun:
             tasks_dir=task_path.parent,
             dry=False,
         )
-        with patch("taskrunner.cli.run_task", side_effect=RuntimeError("boom")):
+        with patch("creel.cli.run_task", side_effect=RuntimeError("boom")):
             rc = cli.cmd_run(args)
         assert rc == 1
         assert "boom" in capsys.readouterr().err
@@ -268,7 +251,7 @@ class TestCmdRun:
             dry=False,
             verbose=True,
         )
-        with patch("taskrunner.cli.run_task", side_effect=RuntimeError("boom")):
+        with patch("creel.cli.run_task", side_effect=RuntimeError("boom")):
             rc = cli.cmd_run(args)
         assert rc == 1
         err = capsys.readouterr().err
@@ -283,14 +266,14 @@ class TestCmdRun:
 class TestCmdSchedule:
     def test_calls_start_scheduler(self, cli_args) -> None:
         args = cli_args()
-        with patch("taskrunner.cli.start_scheduler") as mock_sched:
+        with patch("creel.cli.start_scheduler") as mock_sched:
             cli.cmd_schedule(args)
             mock_sched.assert_called_once()
 
     def test_keyboard_interrupt_returns_0(self, cli_args, capsys) -> None:
         args = cli_args()
         with patch(
-            "taskrunner.cli.start_scheduler",
+            "creel.cli.start_scheduler",
             side_effect=KeyboardInterrupt,
         ):
             rc = cli.cmd_schedule(args)

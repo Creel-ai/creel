@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from taskrunner.models import ToolConfig, ToolParameter
-from taskrunner.tools import build_tool_definitions, execute_tool_call
+from creel.models import ToolConfig, ToolParameter
+from creel.tools import build_tool_definitions, execute_tool_call
 
 
 def _make_tools() -> dict[str, ToolConfig]:
@@ -96,7 +96,7 @@ def test_fixed_args_excluded_from_schema():
     assert "remove_labels" not in props
 
 
-@patch("taskrunner.tools._run_executor_inline")
+@patch("creel.tools._run_executor_inline")
 def test_execute_tool_call_merges_fixed_args(mock_fetch):
     """fixed_args should override LLM input."""
     mock_fetch.return_value = '{"status": "trashed"}'
@@ -117,7 +117,7 @@ def test_execute_tool_call_merges_fixed_args(mock_fetch):
     assert executor_config.args["action"] == "trash"
 
 
-@patch("taskrunner.tools._run_executor_inline")
+@patch("creel.tools._run_executor_inline")
 def test_execute_tool_call_fixed_args_win(mock_fetch):
     """If LLM tries to override a fixed_arg, the fixed value wins."""
     mock_fetch.return_value = '{"ok": true}'

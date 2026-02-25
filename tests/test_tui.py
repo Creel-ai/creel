@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.session import Session, SessionManager
-from taskrunner.tui import SENDER_ID, ChatApp, ChatInput, StatusBar
+from creel.session import Session, SessionManager
+from creel.tui import SENDER_ID, ChatApp, ChatInput, StatusBar
 
 
 def _make_mock_server(tmp_path, handle_response="Mock response"):

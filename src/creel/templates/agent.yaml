@@ -1,0 +1,42 @@
+system_prompt: |
+  You are a personal assistant running on Creel. Be concise and helpful.
+  Today is {date}.
+
+tools:
+  check_weather:
+    executor: weather
+    network: true
+    description: "Get current weather and forecast"
+    parameters:
+      location:
+        type: string
+        description: "City name or coordinates"
+        required: true
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 4096
+  secrets: secrets/anthropic.env.enc
+
+agent:
+  max_turns: 15
+
+session:
+  sessions_dir: sessions
+  max_history: 50
+  summarize_on_trim: true
+
+workspace:
+  path: workspace
+  timezone: "UTC"
+
+guardian:
+  enabled: true
+  fast_classifier:
+    enabled: false
+  llm_judge:
+    enabled: false
+  policy:
+    enabled: true
+  audit:
+    enabled: true

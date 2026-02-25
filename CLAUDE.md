@@ -26,11 +26,11 @@ uv pip install -e ".[dev,guardian]"
 .venv/bin/python -m pytest tests/ -v
 ```
 
-Coverage is configured automatically via `pyproject.toml` (`--cov=taskrunner --cov=guardian --cov-report=term-missing`).
+Coverage is configured automatically via `pyproject.toml` (`--cov=creel --cov=guardian --cov-report=term-missing`).
 
 ## Project Structure
 
-- `src/taskrunner/` — Core orchestration, agent loop, LLM calls, session management, tool execution, output routing, channels (stdin, iMessage), CLI entry point
+- `src/creel/` — Core orchestration, agent loop, LLM calls, session management, tool execution, output routing, channels (stdin, iMessage), CLI entry point
 - `src/guardian/` — Security pipeline: fast classifier (DeBERTa/ONNX), LLM judge (Haiku), YAML policy engine, audit logging
 - `src/bridge/` — Host bridge server for macOS-native tools (FastAPI)
 - `src/executors/` — Isolated data executors (weather, gcal, gmail, drive), each with minimal OAuth scopes

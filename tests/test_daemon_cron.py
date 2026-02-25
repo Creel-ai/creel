@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.base import Channel
-from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
-from taskrunner.cron.store import JobStore
-from taskrunner.daemon.service import DaemonService
-from taskrunner.session import SessionManager
+from creel.channels.base import Channel
+from creel.cron.models import CronJob, Delivery, Payload, Schedule
+from creel.cron.store import JobStore
+from creel.daemon.service import DaemonService
+from creel.session import SessionManager
 
 
 # -- Stubs --
@@ -250,7 +250,7 @@ class TestChannelDelivery:
         with pytest.raises(ValueError, match="not found for cron delivery"):
             daemon_service._channel_send("nonexistent", "Hello!")
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_job_deliver_to_channel(
         self, mock_agent_loop, daemon_service: DaemonService, tmp_path: Path
     ) -> None:
@@ -406,7 +406,7 @@ class TestRunHistoryRecording:
 
         daemon_service.stop_cron_manager()
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_failed_job_records_failure(
         self, mock_agent_loop, daemon_service: DaemonService, tmp_path: Path
     ) -> None:

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from executors.notion.executor import run_action
-from taskrunner.secrets import decrypt_env_file
+from creel.secrets import decrypt_env_file
 
 # Mark this module as smoke-only.
 pytestmark = [pytest.mark.smoke]

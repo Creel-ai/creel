@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from taskrunner.session import SessionManager
+from creel.session import SessionManager
 
 
 def _tool_call_conversation() -> list[dict]:

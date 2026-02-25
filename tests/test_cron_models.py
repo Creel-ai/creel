@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from taskrunner.cron.models import (
+from creel.cron.models import (
     CronJob,
     Delivery,
     Payload,

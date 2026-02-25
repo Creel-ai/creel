@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.base import Channel
-from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
-from taskrunner.channels.registry import ChannelRegistry
+from creel.channels.base import Channel
+from creel.channels.plugin import ChannelCapability, ChannelPluginMeta
+from creel.channels.registry import ChannelRegistry
 
 
 class _DummyChannel(Channel):

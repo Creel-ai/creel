@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.models import AgentDefinition, ToolConfig, ToolParameter
-from taskrunner.orchestrator import (
+from creel.models import AgentDefinition, ToolConfig, ToolParameter
+from creel.orchestrator import (
     ImageBuildCache,
     _image_cache,
     collect_required_images,
@@ -102,7 +102,7 @@ class TestImageBuildCache:
     def setup_method(self):
         self.cache = ImageBuildCache()
 
-    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    @patch("creel.orchestrator._ensure_image_uncached")
     def test_deduplication(self, mock_build):
         """Two concurrent threads trigger only one build."""
         build_started = threading.Event()
@@ -143,7 +143,7 @@ class TestImageBuildCache:
         assert results[0] == results[1]
         assert mock_build.call_count == 1
 
-    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    @patch("creel.orchestrator._ensure_image_uncached")
     def test_error_propagation(self, mock_build):
         """Build error is stored and re-raised to waiters."""
         build_started = threading.Event()
@@ -178,7 +178,7 @@ class TestImageBuildCache:
 
         assert all(isinstance(e, RuntimeError) for e in errors)
 
-    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    @patch("creel.orchestrator._ensure_image_uncached")
     def test_retry_after_failure(self, mock_build):
         """Failed pre-build doesn't permanently block on-demand calls."""
         mock_build.side_effect = RuntimeError("transient failure")
@@ -192,7 +192,7 @@ class TestImageBuildCache:
         assert result == "built-executor-weather:latest"
         assert mock_build.call_count == 2
 
-    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    @patch("creel.orchestrator._ensure_image_uncached")
     def test_cache_hit(self, mock_build):
         """Successful build is cached on subsequent calls."""
         mock_build.return_value = "executor-weather:abc123"
@@ -203,7 +203,7 @@ class TestImageBuildCache:
         assert r1 == r2 == "executor-weather:abc123"
         assert mock_build.call_count == 1
 
-    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    @patch("creel.orchestrator._ensure_image_uncached")
     def test_different_images_independent(self, mock_build):
         """Different image keys are built independently."""
         mock_build.side_effect = lambda img: f"built-{img}"
@@ -215,7 +215,7 @@ class TestImageBuildCache:
         assert r2 == "built-llm-runner:latest"
         assert mock_build.call_count == 2
 
-    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    @patch("creel.orchestrator._ensure_image_uncached")
     def test_waiter_handles_superseded_entry(self, mock_build):
         """Waiter re-enters ensure_image when its entry is superseded.
 
@@ -275,7 +275,7 @@ class TestPrebuildImages:
     def teardown_method(self):
         _image_cache.clear()
 
-    @patch("taskrunner.orchestrator._ensure_image_uncached")
+    @patch("creel.orchestrator._ensure_image_uncached")
     def test_starts_background_threads(self, mock_build):
         """prebuild_images() spawns and completes daemon threads."""
         mock_build.side_effect = lambda img: f"built-{img}"

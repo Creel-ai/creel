@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import pytest
 
-from taskrunner.channels.base import Channel
-from taskrunner.daemon.service import DaemonService
-from taskrunner.session import SessionManager
+from creel.channels.base import Channel
+from creel.daemon.service import DaemonService
+from creel.session import SessionManager
 
 
 class _StubChatServer:
@@ -127,7 +127,7 @@ def test_scheduler_lifecycle(daemon_service: DaemonService) -> None:
         started.set()
         shutdown_event.wait(timeout=2)
 
-    with patch("taskrunner.daemon.service.start_scheduler", side_effect=_fake_scheduler):
+    with patch("creel.daemon.service.start_scheduler", side_effect=_fake_scheduler):
         assert daemon_service.start_scheduler("tasks") is True
         assert started.wait(timeout=1)
         assert daemon_service.status()["scheduler"]["running"] is True

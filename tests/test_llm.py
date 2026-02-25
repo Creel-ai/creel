@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, call, patch
 import anthropic
 import pytest
 
-from taskrunner.llm import (
+from creel.llm import (
     MAX_RETRIES,
     _CLAUDE_CODE_SYSTEM_PREFIX,
     _OAUTH_HEADERS,
@@ -18,7 +18,7 @@ from taskrunner.llm import (
     call_llm,
     summarize_messages,
 )
-from taskrunner.models import LLMConfig
+from creel.models import LLMConfig
 
 
 def _make_config() -> LLMConfig:
@@ -37,7 +37,7 @@ def _mock_message(text: str = "Hello") -> MagicMock:
 # -- _run_llm_direct auth tests --
 
 
-@patch("taskrunner.llm.anthropic.Anthropic")
+@patch("creel.llm.anthropic.Anthropic")
 def test_direct_uses_auth_token(mock_cls, monkeypatch):
     """ANTHROPIC_AUTH_TOKEN should be passed as auth_token=."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-test")
@@ -53,7 +53,7 @@ def test_direct_uses_auth_token(mock_cls, monkeypatch):
     assert result == "Hello"
 
 
-@patch("taskrunner.llm.anthropic.Anthropic")
+@patch("creel.llm.anthropic.Anthropic")
 def test_direct_uses_api_key(mock_cls, monkeypatch):
     """ANTHROPIC_API_KEY should be passed as api_key=."""
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
@@ -67,7 +67,7 @@ def test_direct_uses_api_key(mock_cls, monkeypatch):
     assert result == "Hello"
 
 
-@patch("taskrunner.llm.anthropic.Anthropic")
+@patch("creel.llm.anthropic.Anthropic")
 def test_direct_auth_token_takes_precedence(mock_cls, monkeypatch):
     """When both are set, auth_token wins."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
@@ -82,7 +82,7 @@ def test_direct_auth_token_takes_precedence(mock_cls, monkeypatch):
     )
 
 
-@patch("taskrunner.llm.anthropic.Anthropic")
+@patch("creel.llm.anthropic.Anthropic")
 def test_direct_non_oauth_auth_token_no_headers(mock_cls, monkeypatch):
     """A non-OAuth auth_token should not get the spoofed headers."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-other-token")
@@ -109,8 +109,8 @@ def test_direct_no_credentials_raises(monkeypatch):
 # -- _run_llm_container auth tests --
 
 
-@patch("taskrunner.orchestrator._ensure_image")
-@patch("taskrunner.llm.subprocess.run")
+@patch("creel.orchestrator._ensure_image")
+@patch("creel.llm.subprocess.run")
 def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_path):
     """ANTHROPIC_AUTH_TOKEN should be written to the env file."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
@@ -120,7 +120,7 @@ def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_pa
     env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response")
 
-    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
+    with patch("creel.llm.tempfile.NamedTemporaryFile",
                return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
@@ -130,8 +130,8 @@ def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_pa
     assert "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-token" in contents
 
 
-@patch("taskrunner.orchestrator._ensure_image")
-@patch("taskrunner.llm.subprocess.run")
+@patch("creel.orchestrator._ensure_image")
+@patch("creel.llm.subprocess.run")
 def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path):
     """ANTHROPIC_API_KEY should be written to the env file."""
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
@@ -140,7 +140,7 @@ def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path)
     env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response")
 
-    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
+    with patch("creel.llm.tempfile.NamedTemporaryFile",
                return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
@@ -148,8 +148,8 @@ def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path)
     assert "ANTHROPIC_API_KEY=sk-ant-key" in contents
 
 
-@patch("taskrunner.orchestrator._ensure_image")
-@patch("taskrunner.llm.subprocess.run")
+@patch("creel.orchestrator._ensure_image")
+@patch("creel.llm.subprocess.run")
 def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch, tmp_path):
     """Both env vars should be written to the env file."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
@@ -158,7 +158,7 @@ def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch, tmp
     env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response")
 
-    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
+    with patch("creel.llm.tempfile.NamedTemporaryFile",
                return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
@@ -182,7 +182,7 @@ class TestRetryOnTransient:
         fn = MagicMock(side_effect=exc)
 
         with (
-            patch("taskrunner.llm.time.sleep"),
+            patch("creel.llm.time.sleep"),
             pytest.raises(anthropic.APIStatusError),
         ):
             _retry_on_transient(fn)
@@ -220,7 +220,7 @@ class TestRetryOnTransient:
 
         fn = MagicMock(side_effect=[exc_retryable, "success"])
 
-        with patch("taskrunner.llm.time.sleep"):
+        with patch("creel.llm.time.sleep"):
             result = _retry_on_transient(fn)
 
         assert result == "success"
@@ -265,7 +265,7 @@ class TestCallLlmStreaming:
         mock_client.messages.stream.side_effect = exc
         mock_client.messages.create.return_value = _mock_message("fallback")
 
-        with patch("taskrunner.llm.time.sleep"):
+        with patch("creel.llm.time.sleep"):
             result = _call_llm_streaming(
                 mock_client,
                 {"model": "test", "max_tokens": 100, "messages": []},
@@ -279,7 +279,7 @@ class TestCallLlmStreaming:
 
 
 class TestCallLlm:
-    @patch("taskrunner.llm.anthropic.Anthropic")
+    @patch("creel.llm.anthropic.Anthropic")
     def test_with_tools_param(self, mock_cls, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
@@ -296,7 +296,7 @@ class TestCallLlm:
         kwargs = create_call.call_args[1]
         assert kwargs["tools"] == tools
 
-    @patch("taskrunner.llm.anthropic.Anthropic")
+    @patch("creel.llm.anthropic.Anthropic")
     def test_with_system_param(self, mock_cls, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
@@ -310,7 +310,7 @@ class TestCallLlm:
         kwargs = create_call.call_args[1]
         assert kwargs["system"] == "You are helpful."
 
-    @patch("taskrunner.llm.anthropic.Anthropic")
+    @patch("creel.llm.anthropic.Anthropic")
     def test_oauth_prefix_injection(self, mock_cls, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -333,7 +333,7 @@ class TestCallLlm:
         with pytest.raises(RuntimeError, match="No Anthropic credentials"):
             call_llm(messages, _make_config())
 
-    @patch("taskrunner.llm.anthropic.Anthropic")
+    @patch("creel.llm.anthropic.Anthropic")
     def test_on_text_delta_uses_streaming(self, mock_cls, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
@@ -358,8 +358,8 @@ class TestCallLlm:
 
 
 class TestSummarizeMessages:
-    @patch("taskrunner.llm._run_llm_direct")
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._run_llm_direct")
+    @patch("creel.llm._get_client")
     def test_formats_tool_use_and_tool_result(self, mock_get_client, mock_direct, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         mock_direct.return_value = "Summary of conversation"
@@ -390,8 +390,8 @@ class TestSummarizeMessages:
         assert "Denver" in prompt
         assert "Sunny" in prompt
 
-    @patch("taskrunner.llm._run_llm_direct")
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._run_llm_direct")
+    @patch("creel.llm._get_client")
     def test_truncation_at_200_chars(self, mock_get_client, mock_direct, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         mock_direct.return_value = "summary"

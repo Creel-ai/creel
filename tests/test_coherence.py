@@ -30,7 +30,7 @@ class TestCoherenceChecker:
         result = checker.check("what's the weather?", "check_weather", {})
         assert result.coherent is True
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_coherent_action(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
@@ -43,7 +43,7 @@ class TestCoherenceChecker:
         assert result.coherent is True
         assert result.confidence == 0.95
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_incoherent_action(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
@@ -56,7 +56,7 @@ class TestCoherenceChecker:
         assert result.coherent is False
         assert "email" in result.reasoning.lower()
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_api_failure_defaults_coherent(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = RuntimeError("API down")
@@ -67,7 +67,7 @@ class TestCoherenceChecker:
         assert result.coherent is True
         assert "failed" in result.reasoning.lower()
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_json_parse_error_defaults_coherent(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response("not json")
@@ -77,7 +77,7 @@ class TestCoherenceChecker:
         result = checker.check("test", "check_weather", {})
         assert result.coherent is True
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_usage_stats(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(

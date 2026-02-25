@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.daemon.client import DaemonApiClient, DaemonTuiAdapter
+from creel.daemon.client import DaemonApiClient, DaemonTuiAdapter
 
 
 # ---------------------------------------------------------------------------

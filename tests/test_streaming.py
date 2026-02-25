@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import anthropic
 
-from taskrunner.agent import run_agent_loop
-from taskrunner.llm import _call_llm_streaming, call_llm
-from taskrunner.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
+from creel.agent import run_agent_loop
+from creel.llm import _call_llm_streaming, call_llm
+from creel.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
 
 
 def _make_config() -> LLMConfig:
@@ -121,7 +121,7 @@ def test_streaming_reraises_non_retryable_error():
 # -- call_llm streaming vs non-streaming dispatch --
 
 
-@patch("taskrunner.llm._get_client")
+@patch("creel.llm._get_client")
 def test_call_llm_uses_stream_when_callback_provided(mock_get_client, monkeypatch):
     """call_llm should use client.messages.stream() when on_text_delta is set."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
@@ -147,7 +147,7 @@ def test_call_llm_uses_stream_when_callback_provided(mock_get_client, monkeypatc
     client.messages.create.assert_not_called()
 
 
-@patch("taskrunner.llm._get_client")
+@patch("creel.llm._get_client")
 def test_call_llm_uses_create_when_no_callback(mock_get_client, monkeypatch):
     """call_llm should use client.messages.create() when on_text_delta is None."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
@@ -169,7 +169,7 @@ def test_call_llm_uses_create_when_no_callback(mock_get_client, monkeypatch):
 # -- Agent loop passes callback through --
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_agent_loop_passes_on_text_delta(mock_call_llm):
     """run_agent_loop should forward on_text_delta to call_llm."""
     mock_call_llm.return_value = _mock_message()
@@ -189,7 +189,7 @@ def test_agent_loop_passes_on_text_delta(mock_call_llm):
     assert kwargs["on_text_delta"] is callback
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_agent_loop_none_callback_by_default(mock_call_llm):
     """run_agent_loop should pass on_text_delta=None when not provided."""
     mock_call_llm.return_value = _mock_message()

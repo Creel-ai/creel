@@ -31,7 +31,7 @@ class TestLLMJudge:
         judge = LLMJudge(config)
         assert judge.judge("anything") is None
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_injection_detected(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
@@ -48,7 +48,7 @@ class TestLLMJudge:
         assert result.source == "llm_judge"
         assert "override" in result.reasoning
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_safe_input(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
@@ -63,7 +63,7 @@ class TestLLMJudge:
         assert result.is_injection is False
         assert result.confidence == 0.1
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_api_failure_falls_through(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = RuntimeError("API down")
@@ -77,7 +77,7 @@ class TestLLMJudge:
         assert result.is_injection is False
         assert "failed" in result.reasoning.lower()
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_json_parse_error_falls_through(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response("not valid json at all")
@@ -90,7 +90,7 @@ class TestLLMJudge:
         assert result.is_injection is False
         assert "failed" in result.reasoning.lower()
 
-    @patch("taskrunner.llm._get_client")
+    @patch("creel.llm._get_client")
     def test_uses_correct_model(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(

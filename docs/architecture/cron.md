@@ -159,7 +159,7 @@ The `cron` tool is registered as a built-in tool (like memory tools) with action
 ## Code Layout
 
 ```
-src/taskrunner/cron/
+src/creel/cron/
 ├── __init__.py      # Package exports
 ├── models.py        # CronJob, Schedule, Payload, Delivery, RunRecord (Pydantic v2)
 ├── store.py         # JobStore — JSON persistence, atomic writes, thread-safe

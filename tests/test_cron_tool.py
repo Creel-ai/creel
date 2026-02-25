@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from taskrunner.cron.manager import CronManager
-from taskrunner.cron.models import (
+from creel.cron.manager import CronManager
+from creel.cron.models import (
     CronJob,
     Delivery,
     Payload,
@@ -16,8 +16,8 @@ from taskrunner.cron.models import (
     RunStatus,
     Schedule,
 )
-from taskrunner.cron.store import JobStore
-from taskrunner.cron.tool import CRON_TOOL_DEFINITION, handle_cron_tool
+from creel.cron.store import JobStore
+from creel.cron.tool import CRON_TOOL_DEFINITION, handle_cron_tool
 
 
 # -- Helpers --
@@ -585,7 +585,7 @@ class TestActionRuns:
 
 class TestExecuteToolCallCronDispatch:
     def test_dispatch_with_cron_manager(self, tmp_path: Path) -> None:
-        from taskrunner.tools import execute_tool_call
+        from creel.tools import execute_tool_call
 
         mgr = _make_manager(tmp_path)
         mgr.store.add(_make_job("Dispatched"))
@@ -601,7 +601,7 @@ class TestExecuteToolCallCronDispatch:
         assert result["jobs"][0]["name"] == "Dispatched"
 
     def test_dispatch_without_cron_manager_raises(self, tmp_path: Path) -> None:
-        from taskrunner.tools import execute_tool_call
+        from creel.tools import execute_tool_call
 
         with pytest.raises(ValueError, match="Unknown tool"):
             execute_tool_call(
@@ -612,7 +612,7 @@ class TestExecuteToolCallCronDispatch:
             )
 
     def test_add_via_dispatch(self, tmp_path: Path) -> None:
-        from taskrunner.tools import execute_tool_call
+        from creel.tools import execute_tool_call
 
         mgr = _make_manager(tmp_path)
         result_str = execute_tool_call(
@@ -639,21 +639,21 @@ class TestExecuteToolCallCronDispatch:
 
 class TestBuildToolDefinitionsCron:
     def test_includes_cron_when_flagged(self) -> None:
-        from taskrunner.tools import build_tool_definitions
+        from creel.tools import build_tool_definitions
 
         defs = build_tool_definitions({}, include_cron_tools=True)
         names = [d["name"] for d in defs]
         assert "cron" in names
 
     def test_excludes_cron_by_default(self) -> None:
-        from taskrunner.tools import build_tool_definitions
+        from creel.tools import build_tool_definitions
 
         defs = build_tool_definitions({})
         names = [d["name"] for d in defs]
         assert "cron" not in names
 
     def test_cron_with_other_builtins(self) -> None:
-        from taskrunner.tools import build_tool_definitions
+        from creel.tools import build_tool_definitions
 
         defs = build_tool_definitions(
             {},

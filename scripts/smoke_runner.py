@@ -556,7 +556,7 @@ def handle_poll_backoff(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
 
 def handle_session_ttl(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
-    from taskrunner.session import SessionManager
+    from creel.session import SessionManager
 
     sessions_dir = ctx.run_dir / "runtime" / "session_ttl" / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -666,7 +666,7 @@ def handle_broken_secret_validation(case: dict[str, Any], ctx: SmokeContext) -> 
 
 def handle_no_judge_flag(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
-    from taskrunner import cli as runner
+    from creel import cli as runner
 
     with open(ctx.agent_config) as f:
         config = yaml.safe_load(f) or {}
@@ -1096,8 +1096,8 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     failures: list[str] = []
 
     try:
-        from taskrunner.models import ToolConfig, ToolParameter
-        from taskrunner.tools import execute_tool_call, build_tool_definitions
+        from creel.models import ToolConfig, ToolParameter
+        from creel.tools import execute_tool_call, build_tool_definitions
 
         # Create workspace under run_dir (macOS /var is blocked by security)
         ws = ctx.run_dir / "runtime" / "set_workspace_e2e" / "workspace"

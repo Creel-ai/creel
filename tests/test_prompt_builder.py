@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from taskrunner.prompt_builder import build_system_prompt, _build_workspace_section
+from creel.prompt_builder import build_system_prompt, _build_workspace_section
 
 
 class TestBuildSystemPrompt:

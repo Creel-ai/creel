@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "llm-taskrunner"
+name = "creel"
 version = "0.1.0"
 description = "Secure, scheduled LLM task runner with isolated fetchers"
 requires-python = ">=3.11"
@@ -52,26 +52,26 @@ docs = [
 ]
 
 [project.scripts]
-creel = "taskrunner.cli:main"
+creel = "creel.cli:main"
 
 [project.entry-points."creel.channels"]
-imessage = "taskrunner.channels.imessage:register_plugin"
-bluebubbles = "taskrunner.channels.bluebubbles:register_plugin"
-whatsapp = "taskrunner.channels.whatsapp:register_plugin"
-telegram = "taskrunner.channels.telegram:register_plugin"
+imessage = "creel.channels.imessage:register_plugin"
+bluebubbles = "creel.channels.bluebubbles:register_plugin"
+whatsapp = "creel.channels.whatsapp:register_plugin"
+telegram = "creel.channels.telegram:register_plugin"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/taskrunner", "src/guardian", "src/bridge"]
+packages = ["src/creel", "src/guardian", "src/bridge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing -m 'not smoke'"
+addopts = "--cov=creel --cov=guardian --cov=bridge --cov-report=term-missing -m 'not smoke'"
 markers = [
     "smoke: end-to-end tests requiring Docker and network access",
 ]
 
 [tool.coverage.run]
-source = ["taskrunner", "guardian", "bridge"]
+source = ["creel", "guardian", "bridge"]
 
 [tool.coverage.report]
 show_missing = true

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from taskrunner.agent import AgentResult, run_agent_loop
-from taskrunner.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
+from creel.agent import AgentResult, run_agent_loop
+from creel.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
 
 
 def _make_llm_config() -> LLMConfig:
@@ -56,7 +56,7 @@ def _tool_use_message(tool_name: str, tool_input: dict, tool_id: str = "toolu_1"
     return msg
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_simple_text_response(mock_call_llm):
     """Agent should return immediately when LLM gives a text response."""
     mock_call_llm.return_value = _text_message("Hello!")
@@ -74,8 +74,8 @@ def test_simple_text_response(mock_call_llm):
     assert result.stop_reason == "end_turn"
 
 
-@patch("taskrunner.agent.execute_tool_call")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
 def test_tool_call_then_response(mock_call_llm, mock_execute):
     """Agent should execute tool, then return final text."""
     # First call: tool use. Second call: text response.
@@ -101,8 +101,8 @@ def test_tool_call_then_response(mock_call_llm, mock_execute):
     assert result.tool_history[0]["is_error"] is False
 
 
-@patch("taskrunner.agent.execute_tool_call")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
 def test_tool_error_continues(mock_call_llm, mock_execute):
     """Tool error should be passed back to LLM, not crash the loop."""
     mock_call_llm.side_effect = [
@@ -123,8 +123,8 @@ def test_tool_error_continues(mock_call_llm, mock_execute):
     assert result.tool_history[0]["is_error"] is True
 
 
-@patch("taskrunner.agent.execute_tool_call")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
 def test_max_turns_forces_summary(mock_call_llm, mock_execute):
     """When max_turns is reached, agent should force a final text response."""
     # Every turn returns a tool call - never voluntarily stops
@@ -149,7 +149,7 @@ def test_max_turns_forces_summary(mock_call_llm, mock_execute):
     assert "checked the weather" in result.text
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_llm_error_returns_error_result(mock_call_llm):
     """LLM call failure should return an error AgentResult."""
     mock_call_llm.side_effect = RuntimeError("API rate limited")
@@ -165,7 +165,7 @@ def test_llm_error_returns_error_result(mock_call_llm):
     assert "API rate limited" in result.text
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_no_tools_configured(mock_call_llm):
     """Agent should work fine with no tools (pure chat)."""
     mock_call_llm.return_value = _text_message("Just chatting!")
@@ -185,7 +185,7 @@ def test_no_tools_configured(mock_call_llm):
     assert call_kwargs.kwargs.get("tools") is None or call_kwargs[1].get("tools") is None
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_system_prompt_passed(mock_call_llm):
     """System prompt should be forwarded to call_llm."""
     mock_call_llm.return_value = _text_message("Ok")
@@ -202,8 +202,8 @@ def test_system_prompt_passed(mock_call_llm):
     assert call_kwargs.kwargs.get("system") == "You are helpful."
 
 
-@patch("taskrunner.agent.execute_tool_call")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
 def test_tool_results_not_screened(mock_call_llm, mock_execute):
     """Tool results from our own executors should not be run through the classifier."""
     mock_call_llm.side_effect = [
@@ -230,8 +230,8 @@ def test_tool_results_not_screened(mock_call_llm, mock_execute):
     assert result.tool_history[0]["output"] == '{"temp_f": "72", "condition": "sunny"}'
 
 
-@patch("taskrunner.agent.execute_tool_call")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
 def test_classify_output_screens_executor_result(mock_call_llm, mock_execute):
     """Tools with classify_output=True should have output run through the classifier."""
     mock_call_llm.side_effect = [
@@ -273,8 +273,8 @@ def test_classify_output_screens_executor_result(mock_call_llm, mock_execute):
     assert "blocked" in result.tool_history[0]["output"].lower()
 
 
-@patch("taskrunner.agent.execute_tool_call")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
 def test_classify_output_passes_clean_result(mock_call_llm, mock_execute):
     """Tools with classify_output=True should pass through clean results."""
     mock_call_llm.side_effect = [
@@ -313,7 +313,7 @@ def test_classify_output_passes_clean_result(mock_call_llm, mock_execute):
     assert result.tool_history[0]["output"] == "Hi, meeting at 3pm."
 
 
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.call_llm")
 def test_last_input_tokens_populated(mock_call_llm):
     """AgentResult.last_input_tokens should reflect the final LLM response usage."""
     mock_call_llm.return_value = _text_message("Hello!", input_tokens=4567)
@@ -328,8 +328,8 @@ def test_last_input_tokens_populated(mock_call_llm):
     assert result.last_input_tokens == 4567
 
 
-@patch("taskrunner.agent.execute_tool_call")
-@patch("taskrunner.agent.call_llm")
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
 def test_last_input_tokens_from_final_call(mock_call_llm, mock_execute):
     """last_input_tokens should be from the last LLM call, not the first."""
     mock_call_llm.side_effect = [

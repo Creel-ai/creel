@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from taskrunner.models import TaskDefinition
+from creel.models import TaskDefinition
 
 
 class TestTaskDefinitionAllowedTools:
@@ -47,7 +47,7 @@ allowed_tools:
   - check_weather
   - check_calendar
 """)
-        from taskrunner.models import load_task
+        from creel.models import load_task
         task = load_task(task_file)
         assert task.allowed_tools == ["check_weather", "check_calendar"]
 
@@ -62,6 +62,6 @@ output:
   type: stdout
   to: "-"
 """)
-        from taskrunner.models import load_task
+        from creel.models import load_task
         task = load_task(task_file)
         assert task.allowed_tools == []

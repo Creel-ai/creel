@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.whatsapp import WhatsAppChannel
-from taskrunner.channels.whatsapp_bridge import (
+from creel.channels.whatsapp import WhatsAppChannel
+from creel.channels.whatsapp_bridge import (
     HttpWhatsAppBridge,
     WhatsAppBridge,
     WhatsAppMessage,
@@ -302,7 +302,7 @@ class TestWebhookHMAC:
 
 class TestWebhookVerifyTokenRequired:
     def test_webhook_mode_requires_verify_token(self):
-        from taskrunner.models import WhatsAppChannelConfig
+        from creel.models import WhatsAppChannelConfig
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError, match="webhook_verify_token"):
@@ -313,7 +313,7 @@ class TestWebhookVerifyTokenRequired:
             )
 
     def test_polling_mode_allows_empty_verify_token(self):
-        from taskrunner.models import WhatsAppChannelConfig
+        from creel.models import WhatsAppChannelConfig
 
         cfg = WhatsAppChannelConfig(
             phone_number="+1234",
@@ -325,8 +325,8 @@ class TestWebhookVerifyTokenRequired:
 
 class TestRegisterPlugin:
     def test_register_plugin_returns_meta_and_factory(self):
-        from taskrunner.channels.whatsapp import register_plugin
-        from taskrunner.channels.plugin import ChannelCapability
+        from creel.channels.whatsapp import register_plugin
+        from creel.channels.plugin import ChannelCapability
 
         meta, factory = register_plugin()
         assert meta.id == "whatsapp"

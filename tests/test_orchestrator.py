@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from taskrunner.models import ExecutorConfig
-from taskrunner.orchestrator import (
+from creel.models import ExecutorConfig
+from creel.orchestrator import (
     _load_secrets_to_env,
     _run_executor_inline,
     run_task,
@@ -48,7 +48,7 @@ def test_dry_run(tmp_path: Path) -> None:
     task_path = _make_task(tmp_path)
 
     with patch(
-        "taskrunner.orchestrator._run_executor_inline"
+        "creel.orchestrator._run_executor_inline"
     ) as mock_fetch:
         mock_fetch.return_value = '{"temp_f": "72", "condition": "sunny"}'
         result = run_task(task_path, dry_run=True)
@@ -64,9 +64,9 @@ def test_run_task_calls_llm_and_output(tmp_path: Path) -> None:
     task_path = _make_task(tmp_path)
 
     with (
-        patch("taskrunner.orchestrator._run_executor_inline") as mock_fetch,
-        patch("taskrunner.orchestrator.run_llm") as mock_llm,
-        patch("taskrunner.orchestrator.send_output") as mock_output,
+        patch("creel.orchestrator._run_executor_inline") as mock_fetch,
+        patch("creel.orchestrator.run_llm") as mock_llm,
+        patch("creel.orchestrator.send_output") as mock_output,
     ):
         mock_fetch.return_value = '{"temp": "70"}'
         mock_llm.return_value = "It's a nice day!"
@@ -101,9 +101,9 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
     path.write_text(yaml.dump(task))
 
     with (
-        patch("taskrunner.orchestrator._exec_gmail_readonly_inline") as mock_gmail,
-        patch("taskrunner.orchestrator.run_llm") as mock_llm,
-        patch("taskrunner.orchestrator.send_output"),
+        patch("creel.orchestrator._exec_gmail_readonly_inline") as mock_gmail,
+        patch("creel.orchestrator.run_llm") as mock_llm,
+        patch("creel.orchestrator.send_output"),
     ):
         mock_gmail.return_value = json.dumps([
             {"subject": "Important", "from": "boss@example.com", "snippet": "Need reply"},
@@ -127,9 +127,9 @@ def test_executor_failure_continues(tmp_path: Path) -> None:
     task_path = _make_task(tmp_path)
 
     with (
-        patch("taskrunner.orchestrator._run_executor_inline") as mock_fetch,
-        patch("taskrunner.orchestrator.run_llm") as mock_llm,
-        patch("taskrunner.orchestrator.send_output"),
+        patch("creel.orchestrator._run_executor_inline") as mock_fetch,
+        patch("creel.orchestrator.run_llm") as mock_llm,
+        patch("creel.orchestrator.send_output"),
     ):
         mock_fetch.side_effect = RuntimeError("Connection timeout")
         mock_llm.return_value = "No weather data available."
@@ -157,17 +157,17 @@ class TestRunExecutorInline:
     @pytest.mark.parametrize(
         "name,mock_target",
         [
-            ("weather", "taskrunner.orchestrator._exec_weather_inline"),
-            ("calendar", "taskrunner.orchestrator._exec_gcal_inline"),
-            ("gcal_write", "taskrunner.orchestrator._exec_gcal_write_inline"),
-            ("gmail_send", "taskrunner.orchestrator._exec_gmail_send_inline"),
-            ("drive", "taskrunner.orchestrator._exec_drive_inline"),
-            ("drive_write", "taskrunner.orchestrator._exec_drive_write_inline"),
-            ("apple_notes", "taskrunner.orchestrator._exec_apple_notes_inline"),
-            ("apple_reminders", "taskrunner.orchestrator._exec_apple_reminders_inline"),
-            ("brave_search", "taskrunner.orchestrator._exec_brave_search_inline"),
-            ("notion", "taskrunner.orchestrator._exec_notion_inline"),
-            ("fetch_url", "taskrunner.orchestrator._exec_fetch_url_inline"),
+            ("weather", "creel.orchestrator._exec_weather_inline"),
+            ("calendar", "creel.orchestrator._exec_gcal_inline"),
+            ("gcal_write", "creel.orchestrator._exec_gcal_write_inline"),
+            ("gmail_send", "creel.orchestrator._exec_gmail_send_inline"),
+            ("drive", "creel.orchestrator._exec_drive_inline"),
+            ("drive_write", "creel.orchestrator._exec_drive_write_inline"),
+            ("apple_notes", "creel.orchestrator._exec_apple_notes_inline"),
+            ("apple_reminders", "creel.orchestrator._exec_apple_reminders_inline"),
+            ("brave_search", "creel.orchestrator._exec_brave_search_inline"),
+            ("notion", "creel.orchestrator._exec_notion_inline"),
+            ("fetch_url", "creel.orchestrator._exec_fetch_url_inline"),
         ],
     )
     def test_dispatch_executor(self, name, mock_target) -> None:
@@ -180,7 +180,7 @@ class TestRunExecutorInline:
     def test_dispatch_gmail_readonly(self) -> None:
         cfg = self._cfg()
         with patch(
-            "taskrunner.orchestrator._exec_gmail_readonly_inline",
+            "creel.orchestrator._exec_gmail_readonly_inline",
             return_value="emails",
         ) as mock_fn:
             result = _run_executor_inline("gmail_readonly", cfg)
@@ -190,7 +190,7 @@ class TestRunExecutorInline:
     def test_dispatch_gmail_modify(self) -> None:
         cfg = self._cfg()
         with patch(
-            "taskrunner.orchestrator._exec_gmail_modify_inline",
+            "creel.orchestrator._exec_gmail_modify_inline",
             return_value="modified",
         ) as mock_fn:
             result = _run_executor_inline("gmail_modify", cfg)
@@ -200,7 +200,7 @@ class TestRunExecutorInline:
     def test_dispatch_exec(self) -> None:
         cfg = self._cfg(command="echo hi")
         with patch(
-            "taskrunner.orchestrator._exec_exec_inline", return_value="hi"
+            "creel.orchestrator._exec_exec_inline", return_value="hi"
         ) as mock_fn:
             result = _run_executor_inline("exec", cfg)
         assert result == "hi"
@@ -218,7 +218,7 @@ class TestRunExecutorInline:
     def test_dispatch_bluebubbles_variants(self, name, action) -> None:
         cfg = self._cfg()
         with patch(
-            "taskrunner.orchestrator._exec_bluebubbles_inline",
+            "creel.orchestrator._exec_bluebubbles_inline",
             return_value="bb",
         ) as mock_fn:
             result = _run_executor_inline(name, cfg)
@@ -241,7 +241,7 @@ class TestExecutorSecrets:
         """_run_executor_inline should load secrets and restore env after."""
         key_file, pub_file = age_keypair
         monkeypatch.setenv("AGE_IDENTITY_FILE", str(key_file))
-        from taskrunner.secrets import encrypt_env_file
+        from creel.secrets import encrypt_env_file
 
         env_file = tmp_path / "exec.env"
         env_file.write_text("MY_EXEC_SECRET=s3cret\n")
@@ -256,7 +256,7 @@ class TestExecutorSecrets:
             return '{"ok": true}'
 
         with patch(
-            "taskrunner.orchestrator._exec_weather_inline",
+            "creel.orchestrator._exec_weather_inline",
             side_effect=fake_weather,
         ):
             _run_executor_inline(
@@ -272,7 +272,7 @@ class TestExecutorSecrets:
         """Env vars should be restored even if executor raises."""
         key_file, pub_file = age_keypair
         monkeypatch.setenv("AGE_IDENTITY_FILE", str(key_file))
-        from taskrunner.secrets import encrypt_env_file
+        from creel.secrets import encrypt_env_file
 
         env_file = tmp_path / "exec.env"
         env_file.write_text("TEMP_SECRET=val\n")
@@ -282,7 +282,7 @@ class TestExecutorSecrets:
 
         with (
             patch(
-                "taskrunner.orchestrator._exec_weather_inline",
+                "creel.orchestrator._exec_weather_inline",
                 side_effect=RuntimeError("boom"),
             ),
             pytest.raises(RuntimeError),
@@ -297,7 +297,7 @@ class TestExecutorSecrets:
         """Inline executor env should receive GOOGLE_ACCESS_TOKEN, not refresh JSON."""
         key_file, pub_file = age_keypair
         monkeypatch.setenv("AGE_IDENTITY_FILE", str(key_file))
-        from taskrunner.secrets import encrypt_env_file
+        from creel.secrets import encrypt_env_file
 
         creds_json = json.dumps(
             {
@@ -320,11 +320,11 @@ class TestExecutorSecrets:
 
         with (
             patch(
-                "taskrunner.oauth.get_google_access_token_from_json",
+                "creel.oauth.get_google_access_token_from_json",
                 return_value="ya29.inline-token",
             ) as mock_token,
             patch(
-                "taskrunner.orchestrator._exec_weather_inline",
+                "creel.orchestrator._exec_weather_inline",
                 side_effect=fake_weather,
             ),
         ):
@@ -338,7 +338,7 @@ class TestExecutorSecrets:
 class TestLoadSecretsToEnv:
     def test_loads_and_sets(self, tmp_path, age_keypair) -> None:
         key_file, pub_file = age_keypair
-        from taskrunner.secrets import encrypt_env_file
+        from creel.secrets import encrypt_env_file
 
         env_file = tmp_path / "llm.env"
         env_file.write_text("LLM_SECRET=abc123\n")
@@ -378,10 +378,10 @@ class TestAgentMode:
         mock_result.stop_reason = "end_turn"
 
         with (
-            patch("taskrunner.orchestrator._run_executor_inline", return_value='{"ok":1}'),
-            patch("taskrunner.orchestrator.run_llm"),
-            patch("taskrunner.orchestrator.send_output"),
-            patch("taskrunner.agent.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.orchestrator._run_executor_inline", return_value='{"ok":1}'),
+            patch("creel.orchestrator.run_llm"),
+            patch("creel.orchestrator.send_output"),
+            patch("creel.agent.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = run_task(task_path)
 
@@ -406,11 +406,11 @@ class TestAgentMode:
         mock_result.stop_reason = "end_turn"
 
         with (
-            patch("taskrunner.orchestrator._run_executor_inline", return_value='{"ok":1}'),
-            patch("taskrunner.orchestrator.run_llm"),
-            patch("taskrunner.orchestrator.send_output"),
+            patch("creel.orchestrator._run_executor_inline", return_value='{"ok":1}'),
+            patch("creel.orchestrator.run_llm"),
+            patch("creel.orchestrator.send_output"),
             patch(
-                "taskrunner.container_agent.run_agent_loop_container",
+                "creel.container_agent.run_agent_loop_container",
                 return_value=mock_result,
             ) as mock_loop,
         ):
@@ -421,7 +421,7 @@ class TestAgentMode:
 
     def test_llm_secrets_loaded(self, tmp_path, age_keypair) -> None:
         key_file, pub_file = age_keypair
-        from taskrunner.secrets import encrypt_env_file
+        from creel.secrets import encrypt_env_file
 
         env_file = tmp_path / "llm.env"
         env_file.write_text("ANTHROPIC_API_KEY=sk-test\n")
@@ -439,9 +439,9 @@ class TestAgentMode:
         os.environ["AGE_IDENTITY_FILE"] = str(key_file)
         try:
             with (
-                patch("taskrunner.orchestrator._run_executor_inline", return_value='{}'),
-                patch("taskrunner.orchestrator.run_llm", return_value="ok"),
-                patch("taskrunner.orchestrator.send_output"),
+                patch("creel.orchestrator._run_executor_inline", return_value='{}'),
+                patch("creel.orchestrator.run_llm", return_value="ok"),
+                patch("creel.orchestrator.send_output"),
             ):
                 run_task(task_path)
             assert os.environ.get("ANTHROPIC_API_KEY") == "sk-test"

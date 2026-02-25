@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.oauth import (
+from creel.oauth import (
     DEFAULT_MAX_TOKEN_AGE,
     _token_cache,
     _token_refresh_log,

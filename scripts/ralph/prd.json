@@ -48,7 +48,7 @@
         "App renders without console errors in both light and dark mode"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Use MUI's built-in dark mode via palette.mode. Store preference in localStorage key 'creel-theme'."
     },
     {

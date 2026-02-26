@@ -24,6 +24,9 @@ Started: 2026-02-25
 - Dashboard scaffold: Vite 7 + React 19 + TypeScript 5.9 (strict mode enabled by default in template)
 - Build script: scripts/build-dashboard.sh — npm ci + npm run build + copy dist/ to dashboard_static/
 - Vite dev proxy: /api/* and /v1/* proxied to localhost:8099
+- MUI v6 + Emotion installed; ThemeProvider in dashboard/src/ThemeContext.tsx wraps the app
+- Dark mode toggle persists to localStorage key `creel-theme`; use `useThemeMode()` hook for mode/toggle
+- Theme factory in dashboard/src/theme.ts — `buildTheme(mode)` creates MUI theme
 
 ---
 
@@ -62,5 +65,21 @@ Started: 2026-02-25
   - TypeScript strict mode is on by default in the template's tsconfig.app.json
   - `npm ci` is used in build script (not `npm install`) for reproducible installs
   - The `python -m pytest` command needs `.venv/bin/python` prefix (no system python)
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-003
+- Installed MUI v6: @mui/material, @mui/icons-material, @emotion/react, @emotion/styled
+- Created `dashboard/src/theme.ts` — `buildTheme(mode)` factory using `createTheme()` with primary/secondary palette colors and dark background overrides
+- Created `dashboard/src/ThemeContext.tsx` — React context providing `mode` and `toggleTheme()`, wraps MuiThemeProvider + CssBaseline, persists preference to localStorage key `creel-theme`
+- Updated `dashboard/src/main.tsx` — wraps `<App />` in `<ThemeProvider>`
+- Updated `dashboard/src/App.tsx` — MUI AppBar with "Creel Dashboard" title and dark mode toggle IconButton (Brightness4/7 icons)
+- Files created: dashboard/src/theme.ts, dashboard/src/ThemeContext.tsx
+- Files changed: dashboard/package.json, dashboard/src/main.tsx, dashboard/src/App.tsx
+- **Learnings for future iterations:**
+  - MUI v6 installed fine alongside React 19
+  - Use `<ThemeContext value={...}>` (React 19 style) instead of `<ThemeContext.Provider value={...}>`
+  - CssBaseline in the ThemeProvider ensures consistent baseline styling in both modes
+  - `npm run build` produces 316 KB gzipped bundle (101 KB gzipped) with MUI included
   - All 1373 existing tests still pass
 ---

@@ -133,6 +133,7 @@ class ChatServer:
         text: str,
         on_text_delta: Callable[[str], None] | None = None,
         *,
+        attachments: list[Any] | None = None,
         auto_approve: bool = False,
     ) -> str:
         """Process an incoming message and return a response."""

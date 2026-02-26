@@ -6,6 +6,24 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable
 
 
+def wrap_legacy_callback(callback: Callable[[str, str], str]) -> Callable[..., str]:
+    """Wrap a legacy (sender_id, text) callback to also accept IncomingMessage.
+
+    Returns a callable that can be invoked either as:
+      - ``wrapper(sender_id, text)``  — passes through unchanged
+      - ``wrapper(incoming_message)`` — extracts sender_id/text from the message
+    """
+    from taskrunner.channels.message import IncomingMessage
+
+    def wrapper(*args: Any) -> str:
+        if len(args) == 1 and isinstance(args[0], IncomingMessage):
+            msg: IncomingMessage = args[0]
+            return callback(msg.sender_id, msg.text or "")
+        return callback(*args)
+
+    return wrapper
+
+
 class Channel(ABC):
     """Base class for communication channels."""
 

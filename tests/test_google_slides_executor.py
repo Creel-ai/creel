@@ -102,7 +102,9 @@ class TestReadSlides:
 
     @patch("executors.google_slides.executor.get_credentials")
     @patch("executors.google_slides.executor.build")
-    def test_read_returns_slide_count_and_titles(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+    def test_read_returns_slide_count_and_titles(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service

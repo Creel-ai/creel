@@ -52,11 +52,13 @@ def read_presentation(presentation_id: str) -> dict:
 
     slides = []
     for i, slide in enumerate(pres.get("slides", []), 1):
-        slides.append({
-            "slideNumber": i,
-            "objectId": slide["objectId"],
-            "text": _extract_slide_text(slide),
-        })
+        slides.append(
+            {
+                "slideNumber": i,
+                "objectId": slide["objectId"],
+                "text": _extract_slide_text(slide),
+            }
+        )
 
     return {
         "presentationId": pres["presentationId"],
@@ -144,19 +146,23 @@ def add_slide(
                     continue
                 ph_type = placeholder.get("type", "")
                 if ph_type in ("TITLE", "CENTERED_TITLE") and title:
-                    text_requests.append({
-                        "insertText": {
-                            "objectId": element["objectId"],
-                            "text": title,
+                    text_requests.append(
+                        {
+                            "insertText": {
+                                "objectId": element["objectId"],
+                                "text": title,
+                            }
                         }
-                    })
+                    )
                 elif ph_type in ("BODY", "SUBTITLE") and body:
-                    text_requests.append({
-                        "insertText": {
-                            "objectId": element["objectId"],
-                            "text": body,
+                    text_requests.append(
+                        {
+                            "insertText": {
+                                "objectId": element["objectId"],
+                                "text": body,
+                            }
                         }
-                    })
+                    )
 
     if text_requests:
         service.presentations().batchUpdate(

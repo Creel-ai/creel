@@ -33,10 +33,7 @@ def read_sheet(spreadsheet_id: str, range: str) -> dict:
     service = build("sheets", "v4", credentials=creds, cache_discovery=False)
 
     result = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=spreadsheet_id, range=range)
-        .execute()
+        service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range).execute()
     )
 
     return {

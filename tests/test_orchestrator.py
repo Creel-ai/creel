@@ -531,10 +531,14 @@ class TestGoogleDocsInline:
         mock_append.assert_called_once_with("doc-1", "more")
 
     def test_google_docs_inline_dispatches_replace(self) -> None:
-        cfg = ExecutorConfig(args={
-            "action": "replace", "document_id": "doc-1",
-            "find": "old", "replace_with": "new",
-        })
+        cfg = ExecutorConfig(
+            args={
+                "action": "replace",
+                "document_id": "doc-1",
+                "find": "old",
+                "replace_with": "new",
+            }
+        )
         with patch(
             "executors.google_docs.executor.replace_text",
             return_value={"documentId": "doc-1", "occurrencesChanged": 2},
@@ -544,10 +548,14 @@ class TestGoogleDocsInline:
         mock_replace.assert_called_once_with("doc-1", "old", "new", True)
 
     def test_google_docs_inline_dispatches_insert(self) -> None:
-        cfg = ExecutorConfig(args={
-            "action": "insert", "document_id": "doc-1",
-            "text": "inserted", "index": "5",
-        })
+        cfg = ExecutorConfig(
+            args={
+                "action": "insert",
+                "document_id": "doc-1",
+                "text": "inserted",
+                "index": "5",
+            }
+        )
         with patch(
             "executors.google_docs.executor.insert_text",
             return_value={"documentId": "doc-1", "inserted": True},
@@ -564,9 +572,13 @@ class TestGoogleDocsInline:
 
 class TestGoogleSheetsInline:
     def test_google_sheets_inline_dispatches_read(self) -> None:
-        cfg = ExecutorConfig(args={
-            "action": "read", "spreadsheet_id": "sheet-1", "range": "A1:B2",
-        })
+        cfg = ExecutorConfig(
+            args={
+                "action": "read",
+                "spreadsheet_id": "sheet-1",
+                "range": "A1:B2",
+            }
+        )
         with patch(
             "executors.google_sheets.executor.read_sheet",
             return_value={"range": "A1:B2", "values": [["a"]]},
@@ -576,10 +588,14 @@ class TestGoogleSheetsInline:
         mock_read.assert_called_once_with("sheet-1", "A1:B2")
 
     def test_google_sheets_inline_dispatches_write(self) -> None:
-        cfg = ExecutorConfig(args={
-            "action": "write", "spreadsheet_id": "sheet-1",
-            "range": "A1", "data": '[["x"]]',
-        })
+        cfg = ExecutorConfig(
+            args={
+                "action": "write",
+                "spreadsheet_id": "sheet-1",
+                "range": "A1",
+                "data": '[["x"]]',
+            }
+        )
         with patch(
             "executors.google_sheets.executor.write_to_sheet",
             return_value={"updatedCells": 1},
@@ -599,10 +615,14 @@ class TestGoogleSheetsInline:
         mock_create.assert_called_once_with("New Sheet", "", "")
 
     def test_google_sheets_inline_dispatches_append(self) -> None:
-        cfg = ExecutorConfig(args={
-            "action": "append", "spreadsheet_id": "sheet-1",
-            "range": "A:B", "data": '[["y"]]',
-        })
+        cfg = ExecutorConfig(
+            args={
+                "action": "append",
+                "spreadsheet_id": "sheet-1",
+                "range": "A:B",
+                "data": '[["y"]]',
+            }
+        )
         with patch(
             "executors.google_sheets.executor.append_to_sheet",
             return_value={"updatedCells": 1},
@@ -639,10 +659,14 @@ class TestGoogleSlidesInline:
         mock_create.assert_called_once_with("New Pres")
 
     def test_google_slides_inline_dispatches_add_slide(self) -> None:
-        cfg = ExecutorConfig(args={
-            "action": "add_slide", "presentation_id": "pres-1",
-            "title": "Slide Title", "body": "Slide body",
-        })
+        cfg = ExecutorConfig(
+            args={
+                "action": "add_slide",
+                "presentation_id": "pres-1",
+                "title": "Slide Title",
+                "body": "Slide body",
+            }
+        )
         with patch(
             "executors.google_slides.executor.add_slide",
             return_value={"presentationId": "pres-1", "slideId": "s1"},
@@ -652,10 +676,14 @@ class TestGoogleSlidesInline:
         mock_add.assert_called_once_with("pres-1", "Slide Title", "Slide body", "BLANK")
 
     def test_google_slides_inline_dispatches_replace_text(self) -> None:
-        cfg = ExecutorConfig(args={
-            "action": "replace_text", "presentation_id": "pres-1",
-            "find": "old", "replace_with": "new",
-        })
+        cfg = ExecutorConfig(
+            args={
+                "action": "replace_text",
+                "presentation_id": "pres-1",
+                "find": "old",
+                "replace_with": "new",
+            }
+        )
         with patch(
             "executors.google_slides.executor.replace_text",
             return_value={"presentationId": "pres-1", "occurrencesChanged": 3},
@@ -702,9 +730,7 @@ class TestGoogleExecutorsE2E:
             patch("taskrunner.orchestrator.run_llm") as mock_llm,
             patch("taskrunner.orchestrator.send_output"),
         ):
-            mock_sheets.return_value = json.dumps(
-                {"values": [["Name", "Age"], ["Alice", "30"]]}
-            )
+            mock_sheets.return_value = json.dumps({"values": [["Name", "Age"], ["Alice", "30"]]})
             mock_llm.return_value = "The sheet contains Alice, age 30."
             result = run_task(path)
 

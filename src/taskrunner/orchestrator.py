@@ -564,7 +564,9 @@ def _exec_google_docs_inline(config: ExecutorConfig) -> str:
         index = int(config.args.get("index", "1"))
         result = insert_text(document_id, text, index)
     else:
-        raise ValueError(f"google_docs: unknown action '{action}' (use read/create/append/replace/insert)")
+        raise ValueError(
+            f"google_docs: unknown action '{action}' (use read/create/append/replace/insert)"
+        )
 
     return json.dumps(result, indent=2)
 
@@ -639,7 +641,9 @@ def _exec_google_slides_inline(config: ExecutorConfig) -> str:
         match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
         result = replace_text(presentation_id, find, replace_with, match_case)
     else:
-        raise ValueError(f"google_slides: unknown action '{action}' (use read/create/add_slide/replace_text)")
+        raise ValueError(
+            f"google_slides: unknown action '{action}' (use read/create/add_slide/replace_text)"
+        )
 
     return json.dumps(result, indent=2)
 

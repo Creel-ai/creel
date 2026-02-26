@@ -1538,7 +1538,9 @@ def main() -> int:
         help="Disable scheduler in daemon runtime",
     )
     _daemon_runtime_parent.add_argument(
-        "--wait-seconds", type=float, default=20.0,
+        "--wait-seconds",
+        type=float,
+        default=20.0,
         help="Seconds to wait for daemon health check (default: 20)",
     )
 
@@ -1568,11 +1570,14 @@ def main() -> int:
     )
 
     daemon_restart = daemon_subparsers.add_parser(
-        "restart", help="Stop then start the daemon",
+        "restart",
+        help="Stop then start the daemon",
         parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
     )
     daemon_restart.add_argument(
-        "--timeout", type=float, default=10.0,
+        "--timeout",
+        type=float,
+        default=10.0,
         help="Stop timeout in seconds (default: 10)",
     )
 

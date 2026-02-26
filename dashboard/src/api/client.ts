@@ -308,6 +308,43 @@ export function applyConfig(): Promise<{ status: string }> {
   return request<{ status: string }>('/config/apply', { method: 'POST' });
 }
 
+// ---- Logs types ----
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  module: string;
+  message: string;
+}
+
+export interface LogsRecentResponse {
+  lines: LogEntry[];
+  total: number;
+}
+
+// ---- Logs API methods ----
+
+export function fetchRecentLogs(params?: {
+  limit?: number;
+  level?: string;
+}): Promise<LogsRecentResponse> {
+  const sp = new URLSearchParams();
+  if (params?.limit) sp.set('limit', String(params.limit));
+  if (params?.level) sp.set('level', params.level);
+  const qs = sp.toString();
+  return request<LogsRecentResponse>(`/logs/recent${qs ? `?${qs}` : ''}`);
+}
+
+/**
+ * Create a WebSocket connection to stream logs.
+ * Returns the WebSocket instance. The caller manages the connection lifecycle.
+ */
+export function createLogsWebSocket(): WebSocket {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return new WebSocket(`${proto}//${host}/ws/logs`);
+}
+
 /**
  * Toggle a task's enabled field by reading the raw YAML, modifying it, and writing back.
  */

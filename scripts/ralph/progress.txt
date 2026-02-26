@@ -74,6 +74,13 @@ Started: 2026-02-25
 - Config API types in client.ts: ConfigResponse, ConfigSaveResponse; methods: fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
 - ConfigPage pattern: form↔raw sync on tab switch; `formToConfig()` preserves unknown keys via `...original` spread
 - Channels/Tools config too dynamic for static form — redirect to Raw YAML mode with explanatory note
+- Logs API router in src/taskrunner/daemon/api_logs.py — WebSocket at /ws/logs, GET /api/logs/recent, mounted via `app.include_router(logs_router)` in api.py
+- Log line parsing: `_LOG_LINE_RE` matches human-readable format `"YYYY-MM-DD HH:MM:SS [LEVEL] module: message"`, falls back to JSON log format, then raw text
+- `_passes_level_filter()` uses `_LEVEL_ORDER` dict for numeric level comparison (DEBUG=0, INFO=1, WARN=2, ERROR=3, CRITICAL=4)
+- WebSocket log tailing: tracks file position and inode to handle log rotation (inode change or file shrink resets to start)
+- Client-side level filtering via WebSocket messages: `{"level": "WARN"}` — empty/null resets filter
+- Initial backfill: WebSocket sends last 50 lines on connect before switching to tail mode
+- `_daemon_log_path()` uses CREEL_HOME pattern: `Path(os.environ.get("CREEL_HOME", Path.home() / ".creel")) / "daemon.log"`
 
 ---
 
@@ -451,5 +458,35 @@ Started: 2026-02-25
   - `npm run build` produces 1401 KB (453 KB gzipped) — ConfigPage adds ~30 KB (mostly MUI Accordion components)
   - The `get()` helper avoids `in` operator TypeScript issues when accessing nested properties of unknown types
   - Config API types in client.ts: ConfigResponse, ConfigSaveResponse; methods: fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-017
+- Implemented Log streaming API: WebSocket endpoint and REST fallback
+- Files created: src/taskrunner/daemon/api_logs.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included logs_router)
+- Endpoints:
+  - WebSocket /ws/logs — streams daemon log lines as JSON {timestamp, level, module, message}
+  - GET /api/logs/recent?limit=200&level=INFO — returns recent lines as non-streaming fallback
+- WebSocket features:
+  - Sends last 50 lines as initial backfill on connection
+  - Tails daemon.log for new lines using file position tracking
+  - Handles log rotation: detects inode change or file shrink and resets position
+  - Client can send filter messages: {"level": "WARN"} to filter server-side
+  - Graceful disconnect handling (catches WebSocketDisconnect)
+  - 1-second polling interval for new log data and client messages
+- Log line parsing:
+  - Handles human-readable format: "YYYY-MM-DD HH:MM:SS [LEVEL] module: message"
+  - Falls back to JSON-formatted log lines (from json_mode logging)
+  - Unparseable lines returned as raw messages with INFO level
+- Level filtering: numeric ordering (DEBUG < INFO < WARN < ERROR < CRITICAL)
+- REST fallback reads entire daemon.log, parses, filters, and returns last N lines
+- **Learnings for future iterations:**
+  - FastAPI WebSocket support works well — `websocket.accept()`, `send_json()`, `receive_json()` with `asyncio.wait_for()` for non-blocking receive
+  - File tailing via seek/tell is simpler than file watchers (no inotify/kqueue dependency)
+  - Inode tracking handles log rotation (logrotate creates new file with new inode)
+  - `asyncio.wait_for(websocket.receive_json(), timeout=1.0)` provides non-blocking check for client messages while tailing
+  - The regex approach for parsing log lines is fast and handles the standard Python logging format used by the daemon
+  - WebSocket routes don't need a prefix — they register at the exact path (/ws/logs)
   - All 1373 existing tests still pass
 ---

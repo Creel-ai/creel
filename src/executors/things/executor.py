@@ -118,7 +118,7 @@ def update_item(
     tags: str | None = None,
 ) -> dict[str, Any]:
     """Update Things 3 item via bridge."""
-    data = {"id": item_id}
+    data: dict[str, Any] = {"id": item_id}
     if completed is not None:
         data["completed"] = completed
     if title:

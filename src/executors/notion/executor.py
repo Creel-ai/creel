@@ -89,10 +89,10 @@ def _notion_request(
 
 
 def _parse_page_size(raw: str | int | None) -> int:
-    if raw in (None, ""):
+    if raw is None or raw == "":
         return DEFAULT_PAGE_SIZE
     try:
-        size = int(raw)
+        size = int(raw)  # type: ignore[arg-type]
     except (TypeError, ValueError) as e:
         raise ValueError("page_size must be an integer") from e
     return max(1, min(size, MAX_PAGE_SIZE))

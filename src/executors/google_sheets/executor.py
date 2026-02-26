@@ -16,7 +16,7 @@ from googleapiclient.discovery import build
 try:
     from executors.google_creds import get_credentials
 except ModuleNotFoundError:
-    from google_creds import get_credentials
+    from google_creds import get_credentials  # type: ignore[no-redef]
 
 
 def read_sheet(spreadsheet_id: str, range: str) -> dict:

@@ -19,6 +19,7 @@ import json
 import os
 import sys
 import time
+from typing import Any
 
 import requests
 
@@ -248,6 +249,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
+        result: list[dict[str, Any]] | dict[str, Any]
         if action == "get_recent_messages":
             chat_id = _env("CHAT_ID") or None
             limit = int(_env("LIMIT") or "20")

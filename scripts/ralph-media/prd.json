@@ -160,7 +160,7 @@
         "Full flow test from webhook receipt to response delivery"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Telegram channel already exists at src/taskrunner/channels/telegram.py with telegram_bridge.py. TelegramAttachment model has file_id, file_type, mime_type, file_name. Bridge has download_file(file_id) -> bytes. Build on this existing infrastructure."
     },
     {
@@ -177,7 +177,7 @@
         "Full flow from webhook to response"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Same as MEDIA-009 but for voice. Telegram voice messages come as file_type=\"voice\" in TelegramAttachment. Use existing bridge.download_file() to get the .oga bytes."
     },
     {

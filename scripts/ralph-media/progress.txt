@@ -136,3 +136,41 @@ Started: 2026-02-26
   - Path.expanduser() handles ~ expansion for storage_dir
   - All 1935 tests pass (1918 existing + 17 new)
 ---
+
+## 2026-02-26 - MEDIA-009
+- Implemented end-to-end Telegram image flow: photo message → download → media store → vision → LLM → response
+- Added `_extract_media()` helper in telegram_bridge.py: parses photo, voice, audio, video, document from raw Telegram update dicts
+- Added `media` field to TelegramMessage dataclass (list[TelegramMedia] | None)
+- Updated `HttpTelegramBridge._parse_message()` to populate media field from updates
+- Added `TelegramChannel._download_media()`: downloads files via bridge, converts TelegramMedia → Attachment
+- Updated `TelegramChannel._poll_loop()`: detects media, downloads files, sends IncomingMessage to callback
+- Updated `TelegramChannel._handle_webhook()`: same media handling for webhook mode
+- Added `_telegram_file_type_to_attachment()` helper mapping Telegram file types to AttachmentType
+- Photo-only messages (no caption/text) now pass through as IncomingMessage with text=None
+- Text-only messages still use old-style (sender_id, text) callback for backward compatibility
+- Files changed: src/taskrunner/channels/telegram_bridge.py, src/taskrunner/channels/telegram.py, tests/test_telegram_image_e2e.py (new)
+- **Learnings:**
+  - Telegram photos come as an array of PhotoSize objects; pick the largest by file_size
+  - Documents with image/ MIME type should be classified as "photo" not "document" for proper downstream processing
+  - Voice messages are separate from audio (music files) in Telegram's API
+  - _extract_text returns None for empty text; media-only messages need special handling to not be filtered out
+  - The webhook handler needed the same media extraction + download + IncomingMessage path as polling
+  - MockTelegramBridge test helper extended with file_data dict for controlled download simulation
+  - All 1961 tests pass (1935 existing + 26 new)
+---
+
+## 2026-02-26 - MEDIA-010
+- Implemented end-to-end Telegram voice flow integration test
+- Test classes cover: voice media extraction, voice download, polling with voice, webhook with voice, full E2E ChatServer integration
+- E2E tests verify: voice download → media store save → transcription → text prepend → LLM receives text → response sent back
+- Tests for edge cases: voice-only (no text), transcription failure fallback, webhook mode, polling mode
+- MockTelegramBridge reused from MEDIA-009 pattern with OGG test bytes
+- Files changed: tests/test_telegram_voice_e2e.py (new), scripts/ralph-media/prd.json, scripts/ralph-media/progress.txt
+- **Learnings:**
+  - Telegram voice messages use file_type="voice", mime_type="audio/ogg" — maps to AttachmentType.VOICE
+  - Voice attachments produce plain text (string content), not content blocks like images — LLM receives "[Voice message]: {transcribed}" prepended to user text
+  - OGG format is natively supported by Whisper API — no ffmpeg conversion needed for Telegram voice
+  - Webhook E2E tests must use @pytest.mark.asyncio + await, not asyncio.get_event_loop().run_until_complete()
+  - When transcription fails (returns ""), ChatServer sends "[Voice message: transcription failed] (file: {name})" — file is still saved to disk
+  - All 1975 tests pass (1961 existing + 14 new)
+---

@@ -99,7 +99,7 @@
         "Error state shown if daemon is unreachable"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Use MUI Card, CardContent, Chip, Table, Skeleton. Create dashboard/src/api/client.ts with a fetch wrapper."
     },
     {

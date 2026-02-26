@@ -36,6 +36,10 @@ Started: 2026-02-25
 - Dashboard API router in src/taskrunner/daemon/api_dashboard.py — prefix="/api", mounted via `app.include_router(dashboard_router)` in api.py
 - Access DaemonService in endpoint handlers via `request.app.state.service`
 - Agent definition accessible via `service._agent_def` (AgentDefinition model)
+- TypeScript `erasableSyntaxOnly` disallows `public` param properties — use explicit field declarations
+- MUI Grid v2 uses `size` prop: `<Grid size={{ xs: 12, md: 4 }}>` (not `xs={12} md={4}`)
+- API client: dashboard/src/api/client.ts — typed fetch wrapper, add new API methods here
+- Types for API responses defined in client.ts alongside fetch methods
 
 ---
 
@@ -133,5 +137,29 @@ Started: 2026-02-25
   - `service._agent_def` provides agent config (name, model, provider)
   - Cron history JSONL path: `~/.creel/cron-history.jsonl` — doesn't exist yet (DASH-010 will create it)
   - `load_all_tasks()` can throw FileNotFoundError if tasks dir doesn't exist — wrap in try/except
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-006
+- Implemented Overview page with live daemon status, agent info, channels, quick stats, and recent runs
+- Files created: dashboard/src/api/client.ts (fetch wrapper with typed StatusResponse)
+- Files changed: dashboard/src/pages/OverviewPage.tsx (full implementation replacing placeholder)
+- API client in dashboard/src/api/client.ts: typed fetch wrapper with ApiError class, fetchStatus() method
+- OverviewPage features:
+  - Fetches GET /api/status on mount and displays data in MUI Card components
+  - Daemon status card: running/stopped Chip badge, PID, human-readable uptime, socket path
+  - Agent info card: name, model, provider
+  - Channels section: list of channels with green/red outlined Chip badges
+  - Quick stats card: total tasks, scheduled tasks, enabled cron jobs, next run
+  - Recent runs: MUI Table with status Chips (success=green, failed=red, timeout=orange), relative time, duration
+  - Auto-refreshes every 30 seconds via setInterval polling
+  - Loading skeleton (Skeleton components in Card layout) while fetching
+  - Error state: Alert component when daemon unreachable; warning Alert on refresh failures
+- **Learnings for future iterations:**
+  - TypeScript `erasableSyntaxOnly` (tsconfig.app.json) disallows `public` parameter properties in constructors — use explicit field declarations instead
+  - MUI Grid v2 uses `size` prop instead of `xs`/`md` — e.g. `<Grid size={{ xs: 12, md: 4 }}>`
+  - `npm run build` produces 442 KB (139 KB gzipped) with overview page added
+  - API client lives in dashboard/src/api/client.ts — add new API methods here as needed
+  - pytest needs full path: `cd /Users/ross/.openclaw/workspace/projects/creel && .venv/bin/python -m pytest tests/ -x -q`
   - All 1373 existing tests still pass
 ---

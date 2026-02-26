@@ -50,11 +50,21 @@ def _extract_prior_tools(messages: list[dict]) -> list[str]:
     return prior
 
 
-_RETRY_PHRASES = frozenset({
-    "try again", "try that again", "retry", "do that again",
-    "run that again", "one more time", "redo", "again please",
-    "can you retry", "please retry", "try it again",
-})
+_RETRY_PHRASES = frozenset(
+    {
+        "try again",
+        "try that again",
+        "retry",
+        "do that again",
+        "run that again",
+        "one more time",
+        "redo",
+        "again please",
+        "can you retry",
+        "please retry",
+        "try it again",
+    }
+)
 
 
 def _extract_user_request_for_coherence(messages: list[dict]) -> str:
@@ -72,9 +82,7 @@ def _extract_user_request_for_coherence(messages: list[dict]) -> str:
         if isinstance(content, str):
             text = content
         elif isinstance(content, list):
-            text = " ".join(
-                b.get("text", "") for b in content if b.get("type") == "text"
-            )
+            text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
         else:
             continue
         if text.strip():
@@ -87,10 +95,7 @@ def _extract_user_request_for_coherence(messages: list[dict]) -> str:
 
     # Check if the latest message is a short retry phrase
     normalised = latest.lower().rstrip("!?.").strip()
-    is_retry = (
-        normalised in _RETRY_PHRASES
-        or any(normalised.startswith(p) for p in _RETRY_PHRASES)
-    )
+    is_retry = normalised in _RETRY_PHRASES or any(normalised.startswith(p) for p in _RETRY_PHRASES)
 
     if is_retry and len(user_messages) >= 2:
         prior = user_messages[-2]

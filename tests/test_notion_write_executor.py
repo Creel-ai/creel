@@ -83,11 +83,13 @@ def test_update_page(mock_request):
 
 @patch("executors.notion.executor.requests.request")
 def test_append_blocks(mock_request):
-    mock_request.return_value = _mock_response({
-        "results": [
-            {"object": "block", "id": "blk-1", "parent": {"page_id": PAGE_UUID}},
-        ],
-    })
+    mock_request.return_value = _mock_response(
+        {
+            "results": [
+                {"object": "block", "id": "blk-1", "parent": {"page_id": PAGE_UUID}},
+            ],
+        }
+    )
 
     children = '[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"text": {"content": "Appended"}}]}}]'
     result = run_action(
@@ -145,7 +147,7 @@ def test_update_page_requires_properties():
 
 def test_append_blocks_requires_page_id():
     with pytest.raises(ValueError, match="page_id"):
-        run_action("append_blocks", children_json='[{}]')
+        run_action("append_blocks", children_json="[{}]")
 
 
 def test_append_blocks_requires_children():

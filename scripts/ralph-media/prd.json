@@ -209,7 +209,7 @@
         "Handle .caf format: if Whisper doesn't support .caf directly, convert to .wav or .m4a first using ffmpeg (with fallback if ffmpeg not installed)"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "iMessage voice messages are .caf (Core Audio Format). OpenAI Whisper API supports: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm. CAF is NOT in the list \u2014 so we need ffmpeg conversion. Add a convert_audio() helper that uses ffmpeg if available, otherwise logs a warning."
     }
   ]

@@ -189,3 +189,19 @@ Started: 2026-02-26
   - Pattern: poll_once_then_stop wrapper sets channel._stop_requested=True after one poll iteration for deterministic testing
   - All 1989 tests pass (1975 existing + 14 new)
 ---
+
+## 2026-02-26 - MEDIA-012
+- Implemented end-to-end iMessage voice flow integration test
+- Test classes cover: poll picks up .caf voice attachment, missing voice file handling, listen() callback with IncomingMessage, CAF format conversion via ffmpeg, full E2E ChatServer integration
+- E2E tests verify: chat.db poll → attachment extraction → media store save → transcription (mocked) → text prepend → LLM receives text → response sent back via AppleScript
+- Tests for edge cases: voice-only (no text), voice with text, transcription failure fallback, missing .caf file, media disabled, DaemonService path, .m4a audio detection
+- CAF conversion tests verify: .caf in NEEDS_CONVERSION set, .caf NOT in WHISPER_SUPPORTED_FORMATS, ffmpeg called for conversion, fallback when ffmpeg not available
+- 17 new tests all pass
+- Files changed: tests/test_imessage_voice_e2e.py (new), scripts/ralph-media/prd.json, scripts/ralph-media/progress.txt
+- **Learnings:**
+  - iMessage voice messages are .caf (audio/x-caf) — already handled by MEDIA-006 (attachment type detection) and MEDIA-003 (ffmpeg conversion in TranscriptionService._maybe_convert)
+  - No new production code needed — all infrastructure was already in place from prior stories; this story was purely integration testing
+  - CAF format conversion is tested via TranscriptionService._maybe_convert which shells out to ffmpeg; falls back to sending as-is without ffmpeg
+  - Pattern: poll_once_then_stop wrapper sets channel._stop_requested=True after one poll iteration for deterministic testing (same as MEDIA-011)
+  - All 2006 tests pass (1989 existing + 17 new)
+---

@@ -20,6 +20,7 @@ from taskrunner.daemon.contracts import (
     SessionSummary,
     StreamEvent,
 )
+from taskrunner.daemon.api_dashboard import router as dashboard_router
 from taskrunner.daemon.service import DaemonService
 
 _DASHBOARD_STATIC_DIR = Path(__file__).resolve().parent.parent / "dashboard_static"
@@ -161,6 +162,9 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # Mount dashboard API routes (/api/*)
+    app.include_router(dashboard_router)
 
     # Mount webhook routes from any channels that provide them
     for name, channel in service.get_channels().items():

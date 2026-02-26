@@ -7,8 +7,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestExportOnnxScript:
     """Test the export-onnx.py CLI script."""
@@ -44,7 +42,12 @@ class TestExportOnnxScript:
         )
         # The script should fail gracefully (not crash with traceback)
         # It either fails with our message or import error - both are acceptable
-        assert result.returncode != 0 or "Error" in result.stderr or "error" in result.stderr.lower() or True
+        assert (
+            result.returncode != 0
+            or "Error" in result.stderr
+            or "error" in result.stderr.lower()
+            or True
+        )
 
     @patch("builtins.print")
     def test_export_flow_mocked(self, mock_print: MagicMock, tmp_path: Path) -> None:
@@ -61,14 +64,18 @@ class TestExportOnnxScript:
         mock_tokenizer.save_pretrained.side_effect = lambda p: None
 
         with (
-            patch.dict("sys.modules", {
-                "optimum": MagicMock(),
-                "optimum.onnxruntime": MagicMock(),
-            }),
-            patch("sys.argv", ["export-onnx.py", "test-model", "--output-dir", str(tmp_path / "out")]),
+            patch.dict(
+                "sys.modules",
+                {
+                    "optimum": MagicMock(),
+                    "optimum.onnxruntime": MagicMock(),
+                },
+            ),
+            patch(
+                "sys.argv", ["export-onnx.py", "test-model", "--output-dir", str(tmp_path / "out")]
+            ),
         ):
             # Import and patch at module level
-            import importlib
             mock_ort = MagicMock()
             mock_ort.ORTModelForSequenceClassification.from_pretrained.return_value = mock_model
 
@@ -76,10 +83,13 @@ class TestExportOnnxScript:
             mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
 
             with (
-                patch.dict("sys.modules", {
-                    "optimum.onnxruntime": mock_ort,
-                    "transformers": mock_transformers,
-                }),
+                patch.dict(
+                    "sys.modules",
+                    {
+                        "optimum.onnxruntime": mock_ort,
+                        "transformers": mock_transformers,
+                    },
+                ),
             ):
                 # We can't easily import the script as a module, so just verify structure
                 script_path = Path("scripts/export-onnx.py")

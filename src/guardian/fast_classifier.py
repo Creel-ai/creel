@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
+from typing import Any
 
 from guardian.types import ClassifierResult, FastClassifierConfig
 
@@ -25,7 +27,7 @@ class FastClassifier:
 
     def __init__(self, config: FastClassifierConfig) -> None:
         self._config = config
-        self._pipeline: object | None = None
+        self._pipeline: Callable[[str], list[dict[str, Any]]] | None = None
         self._backend: str = "none"  # "onnx" | "transformers" | "none"
         if self._config.enabled:
             self._load()
@@ -41,9 +43,7 @@ class FastClassifier:
 
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model = ORTModelForSequenceClassification.from_pretrained(model_name)
-            self._pipeline = pipeline(
-                "text-classification", model=model, tokenizer=tokenizer
-            )
+            self._pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
             self._backend = "onnx"
             logger.info("Fast classifier loaded via optimum/ONNX: %s", model_name)
             return
@@ -54,9 +54,7 @@ class FastClassifier:
         try:
             from transformers import pipeline
 
-            self._pipeline = pipeline(
-                "text-classification", model=model_name, truncation=True
-            )
+            self._pipeline = pipeline("text-classification", model=model_name, truncation=True)
             self._backend = "transformers"
             logger.info("Fast classifier loaded via transformers: %s", model_name)
             return
@@ -106,6 +104,8 @@ class FastClassifier:
         """
         if not self._config.enabled:
             return None
+        if self._pipeline is None:
+            return None
 
         chunks = [text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)]
 
@@ -124,7 +124,11 @@ class FastClassifier:
 
                 logger.debug(
                     "chunk %d/%d: label=%s score=%.4f is_injection=%s",
-                    idx + 1, len(chunks), label, score, is_injection,
+                    idx + 1,
+                    len(chunks),
+                    label,
+                    score,
+                    is_injection,
                 )
 
                 elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -139,7 +143,10 @@ class FastClassifier:
                 if is_injection:
                     logger.info(
                         "Fast classifier: INJECTION label=%s score=%.4f elapsed=%.1fms chunks=%d",
-                        label, score, elapsed_ms, idx + 1,
+                        label,
+                        score,
+                        elapsed_ms,
+                        idx + 1,
                     )
                     return result
 
@@ -153,7 +160,9 @@ class FastClassifier:
         if best:
             logger.info(
                 "Fast classifier: SAFE confidence=%.4f elapsed=%.1fms chunks=%d",
-                best.confidence, elapsed_ms, len(chunks),
+                best.confidence,
+                elapsed_ms,
+                len(chunks),
             )
 
         return best
@@ -172,6 +181,8 @@ class FastClassifier:
         """
         if not self._config.enabled:
             return None, []
+        if self._pipeline is None:
+            return None, []
 
         chunks = [text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)]
 
@@ -188,17 +199,23 @@ class FastClassifier:
                 is_injection = label == "INJECTION" and score >= self._config.threshold
                 confidence = score if label == "INJECTION" else 1.0 - score
 
-                chunk_details.append({
-                    "index": idx,
-                    "length": len(chunk),
-                    "label": label,
-                    "score": round(score, 4),
-                    "is_injection": is_injection,
-                })
+                chunk_details.append(
+                    {
+                        "index": idx,
+                        "length": len(chunk),
+                        "label": label,
+                        "score": round(score, 4),
+                        "is_injection": is_injection,
+                    }
+                )
 
                 logger.debug(
                     "chunk %d/%d: label=%s score=%.4f is_injection=%s",
-                    idx + 1, len(chunks), label, score, is_injection,
+                    idx + 1,
+                    len(chunks),
+                    label,
+                    score,
+                    is_injection,
                 )
 
                 result = ClassifierResult(

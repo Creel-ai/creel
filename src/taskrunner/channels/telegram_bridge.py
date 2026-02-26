@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,9 @@ class HttpTelegramBridge(TelegramBridge):
         """Call a Bot API method and return the result."""
         import httpx
 
-        resp = httpx.post(f"{self._base_url}/{method}", json=kwargs, timeout=max(kwargs.get("timeout", 0) + 5, 30))
+        resp = httpx.post(
+            f"{self._base_url}/{method}", json=kwargs, timeout=max(kwargs.get("timeout", 0) + 5, 30)
+        )
         data = resp.json()
         if not data.get("ok"):
             raise RuntimeError(f"Telegram API error on {method}: {data.get('description', data)}")
@@ -98,7 +100,11 @@ class HttpTelegramBridge(TelegramBridge):
     def get_me(self) -> dict:
         if self._bot_info is None:
             self._bot_info = self._call("getMe")
-            logger.info("Telegram bot: @%s (id=%s)", self._bot_info.get("username"), self._bot_info.get("id"))
+            logger.info(
+                "Telegram bot: @%s (id=%s)",
+                self._bot_info.get("username"),
+                self._bot_info.get("id"),
+            )
         return self._bot_info
 
     def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[TelegramMessage]:
@@ -108,7 +114,8 @@ class HttpTelegramBridge(TelegramBridge):
         # Telegram holds the connection for `timeout` seconds
         result = self._call("getUpdates", **params)
         messages = []
-        for update in result if isinstance(result, list) else []:
+        updates: list[dict] = result if isinstance(result, list) else []
+        for update in updates:
             msg = self._parse_message(update)
             if msg is not None:
                 messages.append(msg)

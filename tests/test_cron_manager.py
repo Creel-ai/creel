@@ -10,13 +10,11 @@ import pytest
 from taskrunner.cron.manager import CronManager, _make_trigger
 from taskrunner.cron.models import (
     CronJob,
-    Delivery,
     Payload,
     RunStatus,
     Schedule,
 )
 from taskrunner.cron.store import JobStore
-
 
 # -- Helpers --
 

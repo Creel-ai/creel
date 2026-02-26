@@ -1,11 +1,11 @@
 """Tests for the imessage_bridge executor."""
 
-import json
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from executors.imessage_bridge.executor import call_bridge, get_recent, send_message, get_chats
+import pytest
+
+from executors.imessage_bridge.executor import call_bridge, get_chats, get_recent, send_message
 
 
 class TestBridgeClient:
@@ -21,10 +21,9 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         # Mock environment variables
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             result = call_bridge("/imessage/recent")
 
         assert result["ok"] is True
@@ -38,7 +37,7 @@ class TestBridgeClient:
                 "Authorization": "Bearer test-token",
                 "Content-Type": "application/json",
             },
-            timeout=30
+            timeout=30,
         )
 
     def test_call_bridge_missing_url(self):
@@ -61,10 +60,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": False, "error": "Command failed"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/imessage/recent")
 
@@ -100,10 +98,9 @@ class TestIMessageOperations:
         result = send_message("friend@example.com", "Hello world")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/imessage/send", {
-            "to": "friend@example.com",
-            "text": "Hello world"
-        })
+        mock_call_bridge.assert_called_once_with(
+            "/imessage/send", {"to": "friend@example.com", "text": "Hello world"}
+        )
 
     @patch("executors.imessage_bridge.executor.call_bridge")
     def test_get_chats(self, mock_call_bridge):
@@ -127,6 +124,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "recent"}):
             from executors.imessage_bridge.executor import main
+
             main()
 
         mock_get_recent.assert_called_once_with(20)
@@ -140,6 +138,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "recent", "LIMIT": "10"}):
             from executors.imessage_bridge.executor import main
+
             main()
 
         mock_get_recent.assert_called_once_with(10)
@@ -151,12 +150,11 @@ class TestMainFunction:
         """Test main function with send action."""
         mock_send_message.return_value = {"ok": True, "output": "message sent"}
 
-        with patch.dict(os.environ, {
-            "ACTION": "send",
-            "TO": "friend@example.com",
-            "TEXT": "Hello world"
-        }):
+        with patch.dict(
+            os.environ, {"ACTION": "send", "TO": "friend@example.com", "TEXT": "Hello world"}
+        ):
             from executors.imessage_bridge.executor import main
+
             main()
 
         mock_send_message.assert_called_once_with("friend@example.com", "Hello world")
@@ -168,6 +166,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "send", "TEXT": "Hello"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.imessage_bridge.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -178,6 +177,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "send", "TO": "friend@example.com"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.imessage_bridge.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -190,6 +190,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "chats"}):
             from executors.imessage_bridge.executor import main
+
             main()
 
         mock_get_chats.assert_called_once()
@@ -201,6 +202,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "unknown"}):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.imessage_bridge.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -213,6 +215,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {}, clear=True):
             from executors.imessage_bridge.executor import main
+
             main()
 
         mock_get_recent.assert_called_once_with(20)

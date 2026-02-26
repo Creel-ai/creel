@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
-
-from taskrunner.session import Session, SessionManager
+from taskrunner.session import SessionManager
 
 
 class TestSessionTTL:
@@ -65,6 +61,7 @@ class TestSessionTTL:
 
     def test_ttl_config_in_model(self):
         from taskrunner.models import SessionConfig
+
         cfg = SessionConfig(ttl_hours=48)
         assert cfg.ttl_hours == 48
         cfg2 = SessionConfig()

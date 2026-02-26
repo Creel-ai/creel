@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from executors.weather.executor import (
-    WMO_CODES,
     _geocode,
     _weather_description,
     fetch_weather,
@@ -164,7 +163,16 @@ class TestFetchWeather:
         mock_get.side_effect = [geo_resp, forecast_resp]
 
         result = fetch_weather("Denver")
-        expected_keys = {"location", "temp_f", "temp_c", "feels_like_f", "condition", "humidity", "wind_mph", "forecast"}
+        expected_keys = {
+            "location",
+            "temp_f",
+            "temp_c",
+            "feels_like_f",
+            "condition",
+            "humidity",
+            "wind_mph",
+            "forecast",
+        }
         assert set(result.keys()) == expected_keys
         for day in result["forecast"]:
             assert set(day.keys()) == {"date", "high_f", "low_f", "condition"}

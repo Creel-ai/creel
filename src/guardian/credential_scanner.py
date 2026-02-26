@@ -27,7 +27,11 @@ class CredentialMatch:
 _CREDENTIAL_PATTERNS: list[tuple[str, re.Pattern, int]] = [
     # AWS
     ("aws_access_key", re.compile(r"AKIA[0-9A-Z]{16}"), 20),
-    ("aws_secret_key", re.compile(r"(?:aws_secret_access_key|secret_key)\s*[=:]\s*[A-Za-z0-9/+=]{40}"), 40),
+    (
+        "aws_secret_key",
+        re.compile(r"(?:aws_secret_access_key|secret_key)\s*[=:]\s*[A-Za-z0-9/+=]{40}"),
+        40,
+    ),
     # Google
     ("google_api_key", re.compile(r"AIza[0-9A-Za-z\-_]{35}"), 39),
     ("google_oauth_token", re.compile(r"ya29\.[0-9A-Za-z\-_]+"), 20),
@@ -50,15 +54,23 @@ _CREDENTIAL_PATTERNS: list[tuple[str, re.Pattern, int]] = [
     # Private keys
     ("private_key", re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"), 20),
     # Generic key=value patterns (most likely to false-positive, check last)
-    ("generic_api_key", re.compile(
-        r"(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|secret[_-]?key)"
-        r"\s*[=:]\s*['\"]?[A-Za-z0-9\-._~+/]{20,}['\"]?",
-        re.IGNORECASE,
-    ), 25),
-    ("generic_password", re.compile(
-        r"(?:password|passwd|pwd)\s*[=:]\s*['\"]?[^\s'\"]{8,}['\"]?",
-        re.IGNORECASE,
-    ), 12),
+    (
+        "generic_api_key",
+        re.compile(
+            r"(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|secret[_-]?key)"
+            r"\s*[=:]\s*['\"]?[A-Za-z0-9\-._~+/]{20,}['\"]?",
+            re.IGNORECASE,
+        ),
+        25,
+    ),
+    (
+        "generic_password",
+        re.compile(
+            r"(?:password|passwd|pwd)\s*[=:]\s*['\"]?[^\s'\"]{8,}['\"]?",
+            re.IGNORECASE,
+        ),
+        12,
+    ),
 ]
 
 
@@ -93,14 +105,18 @@ def scan_for_credentials(text: str) -> list[CredentialMatch]:
                 continue
             seen_positions.add(pos)
 
-            matches.append(CredentialMatch(
-                pattern_name=pattern_name,
-                matched_text=_redact(matched),
-                position=pos,
-            ))
+            matches.append(
+                CredentialMatch(
+                    pattern_name=pattern_name,
+                    matched_text=_redact(matched),
+                    position=pos,
+                )
+            )
             logger.warning(
                 "Credential detected in output: %s at position %d (%s)",
-                pattern_name, pos, _redact(matched),
+                pattern_name,
+                pos,
+                _redact(matched),
             )
 
     return matches
@@ -126,12 +142,14 @@ def redact_credentials(text: str) -> tuple[str, list[CredentialMatch]]:
             if len(matched) < min_length:
                 continue
 
-            replacements.append((
-                match.start(),
-                match.end(),
-                pattern_name,
-                matched,
-            ))
+            replacements.append(
+                (
+                    match.start(),
+                    match.end(),
+                    pattern_name,
+                    matched,
+                )
+            )
 
     if not replacements:
         return text, []
@@ -150,11 +168,13 @@ def redact_credentials(text: str) -> tuple[str, list[CredentialMatch]]:
     for start, end, name, matched in reversed(deduped):
         replacement = f"[REDACTED:{name}]"
         redacted = redacted[:start] + replacement + redacted[end:]
-        matches.append(CredentialMatch(
-            pattern_name=name,
-            matched_text=_redact(matched),
-            position=start,
-        ))
+        matches.append(
+            CredentialMatch(
+                pattern_name=name,
+                matched_text=_redact(matched),
+                position=start,
+            )
+        )
 
     matches.reverse()  # Restore original order
     return redacted, matches

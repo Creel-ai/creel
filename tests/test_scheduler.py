@@ -39,7 +39,9 @@ def _sample_task(name: str = "test_task", schedule: str = "0 7 * * *") -> dict:
 @patch("taskrunner.scheduler.run_task")
 def test_start_scheduler_loads_and_schedules_tasks(mock_run_task, tmp_path):
     """Tasks loaded from YAML, add_job called per task, scheduler.start() called."""
-    tasks_dir = _make_tasks_dir(tmp_path, [_sample_task("alpha"), _sample_task("beta", "30 8 * * *")])
+    tasks_dir = _make_tasks_dir(
+        tmp_path, [_sample_task("alpha"), _sample_task("beta", "30 8 * * *")]
+    )
 
     with patch("apscheduler.schedulers.blocking.BlockingScheduler.start"):
         scheduler = start_scheduler(tasks_dir=tasks_dir)
@@ -67,8 +69,10 @@ def test_shutdown_event_stops_scheduler(mock_run_task, tmp_path):
     tasks_dir = _make_tasks_dir(tmp_path, [_sample_task()])
     shutdown_event = threading.Event()
 
-    with patch("apscheduler.schedulers.blocking.BlockingScheduler.start") as mock_start, \
-         patch("apscheduler.schedulers.blocking.BlockingScheduler.shutdown") as mock_shutdown:
+    with (
+        patch("apscheduler.schedulers.blocking.BlockingScheduler.start") as mock_start,
+        patch("apscheduler.schedulers.blocking.BlockingScheduler.shutdown") as mock_shutdown,
+    ):
         # Simulate start() blocking until shutdown is called
         def _block_until_shutdown():
             shutdown_event.wait(timeout=2)
@@ -94,8 +98,12 @@ def test_keyboard_interrupt_stops_scheduler(mock_run_task, tmp_path):
     """start() raising KeyboardInterrupt calls shutdown()."""
     tasks_dir = _make_tasks_dir(tmp_path, [_sample_task()])
 
-    with patch("apscheduler.schedulers.blocking.BlockingScheduler.start", side_effect=KeyboardInterrupt), \
-         patch("apscheduler.schedulers.blocking.BlockingScheduler.shutdown") as mock_shutdown:
+    with (
+        patch(
+            "apscheduler.schedulers.blocking.BlockingScheduler.start", side_effect=KeyboardInterrupt
+        ),
+        patch("apscheduler.schedulers.blocking.BlockingScheduler.shutdown") as mock_shutdown,
+    ):
         start_scheduler(tasks_dir=tasks_dir)
 
     mock_shutdown.assert_called_once()

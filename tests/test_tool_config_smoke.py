@@ -7,13 +7,11 @@ bridge config, etc. They run without Docker or external services.
 
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 
 import pytest
 import yaml
-
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENT_YAML = ROOT / "agent.yaml"
@@ -38,7 +36,7 @@ def _get_executor_actions(executor_name: str) -> set[str]:
         EXECUTORS_DIR / executor_name,
         EXECUTORS_DIR / executor_name.replace("-", "_"),
     ]
-    
+
     for d in candidates:
         py_file = d / "executor.py"
         if py_file.exists():
@@ -58,7 +56,7 @@ def _get_executor_env_vars(executor_name: str) -> set[str]:
         EXECUTORS_DIR / executor_name,
         EXECUTORS_DIR / executor_name.replace("-", "_"),
     ]
-    
+
     for d in candidates:
         py_file = d / "executor.py"
         if py_file.exists():
@@ -108,6 +106,7 @@ def _executor_uses_bridge(executor_name: str) -> bool:
 
 # ---- Fixtures ----
 
+
 @pytest.fixture(scope="module")
 def agent_config():
     return _load_agent_yaml()
@@ -125,6 +124,7 @@ def policies():
 
 # ---- Tests: Action Name Matching ----
 
+
 class TestActionNames:
     """Verify fixed_args.action values match executor capabilities."""
 
@@ -137,17 +137,17 @@ class TestActionNames:
             action = fixed.get("action")
             if not action:
                 continue
-            
+
             valid_actions = _get_executor_actions(executor)
             if not valid_actions:
                 continue  # Can't verify if executor not found
-            
+
             if action not in valid_actions:
                 mismatches.append(
                     f"{tool_name}: action '{action}' not in {executor} "
                     f"(valid: {sorted(valid_actions)})"
                 )
-        
+
         assert not mismatches, "Action mismatches:\n" + "\n".join(mismatches)
 
     def test_no_duplicate_tool_names(self, tools):
@@ -157,6 +157,7 @@ class TestActionNames:
 
 
 # ---- Tests: Dockerfile & Dependencies ----
+
 
 class TestDockerfiles:
     """Verify all executors have Dockerfiles and dependencies."""
@@ -170,10 +171,10 @@ class TestDockerfiles:
             if executor in seen_executors:
                 continue
             seen_executors.add(executor)
-            
+
             if not _has_dockerfile(executor):
                 missing.append(f"{executor} (used by {tool_name})")
-        
+
         assert not missing, "Missing Dockerfiles:\n" + "\n".join(missing)
 
     def test_bridge_executors_have_requests(self, tools):
@@ -185,14 +186,17 @@ class TestDockerfiles:
             if executor in seen:
                 continue
             seen.add(executor)
-            
+
             if _executor_uses_requests(executor) and not _has_requirements(executor):
                 missing.append(f"{executor} (used by {tool_name})")
-        
-        assert not missing, "Executors using requests but missing requirements.txt:\n" + "\n".join(missing)
+
+        assert not missing, "Executors using requests but missing requirements.txt:\n" + "\n".join(
+            missing
+        )
 
 
 # ---- Tests: Bridge Configuration ----
+
 
 class TestBridgeConfig:
     """Verify bridge tools have proper network and bridge settings."""
@@ -205,7 +209,7 @@ class TestBridgeConfig:
             if _executor_uses_bridge(executor):
                 if not tool_cfg.get("network"):
                     issues.append(f"{tool_name} (executor: {executor})")
-        
+
         assert not issues, "Bridge tools missing network: true:\n" + "\n".join(issues)
 
     def test_bridge_executors_have_bridge_flag(self, tools):
@@ -216,7 +220,7 @@ class TestBridgeConfig:
             if _executor_uses_bridge(executor):
                 if not tool_cfg.get("bridge"):
                     issues.append(f"{tool_name} (executor: {executor})")
-        
+
         assert not issues, "Bridge tools missing bridge: true:\n" + "\n".join(issues)
 
     def test_network_executors_have_network(self, tools):
@@ -227,11 +231,12 @@ class TestBridgeConfig:
             if _executor_uses_requests(executor):
                 if not tool_cfg.get("network"):
                     issues.append(f"{tool_name} (executor: {executor})")
-        
+
         assert not issues, "HTTP-calling tools missing network: true:\n" + "\n".join(issues)
 
 
 # ---- Tests: Policy Coverage ----
+
 
 class TestPolicyCoverage:
     """Verify all tools appear in at least one policy rule."""
@@ -249,19 +254,21 @@ class TestPolicyCoverage:
     def test_all_tools_covered_by_policy(self, tools, policies):
         """Every tool should match at least one allow/review/deny rule."""
         import fnmatch
+
         patterns = self._all_policy_patterns(policies)
         uncovered = []
         for tool_name in tools:
             matched = any(fnmatch.fnmatch(tool_name, p) for p in patterns)
             if not matched:
                 uncovered.append(tool_name)
-        
+
         # Uncovered tools default to review, which is safe but noisy
         if uncovered:
             pytest.skip(f"Uncovered tools (default to review): {uncovered}")
 
 
 # ---- Tests: Parameter Mapping ----
+
 
 class TestParameterMapping:
     """Verify tool parameters map to executor env vars."""
@@ -274,7 +281,7 @@ class TestParameterMapping:
             env_vars = _get_executor_env_vars(executor)
             if not env_vars:
                 continue
-            
+
             params = tool_cfg.get("parameters", {})
             for param_name, param_cfg in params.items():
                 if isinstance(param_cfg, dict) and param_cfg.get("required"):
@@ -284,7 +291,7 @@ class TestParameterMapping:
                             f"{tool_name}.{param_name} → {param_name.upper()} "
                             f"not in {executor} env vars"
                         )
-        
+
         # This is advisory — some params go through fixed_args or other mapping
         if warnings:
             pytest.skip(f"Possible param mismatches (may be false positives): {warnings[:5]}")

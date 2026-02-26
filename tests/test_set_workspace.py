@@ -4,26 +4,23 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 
 import pytest
 
+from taskrunner.models import ToolConfig, ToolParameter
 from taskrunner.tools import (
-    BUILTIN_WORKSPACE_TOOLS,
     _is_blocked_path,
     _validate_workspace_path,
     build_tool_definitions,
     execute_tool_call,
 )
-from taskrunner.models import ToolConfig, ToolParameter
-
 
 # ---------------------------------------------------------------------------
 # _is_blocked_path
 # ---------------------------------------------------------------------------
 
-class TestIsBlockedPath:
 
+class TestIsBlockedPath:
     def test_root_blocked(self):
         assert _is_blocked_path("/") is True
 
@@ -60,8 +57,8 @@ class TestIsBlockedPath:
 # _validate_workspace_path
 # ---------------------------------------------------------------------------
 
-class TestValidateWorkspacePath:
 
+class TestValidateWorkspacePath:
     def test_valid_directory(self, tmp_path):
         assert _validate_workspace_path(str(tmp_path)) is None
 
@@ -113,8 +110,8 @@ class TestValidateWorkspacePath:
 # set_workspace handler
 # ---------------------------------------------------------------------------
 
-class TestSetWorkspaceHandler:
 
+class TestSetWorkspaceHandler:
     def test_set_valid_workspace(self, tmp_path):
         state: dict = {}
         result_str = execute_tool_call(
@@ -221,6 +218,7 @@ class TestSetWorkspaceHandler:
 # Workspace injection for file_ops tools
 # ---------------------------------------------------------------------------
 
+
 def _make_file_ops_tools() -> dict[str, ToolConfig]:
     return {
         "read_file": ToolConfig(
@@ -239,7 +237,6 @@ def _make_file_ops_tools() -> dict[str, ToolConfig]:
 
 
 class TestWorkspaceInjection:
-
     def test_file_ops_uses_workspace_from_session_state(self, tmp_path):
         """When workspace is set in session_state, file_ops should use it."""
         # Create a file in the workspace
@@ -329,12 +326,16 @@ class TestWorkspaceInjection:
 
         # Set to dir1
         execute_tool_call("set_workspace", {"path": str(dir1)}, tools, session_state=state)
-        r1 = json.loads(execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state))
+        r1 = json.loads(
+            execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state)
+        )
         assert r1["content"] == "from dir1"
 
         # Switch to dir2
         execute_tool_call("set_workspace", {"path": str(dir2)}, tools, session_state=state)
-        r2 = json.loads(execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state))
+        r2 = json.loads(
+            execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state)
+        )
         assert r2["content"] == "from dir2"
 
 
@@ -342,8 +343,8 @@ class TestWorkspaceInjection:
 # Security: workspace key stripping and re-validation
 # ---------------------------------------------------------------------------
 
-class TestWorkspaceSecurity:
 
+class TestWorkspaceSecurity:
     def test_workspace_key_stripped_from_llm_input(self, tmp_path):
         """LLM cannot inject workspace key in tool_input to bypass set_workspace."""
         legit_ws = tmp_path / "legit"
@@ -393,8 +394,8 @@ class TestWorkspaceSecurity:
 # build_tool_definitions includes workspace tools
 # ---------------------------------------------------------------------------
 
-class TestBuildToolDefinitions:
 
+class TestBuildToolDefinitions:
     def test_workspace_tools_included(self):
         defs = build_tool_definitions({}, include_workspace_tools=True)
         names = [d["name"] for d in defs]
@@ -407,7 +408,9 @@ class TestBuildToolDefinitions:
 
     def test_workspace_and_memory_tools(self):
         defs = build_tool_definitions(
-            {}, include_memory_tools=True, include_workspace_tools=True,
+            {},
+            include_memory_tools=True,
+            include_workspace_tools=True,
         )
         names = [d["name"] for d in defs]
         assert "set_workspace" in names

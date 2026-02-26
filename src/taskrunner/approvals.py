@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -69,8 +69,7 @@ class ApprovalQueue:
     def get_pending(self, sender_id: str) -> PendingAction | None:
         """Get the most recent pending action for a sender."""
         pending = [
-            a for a in self._actions.values()
-            if a.sender_id == sender_id and a.status == "pending"
+            a for a in self._actions.values() if a.sender_id == sender_id and a.status == "pending"
         ]
         if not pending:
             return None

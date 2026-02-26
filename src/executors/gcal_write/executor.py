@@ -51,11 +51,7 @@ def create_event(
     if location:
         event_body["location"] = location
 
-    created = (
-        service.events()
-        .insert(calendarId="primary", body=event_body)
-        .execute()
-    )
+    created = service.events().insert(calendarId="primary", body=event_body).execute()
 
     return {
         "id": created["id"],

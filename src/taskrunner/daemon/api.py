@@ -25,7 +25,7 @@ from taskrunner.daemon.api_config import router as config_router
 from taskrunner.daemon.api_cron import router as cron_router
 from taskrunner.daemon.api_dashboard import router as dashboard_router
 from taskrunner.daemon.api_files import router as files_router
-from taskrunner.daemon.api_logs import router as logs_router
+from taskrunner.daemon.api_logs import router as logs_router, ws_router as logs_ws_router
 from taskrunner.daemon.api_tasks import router as tasks_router
 from taskrunner.daemon.service import DaemonService
 
@@ -172,6 +172,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
     app.include_router(files_router, dependencies=_auth_deps)
     app.include_router(config_router, dependencies=_auth_deps)
     app.include_router(logs_router, dependencies=_auth_deps)
+    app.include_router(logs_ws_router)  # WebSocket — handles its own auth
 
     # Mount webhook routes from any channels that provide them
     for name, channel in service.get_channels().items():

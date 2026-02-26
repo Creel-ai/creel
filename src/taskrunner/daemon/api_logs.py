@@ -12,6 +12,10 @@ from typing import Any
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 router = APIRouter(tags=["logs"])
+# WebSocket routes need a separate router — they can't use HTTPBearer auth
+# dependencies (HTTPBearer requires an HTTP Request object). The ws_logs
+# handler authenticates via query parameter instead.
+ws_router = APIRouter(tags=["logs"])
 
 # Pattern for standard log lines: "2026-02-25 09:30:00 [INFO] taskrunner.daemon: message"
 _LOG_LINE_RE = re.compile(
@@ -108,7 +112,7 @@ async def logs_recent(
     return {"lines": lines, "total": len(lines)}
 
 
-@router.websocket("/ws/logs")
+@ws_router.websocket("/ws/logs")
 async def ws_logs(websocket: WebSocket) -> None:
     """Stream daemon log lines over WebSocket.
 

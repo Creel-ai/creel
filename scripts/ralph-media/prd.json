@@ -1,0 +1,216 @@
+{
+  "project": "Creel Media Message Support (Telegram + iMessage)",
+  "branchName": "ralph/media-messages",
+  "description": "Add support for image and voice messages from Telegram and iMessage channels. Images should be passed to vision models and voice messages should be transcribed (e.g. via Whisper) before reaching the agent. Currently only text messages are processed.",
+  "userStories": [
+    {
+      "id": "MEDIA-001",
+      "title": "Message model extension with media attachments",
+      "description": "Extend the Channel callback interface and ChatServer.handle_message to support media attachments alongside text.",
+      "acceptanceCriteria": [
+        "New dataclass or Pydantic model: IncomingMessage with fields: sender_id (str), text (str | None), attachments (list[Attachment]), channel (str | None)",
+        "Attachment model with fields: type (enum: image, voice, audio, video, file), file_path (Path | None), url (str | None), mime_type (str | None), file_name (str | None), file_size (int | None), data (bytes | None)",
+        "These models live in src/taskrunner/channels/message.py (new file)",
+        "Channel.listen callback signature updated: Callable[[IncomingMessage], str] \u2014 the old (sender_id, text) signature still works via a compatibility wrapper",
+        "ChatServer.handle_message accepts optional attachments parameter: handle_message(sender_id, text, ..., attachments=None)",
+        "When attachments are present, they're stored in the message context for the LLM to access",
+        "Backward compatible: channels that don't support media still work with plain text",
+        "All existing tests pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "The Channel base class callback is Callable[[str, str], str]. We need a backward-compatible migration. Consider a new callback type that accepts IncomingMessage but wrap old-style (sender_id, text) callbacks. ChatServer.handle_message is in src/taskrunner/chat.py line 114. DaemonService._handle_message in src/taskrunner/daemon/service.py bridges channels to ChatServer."
+    },
+    {
+      "id": "MEDIA-002",
+      "title": "Media storage and file management",
+      "description": "Create a media storage service that saves incoming media files to a local directory with organized naming.",
+      "acceptanceCriteria": [
+        "New service: src/taskrunner/services/media_store.py",
+        "MediaStore class with configurable base directory (default: ~/.creel/media/)",
+        "save_media(attachment: Attachment, sender_id: str) -> Path: saves file to disk, returns path",
+        "File organization: ~/.creel/media/{channel}/{YYYY-MM-DD}/{uuid}.{ext}",
+        "Deduplication: if identical file already saved (by content hash), return existing path",
+        "Cleanup method: remove files older than N days (configurable, default 30)",
+        "Supports saving from bytes (data field), file path (copy/move), or URL (download)",
+        "For URL downloads: use httpx with timeout and max file size (20MB default)",
+        "Returns the saved file path for downstream processing",
+        "Unit tests for save/retrieve/cleanup"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Keep it simple \u2014 local filesystem storage. No cloud/S3. The media directory should be created on first use."
+    },
+    {
+      "id": "MEDIA-003",
+      "title": "Voice transcription service",
+      "description": "Service to transcribe voice messages to text using OpenAI Whisper API or local whisper.",
+      "acceptanceCriteria": [
+        "New service: src/taskrunner/services/transcription.py",
+        "TranscriptionService class with two backends: 'openai' (API) and 'local' (whisper CLI)",
+        "transcribe(file_path: Path) -> str: returns transcribed text",
+        "OpenAI backend: uses the OpenAI Whisper API (POST to /v1/audio/transcriptions with the audio file)",
+        "Uses the existing LLM API key from agent config (OpenAI key) \u2014 or a separate WHISPER_API_KEY env var",
+        "Local backend: shells out to 'whisper' CLI if installed, falls back to OpenAI API",
+        "Supports common audio formats: .ogg, .opus, .m4a, .mp3, .wav, .oga",
+        "For Telegram voice: handles .oga/.ogg Opus files (Telegram's voice format)",
+        "For iMessage voice: handles .caf/.m4a files (macOS voice message format)",
+        "Configurable in agent.yaml under media.transcription: {backend: 'openai', model: 'whisper-1'}",
+        "Returns empty string with warning log if transcription fails (don't crash the agent)",
+        "Unit tests with mocked API calls"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Most users will use the OpenAI API. The local whisper fallback is nice-to-have. For the OpenAI API, POST multipart/form-data to https://api.openai.com/v1/audio/transcriptions with model=whisper-1. The existing LLMConfig has api_key \u2014 reuse it if provider is openai."
+    },
+    {
+      "id": "MEDIA-004",
+      "title": "Vision processing service",
+      "description": "Service to process images for LLM vision models, converting them to the right format for the agent's LLM provider.",
+      "acceptanceCriteria": [
+        "New service: src/taskrunner/services/vision.py",
+        "VisionProcessor class",
+        "prepare_image(file_path: Path) -> dict: returns a content block suitable for the LLM provider",
+        "For OpenAI-compatible APIs: returns {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,...'}}",
+        "For Anthropic: returns {type: 'image', source: {type: 'base64', media_type: '...', data: '...'}}",
+        "Auto-detects image format from file extension or magic bytes",
+        "Resizes images larger than 2048px on longest side (using Pillow) to reduce token usage",
+        "Converts unsupported formats (HEIC, WEBP) to JPEG",
+        "Configurable max image size in agent.yaml under media.vision: {max_pixels: 2048, quality: 85}",
+        "Returns None with warning log for unsupported/corrupt files",
+        "Pillow added as optional dependency (with helpful error if missing)",
+        "Unit tests for format detection, resizing, base64 encoding"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Check src/taskrunner/chat.py to see how messages are built for the LLM. The LLM provider info is in AgentConfig.llm.provider. Support at least 'openai' and 'anthropic' content block formats."
+    },
+    {
+      "id": "MEDIA-006",
+      "title": "iMessage channel media support",
+      "description": "Extend the existing iMessage channel to handle image and voice message attachments from chat.db.",
+      "acceptanceCriteria": [
+        "IMessageChannel._poll now also queries the attachment table in chat.db",
+        "SQL join: message_attachment_join + attachment tables to get attachment paths",
+        "For image attachments (mime_type starts with 'image/'): create Attachment with file_path pointing to ~/Library/Messages/Attachments/... path",
+        "For voice/audio attachments (mime_type starts with 'audio/'): create Attachment with file_path, type=voice",
+        "Incoming messages with attachments create IncomingMessage with both text and attachments populated",
+        "Image attachments: copied to media store (don't reference Messages/Attachments directly as it may be cleaned up)",
+        "Voice attachments (.caf files): copied to media store, then transcribed",
+        "The listen callback receives the full IncomingMessage with attachments",
+        "Handle edge cases: attachment file missing from disk, unsupported mime types",
+        "Backward compatible: text-only messages still work exactly as before",
+        "Tests for attachment query SQL, message construction"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "chat.db schema: message table has ROWID, attachment table has ROWID + filename + mime_type + transfer_name, message_attachment_join links them (message_id, attachment_id). Attachment filename field contains the full path like ~/Library/Messages/Attachments/XX/YY/uuid/filename.ext. The ~ needs to be expanded. Voice messages from iMessage are typically .caf format."
+    },
+    {
+      "id": "MEDIA-007",
+      "title": "Agent message building with vision and transcription",
+      "description": "Update ChatServer to build LLM messages that include image content blocks and prepend transcribed voice text.",
+      "acceptanceCriteria": [
+        "ChatServer.handle_message processes attachments before sending to LLM",
+        "Voice attachments: transcribed text is prepended to the user message as '[Voice message]: {transcribed_text}'",
+        "Image attachments: VisionProcessor.prepare_image() output is added to the LLM message content blocks",
+        "For OpenAI-style providers: message content becomes an array of content blocks [{type: 'text', text: '...'}, {type: 'image_url', ...}]",
+        "For Anthropic: message content becomes an array [{type: 'text', text: '...'}, {type: 'image', source: {...}}]",
+        "Multiple images in one message: all added as separate content blocks",
+        "Voice + image in same message: both processed (transcription + vision)",
+        "If transcription fails: message sent as '[Voice message: transcription failed]' with the audio file path noted",
+        "If vision processing fails: message sent as '[Image attached but could not be processed]'",
+        "MediaStore, TranscriptionService, and VisionProcessor are initialized in ChatServer.__init__ based on agent config",
+        "All existing tests pass, new tests for multi-modal message building"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Check how ChatServer builds messages for the LLM \u2014 look at the _build_messages or similar method in chat.py. The LLM provider determines the content block format. Key: the message 'content' field changes from a string to a list of content blocks when images are present."
+    },
+    {
+      "id": "MEDIA-008",
+      "title": "Agent config for media settings",
+      "description": "Add media-related configuration to agent.yaml.",
+      "acceptanceCriteria": [
+        "New config section in agent.yaml: media: {enabled: true, storage_dir: ~/.creel/media, max_file_size_mb: 20, retention_days: 30, transcription: {backend: openai, model: whisper-1, api_key: null}, vision: {max_pixels: 2048, quality: 85}}",
+        "MediaConfig Pydantic model in src/taskrunner/models.py with all fields, sensible defaults",
+        "AgentConfig gets optional media: MediaConfig | None field",
+        "When media is None or media.enabled is false: attachments are ignored with a log message, text-only processing continues",
+        "TranscriptionService reads api_key from media.transcription.api_key, falling back to llm.api_key",
+        "Config is passed to MediaStore, TranscriptionService, VisionProcessor on init",
+        "Default agent.yaml template includes media section (commented out with examples)",
+        "Existing configs without media section continue to work (backward compatible)",
+        "Tests for config parsing with and without media section"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Add to the existing model hierarchy in models.py. Keep defaults sensible so it works out of the box for OpenAI users \u2014 they just need media.enabled: true since api_key falls back to the LLM key."
+    },
+    {
+      "id": "MEDIA-009",
+      "title": "End-to-end Telegram image flow",
+      "description": "Verify the complete flow: user sends image in Telegram \u2192 bot downloads \u2192 vision model processes \u2192 agent responds about the image.",
+      "acceptanceCriteria": [
+        "Integration test: simulate a Telegram webhook with a photo message",
+        "Photo is downloaded from Telegram API (mocked), saved to media store",
+        "Image is processed by VisionProcessor and added to LLM content blocks",
+        "LLM receives the image and generates a response about it (mocked LLM)",
+        "Response is sent back to the Telegram chat via sendMessage",
+        "Media file exists on disk at ~/.creel/media/telegram/{date}/{uuid}.jpg",
+        "Full flow test from webhook receipt to response delivery"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Telegram channel already exists at src/taskrunner/channels/telegram.py with telegram_bridge.py. TelegramAttachment model has file_id, file_type, mime_type, file_name. Bridge has download_file(file_id) -> bytes. Build on this existing infrastructure."
+    },
+    {
+      "id": "MEDIA-010",
+      "title": "End-to-end Telegram voice flow",
+      "description": "Verify the complete flow: user sends voice message in Telegram \u2192 bot downloads \u2192 Whisper transcribes \u2192 agent responds.",
+      "acceptanceCriteria": [
+        "Integration test: simulate a Telegram webhook with a voice message",
+        "Voice .oga file downloaded from Telegram API (mocked), saved to media store",
+        "Audio transcribed by TranscriptionService (mocked Whisper API returns 'Hello, this is a test')",
+        "Transcribed text prepended to message: '[Voice message]: Hello, this is a test'",
+        "LLM receives the text and generates a response (mocked)",
+        "Response sent back to Telegram chat",
+        "Full flow from webhook to response"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Same as MEDIA-009 but for voice. Telegram voice messages come as file_type=\"voice\" in TelegramAttachment. Use existing bridge.download_file() to get the .oga bytes."
+    },
+    {
+      "id": "MEDIA-011",
+      "title": "End-to-end iMessage image flow",
+      "description": "Verify the complete flow: user sends image via iMessage \u2192 chat.db poll picks it up \u2192 vision processes \u2192 agent responds.",
+      "acceptanceCriteria": [
+        "Integration test: mock chat.db with an image attachment row",
+        "Attachment file path resolved from ~/Library/Messages/Attachments/...",
+        "Image copied to media store, processed by VisionProcessor",
+        "LLM receives image content block and generates response (mocked)",
+        "Response sent back via AppleScript (mocked)",
+        "Test handles missing attachment file gracefully (file cleaned up by macOS)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "iMessage attachments are trickier because the file paths in chat.db may use ~ and the files may be cleaned up by macOS. Test the path resolution and missing-file handling."
+    },
+    {
+      "id": "MEDIA-012",
+      "title": "End-to-end iMessage voice flow",
+      "description": "Verify the complete flow: user sends voice message via iMessage \u2192 chat.db poll \u2192 transcription \u2192 agent responds.",
+      "acceptanceCriteria": [
+        "Integration test: mock chat.db with a voice/audio attachment row (.caf mime type)",
+        "Audio file copied to media store, transcribed via TranscriptionService",
+        "Transcribed text prepended to message",
+        "LLM receives text and generates response (mocked)",
+        "Response sent back via AppleScript (mocked)",
+        "Handle .caf format: if Whisper doesn't support .caf directly, convert to .wav or .m4a first using ffmpeg (with fallback if ffmpeg not installed)"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "iMessage voice messages are .caf (Core Audio Format). OpenAI Whisper API supports: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm. CAF is NOT in the list \u2014 so we need ffmpeg conversion. Add a convert_audio() helper that uses ffmpeg if available, otherwise logs a warning."
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Ralph Progress Log — Media Messages
+Started: 2026-02-26
+---
+
+## Codebase Patterns
+- **Channels:** src/taskrunner/channels/ — each channel extends Channel base class (base.py)
+- **Channel base class:** listen(callback: Callable[[str, str], str]) and send(recipient, text)
+- **Channel plugins:** register_plugin() returns (ChannelPluginMeta, factory) — see imessage.py for example
+- **Channel registry:** src/taskrunner/channels/registry.py manages channel loading
+- **ChatServer:** src/taskrunner/chat.py — handle_message(sender_id, text, ...) processes messages and calls LLM
+- **DaemonService:** src/taskrunner/daemon/service.py bridges channels to ChatServer._handle_message
+- **Models:** src/taskrunner/models.py — Pydantic models for all config (AgentConfig, LLMConfig, channel configs, etc.)
+- **Existing channels:** WhatsApp (whatsapp.py), iMessage (imessage.py), BlueBubbles (bluebubbles.py)
+- **iMessage:** polls ~/Library/Messages/chat.db SQLite, sends via AppleScript
+- **WhatsApp:** uses WhatsAppBridge (HTTP or Neonize), supports polling and webhook modes
+- **Telegram channel EXISTS:** src/taskrunner/channels/telegram.py (315 lines) + telegram_bridge.py (202 lines)
+- **TelegramAttachment** model in telegram_bridge.py: file_id, file_type ("photo"/"document"/"voice"/"video"), mime_type, file_name
+- **Bridge.download_file(file_id) -> bytes** already implemented
+- **Bridge._parse_update()** already extracts text and captions from media messages
+- DO NOT recreate the Telegram channel — extend it to pass attachments through to the agent
+- **Tests:** run with `cd /Users/ross/.openclaw/workspace/projects/creel && uv run pytest tests/ -x -q`
+- **LLM message format:** check chat.py for how messages are built — content is typically a string, needs to become content blocks for vision
+- **Agent config:** agent.yaml loaded as AgentConfig Pydantic model
+- **Outputs:** src/taskrunner/outputs.py has MESSAGE_PREFIX used for sent-message detection
+- **Services dir:** src/taskrunner/services/ — may not exist yet, create if needed

@@ -82,6 +82,9 @@ class BlueBubblesChannel(Channel):
 
     def send(self, recipient: str, text: str) -> None:
         """Send a message via BlueBubbles REST API."""
+        if not text:
+            logger.debug("Skipping empty message to %s", recipient)
+            return
         self._api(
             "POST",
             "/message/text",

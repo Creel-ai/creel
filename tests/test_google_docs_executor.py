@@ -48,11 +48,7 @@ class TestExtractText:
         body = {
             "content": [
                 {"sectionBreak": {}},
-                {
-                    "paragraph": {
-                        "elements": [{"textRun": {"content": "text"}}]
-                    }
-                },
+                {"paragraph": {"elements": [{"textRun": {"content": "text"}}]}},
             ]
         }
         assert _extract_text(body) == "text"
@@ -71,11 +67,7 @@ class TestReadDoc:
             "title": "My Doc",
             "body": {
                 "content": [
-                    {
-                        "paragraph": {
-                            "elements": [{"textRun": {"content": "Hello world\n"}}]
-                        }
-                    }
+                    {"paragraph": {"elements": [{"textRun": {"content": "Hello world\n"}}]}}
                 ]
             },
         }
@@ -140,7 +132,9 @@ class TestCreateDoc:
 
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_create_returns_document_id_and_url(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+    def test_create_returns_document_id_and_url(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -203,7 +197,9 @@ class TestReplaceInDoc:
 
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_replace_returns_occurrence_count(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+    def test_replace_returns_occurrence_count(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service

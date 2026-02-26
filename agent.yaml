@@ -597,7 +597,7 @@ tools:
 
   notion_api:
     executor: notion
-    secrets: secrets/notion.env.enc
+    secrets: secrets/notion_read.env.enc
     network: true
     classify_output: true
     description: "Query Notion in read-only mode (search, retrieve page, query database)"
@@ -627,6 +627,30 @@ tools:
       start_cursor:
         type: string
         description: "Pagination cursor for search/query_database"
+
+  notion_write:
+    executor: notion_write
+    secrets: secrets/notion_write.env.enc
+    network: true
+    classify_output: true
+    description: "Create, update, or delete pages in Notion"
+    parameters:
+      action:
+        type: string
+        description: "Action: create_page, update_page, append_blocks, delete_page"
+        required: true
+      page_id:
+        type: string
+        description: "Page ID (required for update_page, append_blocks, delete_page)"
+      database_id:
+        type: string
+        description: "Database ID (required for create_page)"
+      properties_json:
+        type: string
+        description: "JSON object of page properties (for create_page, update_page)"
+      children_json:
+        type: string
+        description: "JSON array of block objects to append (for append_blocks, create_page)"
 
   fetch_url:
     executor: fetch_url

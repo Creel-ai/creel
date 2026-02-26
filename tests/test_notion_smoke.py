@@ -6,7 +6,7 @@ Environment variables:
   - NOTION_API_KEY (required for all tests; loaded from secrets if unset)
   - NOTION_TEST_PAGE_ID (optional, enables page retrieval smoke test)
   - NOTION_TEST_DATABASE_ID (optional, enables database query smoke test)
-  - NOTION_SMOKE_SECRETS_FILE (optional; defaults to secrets/notion.env.enc)
+  - NOTION_SMOKE_SECRETS_FILE (optional; defaults to secrets/notion_read.env.enc)
 
 Run with:
     python -m pytest tests/test_notion_smoke.py -v -m smoke --no-cov
@@ -27,7 +27,7 @@ pytestmark = [pytest.mark.smoke]
 
 
 def _resolve_secrets_path() -> Path:
-    configured = os.environ.get("NOTION_SMOKE_SECRETS_FILE", "secrets/notion.env.enc")
+    configured = os.environ.get("NOTION_SMOKE_SECRETS_FILE", "secrets/notion_read.env.enc")
     path = Path(configured).expanduser()
     if path.is_absolute():
         return path

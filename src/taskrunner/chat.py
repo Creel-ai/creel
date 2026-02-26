@@ -340,9 +340,7 @@ class ChatServer:
         self._approval_queue.resolve(pending.id, approved)
 
         if not approved:
-            result_msg = f"❌ Action denied: {pending.tool_name}"
-            self._send_reply(sender_id, result_msg, proactive=False)  # Direct reply to approval
-            return result_msg
+            return f"❌ Action denied: {pending.tool_name}"
 
         # Execute the tool with full context (session_state, memory)
         session_state = self._session_states.get(sender_id)
@@ -361,7 +359,6 @@ class ChatServer:
             logger.exception("Tool execution failed after approval")
             result_msg = f"✅ Approved but execution failed: {e}"
 
-        self._send_reply(sender_id, result_msg, proactive=False)  # Direct reply to approval
         return result_msg
 
     def _send_reply(

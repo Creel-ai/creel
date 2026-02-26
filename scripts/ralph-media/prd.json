@@ -193,7 +193,7 @@
         "Test handles missing attachment file gracefully (file cleaned up by macOS)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "iMessage attachments are trickier because the file paths in chat.db may use ~ and the files may be cleaned up by macOS. Test the path resolution and missing-file handling."
     },
     {

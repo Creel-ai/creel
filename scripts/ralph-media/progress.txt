@@ -174,3 +174,18 @@ Started: 2026-02-26
   - When transcription fails (returns ""), ChatServer sends "[Voice message: transcription failed] (file: {name})" — file is still saved to disk
   - All 1975 tests pass (1961 existing + 14 new)
 ---
+
+## 2026-02-26 - MEDIA-011
+- Implemented end-to-end iMessage image flow integration test
+- Test classes cover: poll picks up image attachment, missing attachment file handling, listen() callback with IncomingMessage, full E2E ChatServer integration
+- E2E tests verify: chat.db poll → attachment extraction → media store save → vision processing → LLM receives content blocks → response sent back
+- Tests for edge cases: image-only (no text), missing file on disk (macOS cleanup), multiple images, media disabled, DaemonService path
+- 14 new tests all pass
+- Files changed: tests/test_imessage_image_e2e.py (new), scripts/ralph-media/prd.json, scripts/ralph-media/progress.txt
+- **Learnings:**
+  - iMessage image flow reuses all infrastructure from MEDIA-006 (poll + attachment query) and MEDIA-007 (ChatServer media processing)
+  - Missing attachment files (file_path=None) are handled gracefully — ChatServer skips vision processing and sends plain text
+  - The full E2E test simulates DaemonService wiring: channel.listen(callback) where callback routes IncomingMessage to ChatServer.handle_message
+  - Pattern: poll_once_then_stop wrapper sets channel._stop_requested=True after one poll iteration for deterministic testing
+  - All 1989 tests pass (1975 existing + 14 new)
+---

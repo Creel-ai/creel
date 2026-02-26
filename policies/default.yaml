@@ -46,6 +46,8 @@ review:
   - git_commit
   - git_branch
   - git_push
+  # Notion write (all actions require review)
+  - notion_write
   # Browser tools (state-changing)
   - browser_open
   - browser_navigate

@@ -391,6 +391,8 @@ def _run_executor_inline_locked(
             return _exec_brave_search_inline(config)
         elif name == "notion":
             return _exec_notion_inline(config)
+        elif name == "notion_write":
+            return _exec_notion_write_inline(config)
         elif name == "fetch_url":
             return _exec_fetch_url_inline(config)
         elif name == "browser":
@@ -699,6 +701,24 @@ def _exec_notion_inline(config: ExecutorConfig) -> str:
         sorts_json=config.args.get("sorts_json", ""),
         page_size=config.args.get("page_size"),
         start_cursor=config.args.get("start_cursor", ""),
+    )
+    return json.dumps(result, indent=2)
+
+
+def _exec_notion_write_inline(config: ExecutorConfig) -> str:
+    """Run Notion write executor inline."""
+    from executors.notion_write.executor import run_action
+
+    action = config.args.get("action", "")
+    if not action:
+        raise ValueError("notion_write executor requires an 'action' argument")
+
+    result = run_action(
+        action=action,
+        page_id=config.args.get("page_id", ""),
+        database_id=config.args.get("database_id", ""),
+        properties_json=config.args.get("properties_json", ""),
+        children_json=config.args.get("children_json", ""),
     )
     return json.dumps(result, indent=2)
 

@@ -13,6 +13,7 @@ import sys
 from typing import Any
 
 from executors.notion.executor import (
+    _extract_title,
     _notion_request,
     _parse_json_arg,
     _validate_notion_id,
@@ -24,6 +25,31 @@ WRITE_ACTIONS = {
     "append_blocks",
     "delete_page",
 }
+
+
+def _summarize_write_result(action: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Return a concise confirmation instead of the full API response."""
+    summary: dict[str, Any] = {"ok": True, "action": action}
+
+    if action == "append_blocks":
+        results = data.get("results", [])
+        summary["blocks_added"] = len(results)
+        if results:
+            summary["parent_id"] = (
+                results[0].get("parent", {}).get("page_id", "")
+                or results[0].get("parent", {}).get("block_id", "")
+            )
+        return summary
+
+    # create_page, update_page, delete_page all return a page object
+    summary["id"] = data.get("id", "")
+    summary["url"] = data.get("url", "")
+    title = _extract_title(data)
+    if title:
+        summary["title"] = title
+    if action == "delete_page":
+        summary["archived"] = True
+    return summary
 
 
 def create_page(
@@ -48,7 +74,8 @@ def create_page(
     if children:
         payload["children"] = children
 
-    return _notion_request("POST", "/pages", payload=payload)
+    data = _notion_request("POST", "/pages", payload=payload)
+    return _summarize_write_result("create_page", data)
 
 
 def update_page(
@@ -63,11 +90,12 @@ def update_page(
     if not properties:
         raise ValueError("properties_json is required for action='update_page'")
 
-    return _notion_request(
+    data = _notion_request(
         "PATCH",
         f"/pages/{page_id}",
         payload={"properties": properties},
     )
+    return _summarize_write_result("update_page", data)
 
 
 def append_blocks(
@@ -82,11 +110,12 @@ def append_blocks(
     if not children:
         raise ValueError("children_json is required for action='append_blocks'")
 
-    return _notion_request(
+    data = _notion_request(
         "PATCH",
         f"/blocks/{page_id}/children",
         payload={"children": children},
     )
+    return _summarize_write_result("append_blocks", data)
 
 
 def delete_page(page_id: str) -> dict[str, Any]:
@@ -94,11 +123,12 @@ def delete_page(page_id: str) -> dict[str, Any]:
         raise ValueError("page_id is required for action='delete_page'")
     _validate_notion_id(page_id, "page_id")
 
-    return _notion_request(
+    data = _notion_request(
         "PATCH",
         f"/pages/{page_id}",
         payload={"archived": True},
     )
+    return _summarize_write_result("delete_page", data)
 
 
 def run_action(

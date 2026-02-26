@@ -44,6 +44,8 @@ def test_create_page(mock_request):
     payload = call.kwargs["json"]
     assert payload["parent"]["database_id"] == DB_UUID
     assert "Name" in payload["properties"]
+    assert result["ok"] is True
+    assert result["action"] == "create_page"
     assert result["id"] == PAGE_UUID
 
 
@@ -81,10 +83,14 @@ def test_update_page(mock_request):
 
 @patch("executors.notion.executor.requests.request")
 def test_append_blocks(mock_request):
-    mock_request.return_value = _mock_response({"results": []})
+    mock_request.return_value = _mock_response({
+        "results": [
+            {"object": "block", "id": "blk-1", "parent": {"page_id": PAGE_UUID}},
+        ],
+    })
 
     children = '[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"text": {"content": "Appended"}}]}}]'
-    run_action(
+    result = run_action(
         "append_blocks",
         page_id=PAGE_UUID,
         children_json=children,
@@ -94,6 +100,9 @@ def test_append_blocks(mock_request):
     assert call.args[0] == "PATCH"
     assert call.args[1].endswith(f"/blocks/{PAGE_UUID}/children")
     assert len(call.kwargs["json"]["children"]) == 1
+    assert result["ok"] is True
+    assert result["blocks_added"] == 1
+    assert result["parent_id"] == PAGE_UUID
 
 
 @patch("executors.notion.executor.requests.request")

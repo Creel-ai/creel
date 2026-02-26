@@ -124,7 +124,7 @@
         "All existing tests pass, new tests for multi-modal message building"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Check how ChatServer builds messages for the LLM \u2014 look at the _build_messages or similar method in chat.py. The LLM provider determines the content block format. Key: the message 'content' field changes from a string to a list of content blocks when images are present."
     },
     {
@@ -143,7 +143,7 @@
         "Tests for config parsing with and without media section"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Add to the existing model hierarchy in models.py. Keep defaults sensible so it works out of the box for OpenAI users \u2014 they just need media.enabled: true since api_key falls back to the LLM key."
     },
     {

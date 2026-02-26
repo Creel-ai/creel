@@ -101,3 +101,38 @@ Started: 2026-02-26
   - Attachment files may be cleaned up by macOS — file_path=None is valid state, downstream processors should handle it
   - All 1902 tests pass (1878 existing + 24 new)
 ---
+
+## 2026-02-26 - MEDIA-007
+- Updated ChatServer to process media attachments before sending to LLM
+- Added _process_attachments, _process_voice_attachment, _process_image_attachment methods to ChatServer
+- Initialized MediaStore, TranscriptionService, VisionProcessor in ChatServer.__init__
+- Voice/audio attachments: saved to media store → transcribed → prepended as "[Voice message]: {text}" to user message
+- Image attachments: saved to media store → processed by VisionProcessor → added as content blocks to user message
+- When images present: user message content changes from string to list of content blocks [{type: "text", text: ...}, {type: "image", source: ...}]
+- Added SessionManager.add_user_message_blocks() for content-block user messages (preserves title extraction from text blocks)
+- Graceful failure: voice save failure → "[Voice message: could not save audio file]", transcription failure → "[Voice message: transcription failed]", image processing failure → silently omitted
+- Files changed: src/taskrunner/chat.py, src/taskrunner/session.py, tests/test_chat_media.py (new)
+- **Learnings:**
+  - Anthropic API accepts user message content as either str or list[dict] — content blocks are [{type: "text", text: ...}, {type: "image", ...}]
+  - The LLM uses Anthropic exclusively (llm.py only imports anthropic), so VisionProcessor provider is "anthropic"
+  - SessionManager.add_user_message stores content as string; new add_user_message_blocks stores as list for multi-modal
+  - run_agent_loop receives messages list directly from session — content blocks flow through without any changes needed in agent.py
+  - All 1918 tests pass (1902 existing + 16 new)
+---
+
+## 2026-02-26 - MEDIA-008
+- Added MediaConfig, TranscriptionConfig, VisionConfig Pydantic models to src/taskrunner/models.py
+- Added optional media: MediaConfig | None field to AgentDefinition
+- Updated ChatServer.__init__ to use MediaConfig values when initializing MediaStore, TranscriptionService, VisionProcessor
+- When media is None or media.enabled is False: services are set to None, attachments silently ignored with log message
+- When media is enabled: storage_dir is tilde-expanded, max_file_size converted from MB to bytes, all config values passed through
+- Added commented-out media section to agent.yaml as a template with sensible defaults
+- TranscriptionService reads api_key from media.transcription.api_key, falling back to OPENAI_API_KEY env var (unchanged)
+- Updated test_chat_media.py helper to include MediaConfig(enabled=True) so media services are initialized for attachment tests
+- Files changed: src/taskrunner/models.py, src/taskrunner/chat.py, agent.yaml, tests/test_media_config.py (new), tests/test_chat_media.py
+- **Learnings:**
+  - AgentDefinition already has many optional config sections (guardian, browser, bridge) — media follows the same None-means-disabled pattern
+  - ChatServer text-only tests don't need media config — _process_attachments returns early when attachments list is empty, before checking if services are None
+  - Path.expanduser() handles ~ expansion for storage_dir
+  - All 1935 tests pass (1918 existing + 17 new)
+---

@@ -132,9 +132,29 @@ class ChatServer:
             logger.info("Guardian enabled")
 
         # Initialize media services for attachment processing
-        self._media_store = MediaStore()
-        self._transcription = TranscriptionService()
-        self._vision = VisionProcessor(provider="anthropic")
+        media_cfg = agent_def.media
+        if media_cfg is not None and media_cfg.enabled:
+            storage_dir = Path(media_cfg.storage_dir).expanduser()
+            self._media_store: MediaStore | None = MediaStore(
+                base_dir=storage_dir,
+                max_file_size=media_cfg.max_file_size_mb * 1024 * 1024,
+                retention_days=media_cfg.retention_days,
+            )
+            self._transcription: TranscriptionService | None = TranscriptionService(
+                backend=media_cfg.transcription.backend,
+                model=media_cfg.transcription.model,
+                api_key=media_cfg.transcription.api_key,
+            )
+            self._vision: VisionProcessor | None = VisionProcessor(
+                provider="anthropic",
+                max_pixels=media_cfg.vision.max_pixels,
+                quality=media_cfg.vision.quality,
+            )
+            logger.info("Media services enabled (storage: %s)", storage_dir)
+        else:
+            self._media_store = None
+            self._transcription = None
+            self._vision = None
 
     def handle_message(
         self,
@@ -336,6 +356,10 @@ class ChatServer:
             and a list of image content block dicts for the LLM.
         """
         if not attachments:
+            return text, []
+
+        if self._media_store is None:
+            logger.info("Media disabled — ignoring %d attachment(s)", len(attachments))
             return text, []
 
         voice_parts: list[str] = []

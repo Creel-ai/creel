@@ -1099,6 +1099,19 @@ workspace:
   max_daily_entries: 50
   max_long_term_lines: 500
 
+# media:
+#   enabled: true
+#   storage_dir: ~/.creel/media
+#   max_file_size_mb: 20
+#   retention_days: 30
+#   transcription:
+#     backend: openai          # "openai" (Whisper API) or "local" (whisper CLI)
+#     model: whisper-1
+#     # api_key: null          # Falls back to OPENAI_API_KEY env var
+#   vision:
+#     max_pixels: 2048
+#     quality: 85
+
 channels:
   # imessage:
   #   listen_to: "$PHONE"

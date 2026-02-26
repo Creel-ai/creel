@@ -14,6 +14,7 @@ from taskrunner.models import (
     AgentDefinition,
     ChannelsConfig,
     LLMConfig,
+    MediaConfig,
     SessionConfig,
     WorkspaceConfig,
 )
@@ -33,6 +34,7 @@ def _make_agent_def(tmp_path: Path, **overrides) -> AgentDefinition:
         ),
         workspace=WorkspaceConfig(path=str(tmp_path / "nonexistent-workspace")),
         channels=ChannelsConfig(),
+        media=MediaConfig(enabled=True),
     )
     defaults.update(overrides)
     return AgentDefinition(**defaults)

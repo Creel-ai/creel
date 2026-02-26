@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from executors.fetch_url.executor import fetch_url
 
 
@@ -76,9 +74,7 @@ def test_fetch_url_not_truncated(mock_get):
 @patch("executors.fetch_url.executor.requests.get")
 def test_fetch_url_plain_text(mock_get):
     """fetch_url should handle plain text content."""
-    mock_get.return_value = _mock_response(
-        "Just plain text", content_type="text/plain"
-    )
+    mock_get.return_value = _mock_response("Just plain text", content_type="text/plain")
 
     result = fetch_url("https://example.com/file.txt")
     assert "Just plain text" in result["content"]
@@ -87,9 +83,7 @@ def test_fetch_url_plain_text(mock_get):
 @patch("executors.fetch_url.executor.requests.get")
 def test_fetch_url_json_content(mock_get):
     """fetch_url should handle JSON content."""
-    mock_get.return_value = _mock_response(
-        '{"key": "value"}', content_type="application/json"
-    )
+    mock_get.return_value = _mock_response('{"key": "value"}', content_type="application/json")
 
     result = fetch_url("https://api.example.com/data")
     assert '{"key": "value"}' in result["content"]
@@ -98,9 +92,7 @@ def test_fetch_url_json_content(mock_get):
 @patch("executors.fetch_url.executor.requests.get")
 def test_fetch_url_unsupported_content_type(mock_get):
     """fetch_url should return a message for unsupported content types."""
-    mock_get.return_value = _mock_response(
-        b"binary data", content_type="application/pdf"
-    )
+    mock_get.return_value = _mock_response(b"binary data", content_type="application/pdf")
 
     result = fetch_url("https://example.com/file.pdf")
     assert "Unsupported content type" in result["content"]

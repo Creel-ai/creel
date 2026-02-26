@@ -41,6 +41,7 @@ def _derive_fernet_key(passphrase: str, salt: bytes) -> bytes:
 def _encrypt_data(data: bytes, key: bytes) -> bytes:
     """Encrypt data using Fernet symmetric encryption."""
     from cryptography.fernet import Fernet
+
     f = Fernet(key)
     return f.encrypt(data)
 
@@ -48,8 +49,10 @@ def _encrypt_data(data: bytes, key: bytes) -> bytes:
 def _decrypt_data(token: bytes, key: bytes) -> bytes:
     """Decrypt Fernet-encrypted data."""
     from cryptography.fernet import Fernet
+
     f = Fernet(key)
     return f.decrypt(token)
+
 
 _ACTIVE_INDEX_FILE = "_active.json"
 
@@ -125,7 +128,8 @@ class SessionManager:
                 if self._is_expired(session):
                     logger.info(
                         "Session %s expired (last_active=%.0f), starting new session",
-                        session.session_id, session.last_active,
+                        session.session_id,
+                        session.last_active,
                     )
                 else:
                     return session
@@ -191,13 +195,15 @@ class SessionManager:
                 continue
             if data is None or data.get("sender_id") != sender_id:
                 continue
-            results.append({
-                "session_id": data.get("session_id", path.stem),
-                "title": data.get("title", ""),
-                "created_at": data.get("created_at", 0),
-                "last_active": data.get("last_active", 0),
-                "message_count": len(data.get("messages", [])),
-            })
+            results.append(
+                {
+                    "session_id": data.get("session_id", path.stem),
+                    "title": data.get("title", ""),
+                    "created_at": data.get("created_at", 0),
+                    "last_active": data.get("last_active", 0),
+                    "message_count": len(data.get("messages", [])),
+                }
+            )
         results.sort(key=lambda r: r["last_active"], reverse=True)
         return results
 
@@ -281,9 +287,12 @@ class SessionManager:
     def _compact_with_summary(self, session: Session) -> None:
         """Compact older messages into a summary, keeping recent messages."""
         if not self._summarize_fn:
-            logger.warning("Compaction requested but no summarize_fn configured, falling back to trim")
+            logger.warning(
+                "Compaction requested but no summarize_fn configured, falling back to trim"
+            )
             session.messages = self._trim_preserving_tool_pairs(
-                session.messages, self._max_history,
+                session.messages,
+                self._max_history,
             )
             return
 
@@ -300,16 +309,14 @@ class SessionManager:
         except Exception:
             logger.warning("Summarization failed, falling back to trim", exc_info=True)
             session.messages = self._trim_preserving_tool_pairs(
-                session.messages, self._max_history,
+                session.messages,
+                self._max_history,
             )
             return
 
         summary_msg = {
             "role": "user",
-            "content": (
-                "[CONVERSATION SUMMARY]\n"
-                f"<summary>\n{summary_text}\n</summary>"
-            ),
+            "content": (f"[CONVERSATION SUMMARY]\n<summary>\n{summary_text}\n</summary>"),
         }
 
         session.messages = [summary_msg] + recent
@@ -317,7 +324,9 @@ class SessionManager:
         session.token_count = 0
         logger.info(
             "Compacted session %s: %d messages -> 1 summary + %d recent",
-            session.session_id, len(older) + len(recent), len(recent),
+            session.session_id,
+            len(older) + len(recent),
+            len(recent),
         )
 
     @staticmethod
@@ -401,7 +410,8 @@ class SessionManager:
         """
         if len(session.messages) > self._max_history:
             session.messages = self._trim_preserving_tool_pairs(
-                session.messages, self._max_history,
+                session.messages,
+                self._max_history,
             )
 
         data = {
@@ -456,7 +466,8 @@ class SessionManager:
             )
             if len(session.messages) > self._max_history:
                 session.messages = self._trim_preserving_tool_pairs(
-                    session.messages, self._max_history,
+                    session.messages,
+                    self._max_history,
                 )
             return session
         except (json.JSONDecodeError, KeyError) as e:
@@ -500,9 +511,7 @@ class SessionManager:
 
     def session_stats(self) -> dict[str, int]:
         """Return stored session count and active sender count."""
-        session_files = [
-            p for p in self._dir.glob("*.json") if p.name != _ACTIVE_INDEX_FILE
-        ]
+        session_files = [p for p in self._dir.glob("*.json") if p.name != _ACTIVE_INDEX_FILE]
         active_senders = len(self._load_active_index())
         return {"stored": len(session_files), "active_senders": active_senders}
 

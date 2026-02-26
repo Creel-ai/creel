@@ -59,9 +59,7 @@ class TestBrowserAuth:
         """Test that non-browser tokens are rejected."""
         headers = {"Authorization": f"Bearer {scoped_tokens['NOTES']}"}
         with patch.object(app.state, "browser_relay", AsyncMock(), create=True):
-            response = client.post(
-                "/browser/connect", json={"mode": "managed"}, headers=headers
-            )
+            response = client.post("/browser/connect", json={"mode": "managed"}, headers=headers)
         assert response.status_code == 401
 
 
@@ -312,7 +310,12 @@ class TestBrowserSessions:
 
     def test_list_sessions(self, client, browser_auth_headers, mock_relay):
         mock_relay.list_sessions.return_value = [
-            {"session_id": "s1", "mode": "managed", "last_used": 100.0, "url": "https://example.com"},
+            {
+                "session_id": "s1",
+                "mode": "managed",
+                "last_used": 100.0,
+                "url": "https://example.com",
+            },
         ]
 
         with patch.object(app.state, "browser_relay", mock_relay, create=True):

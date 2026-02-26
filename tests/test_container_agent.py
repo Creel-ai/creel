@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from guardian.types import ActionVerdict
-from taskrunner.agent import AgentResult
 from taskrunner.container_agent import (
     _handle_tool_request,
     _recv_from_container,
@@ -17,7 +16,6 @@ from taskrunner.container_agent import (
     run_agent_loop_container,
 )
 from taskrunner.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -92,7 +90,13 @@ class TestProtocolSerialization:
         start = {
             "type": "start",
             "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
-            "tools": [{"name": "t", "description": "d", "input_schema": {"type": "object", "properties": {}}}],
+            "tools": [
+                {
+                    "name": "t",
+                    "description": "d",
+                    "input_schema": {"type": "object", "properties": {}},
+                }
+            ],
             "system": "Be helpful.",
             "model": "claude-sonnet-4-20250514",
             "max_tokens": 1024,
@@ -105,7 +109,9 @@ class TestProtocolSerialization:
     def test_tool_request_message_shape(self):
         msg = {
             "type": "tool_request",
-            "calls": [{"id": "toolu_123", "name": "check_weather", "input": {"location": "Denver"}}],
+            "calls": [
+                {"id": "toolu_123", "name": "check_weather", "input": {"location": "Denver"}}
+            ],
         }
         parsed = json.loads(json.dumps(msg))
         assert parsed["calls"][0]["id"] == "toolu_123"
@@ -125,7 +131,9 @@ class TestProtocolSerialization:
             "turns_used": 2,
             "tool_calls_made": 1,
             "stop_reason": "end_turn",
-            "tool_history": [{"tool": "check_weather", "input": {}, "output": "sunny", "is_error": False}],
+            "tool_history": [
+                {"tool": "check_weather", "input": {}, "output": "sunny", "is_error": False}
+            ],
         }
         parsed = json.loads(json.dumps(msg))
         assert parsed["stop_reason"] == "end_turn"
@@ -145,8 +153,12 @@ class TestHandleToolRequest:
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
-            calls, _make_tools(), use_containers=False,
-            guardian=None, confirm_action=None, memory_manager=None,
+            calls,
+            _make_tools(),
+            use_containers=False,
+            guardian=None,
+            confirm_action=None,
+            memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
@@ -162,8 +174,12 @@ class TestHandleToolRequest:
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
-            calls, _make_tools(), use_containers=False,
-            guardian=None, confirm_action=None, memory_manager=None,
+            calls,
+            _make_tools(),
+            use_containers=False,
+            guardian=None,
+            confirm_action=None,
+            memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
@@ -181,8 +197,12 @@ class TestHandleToolRequest:
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
-            calls, _make_tools(), use_containers=False,
-            guardian=guardian, confirm_action=None, memory_manager=None,
+            calls,
+            _make_tools(),
+            use_containers=False,
+            guardian=guardian,
+            confirm_action=None,
+            memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
@@ -207,8 +227,12 @@ class TestHandleToolRequest:
 
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
-            calls, _make_tools(), use_containers=False,
-            guardian=guardian, confirm_action=confirm_fn, memory_manager=None,
+            calls,
+            _make_tools(),
+            use_containers=False,
+            guardian=guardian,
+            confirm_action=confirm_fn,
+            memory_manager=None,
             messages=[{"role": "user", "content": "Weather?"}],
         )
 
@@ -228,8 +252,12 @@ class TestHandleToolRequest:
         calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         messages = [{"role": "user", "content": "Weather?"}]
         results, pending = _handle_tool_request(
-            calls, _make_tools(), use_containers=False,
-            guardian=guardian, confirm_action=None, memory_manager=None,
+            calls,
+            _make_tools(),
+            use_containers=False,
+            guardian=guardian,
+            confirm_action=None,
+            memory_manager=None,
             messages=messages,
         )
 
@@ -254,7 +282,9 @@ class TestHandleToolRequest:
             "read_email": ToolConfig(
                 executor="gmail_readonly",
                 description="Read email",
-                parameters={"message_id": ToolParameter(type="string", description="ID", required=True)},
+                parameters={
+                    "message_id": ToolParameter(type="string", description="ID", required=True)
+                },
                 classify_output=True,
             ),
         }
@@ -271,8 +301,12 @@ class TestHandleToolRequest:
 
         calls = [{"id": "toolu_1", "name": "read_email", "input": {"message_id": "abc"}}]
         results, pending = _handle_tool_request(
-            calls, tools, use_containers=False,
-            guardian=guardian, confirm_action=None, memory_manager=None,
+            calls,
+            tools,
+            use_containers=False,
+            guardian=guardian,
+            confirm_action=None,
+            memory_manager=None,
             messages=[{"role": "user", "content": "Read email abc"}],
         )
 

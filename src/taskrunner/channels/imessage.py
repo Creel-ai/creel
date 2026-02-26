@@ -8,10 +8,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from taskrunner.channels import Channel
 from taskrunner.outputs import MESSAGE_PREFIX
+
+if TYPE_CHECKING:
+    from taskrunner.channels.plugin import ChannelPluginMeta
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +80,11 @@ class IMessageChannel(Channel):
                             logger.exception("Error handling message from %s", sender)
             except Exception:
                 consecutive_errors += 1
-                backoff = min(self._poll_interval * (2 ** consecutive_errors), max_backoff)
+                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
                 logger.exception(
                     "Error polling messages (consecutive=%d, backoff=%.1fs)",
-                    consecutive_errors, backoff,
+                    consecutive_errors,
+                    backoff,
                 )
                 time.sleep(backoff)
                 continue
@@ -196,13 +200,15 @@ class IMessageChannel(Channel):
 
             messages = []
             for row in cursor.fetchall():
-                messages.append({
-                    "rowid": row[0],
-                    "text": row[1],
-                    "sender": row[2],
-                    "is_from_me": row[3],
-                    "date": row[4],
-                })
+                messages.append(
+                    {
+                        "rowid": row[0],
+                        "text": row[1],
+                        "sender": row[2],
+                        "is_from_me": row[3],
+                        "date": row[4],
+                    }
+                )
             return messages
         finally:
             conn.close()
@@ -217,9 +223,7 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
         id="imessage",
         label="iMessage",
         capabilities=(
-            ChannelCapability.POLLING
-            | ChannelCapability.SEND
-            | ChannelCapability.WAIT_FOR_REPLY
+            ChannelCapability.POLLING | ChannelCapability.SEND | ChannelCapability.WAIT_FOR_REPLY
         ),
         config_schema=IMessageChannelConfig,
         platform="darwin",

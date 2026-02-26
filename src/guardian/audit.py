@@ -83,15 +83,17 @@ class AuditLogger:
         confidence: float | None = None,
     ) -> None:
         """Log an input screening event."""
-        self._write({
-            "event": "screen_input",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "input_hash": input_hash,
-            "input_length": input_length,
-            "blocked": blocked,
-            "source": source,
-            "confidence": confidence,
-        })
+        self._write(
+            {
+                "event": "screen_input",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "input_hash": input_hash,
+                "input_length": input_length,
+                "blocked": blocked,
+                "source": source,
+                "confidence": confidence,
+            }
+        )
 
     def log_tool_screen(
         self,
@@ -103,15 +105,17 @@ class AuditLogger:
         confidence: float | None = None,
     ) -> None:
         """Log a tool result screening event (includes raw text for debugging)."""
-        self._write({
-            "event": "screen_tool_result",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "tool_name": tool_name,
-            "text": text,
-            "blocked": blocked,
-            "source": source,
-            "confidence": confidence,
-        })
+        self._write(
+            {
+                "event": "screen_tool_result",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "tool_name": tool_name,
+                "text": text,
+                "blocked": blocked,
+                "source": source,
+                "confidence": confidence,
+            }
+        )
 
     def log_screen_debug(
         self,
@@ -122,14 +126,16 @@ class AuditLogger:
         source: str,
     ) -> None:
         """Log a debug screening event with raw text and per-chunk breakdown."""
-        self._write({
-            "event": "screen_input_debug",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "text": text,
-            "chunks": chunks,
-            "blocked": blocked,
-            "source": source,
-        })
+        self._write(
+            {
+                "event": "screen_input_debug",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "text": text,
+                "chunks": chunks,
+                "blocked": blocked,
+                "source": source,
+            }
+        )
 
     def log_action(
         self,
@@ -140,14 +146,16 @@ class AuditLogger:
         matched_rule: str,
     ) -> None:
         """Log an action validation event."""
-        self._write({
-            "event": "validate_action",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "tool_name": tool_name,
-            "arg_keys": arg_keys,
-            "verdict": verdict,
-            "matched_rule": matched_rule,
-        })
+        self._write(
+            {
+                "event": "validate_action",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "tool_name": tool_name,
+                "arg_keys": arg_keys,
+                "verdict": verdict,
+                "matched_rule": matched_rule,
+            }
+        )
 
     def log_action_outcome(
         self,
@@ -157,13 +165,15 @@ class AuditLogger:
         outcome: str,
     ) -> None:
         """Log the outcome of a review/deny action."""
-        self._write({
-            "event": "action_outcome",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "tool_name": tool_name,
-            "verdict": verdict,
-            "outcome": outcome,
-        })
+        self._write(
+            {
+                "event": "action_outcome",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "tool_name": tool_name,
+                "verdict": verdict,
+                "outcome": outcome,
+            }
+        )
 
     def log_coherence_check(
         self,
@@ -173,13 +183,15 @@ class AuditLogger:
         confidence: float | None = None,
     ) -> None:
         """Log a coherence check event."""
-        self._write({
-            "event": "coherence_check",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "tool_name": tool_name,
-            "coherent": coherent,
-            "confidence": confidence,
-        })
+        self._write(
+            {
+                "event": "coherence_check",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "tool_name": tool_name,
+                "coherent": coherent,
+                "confidence": confidence,
+            }
+        )
 
     def log_drift_alert(
         self,
@@ -190,14 +202,16 @@ class AuditLogger:
         severity: str,
     ) -> None:
         """Log a drift detection alert."""
-        self._write({
-            "event": "drift_alert",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "alert_type": alert_type,
-            "tool_name": tool_name,
-            "detail": detail,
-            "severity": severity,
-        })
+        self._write(
+            {
+                "event": "drift_alert",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "alert_type": alert_type,
+                "tool_name": tool_name,
+                "detail": detail,
+                "severity": severity,
+            }
+        )
 
     def log_credential_leak(
         self,
@@ -207,13 +221,15 @@ class AuditLogger:
         count: int,
     ) -> None:
         """Log a credential leak detection event."""
-        self._write({
-            "event": "credential_leak",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "tool_name": tool_name,
-            "patterns_found": patterns_found,
-            "count": count,
-        })
+        self._write(
+            {
+                "event": "credential_leak",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "tool_name": tool_name,
+                "patterns_found": patterns_found,
+                "count": count,
+            }
+        )
 
     def log_tool_result(
         self,

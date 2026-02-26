@@ -40,6 +40,11 @@ Coverage is configured automatically via `pyproject.toml` (`--cov=taskrunner --c
 - `tests/` — Pytest suite covering all modules
 - `agent.yaml` — Global agent configuration (tools, channels, sessions, guardian)
 
+## Git Workflow
+
+- **Never commit or push directly to `main`.** Always create a feature branch and open a PR.
+- Branch naming: `feat/`, `fix/`, etc. (e.g., `feat/google-workspace-executors`)
+
 ## Key Conventions
 
 - Configuration is YAML-based (`agent.yaml`, `tasks/*.yaml`, `policies/default.yaml`)

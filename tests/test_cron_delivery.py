@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from taskrunner.cron.delivery import deliver
 from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
-
 
 # -- Helpers --
 

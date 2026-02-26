@@ -24,19 +24,20 @@ def decrypt_env_file(enc_path: str | Path, identity_path: str | None = None) -> 
     if not enc_path.exists():
         raise FileNotFoundError(f"Encrypted file not found: {enc_path}")
 
-    if identity_path is None:
-        identity_path = os.environ.get(
+    identity_file = Path(
+        identity_path
+        or os.environ.get(
             "AGE_IDENTITY_FILE",
             str(Path.home() / ".age" / "key.txt"),
         )
-
-    identity_path = Path(identity_path)
-    if not identity_path.exists():
-        raise FileNotFoundError(f"Age identity file not found: {identity_path}")
+    )
+    if not identity_file.exists():
+        raise FileNotFoundError(f"Age identity file not found: {identity_file}")
 
     # key.txt contains comment lines; extract just the secret key line
     identity_line = next(
-        line for line in identity_path.read_text().splitlines()
+        line
+        for line in identity_file.read_text().splitlines()
         if line.startswith("AGE-SECRET-KEY-")
     )
     identity = pyrage.x25519.Identity.from_str(identity_line)
@@ -67,18 +68,18 @@ def encrypt_env_file(
     if not env_path.exists():
         raise FileNotFoundError(f"Env file not found: {env_path}")
 
-    if recipient_path is None:
-        recipient_path = os.environ.get(
+    recipient_file = Path(
+        recipient_path
+        or os.environ.get(
             "AGE_RECIPIENT_FILE",
             str(Path.home() / ".age" / "key.pub"),
         )
-
-    recipient_path = Path(recipient_path)
-    if not recipient_path.exists():
-        raise FileNotFoundError(f"Age recipient file not found: {recipient_path}")
+    )
+    if not recipient_file.exists():
+        raise FileNotFoundError(f"Age recipient file not found: {recipient_file}")
 
     # key.pub may contain "Public key: age1..." prefix; extract just the key
-    pub_text = recipient_path.read_text().strip()
+    pub_text = recipient_file.read_text().strip()
     if pub_text.startswith("Public key:"):
         pub_text = pub_text.split()[-1]
     recipient = pyrage.x25519.Recipient.from_str(pub_text)

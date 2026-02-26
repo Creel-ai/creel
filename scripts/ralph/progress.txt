@@ -54,6 +54,9 @@ Started: 2026-02-25
 - CodeMirror editor must be recreated when dark mode changes — theme is set at EditorState creation time
 - Form↔YAML sync pattern: only convert on tab switch (not per-keystroke) to avoid feedback loops
 - TaskEditPage serves both /tasks/new (create) and /tasks/:name (edit) — `useParams().name` determines mode
+- MUI ToggleButton `value` must not be `null` — use sentinel string (e.g. 'all') instead
+- Cron API types in client.ts: CronJob, CronRunRecord, CronHistoryResponse; methods: fetchCronJobs(), toggleCronJob(), fetchCronHistory(), fetchCronRunDetail()
+- Expandable table rows pattern: wrap data row + collapse row in `<Box component="tbody">`, Collapse in a colSpan cell
 
 ---
 
@@ -294,5 +297,36 @@ Started: 2026-02-25
   - `next_run` is always None — would need APScheduler instance access to compute real next-run times
   - The `_get_tasks_dir()` and `_cron_history_path()` helpers are duplicated across api_dashboard.py, api_tasks.py, and api_cron.py — candidate for shared util
   - History pagination: all records loaded into memory then sliced — fine for typical JSONL sizes but could be optimized for very large files
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-012
+- Implemented Cron jobs page with job list panel and run history panel
+- Files changed: dashboard/src/pages/CronPage.tsx (full implementation), dashboard/src/api/client.ts (added cron API methods)
+- API client additions: CronJob, CronRunRecord, CronHistoryResponse interfaces, fetchCronJobs(), toggleCronJob(), fetchCronHistory(), fetchCronRunDetail()
+- Job list panel features:
+  - MUI Table with columns: Name, Schedule (human-readable), Next Run, Last Run, Status (Chip), Enabled (Switch toggle)
+  - Sort by next run (default), name via TableSortLabel
+  - Filter dropdown: All/Enabled/Disabled via Select
+  - Search by name via TextField
+  - Click job row to filter run history panel below (highlighted with action.selected)
+  - Toggle enabled via POST /api/cron/jobs/{name}/toggle
+  - Empty state with create button
+- Run history panel features:
+  - MUI Table with Job Name, Started (relative), Duration, Status Chip, Summary (truncated)
+  - Filter by status: ToggleButtonGroup (All/Success/Failed/Timeout)
+  - Click row to expand via MUI Collapse showing full details: run ID, timestamps, duration, tokens, summary, error
+  - Pagination: 'Load more' button at bottom, default 50 rows
+  - Selected job shown as deletable Chip in header
+- New Job dialog (MUI Dialog):
+  - Name (slug-validated), schedule type (Select: preset or cron expression), interval preset or cron input with human preview, prompt (multiline), model override, timeout, enabled checkbox, Create button
+  - Creates task via POST /api/tasks with raw YAML
+- Empty states for both panels
+- **Learnings for future iterations:**
+  - MUI ToggleButton `value` must not be `null` — use string like 'all' instead of null for the default/unset state
+  - `Box component="tbody"` can be used to group adjacent TableRows (data + collapse) in the DOM without breaking table structure
+  - History status filter uses 'all' as sentinel value, converted to `undefined` when calling API
+  - The `useNavigate` import was unused and had to be removed to pass TypeScript strict checks
+  - `npm run build` produces 1040 KB (330 KB gzipped) — cron page adds minimal to bundle since it reuses MUI components
   - All 1373 existing tests still pass
 ---

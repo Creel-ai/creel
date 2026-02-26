@@ -211,7 +211,7 @@
         "Empty states for both panels"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Split into two panels using MUI Grid or Stack. Use Collapse for expandable rows. Dialog for new job form."
     },
     {

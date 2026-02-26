@@ -21,6 +21,9 @@ Started: 2026-02-25
 - SPA fallback uses catch-all `/{full_path:path}` route — must be registered AFTER all other routes
 - `_mount_dashboard()` is a no-op when dashboard_static/ dir is missing (graceful degradation)
 - Tests run with `.venv/bin/python -m pytest tests/ -x -q`
+- Dashboard scaffold: Vite 7 + React 19 + TypeScript 5.9 (strict mode enabled by default in template)
+- Build script: scripts/build-dashboard.sh — npm ci + npm run build + copy dist/ to dashboard_static/
+- Vite dev proxy: /api/* and /v1/* proxied to localhost:8099
 
 ---
 
@@ -40,4 +43,24 @@ Started: 2026-02-25
   - When dashboard_static/ is missing, all existing endpoints work unchanged
   - FastAPI StaticFiles requires the directory to exist at mount time, so we guard with is_dir()
   - All 1373 existing tests pass with no changes needed
+---
+
+## 2026-02-25 - DASH-002
+- Scaffolded Vite + React + TypeScript frontend in dashboard/
+- Files created: dashboard/ (Vite scaffold), scripts/build-dashboard.sh
+- Files changed: .gitignore, vite.config.ts
+- Scaffold created with `npm create vite@latest -- --template react-ts`
+- Simplified App.tsx to minimal Creel Dashboard placeholder, removed template boilerplate (App.css, index.css, assets/)
+- Configured Vite dev proxy: /api/* and /v1/* → localhost:8099
+- TypeScript strict mode already enabled by Vite react-ts template in tsconfig.app.json
+- Build script runs: npm ci → npm run build → copy dist/ to src/taskrunner/dashboard_static/
+- Added dashboard/node_modules/, dashboard/dist/, src/taskrunner/dashboard_static/ to .gitignore
+- npm run build produces output in dashboard/dist/ (verified)
+- Build script copies to src/taskrunner/dashboard_static/ (verified)
+- **Learnings for future iterations:**
+  - Vite 7 react-ts template uses React 19 (not 18) — fine for our purposes
+  - TypeScript strict mode is on by default in the template's tsconfig.app.json
+  - `npm ci` is used in build script (not `npm install`) for reproducible installs
+  - The `python -m pytest` command needs `.venv/bin/python` prefix (no system python)
+  - All 1373 existing tests still pass
 ---

@@ -33,7 +33,7 @@
         ".gitignore includes dashboard/node_modules/, dashboard/dist/, src/taskrunner/dashboard_static/"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Use npm create vite@latest with react-ts template. Keep it minimal — just the scaffold."
     },
     {

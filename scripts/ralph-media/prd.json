@@ -18,7 +18,7 @@
         "All existing tests pass"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "The Channel base class callback is Callable[[str, str], str]. We need a backward-compatible migration. Consider a new callback type that accepts IncomingMessage but wrap old-style (sender_id, text) callbacks. ChatServer.handle_message is in src/taskrunner/chat.py line 114. DaemonService._handle_message in src/taskrunner/daemon/service.py bridges channels to ChatServer."
     },
     {
@@ -38,7 +38,7 @@
         "Unit tests for save/retrieve/cleanup"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Keep it simple \u2014 local filesystem storage. No cloud/S3. The media directory should be created on first use."
     },
     {
@@ -60,7 +60,7 @@
         "Unit tests with mocked API calls"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Most users will use the OpenAI API. The local whisper fallback is nice-to-have. For the OpenAI API, POST multipart/form-data to https://api.openai.com/v1/audio/transcriptions with model=whisper-1. The existing LLMConfig has api_key \u2014 reuse it if provider is openai."
     },
     {
@@ -82,7 +82,7 @@
         "Unit tests for format detection, resizing, base64 encoding"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Check src/taskrunner/chat.py to see how messages are built for the LLM. The LLM provider info is in AgentConfig.llm.provider. Support at least 'openai' and 'anthropic' content block formats."
     },
     {

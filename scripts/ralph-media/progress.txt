@@ -23,3 +23,63 @@ Started: 2026-02-26
 - **Agent config:** agent.yaml loaded as AgentConfig Pydantic model
 - **Outputs:** src/taskrunner/outputs.py has MESSAGE_PREFIX used for sent-message detection
 - **Services dir:** src/taskrunner/services/ — may not exist yet, create if needed
+
+## 2026-02-26 - MEDIA-001
+- Implemented IncomingMessage and Attachment Pydantic models in src/taskrunner/channels/message.py
+- Added AttachmentType StrEnum (image, voice, audio, video, file)
+- Added wrap_legacy_callback() in src/taskrunner/channels/base.py — wraps (sender_id, text) callbacks to also accept IncomingMessage
+- Updated ChatServer.handle_message to accept optional attachments keyword parameter
+- Files changed: src/taskrunner/channels/message.py (new), src/taskrunner/channels/base.py, src/taskrunner/chat.py, tests/test_message_models.py (new)
+- **Learnings:**
+  - message.py was partially scaffolded from a previous run but lacked wrap_legacy_callback and ChatServer changes
+  - The data field on Attachment uses exclude=True, repr=False to avoid serializing large binary blobs
+  - DaemonService.send_message routes to ChatServer.handle_message — no changes needed there for this story
+  - All 1797 existing tests pass + 15 new tests
+---
+
+## 2026-02-26 - MEDIA-002
+- Implemented MediaStore class in src/taskrunner/services/media_store.py
+- Created src/taskrunner/services/ package with __init__.py
+- MediaStore features: save from bytes/file_path/URL, SHA-256 deduplication, configurable retention cleanup, organized file structure ({channel}/{YYYY-MM-DD}/{uuid}.{ext})
+- URL downloads use httpx streaming with max file size enforcement (20MB default)
+- MIME-to-extension mapping for common image/audio/video types with fallback chain (file_name → mime_type → attachment type)
+- Files changed: src/taskrunner/services/__init__.py (new), src/taskrunner/services/media_store.py (new), tests/test_media_store.py (new)
+- **Learnings:**
+  - httpx is already a project dependency — used streaming download to enforce size limits without loading entire file
+  - Deduplication uses in-memory hash index (populated on save) — sufficient for session-scoped use, doesn't persist across restarts
+  - Cleanup prunes empty directories bottom-up after file removal
+  - All 1824 tests pass (1797 existing + 27 new)
+---
+
+## 2026-02-26 - MEDIA-003
+- Implemented TranscriptionService class in src/taskrunner/services/transcription.py
+- Two backends: "openai" (Whisper API via httpx POST) and "local" (whisper CLI with API fallback)
+- Audio format conversion: unsupported formats (.caf, .opus, .amr, .aac) converted to .wav via ffmpeg when available
+- API key resolution: explicit api_key param → OPENAI_API_KEY env var (matches project's secrets-to-env pattern)
+- Graceful failure: returns empty string with warning log on any error (file missing, API error, no key, etc.)
+- Files changed: src/taskrunner/services/transcription.py (new), tests/test_transcription.py (new)
+- **Learnings:**
+  - LLMConfig has no api_key or provider field — credentials come from encrypted env files decrypted at runtime
+  - TranscriptionService uses explicit key param or OPENAI_API_KEY from env, avoiding coupling to the secrets mechanism
+  - Telegram voice messages are .oga/.ogg (natively supported by Whisper API), iMessage voice is .caf (needs ffmpeg conversion)
+  - WHISPER_SUPPORTED_FORMATS constant exported for use by other services that need to check format compatibility
+  - All 1843 tests pass (1824 existing + 19 new)
+---
+
+## 2026-02-26 - MEDIA-004
+- Implemented VisionProcessor class in src/taskrunner/services/vision.py
+- Supports two LLM provider formats: Anthropic (type: image, source: base64) and OpenAI (type: image_url, data URI)
+- Image resizing: uses Pillow to downscale images exceeding max_pixels (default 2048) while preserving aspect ratio
+- Format conversion: unsupported formats (HEIC, HEIF, TIFF, BMP) converted to JPEG via Pillow
+- RGBA-to-RGB conversion for JPEG compatibility (strips alpha channel)
+- Graceful degradation: without Pillow, supported formats (PNG, JPEG, GIF, WEBP) are sent as raw bytes; conversion-needed formats return None with warning
+- Configurable quality parameter for JPEG compression
+- Added Pillow>=10.0.0 as optional dependency under [project.optional-dependencies] vision group
+- Files changed: src/taskrunner/services/vision.py (new), tests/test_vision.py (new), pyproject.toml (vision optional dep)
+- **Learnings:**
+  - LLM uses Anthropic API exclusively (llm.py only imports anthropic) — but VisionProcessor supports both formats for future flexibility
+  - Pillow is optional — the service works without it for natively-supported formats, only needed for resize/conversion
+  - _detect_mime_type uses a hardcoded map for common types, falls back to mimetypes module
+  - Test helpers (_make_png, _make_jpeg, _make_bmp) create real image files via Pillow for realistic testing
+  - All 1878 tests pass (1843 existing + 35 new)
+---

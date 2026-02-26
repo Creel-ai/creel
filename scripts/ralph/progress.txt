@@ -40,6 +40,11 @@ Started: 2026-02-25
 - MUI Grid v2 uses `size` prop: `<Grid size={{ xs: 12, md: 4 }}>` (not `xs={12} md={4}`)
 - API client: dashboard/src/api/client.ts — typed fetch wrapper, add new API methods here
 - Types for API responses defined in client.ts alongside fetch methods
+- Task CRUD API router in src/taskrunner/daemon/api_tasks.py — prefix="/api/tasks", mounted via `app.include_router(tasks_router)` in api.py
+- Task CRUD supports both form-field requests and raw_yaml passthrough for create/update
+- Soft-delete pattern: move files to .deleted/ subdir instead of permanent removal
+- Task toggle pattern: read raw_yaml via GET /api/tasks/{name}, regex-replace `enabled:` line, PUT back with raw_yaml field
+- Types for API responses defined in dashboard/src/api/client.ts: TaskSummary, TaskDetail, TaskUpdateRequest
 
 ---
 
@@ -161,5 +166,48 @@ Started: 2026-02-25
   - `npm run build` produces 442 KB (139 KB gzipped) with overview page added
   - API client lives in dashboard/src/api/client.ts — add new API methods here as needed
   - pytest needs full path: `cd /Users/ross/.openclaw/workspace/projects/creel && .venv/bin/python -m pytest tests/ -x -q`
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-007
+- Implemented Task CRUD API endpoints: list, get, create, update, delete, run
+- Files created: src/taskrunner/daemon/api_tasks.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included tasks_router)
+- Endpoints:
+  - GET /api/tasks — lists all tasks with name, description, schedule, enabled, last_modified, file_path
+  - GET /api/tasks/{name} — full task detail with raw_yaml field
+  - POST /api/tasks — create new task, validates with TaskDefinition Pydantic model, 409 if exists
+  - PUT /api/tasks/{name} — update task, creates .bak backup before overwrite, 404 if not found
+  - DELETE /api/tasks/{name} — soft-delete to .deleted/ subdirectory, 404 if not found
+  - POST /api/tasks/{name}/run — triggers run_task() in background daemon thread, returns 202 with run_id
+- Supports both form-field based creation and raw_yaml passthrough
+- Uses same `_get_tasks_dir()` pattern from api_dashboard.py
+- **Learnings for future iterations:**
+  - Task CRUD router uses prefix="/api/tasks" (separate APIRouter from dashboard_router)
+  - `_build_task_yaml()` constructs dict from form fields; `raw_yaml` field allows direct YAML editing
+  - Soft-delete uses .deleted/ subdir with timestamp suffix for name collisions
+  - Background task execution via threading.Thread(daemon=True) — fire-and-forget with orchestrator logging
+  - Pydantic validation catches invalid task definitions before writing to disk
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-008
+- Implemented Task list page with MUI Table, search, sort, and enable/disable toggles
+- Files changed: dashboard/src/pages/TaskListPage.tsx (full implementation), dashboard/src/api/client.ts (added task API methods)
+- Features:
+  - MUI Table with columns: Name (bold, clickable → /tasks/{name}), Description, Schedule (human-readable), Last Modified (relative), Enabled (Switch toggle)
+  - Enabled toggle uses `toggleTaskEnabled()` — reads raw YAML, modifies enabled field, PUTs back to preserve all other fields
+  - TextField search filters tasks by name/description (client-side)
+  - Sortable columns: Name, Schedule, Last Modified via TableSortLabel
+  - New Task button (AddIcon) in top-right navigates to /tasks/new
+  - Empty state: "No tasks yet. Create your first task." with button
+  - Loading skeleton while fetching
+  - Error handling for both initial load failures and toggle failures
+- API client additions: TaskDetail interface, TaskSummary interface, TaskUpdateRequest interface, fetchTasks(), fetchTaskDetail(), updateTask(), toggleTaskEnabled()
+- **Learnings for future iterations:**
+  - PUT /api/tasks/{name} replaces the entire file — for partial updates like toggle, must read raw_yaml first, modify it, then send back with raw_yaml field
+  - `toggleTaskEnabled()` reads task detail, regex-replaces `enabled:` line in YAML, then PUTs back — avoids losing other fields
+  - The `stopPropagation()` on the Switch's parent TableCell prevents row click from navigating when toggling
+  - `npm run build` produces 509 KB (158 KB gzipped) with task list page
   - All 1373 existing tests still pass
 ---

@@ -73,8 +73,80 @@ export interface StatusResponse {
   recent_runs: RecentRun[];
 }
 
+// ---- Task types ----
+
+export interface TaskSummary {
+  name: string;
+  description: string;
+  schedule: string;
+  enabled: boolean;
+  last_modified: string | null;
+  file_path: string;
+}
+
+export interface TaskDetail {
+  name: string;
+  description: string;
+  schedule: string;
+  prompt: string;
+  output_type: string;
+  output_to: string;
+  model: string;
+  max_tokens: number;
+  mode: string;
+  enabled: boolean;
+  raw_yaml: string;
+  file_path: string;
+  last_modified: string | null;
+}
+
+export interface TaskUpdateRequest {
+  name: string;
+  description?: string;
+  schedule?: string;
+  prompt?: string;
+  output_type?: string;
+  output_to?: string;
+  model?: string;
+  max_tokens?: number;
+  mode?: string;
+  enabled?: boolean;
+  raw_yaml?: string | null;
+}
+
 // ---- API methods ----
 
 export function fetchStatus(): Promise<StatusResponse> {
   return request<StatusResponse>('/status');
+}
+
+export function fetchTasks(): Promise<TaskSummary[]> {
+  return request<TaskSummary[]>('/tasks');
+}
+
+export function fetchTaskDetail(name: string): Promise<TaskDetail> {
+  return request<TaskDetail>(`/tasks/${encodeURIComponent(name)}`);
+}
+
+export function updateTask(name: string, data: TaskUpdateRequest): Promise<unknown> {
+  return request(`/tasks/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Toggle a task's enabled field by reading the raw YAML, modifying it, and writing back.
+ */
+export async function toggleTaskEnabled(name: string, enabled: boolean): Promise<void> {
+  const detail = await fetchTaskDetail(name);
+  let yaml = detail.raw_yaml;
+  // Update or add the enabled field in the YAML
+  if (/^enabled\s*:/m.test(yaml)) {
+    yaml = yaml.replace(/^enabled\s*:.*/m, `enabled: ${enabled}`);
+  } else {
+    yaml = yaml.trimEnd() + `\nenabled: ${enabled}\n`;
+  }
+  await updateTask(name, { name, raw_yaml: yaml });
 }

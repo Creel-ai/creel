@@ -117,7 +117,7 @@
         "Existing tests still pass"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Create src/taskrunner/daemon/api_tasks.py with APIRouter. Use existing models.load_all_tasks() and orchestrator.run_task(). Task files live in the configured tasks directory."
     },
     {
@@ -135,7 +135,7 @@
         "Loading skeleton while fetching"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Use MUI Table, TableHead, TableBody, TableRow, TableCell, TableSortLabel, Switch, TextField, Button."
     },
     {

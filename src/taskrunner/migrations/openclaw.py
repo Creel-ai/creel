@@ -402,14 +402,18 @@ class OpenClawMigrator:
                 if self._ignore_discovered_relpath(rel):
                     continue
                 rel_text = str(rel).lower()
-                if any(token in rel_text for token in ("conversation", "session", "history", "chat")):
+                if any(
+                    token in rel_text for token in ("conversation", "session", "history", "chat")
+                ):
                     paths.append(candidate)
             for candidate in sorted(self.source_root.rglob("*.jsonl")):
                 rel = candidate.relative_to(self.source_root)
                 if self._ignore_discovered_relpath(rel):
                     continue
                 rel_text = str(rel).lower()
-                if any(token in rel_text for token in ("conversation", "session", "history", "chat")):
+                if any(
+                    token in rel_text for token in ("conversation", "session", "history", "chat")
+                ):
                     paths.append(candidate)
 
         # Deduplicate while preserving order.
@@ -446,8 +450,7 @@ class OpenClawMigrator:
                     rows.append(json.loads(line))
                 except json.JSONDecodeError:
                     self._warn(
-                        f"Failed to parse JSONL line {lineno} in {path}. "
-                        "Skipping that line."
+                        f"Failed to parse JSONL line {lineno} in {path}. Skipping that line."
                     )
             return self._coerce_payload_to_conversations(rows)
 
@@ -1089,10 +1092,7 @@ class OpenClawMigrator:
                 job = {}
 
             cron = (
-                job.get("schedule")
-                or job.get("cron")
-                or job.get("expression")
-                or job.get("rrule")
+                job.get("schedule") or job.get("cron") or job.get("expression") or job.get("rrule")
             )
             normalized_cron = self._normalize_cron(cron)
             if not normalized_cron:
@@ -1162,7 +1162,7 @@ class OpenClawMigrator:
                     result[str(key)] = {}
             return result
 
-        result: dict[str, dict[str, Any]] = {}
+        executor_map: dict[str, dict[str, Any]] = {}
         tools_node = job.get("tools")
         if isinstance(tools_node, list):
             for tool_name in tools_node:
@@ -1170,8 +1170,8 @@ class OpenClawMigrator:
                 if not mapped:
                     continue
                 executor_name = str(mapped["executor"])
-                result[executor_name] = {}
-        return result
+                executor_map[executor_name] = {}
+        return executor_map
 
     @staticmethod
     def _normalize_cron(value: Any) -> str | None:
@@ -1244,7 +1244,9 @@ class OpenClawMigrator:
             )
 
             if classification == "prompt-only":
-                prompt_skill_sections.append(self._format_skill_context(skill_name, rel_source, content))
+                prompt_skill_sections.append(
+                    self._format_skill_context(skill_name, rel_source, content)
+                )
                 self._entry(
                     phase=phase,
                     action="classify_skill",
@@ -1256,7 +1258,9 @@ class OpenClawMigrator:
                 continue
 
             if classification == "executor-equivalent" and executors:
-                tool_name = self._unique_name(f"skill_{slug}", self._agent_overlay.setdefault("tools", {}))
+                tool_name = self._unique_name(
+                    f"skill_{slug}", self._agent_overlay.setdefault("tools", {})
+                )
                 self._agent_overlay["tools"][tool_name] = {
                     "executor": executors[0],
                     "description": f"Migrated from OpenClaw skill '{skill_name}'",
@@ -1280,8 +1284,7 @@ class OpenClawMigrator:
                 f"Suggested executors: {recommendation}."
             )
             self._manual(
-                f"Skill '{skill_name}' requires manual migration "
-                f"(classification={classification})."
+                f"Skill '{skill_name}' requires manual migration (classification={classification})."
             )
             self._entry(
                 phase=phase,
@@ -1295,8 +1298,7 @@ class OpenClawMigrator:
             section = (
                 "## Migrated OpenClaw Skill Context\n\n"
                 "These skills were imported as prompt context because they do not map "
-                "cleanly to a Creel executor.\n\n"
-                + "\n\n".join(prompt_skill_sections)
+                "cleanly to a Creel executor.\n\n" + "\n\n".join(prompt_skill_sections)
             )
             self._upsert_generated_section(
                 phase=phase,
@@ -1310,9 +1312,7 @@ class OpenClawMigrator:
         if manual_items:
             checklist = (
                 "# OpenClaw Skills Manual Migration Checklist\n\n"
-                "The following skills need manual migration:\n\n"
-                + "\n".join(manual_items)
-                + "\n"
+                "The following skills need manual migration:\n\n" + "\n".join(manual_items) + "\n"
             )
             self._write_text(
                 phase=phase,

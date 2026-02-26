@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
-from guardian.drift import DriftAlert, DriftBaseline, DriftDetector
+from guardian.drift import DriftDetector
 
 
 class TestDriftDetectorNewTool:
@@ -173,9 +171,24 @@ class TestDriftDetectorBaseline:
             {"event": "validate_action", "tool_name": "check_weather"},
             {"event": "validate_action", "tool_name": "check_email"},
             {"event": "validate_action", "tool_name": "check_weather"},
-            {"event": "tool_result", "tool_name": "check_weather", "output_length": 100, "success": True},
-            {"event": "tool_result", "tool_name": "check_email", "output_length": 200, "success": True},
-            {"event": "tool_result", "tool_name": "check_weather", "output_length": 150, "success": False},
+            {
+                "event": "tool_result",
+                "tool_name": "check_weather",
+                "output_length": 100,
+                "success": True,
+            },
+            {
+                "event": "tool_result",
+                "tool_name": "check_email",
+                "output_length": 200,
+                "success": True,
+            },
+            {
+                "event": "tool_result",
+                "tool_name": "check_weather",
+                "output_length": 150,
+                "success": False,
+            },
         ]
         log_path.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
@@ -203,9 +216,7 @@ class TestDriftDetectorBaseline:
         """Corrupt lines in audit log should be skipped."""
         log_path = tmp_path / "audit.jsonl"
         log_path.write_text(
-            'not json\n'
-            '{"event": "validate_action", "tool_name": "check_weather"}\n'
-            '{bad json}\n'
+            'not json\n{"event": "validate_action", "tool_name": "check_weather"}\n{bad json}\n'
         )
         detector = DriftDetector(audit_log_path=log_path)
         assert "check_weather" in detector._baseline.known_tools

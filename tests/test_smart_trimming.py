@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from taskrunner.session import SessionManager
 
 
@@ -13,22 +11,39 @@ def _tool_call_conversation() -> list[dict]:
     """Build a conversation with tool calls for testing."""
     return [
         {"role": "user", "content": "What's the weather?"},
-        {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "t1", "name": "weather", "input": {"city": "Denver"}},
-        ]},
-        {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "t1", "content": "Sunny, 72°F"},
-        ]},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "weather", "input": {"city": "Denver"}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "Sunny, 72°F"},
+            ],
+        },
         {"role": "assistant", "content": [{"type": "text", "text": "It's sunny!"}]},
         {"role": "user", "content": "Thanks"},
         {"role": "assistant", "content": [{"type": "text", "text": "You're welcome!"}]},
         {"role": "user", "content": "What about tomorrow?"},
-        {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "t2", "name": "weather", "input": {"city": "Denver", "day": "tomorrow"}},
-        ]},
-        {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "t2", "content": "Partly cloudy, 65°F"},
-        ]},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "t2",
+                    "name": "weather",
+                    "input": {"city": "Denver", "day": "tomorrow"},
+                },
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t2", "content": "Partly cloudy, 65°F"},
+            ],
+        },
         {"role": "assistant", "content": [{"type": "text", "text": "Partly cloudy tomorrow!"}]},
     ]
 
@@ -110,14 +125,20 @@ class TestSmartTrimming:
         mgr = SessionManager(sessions_dir=str(tmp_path), max_history=4)
         messages = [
             {"role": "user", "content": "Do two things"},
-            {"role": "assistant", "content": [
-                {"type": "tool_use", "id": "a", "name": "tool_a", "input": {}},
-                {"type": "tool_use", "id": "b", "name": "tool_b", "input": {}},
-            ]},
-            {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": "a", "content": "result_a"},
-                {"type": "tool_result", "tool_use_id": "b", "content": "result_b"},
-            ]},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "a", "name": "tool_a", "input": {}},
+                    {"type": "tool_use", "id": "b", "name": "tool_b", "input": {}},
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "a", "content": "result_a"},
+                    {"type": "tool_result", "tool_use_id": "b", "content": "result_b"},
+                ],
+            },
             {"role": "assistant", "content": [{"type": "text", "text": "Done!"}]},
             {"role": "user", "content": "Great"},
             {"role": "assistant", "content": [{"type": "text", "text": "Thanks!"}]},

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from taskrunner.chat import ChatServer
 from taskrunner.models import AgentDefinition
 
@@ -36,11 +34,13 @@ class TestFullPipeline:
         mock_call_llm.assert_called()
         # Verify the user message was passed through
         call_kwargs = mock_call_llm.call_args
-        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages") or call_kwargs[0][0]
+        messages = (
+            call_kwargs.kwargs.get("messages")
+            or call_kwargs[1].get("messages")
+            or call_kwargs[0][0]
+        )
         assert any(
-            m.get("content") == "What's the weather?"
-            for m in messages
-            if isinstance(m, dict)
+            m.get("content") == "What's the weather?" for m in messages if isinstance(m, dict)
         )
 
     @patch("taskrunner.agent.call_llm")
@@ -64,8 +64,16 @@ class TestFullPipeline:
 
         # Second call should have both messages in history
         second_call = mock_call_llm.call_args_list[1]
-        messages = second_call.kwargs.get("messages") or second_call[1].get("messages") or second_call[0][0]
-        user_messages = [m for m in messages if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)]
+        messages = (
+            second_call.kwargs.get("messages")
+            or second_call[1].get("messages")
+            or second_call[0][0]
+        )
+        user_messages = [
+            m
+            for m in messages
+            if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)
+        ]
         assert len(user_messages) >= 2
 
     @patch("taskrunner.agent.call_llm")
@@ -117,6 +125,7 @@ class TestFullPipeline:
 
         # Add a tool to the agent definition
         from taskrunner.models import ToolConfig
+
         minimal_agent_def.tools = {
             "test_tool": ToolConfig(
                 executor="weather",

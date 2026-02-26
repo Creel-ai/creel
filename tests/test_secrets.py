@@ -13,7 +13,6 @@ from taskrunner.secrets import (
     parse_env_file,
 )
 
-
 # ---------------------------------------------------------------------------
 # _parse_env tests (existing)
 # ---------------------------------------------------------------------------
@@ -26,7 +25,7 @@ def test_parse_env_basic() -> None:
 
 
 def test_parse_env_quoted_values() -> None:
-    content = 'KEY="quoted value"\nSINGLE=\'single quoted\''
+    content = "KEY=\"quoted value\"\nSINGLE='single quoted'"
     result = _parse_env(content)
     assert result == {"KEY": "quoted value", "SINGLE": "single quoted"}
 
@@ -95,9 +94,7 @@ def test_encrypt_custom_output_path(tmp_path: Path, age_keypair) -> None:
     env_file.write_text("KEY=val\n")
 
     custom_out = tmp_path / "custom.enc"
-    enc_path = encrypt_env_file(
-        env_file, recipient_path=str(pub_file), output_path=custom_out
-    )
+    enc_path = encrypt_env_file(env_file, recipient_path=str(pub_file), output_path=custom_out)
     assert enc_path == custom_out
     assert enc_path.exists()
 

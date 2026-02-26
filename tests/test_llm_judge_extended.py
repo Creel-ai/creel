@@ -75,7 +75,9 @@ class TestShouldRun:
 
 class TestJudgeParsing:
     @patch("taskrunner.llm._get_client")
-    def test_json_with_extra_whitespace(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_json_with_extra_whitespace(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '  \n{"is_injection": false, "confidence": 0.2, "reasoning": "Normal"}\n  '
@@ -87,7 +89,9 @@ class TestJudgeParsing:
         assert result.is_injection is False
 
     @patch("taskrunner.llm._get_client")
-    def test_missing_reasoning_field(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_missing_reasoning_field(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"is_injection": true, "confidence": 0.9}'
@@ -100,11 +104,11 @@ class TestJudgeParsing:
         assert result.reasoning == ""
 
     @patch("taskrunner.llm._get_client")
-    def test_missing_confidence_defaults_zero(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_missing_confidence_defaults_zero(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
-            '{"is_injection": false}'
-        )
+        mock_client.messages.create.return_value = _mock_response('{"is_injection": false}')
         mock_get_client.return_value = mock_client
         judge = LLMJudge(config)
         result = judge.judge("test")
@@ -112,7 +116,9 @@ class TestJudgeParsing:
         assert result.confidence == 0.0
 
     @patch("taskrunner.llm._get_client")
-    def test_missing_is_injection_defaults_false(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_missing_is_injection_defaults_false(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"confidence": 0.5, "reasoning": "unclear"}'
@@ -124,7 +130,9 @@ class TestJudgeParsing:
         assert result.is_injection is False
 
     @patch("taskrunner.llm._get_client")
-    def test_empty_response_falls_through(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_empty_response_falls_through(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response("")
         mock_get_client.return_value = mock_client
@@ -135,7 +143,9 @@ class TestJudgeParsing:
         assert "failed" in result.reasoning.lower()
 
     @patch("taskrunner.llm._get_client")
-    def test_json_wrapped_in_markdown(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_json_wrapped_in_markdown(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         """If the LLM wraps JSON in ```json blocks, parsing should fail gracefully."""
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
@@ -149,7 +159,9 @@ class TestJudgeParsing:
         assert result.is_injection is False
 
     @patch("taskrunner.llm._get_client")
-    def test_timeout_falls_through(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_timeout_falls_through(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = TimeoutError("API timeout")
         mock_get_client.return_value = mock_client
@@ -161,7 +173,9 @@ class TestJudgeParsing:
 
 class TestUsageTracking:
     @patch("taskrunner.llm._get_client")
-    def test_usage_stats_accumulate(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_usage_stats_accumulate(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"is_injection": false, "confidence": 0.1, "reasoning": "ok"}',

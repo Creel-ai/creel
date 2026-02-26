@@ -41,12 +41,7 @@ def send_email(to: str, subject: str, body: str) -> dict:
 
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
 
-    sent = (
-        service.users()
-        .messages()
-        .send(userId="me", body={"raw": raw})
-        .execute()
-    )
+    sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
 
     return {
         "id": sent["id"],

@@ -34,11 +34,17 @@ python scripts/setup-google-oauth.py --encrypt-all
 | Gmail (modify) | `gmail_modify` | `gmail.modify` |
 | Google Drive (read) | `drive` | `drive.readonly` |
 | Google Drive (write) | `drive_write` | `drive.file` |
+| Google Docs (read) | `docs_read` | `documents.readonly` |
+| Google Docs (write) | `docs_write` | `documents` |
+| Google Sheets (read) | `sheets_read` | `spreadsheets.readonly` |
+| Google Sheets (write) | `sheets_write` | `spreadsheets` |
+| Google Slides (read) | `slides_read` | `presentations.readonly` |
+| Google Slides (write) | `slides_write` | `presentations` |
 
 ## GCP Project Setup
 
 1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
-2. Enable the APIs you need (Calendar, Gmail, Drive)
+2. Enable the APIs you need (Calendar, Gmail, Drive, Docs, Sheets, Slides)
 3. Create OAuth 2.0 credentials (Desktop application type)
 4. Download the `client_secret.json` file to your project root
 5. Run the setup script for each service you want to use

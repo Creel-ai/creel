@@ -26,11 +26,13 @@ def _mock_response(payload: dict, status_code: int = 200) -> MagicMock:
 
 @patch("executors.notion.executor.requests.request")
 def test_search_sends_expected_request(mock_request):
-    mock_request.return_value = _mock_response({
-        "results": [],
-        "next_cursor": None,
-        "has_more": False,
-    })
+    mock_request.return_value = _mock_response(
+        {
+            "results": [],
+            "next_cursor": None,
+            "has_more": False,
+        }
+    )
 
     run_action("search", query="weekly plan", page_size="5")
 
@@ -45,31 +47,33 @@ def test_search_sends_expected_request(mock_request):
 
 @patch("executors.notion.executor.requests.request")
 def test_search_parses_titles(mock_request):
-    mock_request.return_value = _mock_response({
-        "results": [
-            {
-                "object": "page",
-                "id": "page-1",
-                "url": "https://notion.so/page-1",
-                "last_edited_time": "2026-01-01T00:00:00.000Z",
-                "properties": {
-                    "Name": {
-                        "type": "title",
-                        "title": [{"plain_text": "Roadmap"}],
-                    }
+    mock_request.return_value = _mock_response(
+        {
+            "results": [
+                {
+                    "object": "page",
+                    "id": "page-1",
+                    "url": "https://notion.so/page-1",
+                    "last_edited_time": "2026-01-01T00:00:00.000Z",
+                    "properties": {
+                        "Name": {
+                            "type": "title",
+                            "title": [{"plain_text": "Roadmap"}],
+                        }
+                    },
                 },
-            },
-            {
-                "object": "database",
-                "id": "db-1",
-                "url": "https://notion.so/db-1",
-                "last_edited_time": "2026-01-02T00:00:00.000Z",
-                "title": [{"plain_text": "Tasks"}],
-            },
-        ],
-        "next_cursor": None,
-        "has_more": False,
-    })
+                {
+                    "object": "database",
+                    "id": "db-1",
+                    "url": "https://notion.so/db-1",
+                    "last_edited_time": "2026-01-02T00:00:00.000Z",
+                    "title": [{"plain_text": "Tasks"}],
+                },
+            ],
+            "next_cursor": None,
+            "has_more": False,
+        }
+    )
 
     result = run_action("search", query="roadmap")
     assert len(result["results"]) == 2
@@ -80,12 +84,14 @@ def test_search_parses_titles(mock_request):
 @patch("executors.notion.executor.requests.request")
 def test_retrieve_page_hits_page_endpoint(mock_request):
     page_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-    mock_request.return_value = _mock_response({
-        "object": "page",
-        "id": page_uuid,
-        "url": f"https://notion.so/{page_uuid}",
-        "properties": {},
-    })
+    mock_request.return_value = _mock_response(
+        {
+            "object": "page",
+            "id": page_uuid,
+            "url": f"https://notion.so/{page_uuid}",
+            "properties": {},
+        }
+    )
 
     run_action("retrieve_page", page_id=page_uuid)
 
@@ -96,11 +102,13 @@ def test_retrieve_page_hits_page_endpoint(mock_request):
 
 @patch("executors.notion.executor.requests.request")
 def test_query_database_sends_filter_and_sorts(mock_request):
-    mock_request.return_value = _mock_response({
-        "results": [],
-        "next_cursor": None,
-        "has_more": False,
-    })
+    mock_request.return_value = _mock_response(
+        {
+            "results": [],
+            "next_cursor": None,
+            "has_more": False,
+        }
+    )
 
     db_uuid = "12345678-abcd-ef01-2345-678901abcdef"
     run_action(
@@ -142,7 +150,11 @@ def test_query_database_requires_database_id():
 
 def test_invalid_filter_json_raises():
     with pytest.raises(ValueError, match="filter_json"):
-        run_action("query_database", database_id="12345678-abcd-ef01-2345-678901abcdef", filter_json="{not-json")
+        run_action(
+            "query_database",
+            database_id="12345678-abcd-ef01-2345-678901abcdef",
+            filter_json="{not-json",
+        )
 
 
 def test_page_id_path_traversal_rejected():

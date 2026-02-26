@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from guardian.credential_scanner import (
-    CredentialMatch,
     _redact,
     redact_credentials,
     scan_for_credentials,
@@ -72,7 +69,7 @@ class TestScanForCredentials:
         assert any(m.pattern_name == "private_key" for m in matches)
 
     def test_detect_bearer_token(self) -> None:
-        text = 'Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.abc'
+        text = "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.abc"
         matches = scan_for_credentials(text)
         assert any(m.pattern_name == "bearer_token" for m in matches)
 
@@ -92,10 +89,7 @@ class TestScanForCredentials:
         assert any(m.pattern_name == "google_oauth_token" for m in matches)
 
     def test_multiple_credentials_in_one_text(self) -> None:
-        text = (
-            "AWS: AKIAIOSFODNN7EXAMPLE\n"
-            "GitHub: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij\n"
-        )
+        text = "AWS: AKIAIOSFODNN7EXAMPLE\nGitHub: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij\n"
         matches = scan_for_credentials(text)
         pattern_names = {m.pattern_name for m in matches}
         assert "aws_access_key" in pattern_names
@@ -125,10 +119,7 @@ class TestRedactCredentials:
         assert "[REDACTED:github_token]" in redacted
 
     def test_multiple_credentials_all_redacted(self) -> None:
-        text = (
-            "AWS: AKIAIOSFODNN7EXAMPLE "
-            "GH: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
-        )
+        text = "AWS: AKIAIOSFODNN7EXAMPLE GH: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
         redacted, matches = redact_credentials(text)
         assert "AKIAIOSFODNN7EXAMPLE" not in redacted
         assert "ghp_ABCDEF" not in redacted

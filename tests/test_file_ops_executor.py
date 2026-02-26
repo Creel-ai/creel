@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 
 import pytest
 
@@ -99,12 +98,14 @@ class TestActionRead:
 
     def test_read_with_offset_and_limit(self, workspace):
         (workspace / "lines.txt").write_text("a\nb\nc\nd\ne\n")
-        cleanup = _set_env({
-            "ACTION": "read",
-            "FILE_PATH": "lines.txt",
-            "OFFSET": "1",
-            "LIMIT": "2",
-        })
+        cleanup = _set_env(
+            {
+                "ACTION": "read",
+                "FILE_PATH": "lines.txt",
+                "OFFSET": "1",
+                "LIMIT": "2",
+            }
+        )
         try:
             result = action_read()
             assert result["content"] == "b\nc\n"
@@ -223,11 +224,13 @@ class TestActionEdit:
 
     def test_edit_replaces_text(self, workspace):
         (workspace / "doc.txt").write_text("foo bar baz")
-        cleanup = _set_env({
-            "FILE_PATH": "doc.txt",
-            "OLD_TEXT": "bar",
-            "NEW_TEXT": "qux",
-        })
+        cleanup = _set_env(
+            {
+                "FILE_PATH": "doc.txt",
+                "OLD_TEXT": "bar",
+                "NEW_TEXT": "qux",
+            }
+        )
         try:
             result = action_edit()
             assert result["replacements"] == 1
@@ -237,11 +240,13 @@ class TestActionEdit:
 
     def test_edit_multiple_replacements(self, workspace):
         (workspace / "doc.txt").write_text("aaa bbb aaa")
-        cleanup = _set_env({
-            "FILE_PATH": "doc.txt",
-            "OLD_TEXT": "aaa",
-            "NEW_TEXT": "ccc",
-        })
+        cleanup = _set_env(
+            {
+                "FILE_PATH": "doc.txt",
+                "OLD_TEXT": "aaa",
+                "NEW_TEXT": "ccc",
+            }
+        )
         try:
             result = action_edit()
             assert result["replacements"] == 2
@@ -251,11 +256,13 @@ class TestActionEdit:
 
     def test_edit_old_text_not_found(self, workspace):
         (workspace / "doc.txt").write_text("hello")
-        cleanup = _set_env({
-            "FILE_PATH": "doc.txt",
-            "OLD_TEXT": "missing",
-            "NEW_TEXT": "x",
-        })
+        cleanup = _set_env(
+            {
+                "FILE_PATH": "doc.txt",
+                "OLD_TEXT": "missing",
+                "NEW_TEXT": "x",
+            }
+        )
         try:
             result = action_edit()
             assert "error" in result
@@ -264,11 +271,13 @@ class TestActionEdit:
             cleanup()
 
     def test_edit_missing_file(self, workspace):
-        cleanup = _set_env({
-            "FILE_PATH": "nope.txt",
-            "OLD_TEXT": "a",
-            "NEW_TEXT": "b",
-        })
+        cleanup = _set_env(
+            {
+                "FILE_PATH": "nope.txt",
+                "OLD_TEXT": "a",
+                "NEW_TEXT": "b",
+            }
+        )
         try:
             result = action_edit()
             assert "error" in result
@@ -277,11 +286,13 @@ class TestActionEdit:
             cleanup()
 
     def test_edit_path_traversal(self, workspace):
-        cleanup = _set_env({
-            "FILE_PATH": "../../etc/passwd",
-            "OLD_TEXT": "root",
-            "NEW_TEXT": "hacked",
-        })
+        cleanup = _set_env(
+            {
+                "FILE_PATH": "../../etc/passwd",
+                "OLD_TEXT": "root",
+                "NEW_TEXT": "hacked",
+            }
+        )
         try:
             result = action_edit()
             assert "error" in result
@@ -291,11 +302,13 @@ class TestActionEdit:
 
     def test_edit_missing_old_text_param(self, workspace):
         (workspace / "doc.txt").write_text("hello")
-        cleanup = _set_env({
-            "FILE_PATH": "doc.txt",
-            "OLD_TEXT": "",
-            "NEW_TEXT": "x",
-        })
+        cleanup = _set_env(
+            {
+                "FILE_PATH": "doc.txt",
+                "OLD_TEXT": "",
+                "NEW_TEXT": "x",
+            }
+        )
         try:
             result = action_edit()
             assert "error" in result
@@ -338,11 +351,13 @@ class TestActionList:
         sub = workspace / "sub"
         sub.mkdir()
         (sub / "deep.txt").write_text("d")
-        cleanup = _set_env({
-            "DIRECTORY": ".",
-            "PATTERN": "*.txt",
-            "RECURSIVE": "true",
-        })
+        cleanup = _set_env(
+            {
+                "DIRECTORY": ".",
+                "PATTERN": "*.txt",
+                "RECURSIVE": "true",
+            }
+        )
         try:
             result = action_list()
             names = [e["name"] for e in result["entries"]]
@@ -386,11 +401,13 @@ class TestActionList:
         sub.mkdir()
         (sub / "real.txt").write_text("real")
         (sub / "link.txt").symlink_to(sub / "real.txt")
-        cleanup = _set_env({
-            "DIRECTORY": ".",
-            "PATTERN": "*.txt",
-            "RECURSIVE": "true",
-        })
+        cleanup = _set_env(
+            {
+                "DIRECTORY": ".",
+                "PATTERN": "*.txt",
+                "RECURSIVE": "true",
+            }
+        )
         try:
             result = action_list()
             names = [e["name"] for e in result["entries"]]

@@ -14,7 +14,8 @@ from guardian.types import ActionVerdict
 @pytest.fixture
 def policy_with_auto_approve(tmp_path: Path) -> PolicyEngine:
     p = tmp_path / "policy.yaml"
-    p.write_text(textwrap.dedent("""\
+    p.write_text(
+        textwrap.dedent("""\
         allow:
           - check_weather
           - check_email
@@ -30,7 +31,8 @@ def policy_with_auto_approve(tmp_path: Path) -> PolicyEngine:
         auto_approve:
           - mark_read
           - react_imessage
-    """))
+    """)
+    )
     return PolicyEngine(p)
 
 
@@ -67,12 +69,14 @@ class TestAutoApprove:
 class TestAutoApproveGlob:
     def test_glob_auto_approve(self, tmp_path: Path) -> None:
         p = tmp_path / "policy.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             review:
               - mark_*
             auto_approve:
               - mark_*
-        """))
+        """)
+        )
         engine = PolicyEngine(p)
         decision = engine.evaluate("mark_read")
         assert decision.verdict == ActionVerdict.ALLOW
@@ -80,12 +84,14 @@ class TestAutoApproveGlob:
 
     def test_unknown_tool_with_auto_approve(self, tmp_path: Path) -> None:
         p = tmp_path / "policy.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             review:
               - send_*
             auto_approve:
               - my_custom_tool
-        """))
+        """)
+        )
         engine = PolicyEngine(p)
         # my_custom_tool is unknown (not in review/allow/deny) but in auto_approve
         decision = engine.evaluate("my_custom_tool")
@@ -96,14 +102,16 @@ class TestAutoApproveGlob:
 class TestNoAutoApprove:
     def test_policy_without_auto_approve(self, tmp_path: Path) -> None:
         p = tmp_path / "policy.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             allow:
               - check_weather
             review:
               - send_*
             deny:
               - delete_*
-        """))
+        """)
+        )
         engine = PolicyEngine(p)
         decision = engine.evaluate("send_email")
         assert decision.verdict == ActionVerdict.REVIEW

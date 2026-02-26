@@ -29,6 +29,7 @@ def _validate_notion_id(value: str, name: str) -> str:
         raise ValueError(f"{name} must be a valid Notion UUID")
     return value
 
+
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 
@@ -74,9 +75,7 @@ def _notion_request(
         except ValueError:
             message = resp.text.strip()
         detail = message or str(e)
-        raise RuntimeError(
-            f"Notion API request failed ({resp.status_code}): {detail}"
-        ) from e
+        raise RuntimeError(f"Notion API request failed ({resp.status_code}): {detail}") from e
 
     try:
         data = resp.json()
@@ -203,7 +202,9 @@ def _summarize_result(item: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
-def search(query: str = "", page_size: int = DEFAULT_PAGE_SIZE, start_cursor: str = "") -> dict[str, Any]:
+def search(
+    query: str = "", page_size: int = DEFAULT_PAGE_SIZE, start_cursor: str = ""
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "page_size": page_size,
     }
@@ -216,9 +217,7 @@ def search(query: str = "", page_size: int = DEFAULT_PAGE_SIZE, start_cursor: st
     results = data.get("results", [])
 
     return {
-        "results": [
-            _summarize_result(item) for item in results if isinstance(item, dict)
-        ],
+        "results": [_summarize_result(item) for item in results if isinstance(item, dict)],
         "next_cursor": data.get("next_cursor"),
         "has_more": bool(data.get("has_more", False)),
     }
@@ -259,9 +258,7 @@ def query_database(
     results = data.get("results", [])
 
     return {
-        "results": [
-            _summarize_result(item) for item in results if isinstance(item, dict)
-        ],
+        "results": [_summarize_result(item) for item in results if isinstance(item, dict)],
         "next_cursor": data.get("next_cursor"),
         "has_more": bool(data.get("has_more", False)),
     }

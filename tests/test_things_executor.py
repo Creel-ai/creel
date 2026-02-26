@@ -1,11 +1,20 @@
 """Tests for the things executor."""
 
-import json
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from executors.things.executor import call_bridge, inbox, today, upcoming, search, projects, add_item, update_item
+import pytest
+
+from executors.things.executor import (
+    add_item,
+    call_bridge,
+    inbox,
+    projects,
+    search,
+    today,
+    upcoming,
+    update_item,
+)
 
 
 class TestBridgeClient:
@@ -21,10 +30,9 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         # Mock environment variables
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             result = call_bridge("/things/inbox")
 
         assert result["ok"] is True
@@ -38,7 +46,7 @@ class TestBridgeClient:
                 "Authorization": "Bearer test-token",
                 "Content-Type": "application/json",
             },
-            timeout=30
+            timeout=30,
         )
 
     def test_call_bridge_missing_url(self):
@@ -61,10 +69,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": False, "error": "Command failed"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/things/inbox")
 
@@ -153,18 +160,21 @@ class TestThingsOperations:
             tags="work,urgent",
             when="today",
             list_name="Work",
-            heading="Section"
+            heading="Section",
         )
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/things/add", {
-            "title": "Test Task",
-            "notes": "Task notes",
-            "tags": "work,urgent",
-            "when": "today",
-            "list": "Work",
-            "heading": "Section"
-        })
+        mock_call_bridge.assert_called_once_with(
+            "/things/add",
+            {
+                "title": "Test Task",
+                "notes": "Task notes",
+                "tags": "work,urgent",
+                "when": "today",
+                "list": "Work",
+                "heading": "Section",
+            },
+        )
 
     @patch("executors.things.executor.call_bridge")
     def test_update_item(self, mock_call_bridge):
@@ -172,19 +182,19 @@ class TestThingsOperations:
         mock_call_bridge.return_value = {"ok": True, "output": "item updated"}
 
         result = update_item(
-            "task-123",
-            completed=True,
-            title="Updated Task",
-            notes="Updated notes"
+            "task-123", completed=True, title="Updated Task", notes="Updated notes"
         )
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/things/update", {
-            "id": "task-123",
-            "completed": True,
-            "title": "Updated Task",
-            "notes": "Updated notes"
-        })
+        mock_call_bridge.assert_called_once_with(
+            "/things/update",
+            {
+                "id": "task-123",
+                "completed": True,
+                "title": "Updated Task",
+                "notes": "Updated notes",
+            },
+        )
 
 
 class TestMainFunction:
@@ -198,6 +208,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "inbox"}):
             from executors.things.executor import main
+
             main()
 
         mock_inbox.assert_called_once_with(50)
@@ -211,6 +222,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "inbox", "LIMIT": "25"}):
             from executors.things.executor import main
+
             main()
 
         mock_inbox.assert_called_once_with(25)
@@ -224,6 +236,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "today"}):
             from executors.things.executor import main
+
             main()
 
         mock_today.assert_called_once()
@@ -237,6 +250,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "upcoming"}):
             from executors.things.executor import main
+
             main()
 
         mock_upcoming.assert_called_once()
@@ -250,6 +264,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "search", "QUERY": "test query"}):
             from executors.things.executor import main
+
             main()
 
         mock_search.assert_called_once_with("test query")
@@ -261,6 +276,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "search"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.things.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -273,6 +289,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "projects"}):
             from executors.things.executor import main
+
             main()
 
         mock_projects.assert_called_once()
@@ -284,16 +301,20 @@ class TestMainFunction:
         """Test main function with add action."""
         mock_add_item.return_value = {"ok": True, "output": "item added"}
 
-        with patch.dict(os.environ, {
-            "ACTION": "add",
-            "TITLE": "Test Task",
-            "NOTES": "Task notes",
-            "TAGS": "work,urgent",
-            "WHEN": "today",
-            "LIST": "Work",
-            "HEADING": "Section"
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "ACTION": "add",
+                "TITLE": "Test Task",
+                "NOTES": "Task notes",
+                "TAGS": "work,urgent",
+                "WHEN": "today",
+                "LIST": "Work",
+                "HEADING": "Section",
+            },
+        ):
             from executors.things.executor import main
+
             main()
 
         mock_add_item.assert_called_once_with(
@@ -307,6 +328,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "add"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.things.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -317,14 +339,18 @@ class TestMainFunction:
         """Test main function with update action."""
         mock_update_item.return_value = {"ok": True, "output": "item updated"}
 
-        with patch.dict(os.environ, {
-            "ACTION": "update",
-            "ID": "task-123",
-            "COMPLETED": "true",
-            "TITLE": "Updated Task",
-            "NOTES": "Updated notes"
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "ACTION": "update",
+                "ID": "task-123",
+                "COMPLETED": "true",
+                "TITLE": "Updated Task",
+                "NOTES": "Updated notes",
+            },
+        ):
             from executors.things.executor import main
+
             main()
 
         mock_update_item.assert_called_once_with(
@@ -338,6 +364,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "update"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.things.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -348,6 +375,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "unknown"}):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.things.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -360,6 +388,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {}, clear=True):
             from executors.things.executor import main
+
             main()
 
         mock_inbox.assert_called_once_with(50)

@@ -23,6 +23,7 @@ class TelegramMessage:
     update_id: int
     is_group: bool
     message_id: int
+    media: list[TelegramMedia] | None = None
 
 
 @dataclass
@@ -173,6 +174,9 @@ class HttpTelegramBridge(TelegramBridge):
         # Extract text; fall back to caption for media messages
         text = msg.get("text", "") or msg.get("caption", "")
 
+        # Extract media attachments
+        media = _extract_media(msg)
+
         return TelegramMessage(
             sender_id=str(sender.get("id", "")),
             sender_username=sender.get("username", ""),
@@ -181,7 +185,86 @@ class HttpTelegramBridge(TelegramBridge):
             update_id=update.get("update_id", 0),
             is_group=chat_type in ("group", "supergroup"),
             message_id=msg.get("message_id", 0),
+            media=media or None,
         )
+
+
+def _extract_media(msg: dict) -> list[TelegramMedia]:
+    """Extract media attachments from a raw Telegram message dict."""
+    media: list[TelegramMedia] = []
+
+    # Photos: Telegram sends an array of sizes; pick the largest
+    photos = msg.get("photo")
+    if photos:
+        best = max(photos, key=lambda p: p.get("file_size", 0))
+        media.append(
+            TelegramMedia(
+                file_id=best["file_id"],
+                file_type="photo",
+                mime_type="image/jpeg",  # Telegram photos are always JPEG
+            )
+        )
+
+    # Voice messages
+    voice = msg.get("voice")
+    if voice:
+        media.append(
+            TelegramMedia(
+                file_id=voice["file_id"],
+                file_type="voice",
+                mime_type=voice.get("mime_type", "audio/ogg"),
+                file_size=voice.get("file_size"),
+            )
+        )
+
+    # Audio files (music, podcasts, etc.)
+    audio = msg.get("audio")
+    if audio:
+        media.append(
+            TelegramMedia(
+                file_id=audio["file_id"],
+                file_type="audio",
+                file_name=audio.get("file_name"),
+                mime_type=audio.get("mime_type"),
+                file_size=audio.get("file_size"),
+            )
+        )
+
+    # Videos
+    video = msg.get("video")
+    if video:
+        media.append(
+            TelegramMedia(
+                file_id=video["file_id"],
+                file_type="video",
+                file_name=video.get("file_name"),
+                mime_type=video.get("mime_type", "video/mp4"),
+                file_size=video.get("file_size"),
+            )
+        )
+
+    # Documents (files sent as documents)
+    document = msg.get("document")
+    if document:
+        mime = document.get("mime_type", "")
+        # Classify based on MIME type
+        if mime.startswith("image/"):
+            file_type = "photo"
+        elif mime.startswith("video/"):
+            file_type = "video"
+        else:
+            file_type = "document"
+        media.append(
+            TelegramMedia(
+                file_id=document["file_id"],
+                file_type=file_type,
+                file_name=document.get("file_name"),
+                mime_type=mime or None,
+                file_size=document.get("file_size"),
+            )
+        )
+
+    return media
 
 
 def _chunk_text(text: str, limit: int) -> list[str]:

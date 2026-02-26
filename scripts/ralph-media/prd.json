@@ -103,7 +103,7 @@
         "Tests for attachment query SQL, message construction"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "chat.db schema: message table has ROWID, attachment table has ROWID + filename + mime_type + transfer_name, message_attachment_join links them (message_id, attachment_id). Attachment filename field contains the full path like ~/Library/Messages/Attachments/XX/YY/uuid/filename.ext. The ~ needs to be expanded. Voice messages from iMessage are typically .caf format."
     },
     {

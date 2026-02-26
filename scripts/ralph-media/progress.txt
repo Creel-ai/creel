@@ -83,3 +83,21 @@ Started: 2026-02-26
   - Test helpers (_make_png, _make_jpeg, _make_bmp) create real image files via Pillow for realistic testing
   - All 1878 tests pass (1843 existing + 35 new)
 ---
+
+## 2026-02-26 - MEDIA-006
+- Extended IMessageChannel._poll to query attachment table via message_attachment_join
+- SQL uses DISTINCT + LEFT JOIN to message_attachment_join so messages with attachments (even without text) are returned
+- Added _query_attachments static method: queries attachment table for a message ROWID, resolves ~ paths, detects attachment type from MIME
+- Attachment type detection: image/ → IMAGE, audio/ → AUDIO, voice MIME types (audio/x-caf, audio/caf, audio/amr) → VOICE, video/ → VIDEO, else FILE
+- Tilde expansion: chat.db stores paths like ~/Library/Messages/Attachments/..., replaced with Path.home()
+- Missing files: logged as warning, attachment still returned with file_path=None (skipped only if also no transfer_name)
+- listen() builds IncomingMessage when attachments present, calls callback(incoming_message); text-only uses callback(sender_id, text)
+- Updated DaemonService.send_message to accept IncomingMessage as first arg, forwarding attachments to ChatServer.handle_message
+- Files changed: src/taskrunner/channels/imessage.py, src/taskrunner/daemon/service.py, tests/test_imessage_media.py (new)
+- **Learnings:**
+  - chat.db message_attachment_join uses (message_id, attachment_id) — must use DISTINCT in message query to avoid duplicates for multi-attachment messages
+  - iMessage voice messages are .caf format (audio/x-caf), not in Whisper's supported formats — conversion handled by TranscriptionService from MEDIA-003
+  - DaemonService.send_message needed signature update to accept IncomingMessage — used isinstance check for backward compat
+  - Attachment files may be cleaned up by macOS — file_path=None is valid state, downstream processors should handle it
+  - All 1902 tests pass (1878 existing + 24 new)
+---

@@ -81,10 +81,29 @@ class DaemonService:
 
     # --- Message and session API ---
 
-    def send_message(self, sender_id: str, text: str, *, auto_approve: bool = False) -> str:
-        """Route a message through the agent loop and return the response text."""
+    def send_message(
+        self, sender_id_or_msg: str | Any, text: str = "", *, auto_approve: bool = False
+    ) -> str:
+        """Route a message through the agent loop and return the response text.
+
+        Accepts either ``(sender_id, text)`` for plain text messages or a
+        single :class:`IncomingMessage` for messages with media attachments.
+        """
+        from taskrunner.channels.message import IncomingMessage
+
+        if isinstance(sender_id_or_msg, IncomingMessage):
+            msg: IncomingMessage = sender_id_or_msg
+            with self._lock:
+                return self._server.handle_message(
+                    msg.sender_id,
+                    msg.text or "",
+                    auto_approve=auto_approve,
+                    attachments=msg.attachments or None,
+                )
         with self._lock:
-            return self._server.handle_message(sender_id, text, auto_approve=auto_approve)
+            return self._server.handle_message(
+                sender_id_or_msg, text, auto_approve=auto_approve
+            )
 
     def stream_message(
         self,

@@ -20,6 +20,7 @@ from taskrunner.daemon.contracts import (
     SessionSummary,
     StreamEvent,
 )
+from taskrunner.daemon.api_cron import router as cron_router
 from taskrunner.daemon.api_dashboard import router as dashboard_router
 from taskrunner.daemon.api_tasks import router as tasks_router
 from taskrunner.daemon.service import DaemonService
@@ -167,6 +168,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
     # Mount dashboard API routes (/api/*)
     app.include_router(dashboard_router)
     app.include_router(tasks_router)
+    app.include_router(cron_router)
 
     # Mount webhook routes from any channels that provide them
     for name, channel in service.get_channels().items():

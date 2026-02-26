@@ -9,6 +9,10 @@ Started: 2026-02-25
 - Scheduler is APScheduler-based in src/taskrunner/scheduler.py
 - NEW: Full cron system in src/taskrunner/cron/ (manager, store, models, executor, delivery, tool)
 - Cron store already persists run history — check src/taskrunner/cron/store.py before building new history storage
+- Cron API router in src/taskrunner/daemon/api_cron.py — prefix="/api/cron", mounted via `app.include_router(cron_router)` in api.py
+- `_cron_to_human()` in api_cron.py converts common cron expressions to readable strings (every minute, daily at X, weekly on Y, etc.)
+- Cron history read pattern: `_read_all_history()` reads all JSONL lines, filtering/pagination done in-memory
+- Toggle pattern: regex-replace `enabled:` line in raw YAML, same as task toggle in api_tasks.py
 - Config is agent.yaml (YAML), loaded as Pydantic models
 - Telegram channel support added in src/taskrunner/channels/telegram.py
 - Daemon service layer in src/taskrunner/daemon/service.py wraps business logic
@@ -246,5 +250,49 @@ Started: 2026-02-25
   - js-yaml `dump()` with `lineWidth: -1` prevents unwanted line wrapping in generated YAML
   - Dirty tracking for edit mode compares current rawYaml against savedYaml snapshot; for create mode, checks if name or prompt are non-empty
   - `npm run build` produces 1016 KB (324 KB gzipped) — CodeMirror adds significant bundle size
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-010
+- Implemented cron history storage: after each scheduled task execution, a JSONL record is appended to ~/.creel/cron-history.jsonl
+- Files changed: src/taskrunner/scheduler.py
+- Added `_cron_history_path()` — resolves JSONL path from CREEL_HOME env var (defaults to ~/.creel/)
+- Added `_append_cron_history(record)` — appends JSON record to JSONL file, creates file/dirs if missing, catches OSError gracefully
+- Modified `_run_task_safe()` to:
+  - Generate UUID4 run_id before execution
+  - Record started_at (UTC ISO timestamp) and start_time (monotonic) before calling run_task()
+  - Capture result summary (first 500 chars) on success
+  - Capture traceback string on failure
+  - Compute duration_ms from monotonic clock
+  - Write record: {run_id, job_name, started_at, finished_at, duration_ms, status, token_usage, error, summary}
+- token_usage is None for now (orchestrator doesn't expose token counts yet)
+- Record format matches what api_dashboard.py already reads via _read_recent_runs()
+- **Learnings for future iterations:**
+  - The existing `_read_recent_runs()` in api_dashboard.py already reads from the JSONL file — no changes needed there
+  - `_cron_history_path()` is now defined in both scheduler.py and api_dashboard.py — could be refactored to a shared util later
+  - All existing `_run_task_safe` tests still pass because `_append_cron_history` writes to `~/.creel/` without needing mocking
+  - `time.monotonic()` is more reliable than `time.time()` for duration measurement (not affected by system clock changes)
+  - job_name is derived from `Path(task_path).stem` which strips the directory and .yaml extension
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-011
+- Implemented Cron API endpoints: list jobs, toggle, paginated history, run detail
+- Files created: src/taskrunner/daemon/api_cron.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included cron_router)
+- Endpoints:
+  - GET /api/cron/jobs — lists tasks with schedule field: name, schedule, schedule_human, next_run, last_run, last_status, enabled
+  - POST /api/cron/jobs/{name}/toggle — flips enabled field in YAML with .bak backup
+  - GET /api/cron/history — paginated history with filters: ?job=name&status=success|failed|timeout&limit=50&offset=0
+  - GET /api/cron/history/{run_id} — full detail of a single run
+- `_cron_to_human()` converts common cron patterns: every minute, every N minutes, hourly, daily at HH:MM, weekly on day, monthly on Nth
+- History read uses in-memory filtering and reverse-chronological ordering
+- Toggle uses regex replacement of `enabled:` line in raw YAML (same pattern as task toggle)
+- Returns empty lists gracefully when no history file exists
+- **Learnings for future iterations:**
+  - The `_cron_to_human()` function handles most common patterns but falls back to raw expression for complex ones
+  - `next_run` is always None — would need APScheduler instance access to compute real next-run times
+  - The `_get_tasks_dir()` and `_cron_history_path()` helpers are duplicated across api_dashboard.py, api_tasks.py, and api_cron.py — candidate for shared util
+  - History pagination: all records loaded into memory then sliced — fine for typical JSONL sizes but could be optimized for very large files
   - All 1373 existing tests still pass
 ---

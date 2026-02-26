@@ -173,7 +173,7 @@
         "Existing scheduler tests still pass"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Modify src/taskrunner/scheduler.py _run_task_safe() to write records. Use json.dumps() + file append. Import uuid for run_id generation."
     },
     {
@@ -190,7 +190,7 @@
         "Existing tests still pass"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Create src/taskrunner/daemon/api_cron.py. For cron-to-human conversion, use a simple mapping or cronstrue library. Read JSONL file with line-by-line JSON parsing."
     },
     {

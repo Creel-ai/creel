@@ -3,6 +3,29 @@
  */
 
 const BASE = '/api';
+const TOKEN_KEY = 'creel-dashboard-token';
+
+// ---- Auth helpers ----
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+// Callback invoked when an API call returns 401.
+// Set by the AuthProvider to trigger the login dialog.
+let _onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(cb: (() => void) | null): void {
+  _onUnauthorized = cb;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -17,8 +40,19 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init);
+  const token = getToken();
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> ?? {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
+    if (res.status === 401 && _onUnauthorized) {
+      _onUnauthorized();
+    }
     const body = await res.json().catch(() => ({ detail: res.statusText }));
     throw new ApiError(res.status, body.detail ?? body.error ?? res.statusText);
   }
@@ -338,11 +372,14 @@ export function fetchRecentLogs(params?: {
 /**
  * Create a WebSocket connection to stream logs.
  * Returns the WebSocket instance. The caller manages the connection lifecycle.
+ * Includes auth token as a query parameter.
  */
 export function createLogsWebSocket(): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
-  return new WebSocket(`${proto}//${host}/ws/logs`);
+  const token = getToken();
+  const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+  return new WebSocket(`${proto}//${host}/ws/logs${qs}`);
 }
 
 /**

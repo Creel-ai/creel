@@ -7,7 +7,7 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -20,6 +20,7 @@ from taskrunner.daemon.contracts import (
     SessionSummary,
     StreamEvent,
 )
+from taskrunner.daemon.api_auth import ensure_dashboard_token, require_dashboard_token
 from taskrunner.daemon.api_config import router as config_router
 from taskrunner.daemon.api_cron import router as cron_router
 from taskrunner.daemon.api_dashboard import router as dashboard_router
@@ -37,6 +38,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.service = service
+        app.state.dashboard_token = ensure_dashboard_token()
         yield
         # Shutdown is handled by the CLI finally block; service.shutdown()
         # is idempotent so calling it here is safe but not required.
@@ -168,13 +170,14 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # Mount dashboard API routes (/api/*)
-    app.include_router(dashboard_router)
-    app.include_router(tasks_router)
-    app.include_router(cron_router)
-    app.include_router(files_router)
-    app.include_router(config_router)
-    app.include_router(logs_router)
+    # Mount dashboard API routes (/api/*) — all require auth
+    _auth_deps = [Depends(require_dashboard_token)]
+    app.include_router(dashboard_router, dependencies=_auth_deps)
+    app.include_router(tasks_router, dependencies=_auth_deps)
+    app.include_router(cron_router, dependencies=_auth_deps)
+    app.include_router(files_router, dependencies=_auth_deps)
+    app.include_router(config_router, dependencies=_auth_deps)
+    app.include_router(logs_router, dependencies=_auth_deps)
 
     # Mount webhook routes from any channels that provide them
     for name, channel in service.get_channels().items():

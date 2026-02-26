@@ -113,7 +113,15 @@ async def ws_logs(websocket: WebSocket) -> None:
     """Stream daemon log lines over WebSocket.
 
     Client can send filter messages: {"level": "WARN"} to filter server-side.
+    Requires token via query parameter: /ws/logs?token=<token>
     """
+    # Authenticate WebSocket via query parameter
+    expected_token = websocket.app.state.dashboard_token
+    client_token = websocket.query_params.get("token")
+    if not client_token or client_token != expected_token:
+        await websocket.close(code=4401, reason="unauthorized")
+        return
+
     await websocket.accept()
 
     log_path = _daemon_log_path()

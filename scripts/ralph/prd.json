@@ -323,7 +323,7 @@
         "Falls back to polling GET /api/logs/recent if WebSocket fails"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "Use MUI ToggleButtonGroup, Chip, Alert. Virtualized list (react-window or similar) for performance with 1000 lines. Auto-reconnect with exponential backoff."
     },
     {
@@ -340,7 +340,7 @@
         "Existing /v1/* endpoints remain unchanged (backward compat)"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": "Use FastAPI Depends() with a token checker for /api/* routes. Generate token with uuid4 on first start. Frontend: intercept 401 in fetch wrapper and show login dialog."
     },
     {

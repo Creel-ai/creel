@@ -81,6 +81,19 @@ Started: 2026-02-25
 - Client-side level filtering via WebSocket messages: `{"level": "WARN"}` — empty/null resets filter
 - Initial backfill: WebSocket sends last 50 lines on connect before switching to tail mode
 - `_daemon_log_path()` uses CREEL_HOME pattern: `Path(os.environ.get("CREEL_HOME", Path.home() / ".creel")) / "daemon.log"`
+- react-window v2 API: `List` component with `rowComponent`, `rowCount`, `rowHeight`, `rowProps`, `listRef` (via `useListRef(null)`)
+- react-window v2 row component signature: `(props: { index, style, ariaAttributes, ...rowProps }) => ReactElement | null`
+- react-window v2 scroll-to: `listRef.current.scrollToRow({ index, align: 'end' })`
+- react-window v2 outer element access: `listRef.current.element` for scroll event listeners
+- Vite WebSocket proxy: `'/ws': { target: 'ws://localhost:8099', ws: true }`
+- Logs API types in client.ts: LogEntry, LogsRecentResponse; methods: fetchRecentLogs(), createLogsWebSocket()
+- Dashboard API auth: all /api/* routes require Bearer token via `dependencies=[Depends(require_dashboard_token)]` on router include
+- Token file: ~/.creel/dashboard-token (auto-generated UUID4 on first daemon start, chmod 600)
+- `app.state.dashboard_token` set in lifespan — auth dependency reads from there (not file on every request)
+- WebSocket auth: query param `?token=<token>` checked manually before `websocket.accept()` — FastAPI Depends don't run for WebSocket
+- Frontend auth: token stored in localStorage key `creel-dashboard-token`; `getToken()`/`setToken()`/`clearToken()` in client.ts
+- `setOnUnauthorized()` callback in client.ts triggers login dialog from AuthContext on 401 responses
+- AuthProvider in dashboard/src/AuthContext.tsx wraps app in main.tsx — shows login Dialog on missing/invalid token
 
 ---
 
@@ -488,5 +501,66 @@ Started: 2026-02-25
   - `asyncio.wait_for(websocket.receive_json(), timeout=1.0)` provides non-blocking check for client messages while tailing
   - The regex approach for parsing log lines is fast and handles the standard Python logging format used by the daemon
   - WebSocket routes don't need a prefix — they register at the exact path (/ws/logs)
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-018
+- Implemented Logs page with live WebSocket streaming, level filtering, search, pause/resume, download, and reconnect
+- Files changed: dashboard/src/pages/LogsPage.tsx (full implementation), dashboard/src/api/client.ts (added logs API types and methods), dashboard/vite.config.ts (added /ws proxy), dashboard/package.json (added react-window)
+- New npm dependency: react-window v2 (for virtualized list performance with 1000 lines)
+- API client additions: LogEntry, LogsRecentResponse interfaces, fetchRecentLogs(), createLogsWebSocket()
+- Vite dev proxy: added /ws → ws://localhost:8099 for WebSocket proxying during development
+- LogsPage features:
+  - Live-updating log display using WebSocket connection to /ws/logs
+  - Level filter: MUI ToggleButtonGroup with ALL, DEBUG, INFO, WARN, ERROR (multi-select with ALL toggling logic)
+  - TextField search to filter log lines by text (client-side, matches message/module/timestamp)
+  - Pause button to stop auto-scroll — shows Chip with 'N new lines' count
+  - Click chip or unpause jumps to bottom
+  - Each log line: timestamp, level (color-coded Chip), module, message in monospace font
+  - Download button triggers file download of log content via REST API
+  - Max 1000 lines in view — older lines discarded as new arrive
+  - Graceful WebSocket reconnect with exponential backoff and 'Reconnecting...' Alert banner
+  - Falls back to polling GET /api/logs/recent if WebSocket fails
+  - Virtualized list via react-window v2 List component for performance
+  - Loading skeleton while initial connection establishes
+  - Auto-pause on manual scroll up, scroll detection via outer element event listener
+  - Connected/Disconnected status Chip
+- **Learnings for future iterations:**
+  - react-window v2 has a completely different API from v1: `List` instead of `FixedSizeList`, `rowComponent`/`rowCount`/`rowHeight`/`rowProps` instead of `children`/`itemCount`/`itemSize`
+  - react-window v2 bundles its own TypeScript types — do NOT install @types/react-window (that's for v1 only)
+  - `useListRef(null)` requires an argument (it's `typeof useRef<ListImperativeAPI>`)
+  - v2 row component receives props as flat object: `{ index, style, ariaAttributes, ...rowProps }` — not `{ index, style, data }`
+  - v2 `scrollToRow()` replaces v1 `scrollToItem()`: `listRef.current.scrollToRow({ index, align: 'end' })`
+  - v2 `listRef.current.element` gives access to the outer DOM element for scroll event listeners
+  - Vite WebSocket proxy needs `ws: true` flag and `ws://` protocol target
+  - `npm run build` produces 1415 KB (458 KB gzipped) — react-window v2 adds ~14 KB to bundle
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-019
+- Implemented API authentication for all /api/* dashboard endpoints
+- Files created: src/taskrunner/daemon/api_auth.py, dashboard/src/AuthContext.tsx
+- Files changed: src/taskrunner/daemon/api.py, src/taskrunner/daemon/api_logs.py, dashboard/src/api/client.ts, dashboard/src/main.tsx
+- Backend:
+  - `api_auth.py`: `ensure_dashboard_token()` loads or generates UUID4 token at ~/.creel/dashboard-token (chmod 600), `require_dashboard_token` FastAPI dependency checks Authorization: Bearer header or ?token= query param
+  - Token stored on `app.state.dashboard_token` during lifespan startup
+  - All /api/* routers included with `dependencies=[Depends(require_dashboard_token)]`
+  - WebSocket /ws/logs: manual token check via query param before accept() — FastAPI Depends don't run for WebSocket routes
+  - /health endpoint remains unauthenticated
+  - /v1/* endpoints remain unchanged (backward compat)
+  - Unauthenticated requests return 401 `{detail: "unauthorized"}`
+- Frontend:
+  - API client: `getToken()`/`setToken()`/`clearToken()` for localStorage; `request()` adds Authorization header; 401 triggers `_onUnauthorized` callback
+  - `AuthContext.tsx`: AuthProvider wraps app, shows login Dialog on missing/invalid token, validates token against GET /api/status before accepting
+  - WebSocket: `createLogsWebSocket()` includes token as ?token= query parameter
+  - Token stored in localStorage key `creel-dashboard-token`
+- **Learnings for future iterations:**
+  - FastAPI `dependencies=[Depends(...)]` on `include_router()` applies to HTTP routes but NOT WebSocket routes — WebSocket auth must be handled manually
+  - WebSocket auth via query param is standard practice since browsers can't set custom headers on WebSocket upgrade requests
+  - `websocket.close(code=4401, reason="unauthorized")` uses a custom close code (4000-4999 range) for auth failure before accept()
+  - Token file permissions set to 0o600 for security — only owner can read
+  - The `setOnUnauthorized()` callback pattern avoids tight coupling between API client and React component tree
+  - AuthProvider validates the token by making a test request to /api/status before accepting — provides immediate feedback on invalid tokens
+  - `npm run build` produces 1417 KB (459 KB gzipped) — AuthContext adds ~1 KB
   - All 1373 existing tests still pass
 ---

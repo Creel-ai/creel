@@ -267,7 +267,7 @@
         "Existing tests still pass"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "Create src/taskrunner/daemon/api_config.py. For restart: signal the daemon to re-read config and restart the scheduler. Use Pydantic model_json_schema() for schema generation."
     },
     {

@@ -13,7 +13,12 @@ Started: 2026-02-25
 - `_cron_to_human()` in api_cron.py converts common cron expressions to readable strings (every minute, daily at X, weekly on Y, etc.)
 - Cron history read pattern: `_read_all_history()` reads all JSONL lines, filtering/pagination done in-memory
 - Toggle pattern: regex-replace `enabled:` line in raw YAML, same as task toggle in api_tasks.py
-- Config is agent.yaml (YAML), loaded as Pydantic models
+- Config is agent.yaml (YAML), loaded as Pydantic models — AgentDefinition in models.py
+- Config API router in src/taskrunner/daemon/api_config.py — prefix="/api/config", mounted via `app.include_router(config_router)` in api.py
+- `_find_agent_config()` locates agent.yaml: CWD first, then CREEL_HOME (same as CLI default)
+- Config validation: parse YAML → validate against AgentDefinition(**raw) — rejects invalid configs with 400
+- JSON Schema generation via `AgentDefinition.model_json_schema()` — Pydantic v2 built-in
+- Pydantic field alias: use `Field(None, alias="json")` when field name shadows BaseModel attribute
 - Telegram channel support added in src/taskrunner/channels/telegram.py
 - Daemon service layer in src/taskrunner/daemon/service.py wraps business logic
 - CREEL_HOME defaults to ~/.creel/ — state dir for daemon.sock, daemon.pid, daemon.log
@@ -395,5 +400,25 @@ Started: 2026-02-25
   - The `filePath` dependency in FileEditor's useEffect ensures the editor is fully recreated when switching files (new language mode, fresh content)
   - Global window keydown handler for Ctrl/Cmd+S provides save fallback when focus isn't in the editor
   - `npm run build` produces 1370 KB (445 KB gzipped) — react-markdown and additional CodeMirror language modes add ~330 KB to bundle
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-015
+- Implemented Config API endpoints for reading and writing agent.yaml configuration
+- Files created: src/taskrunner/daemon/api_config.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included config_router)
+- Endpoints:
+  - GET /api/config — returns parsed agent.yaml as JSON plus raw_yaml field
+  - PUT /api/config — accepts {json: {...}} or {raw_yaml: '...'}, validates against AgentDefinition Pydantic model, creates .bak backup before overwriting, returns 400 with validation errors if invalid
+  - POST /api/config/apply — sends SIGHUP to daemon process for graceful restart, returns 202
+  - GET /api/config/schema — returns JSON Schema derived from AgentDefinition via model_json_schema()
+- Config file discovery: checks CWD agent.yaml first (matches CLI default), falls back to CREEL_HOME/agent.yaml
+- Validation round-trips through AgentDefinition(**raw) to catch type errors, missing fields, invalid values
+- .bak backup created before any write to prevent data loss
+- **Learnings for future iterations:**
+  - Pydantic BaseModel has a `.json()` method so naming a field `json` causes a shadow warning — use `Field(None, alias="json")` with a different attribute name (`config_json`)
+  - `AgentDefinition.model_json_schema()` generates full JSON Schema including all nested models (GuardianConfig, ChannelsConfig, etc.)
+  - SIGHUP is the standard Unix signal for config reload — uvicorn doesn't handle it natively but process managers do
+  - Config path discovery mirrors `_get_tasks_dir()` pattern from other API modules
   - All 1373 existing tests still pass
 ---

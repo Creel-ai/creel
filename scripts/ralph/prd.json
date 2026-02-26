@@ -1,0 +1,364 @@
+{
+  "project": "Creel Dashboard",
+  "branchName": "ralph/dashboard",
+  "description": "Web dashboard served by the Creel daemon for managing tasks, cron jobs, workspace files, and config. React + TypeScript + MUI v6 + Vite frontend, FastAPI backend.",
+  "userStories": [
+    {
+      "id": "DASH-001",
+      "title": "Static SPA serving from FastAPI daemon",
+      "description": "The daemon should serve the built React app as static files so visiting localhost:8099 loads the dashboard.",
+      "acceptanceCriteria": [
+        "FastAPI daemon mounts StaticFiles at '/' serving built React app from src/taskrunner/dashboard_static/",
+        "index.html is served for all non-API routes (SPA fallback) so client-side routing works",
+        "API routes remain at /v1/... (existing) and /api/... (new dashboard endpoints)",
+        "When dashboard_static/ directory is missing or empty, the daemon starts normally without errors",
+        "Existing /health and /v1/* endpoints still work unchanged",
+        "Typecheck passes, existing tests pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Modify src/taskrunner/daemon/api.py. Use FastAPI StaticFiles mount. SPA fallback: catch-all route that returns index.html for non-API paths."
+    },
+    {
+      "id": "DASH-002",
+      "title": "Vite + React + TypeScript scaffold",
+      "description": "Create the frontend project skeleton with Vite, React 18+, and TypeScript.",
+      "acceptanceCriteria": [
+        "dashboard/ directory contains a working Vite + React 18 + TypeScript project",
+        "npm install && npm run build produces output in dashboard/dist/",
+        "A build script scripts/build-dashboard.sh copies dashboard/dist/ to src/taskrunner/dashboard_static/",
+        "dashboard/src/main.tsx renders <App /> into #root",
+        "TypeScript strict mode enabled in tsconfig.json",
+        "Vite dev server proxies /api/* and /v1/* to localhost:8099 for local development",
+        ".gitignore includes dashboard/node_modules/, dashboard/dist/, src/taskrunner/dashboard_static/"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Use npm create vite@latest with react-ts template. Keep it minimal — just the scaffold."
+    },
+    {
+      "id": "DASH-003",
+      "title": "Material UI setup and theming",
+      "description": "Install and configure MUI v6 with dark mode support.",
+      "acceptanceCriteria": [
+        "MUI installed: @mui/material, @mui/icons-material, @emotion/react, @emotion/styled",
+        "MUI ThemeProvider wraps the app with createTheme()",
+        "Dark mode toggle in header, persisted to localStorage",
+        "MUI theme palette defines the color scheme",
+        "App renders without console errors in both light and dark mode"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Use MUI's built-in dark mode via palette.mode. Store preference in localStorage key 'creel-theme'."
+    },
+    {
+      "id": "DASH-004",
+      "title": "Layout shell with sidebar and routing",
+      "description": "Create the main layout with collapsible sidebar navigation and React Router.",
+      "acceptanceCriteria": [
+        "React Router v6 with routes: /, /tasks, /tasks/:name, /tasks/new, /cron, /files, /config, /logs",
+        "Persistent MUI Drawer sidebar with nav links grouped: Control (Overview, Tasks, Cron Jobs), Workspace (Files, Config), System (Logs)",
+        "Active page highlighted in sidebar using MUI ListItemButton selected state",
+        "Header AppBar with: Creel name, daemon connection status badge (green/red Chip), dark mode toggle IconButton",
+        "Sidebar collapses on screens < 768px (MUI responsive Drawer — temporary variant on mobile)",
+        "404 page for unknown routes",
+        "Each route renders a placeholder page component with the page title"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Use MUI Drawer (permanent on desktop, temporary on mobile), AppBar, List, ListItemButton, ListItemIcon, ListItemText. Use react-router-dom NavLink for active state."
+    },
+    {
+      "id": "DASH-005",
+      "title": "Status API endpoint",
+      "description": "Backend endpoint that returns daemon status, agent info, and summary stats for the overview page.",
+      "acceptanceCriteria": [
+        "GET /api/status returns JSON with: daemon (running, pid, uptime_seconds, socket), agent (name, model, provider), channels list with enabled/connected status, tasks (total, scheduled counts), cron (enabled_jobs, total_jobs, next_run), recent_runs (last 5 with task name, status, finished_at, duration_ms)",
+        "Endpoint reads agent config from agent.yaml via existing config loading",
+        "Endpoint reads task files from tasks directory",
+        "Returns sensible defaults when no tasks/channels exist",
+        "Existing tests still pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Create src/taskrunner/daemon/api_dashboard.py with an APIRouter. Mount it in api.py. Use existing model loading and service status methods where possible."
+    },
+    {
+      "id": "DASH-006",
+      "title": "Overview page with live status",
+      "description": "Frontend overview page that displays daemon status, agent info, channel health, and recent activity.",
+      "acceptanceCriteria": [
+        "Overview page fetches GET /api/status on mount and displays data in MUI Card components",
+        "Daemon status card: running/stopped badge, PID, uptime (human readable), socket path",
+        "Agent info card: name, model, provider",
+        "Channels section: list of channels with green/red Chip badges for connected/disconnected",
+        "Quick stats: total tasks, scheduled tasks, enabled cron jobs, next scheduled run",
+        "Recent runs: MUI Table with last 5 runs showing task name, status Chip (success=green, failed=red, timeout=orange), finished time (relative), duration",
+        "Auto-refreshes every 30 seconds via polling",
+        "Loading skeleton shown while fetching",
+        "Error state shown if daemon is unreachable"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Use MUI Card, CardContent, Chip, Table, Skeleton. Create dashboard/src/api/client.ts with a fetch wrapper."
+    },
+    {
+      "id": "DASH-007",
+      "title": "Task CRUD API endpoints",
+      "description": "Backend REST API for listing, reading, creating, updating, and deleting task definitions.",
+      "acceptanceCriteria": [
+        "GET /api/tasks returns list of all tasks from tasks directory: name, description, schedule, enabled, last_modified, file_path",
+        "GET /api/tasks/{name} returns full task as JSON plus raw_yaml field with file contents",
+        "POST /api/tasks creates new task YAML file — validates with Pydantic, returns 409 if exists",
+        "PUT /api/tasks/{name} updates existing task — creates .bak backup before overwriting, validates, returns 404 if not found",
+        "DELETE /api/tasks/{name} moves file to .deleted/ subdirectory (not permanent delete), returns 404 if not found",
+        "POST /api/tasks/{name}/run triggers run_task() in background thread, returns 202 with run_id",
+        "All endpoints return consistent error JSON: {error, detail}",
+        "Existing tests still pass"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Create src/taskrunner/daemon/api_tasks.py with APIRouter. Use existing models.load_all_tasks() and orchestrator.run_task(). Task files live in the configured tasks directory."
+    },
+    {
+      "id": "DASH-008",
+      "title": "Task list page",
+      "description": "Frontend page showing all tasks in a table with search, sort, and enable/disable toggles.",
+      "acceptanceCriteria": [
+        "MUI Table with columns: Name, Description, Schedule (human-readable), Last Modified, Enabled (Switch toggle)",
+        "Enabled toggle calls PUT /api/tasks/{name} to flip enabled field",
+        "TextField search input filters tasks by name/description (client-side)",
+        "Column headers clickable to sort by name, schedule, last modified",
+        "New Task button (MUI Button with AddIcon) in top-right, navigates to /tasks/new",
+        "Click task name navigates to /tasks/{name}",
+        "Empty state: 'No tasks yet. Create your first task.' with button",
+        "Loading skeleton while fetching"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Use MUI Table, TableHead, TableBody, TableRow, TableCell, TableSortLabel, Switch, TextField, Button."
+    },
+    {
+      "id": "DASH-009",
+      "title": "Task edit and create page",
+      "description": "Form for creating and editing tasks with both form fields and raw YAML editing.",
+      "acceptanceCriteria": [
+        "Form mode with MUI fields: Name (TextField, required, slug pattern [a-z0-9-]), Description (TextField multiline), Schedule (TextField with human-readable preview below), Prompt (TextField multiline, required), Model override (TextField, optional), Timeout (TextField type=number), Output type (Select: stdout/imessage/file), Output target (TextField), Enabled (Checkbox)",
+        "Raw YAML tab with CodeMirror 6 editor: YAML syntax highlighting, line numbers",
+        "MUI Tabs component to switch between Form and Raw modes",
+        "Switching tabs syncs content (form changes reflected in raw YAML and vice versa)",
+        "Save button calls POST (create) or PUT (edit) API — shows Snackbar success toast",
+        "Save disabled when no changes (dirty tracking)",
+        "Run Now button (edit mode only) triggers POST /api/tasks/{name}/run",
+        "Delete button (edit mode only) with Dialog confirmation",
+        "Form validation: required fields show error state, slug pattern validated on name",
+        "Unsaved changes warning via beforeunload event",
+        "Schedule preset helper: Select dropdown with common schedules (hourly, daily 9am, weekly Monday) that fills the cron field"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Install @codemirror/lang-yaml, @codemirror/view, @codemirror/state. Use js-yaml for YAML<->JSON conversion in the browser. Handle form<->raw sync carefully — only sync on tab switch, not on every keystroke."
+    },
+    {
+      "id": "DASH-010",
+      "title": "Cron history storage",
+      "description": "The scheduler should persist cron run history to a JSONL file for the dashboard to display.",
+      "acceptanceCriteria": [
+        "After each scheduled task execution, a record is appended to ~/.creel/cron-history.jsonl",
+        "Record format: {run_id, job_name, started_at, finished_at, duration_ms, status (success/failed/timeout), token_usage, error, summary}",
+        "run_id is a UUID4",
+        "Error field contains traceback string on failure, null on success",
+        "Summary field contains truncated response text (first 500 chars)",
+        "File is created automatically if it doesn't exist",
+        "Existing scheduler tests still pass"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Modify src/taskrunner/scheduler.py _run_task_safe() to write records. Use json.dumps() + file append. Import uuid for run_id generation."
+    },
+    {
+      "id": "DASH-011",
+      "title": "Cron API endpoints",
+      "description": "Backend API for listing cron jobs, toggling them, and querying run history.",
+      "acceptanceCriteria": [
+        "GET /api/cron/jobs returns tasks with schedule field set: name, schedule, schedule_human (readable), next_run, last_run, last_status, enabled",
+        "POST /api/cron/jobs/{name}/toggle enables/disables job — updates YAML enabled field",
+        "GET /api/cron/history returns paginated run history from cron-history.jsonl: query params ?job=name&status=success|failed|timeout&limit=50&offset=0",
+        "GET /api/cron/history/{run_id} returns full detail of a single run",
+        "schedule_human converts cron expressions to readable strings (e.g., '0 9 * * *' -> 'Every day at 9:00 AM')",
+        "Returns empty lists gracefully when no history exists",
+        "Existing tests still pass"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Create src/taskrunner/daemon/api_cron.py. For cron-to-human conversion, use a simple mapping or cronstrue library. Read JSONL file with line-by-line JSON parsing."
+    },
+    {
+      "id": "DASH-012",
+      "title": "Cron jobs page",
+      "description": "Frontend page with job list, run history, and new job creation form.",
+      "acceptanceCriteria": [
+        "Job list panel: MUI Table with Name, Schedule, Next Run, Last Run, Status (Chip), Enabled (Switch toggle)",
+        "Sort by next run (default), name — via TableSortLabel",
+        "Filter dropdown: All/Enabled/Disabled",
+        "Search by name (TextField)",
+        "Click a job to filter run history below to that job",
+        "Run history panel: MUI Table with Job Name, Started, Duration, Status Chip, Summary (truncated)",
+        "Filter by status: toggle ButtonGroup (All/Success/Failed/Timeout)",
+        "Click history row to expand (MUI Collapse) showing full details: prompt, response, tokens, error",
+        "Pagination: 'Load more' button at bottom, default 50 rows",
+        "New Job dialog (MUI Dialog): name, schedule type (Select: 'Every X' or 'Cron expression'), interval fields or cron input with human preview, prompt (TextField multiline), model override, timeout, enabled checkbox, Create button",
+        "Empty states for both panels"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Split into two panels using MUI Grid or Stack. Use Collapse for expandable rows. Dialog for new job form."
+    },
+    {
+      "id": "DASH-013",
+      "title": "File browser API endpoints",
+      "description": "Backend API for browsing and editing files in ~/.creel/.",
+      "acceptanceCriteria": [
+        "GET /api/files/tree returns recursive directory tree of ~/.creel/: name, path, type (file/dir), size_bytes, modified_at, children",
+        "Excludes: __pycache__, .pyc, daemon.sock, daemon.pid, *.bak, .git, .deleted",
+        "Max depth: 5 levels",
+        "GET /api/files/{path} returns file contents: path, content, size_bytes, modified_at — returns binary:true for non-text files",
+        "Max file size for content: 1MB, returns error for larger",
+        "PUT /api/files/{path} writes file — creates .bak backup, creates parent dirs if needed",
+        "POST /api/files/{path} creates new file — returns 409 if exists",
+        "DELETE /api/files/{path} moves to .trash/ — returns 400 for protected files (agent.yaml, daemon.pid, daemon.sock)",
+        "ALL paths validated to be within ~/.creel/ — reject any ../ traversal with 400",
+        "Existing tests still pass"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Create src/taskrunner/daemon/api_files.py. Use pathlib for path resolution and security validation. Resolve symlinks before checking containment."
+    },
+    {
+      "id": "DASH-014",
+      "title": "File browser page",
+      "description": "Frontend with tree navigation and CodeMirror code editor for browsing and editing workspace files.",
+      "acceptanceCriteria": [
+        "Left panel: MUI TreeView with expandable directory tree, file icons by extension (using MUI icons: Description for .yaml, Article for .md, DataObject for .json, Folder for dirs)",
+        "Quick Access section pinned at top with: agent.yaml, workspace/SOUL.md, workspace/USER.md, workspace/MEMORY.md",
+        "Click file opens in right panel editor",
+        "Right panel: CodeMirror 6 with auto-detected language mode (YAML, Markdown, JSON, plain text based on extension)",
+        "Line numbers, active line highlighting, bracket matching enabled",
+        "Breadcrumb above editor showing current file path",
+        "Save button (and Ctrl/Cmd+S keyboard shortcut) writes via PUT API — Snackbar confirmation",
+        "Unsaved changes dot indicator next to filename",
+        "For .md files: toggle IconButton to switch Edit vs Preview (rendered with a markdown-to-html library)",
+        "New File dialog: TextField for path, Select for template (blank, YAML task, Markdown note)",
+        "Empty state when no file selected: 'Select a file from the tree to edit'"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Use MUI TreeView from @mui/x-tree-view. Install @codemirror/lang-json, @codemirror/lang-markdown in addition to yaml. For markdown preview, use react-markdown or marked."
+    },
+    {
+      "id": "DASH-015",
+      "title": "Config API endpoints",
+      "description": "Backend API for reading and writing agent.yaml configuration.",
+      "acceptanceCriteria": [
+        "GET /api/config returns parsed agent.yaml as JSON plus raw_yaml field",
+        "PUT /api/config accepts {json: {...}} or {raw_yaml: '...'} — validates against AgentConfig model, creates .bak backup, returns 400 with validation errors if invalid",
+        "POST /api/config/apply performs graceful daemon restart to pick up changes — returns 202",
+        "GET /api/config/schema returns JSON Schema derived from AgentConfig Pydantic model (using model_json_schema())",
+        "Existing tests still pass"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Create src/taskrunner/daemon/api_config.py. For restart: signal the daemon to re-read config and restart the scheduler. Use Pydantic model_json_schema() for schema generation."
+    },
+    {
+      "id": "DASH-016",
+      "title": "Config editor page",
+      "description": "Frontend config editor with form mode and raw YAML mode.",
+      "acceptanceCriteria": [
+        "MUI Tabs: Form | Raw",
+        "Form mode with collapsible MUI Accordion sections: Agent (name, model, provider, max_tokens), Channels (per-channel sub-accordions with relevant fields), Guardian (enabled Switch, policy path), Daemon (log level Select, port TextField), Tools (list of tool configs)",
+        "Field types rendered appropriately: TextField, Select, Switch, TextField type=number",
+        "Help text below fields (MUI FormHelperText) from schema descriptions",
+        "Validation errors shown inline (TextField error prop + helperText)",
+        "Raw mode: full CodeMirror YAML editor",
+        "Switching tabs syncs content",
+        "Save button writes to disk — Snackbar toast",
+        "Apply button saves AND triggers POST /api/config/apply with Dialog confirmation: 'This will restart the daemon. Active sessions will be interrupted.'",
+        "Unsaved changes Chip badge next to save button showing change count"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Dynamically generate form from JSON Schema where possible. Fall back to TextField for unknown field types. Use MUI Accordion, AccordionSummary, AccordionDetails for sections."
+    },
+    {
+      "id": "DASH-017",
+      "title": "Log streaming API",
+      "description": "WebSocket endpoint for streaming daemon logs to the dashboard.",
+      "acceptanceCriteria": [
+        "WebSocket endpoint at /ws/logs streams daemon log lines as JSON: {timestamp, level, module, message}",
+        "Reads from ~/.creel/daemon.log tail plus new lines as they're written",
+        "Client can send filter messages: {level: 'WARN'} to filter server-side",
+        "GET /api/logs/recent?limit=200&level=INFO returns recent lines as non-streaming fallback",
+        "WebSocket handles client disconnects gracefully",
+        "Existing tests still pass"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Use FastAPI WebSocket support. Use asyncio file watching or periodic tail for new lines. Parse log lines into structured JSON."
+    },
+    {
+      "id": "DASH-018",
+      "title": "Logs page with live streaming",
+      "description": "Frontend log viewer with live updates, level filtering, and search.",
+      "acceptanceCriteria": [
+        "Live-updating log display using WebSocket connection to /ws/logs",
+        "Level filter: MUI ToggleButtonGroup with ALL, DEBUG, INFO, WARN, ERROR (multi-select)",
+        "TextField search to filter log lines by text (client-side)",
+        "Pause Button to stop auto-scroll — shows Chip with 'N new lines' count",
+        "Click chip or unpause jumps to bottom",
+        "Each log line shows: timestamp, level (color-coded Chip — blue=DEBUG, green=INFO, orange=WARN, red=ERROR), module, message",
+        "Download log Button triggers file download of full daemon.log",
+        "Max 1000 lines in view — older lines discarded as new arrive",
+        "Graceful WebSocket reconnect with 'Reconnecting...' Alert banner",
+        "Falls back to polling GET /api/logs/recent if WebSocket fails"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "Use MUI ToggleButtonGroup, Chip, Alert. Virtualized list (react-window or similar) for performance with 1000 lines. Auto-reconnect with exponential backoff."
+    },
+    {
+      "id": "DASH-019",
+      "title": "API authentication",
+      "description": "Protect all dashboard API endpoints with token auth.",
+      "acceptanceCriteria": [
+        "All /api/* endpoints require Authorization: Bearer <token> header or ?token=<token> query param",
+        "Token stored in ~/.creel/dashboard-token (auto-generated UUID on first daemon start if missing)",
+        "Unauthenticated requests return 401 JSON: {error: 'unauthorized'}",
+        "Dashboard frontend stores token in localStorage after entry in a login dialog",
+        "Login dialog shown on 401 response — TextField for token, Submit button",
+        "/health endpoint remains unauthenticated",
+        "Existing /v1/* endpoints remain unchanged (backward compat)"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Use FastAPI Depends() with a token checker for /api/* routes. Generate token with uuid4 on first start. Frontend: intercept 401 in fetch wrapper and show login dialog."
+    },
+    {
+      "id": "DASH-020",
+      "title": "Build script and packaging",
+      "description": "Build pipeline that bundles the frontend into the Python wheel.",
+      "acceptanceCriteria": [
+        "scripts/build-dashboard.sh runs: cd dashboard && npm ci && npm run build, then copies dist/ to src/taskrunner/dashboard_static/",
+        "pyproject.toml includes dashboard_static/ as package data via force-include",
+        ".gitignore includes dashboard/node_modules/, dashboard/dist/, src/taskrunner/dashboard_static/",
+        "Dashboard loads with no external CDN/network requests (all assets bundled)",
+        "pip install . from repo root includes the dashboard and it loads at localhost:8099/",
+        "Build script is idempotent and handles missing node_modules gracefully",
+        "dashboard/README.md documents: npm install, npm run dev, npm run build"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "Add to pyproject.toml: [tool.hatch.build.targets.wheel.force-include] 'src/taskrunner/dashboard_static' = 'taskrunner/dashboard_static'. Vite build should produce minimal output with no external fetches."
+    }
+  ]
+}

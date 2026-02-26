@@ -1,0 +1,19 @@
+# Ralph Progress Log
+Started: 2026-02-25
+---
+
+## Codebase Patterns
+- Python source lives in src/taskrunner/ (package name is taskrunner, not creel yet)
+- FastAPI daemon API is in src/taskrunner/daemon/api.py — use APIRouter for new endpoint groups
+- Task models and loading in src/taskrunner/models.py — use load_all_tasks()
+- Scheduler is APScheduler-based in src/taskrunner/scheduler.py
+- NEW: Full cron system in src/taskrunner/cron/ (manager, store, models, executor, delivery, tool)
+- Cron store already persists run history — check src/taskrunner/cron/store.py before building new history storage
+- Config is agent.yaml (YAML), loaded as Pydantic models
+- Telegram channel support added in src/taskrunner/channels/telegram.py
+- Daemon service layer in src/taskrunner/daemon/service.py wraps business logic
+- CREEL_HOME defaults to ~/.creel/ — state dir for daemon.sock, daemon.pid, daemon.log
+- Tasks dir configurable, defaults to tasks/ relative to working directory
+- Existing tests in tests/ — run with pytest
+- pyproject.toml uses hatchling build system
+- Bridge (FastAPI host bridge) is in src/bridge/ — separate from daemon

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from guardian.audit import AuditLogger, _hash_text
 from guardian.coherence import CoherenceChecker
@@ -38,9 +37,7 @@ class Guardian:
         self._config = config
         self._classifier = FastClassifier(config.fast_classifier)
         self._judge = LLMJudge(config.llm_judge)
-        self._policy = (
-            PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
-        )
+        self._policy = PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
         self._coherence = CoherenceChecker(config.coherence)
         self._audit = (
             AuditLogger(
@@ -62,11 +59,13 @@ class Guardian:
             if config.drift.enabled
             else None
         )
-        logger.info("Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s)",
-                     config.fast_classifier.enabled,
-                     config.llm_judge.enabled,
-                     config.policy.enabled,
-                     config.drift.enabled)
+        logger.info(
+            "Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s)",
+            config.fast_classifier.enabled,
+            config.llm_judge.enabled,
+            config.policy.enabled,
+            config.drift.enabled,
+        )
 
     def warm_up(self) -> None:
         """Eagerly warm up the fast classifier at startup."""
@@ -142,10 +141,7 @@ class Guardian:
 
         rejection_message = ""
         if blocked:
-            rejection_message = (
-                "I can't process that request. "
-                "Please rephrase your message."
-            )
+            rejection_message = "I can't process that request. Please rephrase your message."
 
         return ScreenResult(
             blocked=blocked,
@@ -166,14 +162,15 @@ class Guardian:
         """
         import html
         import re
+
         # Remove script/style blocks entirely
-        text = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
         # Remove HTML tags
-        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r"<[^>]+>", " ", text)
         # Decode HTML entities
         text = html.unescape(text)
         # Collapse whitespace
-        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r"\s+", " ", text).strip()
         return text
 
     @staticmethod
@@ -186,7 +183,6 @@ class Guardian:
         just the human-readable text content.
         """
         import json
-        import re
 
         # Try to parse as JSON and extract text fields from a11y tree nodes
         try:
@@ -296,15 +292,15 @@ class Guardian:
         returns coherent=True.
         """
         result = self._coherence.check(
-            user_request, tool_name, tool_args,
+            user_request,
+            tool_name,
+            tool_args,
             prior_tools=prior_tools,
             available_tools=available_tools,
         )
 
         if not result.coherent:
-            logger.warning(
-                "Action coherence failed: %s — %s", tool_name, result.reasoning
-            )
+            logger.warning("Action coherence failed: %s — %s", tool_name, result.reasoning)
 
         if self._audit:
             self._audit.log_coherence_check(
@@ -354,8 +350,7 @@ class Guardian:
             self._audit.log_credential_leak(
                 tool_name=tool_name,
                 patterns_found=[
-                    {"pattern": m.pattern_name, "redacted": m.matched_text}
-                    for m in matches
+                    {"pattern": m.pattern_name, "redacted": m.matched_text} for m in matches
                 ],
                 count=len(matches),
             )

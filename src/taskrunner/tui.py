@@ -17,6 +17,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.message import Message
 from textual.reactive import reactive
+from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Button, Footer, Header, RichLog, Static, TextArea
 
@@ -40,6 +41,7 @@ class TuiBackend(Protocol):
     def get_or_create_session(self, sender_id: str) -> Any: ...
 
     def new_session(self, sender_id: str) -> Any: ...
+
 
 SENDER_ID = "cli"
 
@@ -143,7 +145,7 @@ class StatusBar(Static):
     def __init__(self, **kwargs) -> None:
         super().__init__("", **kwargs)
         self._think_start: float = 0.0
-        self._refresh_timer = None
+        self._refresh_timer: Timer | None = None
 
     def on_mount(self) -> None:
         self._refresh_timer = self.set_interval(0.5, self._tick)
@@ -214,7 +216,7 @@ class ChatInput(TextArea):
         self._history_index: int = -1
         self._draft: str = ""
 
-    def _on_key(self, event) -> None:
+    async def _on_key(self, event) -> None:
         """Handle enter, shift+enter, and arrow keys."""
         if event.key == "enter":
             text = self.text.strip()
@@ -313,7 +315,7 @@ class ChatApp(App):
         self._guardian_active = guardian_active
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._log_handler: _QueueLogHandler | None = None
-        self._log_poller = None
+        self._log_poller: Timer | None = None
         self._streaming_chunks: list[str] = []
 
     def compose(self) -> ComposeResult:
@@ -426,7 +428,7 @@ class ChatApp(App):
             return self._send_message_with_callback(text)
 
         final_text = ""
-        for event in self._server.stream_message(self._sender_id, text):
+        for event in stream_fn(self._server, self._sender_id, text):
             event_type = str(event.get("type", ""))
             payload = event.get("payload", {})
             if not isinstance(payload, dict):
@@ -440,7 +442,8 @@ class ChatApp(App):
                         self.call_from_thread(self._start_streaming)
                     self._streaming_chunks.append(chunk)
                     self.call_from_thread(
-                        self._update_streaming, "".join(self._streaming_chunks),
+                        self._update_streaming,
+                        "".join(self._streaming_chunks),
                     )
             elif event_type == "final":
                 final_text = str(payload.get("text", ""))
@@ -462,7 +465,9 @@ class ChatApp(App):
             self.call_from_thread(self._update_streaming, "".join(self._streaming_chunks))
 
         return self._server.handle_message(
-            self._sender_id, text, on_text_delta=on_delta,
+            self._sender_id,
+            text,
+            on_text_delta=on_delta,
         )
 
     def _show_status(self) -> None:
@@ -528,9 +533,7 @@ class ChatApp(App):
                 if isinstance(content, str):
                     text = content
                 elif isinstance(content, list):
-                    text = " ".join(
-                        b.get("text", "") for b in content if b.get("type") == "text"
-                    )
+                    text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
                 else:
                     continue
                 if text:
@@ -561,7 +564,7 @@ class ChatApp(App):
     def _new_session(self):
         return self._server.new_session(self._sender_id)
 
-    def action_quit(self) -> None:
+    def action_quit(self) -> None:  # type: ignore[override]
         if self._log_handler:
             logging.getLogger("taskrunner").removeHandler(self._log_handler)
         self.exit()

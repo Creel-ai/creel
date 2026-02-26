@@ -70,10 +70,7 @@ def _missing_reason(required_vars: list[str]) -> str:
 
     base = ", ".join(missing)
     if _SECRET_ENV_ERROR:
-        return (
-            f"missing {base}; could not use {_resolve_secrets_path()} "
-            f"({_SECRET_ENV_ERROR})"
-        )
+        return f"missing {base}; could not use {_resolve_secrets_path()} ({_SECRET_ENV_ERROR})"
     return f"missing {base}; set env vars or update {_resolve_secrets_path()}"
 
 

@@ -9,11 +9,9 @@ import httpx
 import pytest
 
 from taskrunner.llm import (
-    MAX_RETRIES,
-    RETRYABLE_STATUS_CODES,
     _retry_on_transient,
-    call_llm,
     _run_llm_direct,
+    call_llm,
 )
 from taskrunner.models import LLMConfig
 
@@ -73,11 +71,13 @@ class TestRetryOnTransient:
     @patch("taskrunner.llm.time.sleep")
     def test_exponential_backoff_delays(self, mock_sleep):
         """Should use 1s, 2s delays for 3 attempts."""
-        fn = MagicMock(side_effect=[
-            _make_api_error(429),
-            _make_api_error(429),
-            "ok",
-        ])
+        fn = MagicMock(
+            side_effect=[
+                _make_api_error(429),
+                _make_api_error(429),
+                "ok",
+            ]
+        )
         result = _retry_on_transient(fn)
         assert result == "ok"
         assert mock_sleep.call_count == 2
@@ -86,11 +86,13 @@ class TestRetryOnTransient:
 
     @patch("taskrunner.llm.time.sleep")
     def test_raises_after_max_retries(self, mock_sleep):
-        fn = MagicMock(side_effect=[
-            _make_api_error(429),
-            _make_api_error(429),
-            _make_api_error(429),
-        ])
+        fn = MagicMock(
+            side_effect=[
+                _make_api_error(429),
+                _make_api_error(429),
+                _make_api_error(429),
+            ]
+        )
         with pytest.raises(anthropic.APIStatusError):
             _retry_on_transient(fn)
         assert fn.call_count == 3

@@ -38,8 +38,7 @@ class Schedule(BaseModel):
             ZoneInfo(v)
         except Exception:
             raise ValueError(
-                f"Unknown timezone: '{v}'. "
-                "Use IANA timezone names like 'America/Denver' or 'UTC'."
+                f"Unknown timezone: '{v}'. Use IANA timezone names like 'America/Denver' or 'UTC'."
             )
         return v
 
@@ -50,9 +49,7 @@ class Schedule(BaseModel):
         if kind == "cron":
             parts = v.split()
             if len(parts) != 5:
-                raise ValueError(
-                    f"cron expression must have 5 parts, got {len(parts)}"
-                )
+                raise ValueError(f"cron expression must have 5 parts, got {len(parts)}")
             try:
                 from apscheduler.triggers.cron import CronTrigger
 
@@ -63,20 +60,14 @@ class Schedule(BaseModel):
             try:
                 seconds = int(v)
             except ValueError:
-                raise ValueError(
-                    f"'every' schedule expr must be an integer (seconds), got '{v}'"
-                )
+                raise ValueError(f"'every' schedule expr must be an integer (seconds), got '{v}'")
             if seconds < 1:
-                raise ValueError(
-                    f"'every' interval must be >= 1 second, got {seconds}"
-                )
+                raise ValueError(f"'every' interval must be >= 1 second, got {seconds}")
         elif kind == "at":
             try:
                 datetime.fromisoformat(v)
             except ValueError:
-                raise ValueError(
-                    f"'at' schedule expr must be ISO 8601, got '{v}'"
-                )
+                raise ValueError(f"'at' schedule expr must be ISO 8601, got '{v}'")
         return v
 
 
@@ -160,9 +151,7 @@ def _validate_webhook_url(url: str) -> None:
     """Validate a webhook URL for safety (SSRF protection)."""
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        raise ValueError(
-            "Webhook URL must use HTTPS"
-        )
+        raise ValueError("Webhook URL must use HTTPS")
     hostname = parsed.hostname
     if not hostname:
         raise ValueError("Webhook URL must have a hostname")
@@ -177,9 +166,7 @@ def _validate_webhook_url(url: str) -> None:
     except ValueError:
         return  # hostname is a domain name, not an IP — that's fine
     if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-        raise ValueError(
-            "Webhook URL must not target private or internal addresses"
-        )
+        raise ValueError("Webhook URL must not target private or internal addresses")
 
 
 class CronJob(BaseModel):

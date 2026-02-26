@@ -8,7 +8,7 @@ import anthropic
 
 from taskrunner.agent import run_agent_loop
 from taskrunner.llm import _call_llm_streaming, call_llm
-from taskrunner.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
+from taskrunner.models import AgentConfig, LLMConfig
 
 
 def _make_config() -> LLMConfig:
@@ -81,9 +81,13 @@ def test_streaming_falls_back_on_transient_error():
     resp.status_code = 503
     resp.headers = {}
     stream = MagicMock()
-    stream.__enter__ = MagicMock(side_effect=anthropic.APIStatusError(
-        message="overloaded", response=resp, body=None,
-    ))
+    stream.__enter__ = MagicMock(
+        side_effect=anthropic.APIStatusError(
+            message="overloaded",
+            response=resp,
+            body=None,
+        )
+    )
     stream.__exit__ = MagicMock(return_value=False)
 
     client = MagicMock()
@@ -106,9 +110,13 @@ def test_streaming_reraises_non_retryable_error():
     resp.status_code = 400
     resp.headers = {}
     stream = MagicMock()
-    stream.__enter__ = MagicMock(side_effect=anthropic.APIStatusError(
-        message="bad request", response=resp, body=None,
-    ))
+    stream.__enter__ = MagicMock(
+        side_effect=anthropic.APIStatusError(
+            message="bad request",
+            response=resp,
+            body=None,
+        )
+    )
     stream.__exit__ = MagicMock(return_value=False)
 
     client = MagicMock()

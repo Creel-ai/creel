@@ -59,7 +59,7 @@ class LLMConfig(BaseModel):
 
 class MountConfig(BaseModel):
     """Configuration for mounting a host path into an executor container."""
-    
+
     path: str
     mode: str = Field(default="ro", pattern="^(ro|rw)$")
 
@@ -182,9 +182,7 @@ class WhatsAppChannelConfig(BaseModel):
     @model_validator(mode="after")
     def check_webhook_verify_token(self) -> WhatsAppChannelConfig:
         if self.mode == "webhook" and not self.webhook_verify_token:
-            raise ValueError(
-                "webhook_verify_token must be set when mode is 'webhook'"
-            )
+            raise ValueError("webhook_verify_token must be set when mode is 'webhook'")
         return self
 
     @field_validator("mode")
@@ -232,9 +230,7 @@ class TelegramChannelConfig(BaseModel):
     @model_validator(mode="after")
     def check_webhook_secret(self) -> TelegramChannelConfig:
         if self.mode == "webhook" and not self.webhook_secret:
-            raise ValueError(
-                "webhook_secret must be set when mode is 'webhook'"
-            )
+            raise ValueError("webhook_secret must be set when mode is 'webhook'")
         return self
 
     @field_validator("mode")
@@ -367,9 +363,7 @@ class TaskDefinition(BaseModel):
     def validate_cron(cls, v: str) -> str:
         parts = v.split()
         if len(parts) != 5:
-            raise ValueError(
-                f"schedule must be a 5-part cron expression, got {len(parts)} parts"
-            )
+            raise ValueError(f"schedule must be a 5-part cron expression, got {len(parts)} parts")
         return v
 
     @field_validator("mode")

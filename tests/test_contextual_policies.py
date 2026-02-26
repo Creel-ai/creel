@@ -53,7 +53,8 @@ class TestMatchCondition:
 @pytest.fixture
 def contextual_policy(tmp_path: Path) -> PolicyEngine:
     p = tmp_path / "policy.yaml"
-    p.write_text(textwrap.dedent("""\
+    p.write_text(
+        textwrap.dedent("""\
         allow:
           - check_weather
           - send_email
@@ -76,7 +77,8 @@ def contextual_policy(tmp_path: Path) -> PolicyEngine:
           - tool: upload_*
             arg: visibility
             pattern: "public"
-    """))
+    """)
+    )
     return PolicyEngine(p)
 
 
@@ -134,14 +136,16 @@ class TestBackwardCompatibility:
     def test_old_style_policy_still_works(self, tmp_path: Path) -> None:
         """Policy without deny_when/review_when should work as before."""
         p = tmp_path / "policy.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             allow:
               - check_weather
             review:
               - send_*
             deny:
               - delete_*
-        """))
+        """)
+        )
         engine = PolicyEngine(p)
         assert engine.evaluate("check_weather").verdict == ActionVerdict.ALLOW
         assert engine.evaluate("send_email").verdict == ActionVerdict.REVIEW

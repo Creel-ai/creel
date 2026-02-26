@@ -6,7 +6,6 @@ import pytest
 
 from taskrunner.cron.models import (
     CronJob,
-    Delivery,
     Payload,
     RunRecord,
     RunStatus,
@@ -137,7 +136,9 @@ class TestJobStoreUpdate:
             jobs_path=tmp_path / "jobs.json",
             runs_path=tmp_path / "runs.json",
         )
-        job = _make_job(created_at="2026-01-01T00:00:00+00:00", updated_at="2026-01-01T00:00:00+00:00")
+        job = _make_job(
+            created_at="2026-01-01T00:00:00+00:00", updated_at="2026-01-01T00:00:00+00:00"
+        )
         store.add(job)
         updated = store.update(job.id, name="changed")
         assert updated.updated_at > "2026-01-01T00:00:00+00:00"
@@ -244,12 +245,14 @@ class TestRunHistory:
         store.add(job)
 
         for i in range(5):
-            store.add_run(RunRecord(
-                job_id=job.id,
-                started_at=f"2026-02-21T08:0{i}:00+00:00",
-                ended_at=f"2026-02-21T08:0{i}:05+00:00",
-                status=RunStatus.SUCCESS,
-            ))
+            store.add_run(
+                RunRecord(
+                    job_id=job.id,
+                    started_at=f"2026-02-21T08:0{i}:00+00:00",
+                    ended_at=f"2026-02-21T08:0{i}:05+00:00",
+                    status=RunStatus.SUCCESS,
+                )
+            )
 
         runs = store.get_runs(job.id)
         assert len(runs) == 3

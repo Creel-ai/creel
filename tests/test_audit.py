@@ -79,12 +79,8 @@ class TestAuditLogger:
         assert record["matched_rule"] == "send_*"
 
     def test_multiple_entries_append(self, logger: AuditLogger, log_file: Path) -> None:
-        logger.log_screen(
-            input_hash="a", input_length=1, blocked=False, source="test"
-        )
-        logger.log_screen(
-            input_hash="b", input_length=2, blocked=True, source="test"
-        )
+        logger.log_screen(input_hash="a", input_length=1, blocked=False, source="test")
+        logger.log_screen(input_hash="b", input_length=2, blocked=True, source="test")
         lines = log_file.read_text().strip().split("\n")
         assert len(lines) == 2
 
@@ -103,13 +99,17 @@ class TestAuditLogger:
         """Write to an invalid path should warn, not crash."""
         bad_logger = AuditLogger(tmp_path / "nonexistent_dir" / "audit.jsonl")
         # Should not raise
-        bad_logger.log_screen(
-            input_hash="x", input_length=1, blocked=False, source="test"
-        )
+        bad_logger.log_screen(input_hash="x", input_length=1, blocked=False, source="test")
 
     def test_log_screen_debug_writes_jsonl(self, logger: AuditLogger, log_file: Path) -> None:
         chunks = [
-            {"index": 0, "length": 137, "label": "INJECTION", "score": 0.9953, "is_injection": True},
+            {
+                "index": 0,
+                "length": 137,
+                "label": "INJECTION",
+                "score": 0.9953,
+                "is_injection": True,
+            },
         ]
         logger.log_screen_debug(
             text='{"id": "msg_123"}',

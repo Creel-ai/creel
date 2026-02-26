@@ -154,22 +154,26 @@ def action_list() -> dict:
                         continue
                     rel = os.path.relpath(full, resolved)
                     if fnmatch.fnmatch(name, pattern):
-                        entries.append({
-                            "name": rel,
-                            "type": "directory" if os.path.isdir(full) else "file",
-                            "size": os.path.getsize(full) if os.path.isfile(full) else 0,
-                        })
+                        entries.append(
+                            {
+                                "name": rel,
+                                "type": "directory" if os.path.isdir(full) else "file",
+                                "size": os.path.getsize(full) if os.path.isfile(full) else 0,
+                            }
+                        )
         else:
             for name in sorted(os.listdir(resolved)):
                 full = os.path.join(resolved, name)
                 if os.path.islink(full):
                     continue
                 if fnmatch.fnmatch(name, pattern):
-                    entries.append({
-                        "name": name,
-                        "type": "directory" if os.path.isdir(full) else "file",
-                        "size": os.path.getsize(full) if os.path.isfile(full) else 0,
-                    })
+                    entries.append(
+                        {
+                            "name": name,
+                            "type": "directory" if os.path.isdir(full) else "file",
+                            "size": os.path.getsize(full) if os.path.isfile(full) else 0,
+                        }
+                    )
 
         return {"directory": directory, "entries": entries, "count": len(entries)}
     except OSError as e:

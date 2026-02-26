@@ -62,9 +62,9 @@ class ChannelRegistry:
         eps = importlib.metadata.entry_points()
         # Python 3.12+: entry_points() returns a SelectableGroups or dict-like
         if hasattr(eps, "select"):
-            channel_eps = eps.select(group=ENTRY_POINT_GROUP)
+            channel_eps = list(eps.select(group=ENTRY_POINT_GROUP))
         else:
-            channel_eps = eps.get(ENTRY_POINT_GROUP, [])
+            channel_eps = list(eps.get(ENTRY_POINT_GROUP) or [])
 
         for ep in channel_eps:
             try:
@@ -72,9 +72,7 @@ class ChannelRegistry:
                 meta, factory = register_fn()
                 self.register(meta, factory)
             except Exception:
-                logger.exception(
-                    "Failed to load channel plugin '%s' from entry point", ep.name
-                )
+                logger.exception("Failed to load channel plugin '%s' from entry point", ep.name)
 
         if not self._entries:
             logger.info("No entry-point plugins found; falling back to built-in imports")
@@ -130,8 +128,6 @@ class ChannelRegistry:
         entry = self._entries.get(channel_id)
         if entry is None:
             known = ", ".join(sorted(self._entries.keys())) or "(none)"
-            raise ValueError(
-                f"Unknown channel '{channel_id}'. Registered: {known}"
-            )
+            raise ValueError(f"Unknown channel '{channel_id}'. Registered: {known}")
         logger.info("Creating channel '%s'", channel_id)
         return entry.factory(config)

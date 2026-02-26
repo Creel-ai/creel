@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -80,7 +80,8 @@ class CronManager:
                 except Exception:
                     logger.exception(
                         "Failed to schedule job '%s' (%s) on startup — skipping",
-                        job.name, job.id,
+                        job.name,
+                        job.id,
                     )
 
         self._scheduler.start()
@@ -237,10 +238,7 @@ class CronManager:
         self._store.add_run(record)
 
         # Auto-delete one-shot `at` jobs after success
-        if (
-            job.schedule.kind == "at"
-            and status == RunStatus.SUCCESS
-        ):
+        if job.schedule.kind == "at" and status == RunStatus.SUCCESS:
             try:
                 self._store.remove(job.id, keep_history=True)
                 logger.info(

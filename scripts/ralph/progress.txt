@@ -27,6 +27,12 @@ Started: 2026-02-25
 - MUI v6 + Emotion installed; ThemeProvider in dashboard/src/ThemeContext.tsx wraps the app
 - Dark mode toggle persists to localStorage key `creel-theme`; use `useThemeMode()` hook for mode/toggle
 - Theme factory in dashboard/src/theme.ts — `buildTheme(mode)` creates MUI theme
+- React Router v6 in dashboard/src/App.tsx — routes defined as children of Layout route
+- BrowserRouter wraps the app in main.tsx
+- Layout component in dashboard/src/Layout.tsx — AppBar (fixed) + responsive Drawer + Outlet
+- Sidebar nav groups: Control, Workspace, System — defined as `NAV_GROUPS` array in Layout.tsx
+- Page components in dashboard/src/pages/ — one file per page (OverviewPage.tsx, etc.)
+- Drawer width: 240px; mobile breakpoint: `theme.breakpoints.down('md')`
 
 ---
 
@@ -81,5 +87,29 @@ Started: 2026-02-25
   - Use `<ThemeContext value={...}>` (React 19 style) instead of `<ThemeContext.Provider value={...}>`
   - CssBaseline in the ThemeProvider ensures consistent baseline styling in both modes
   - `npm run build` produces 316 KB gzipped bundle (101 KB gzipped) with MUI included
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-004
+- Implemented layout shell with sidebar navigation and React Router
+- Files created: dashboard/src/Layout.tsx, dashboard/src/pages/OverviewPage.tsx, TaskListPage.tsx, TaskDetailPage.tsx, TaskNewPage.tsx, CronPage.tsx, FilesPage.tsx, ConfigPage.tsx, LogsPage.tsx, NotFoundPage.tsx
+- Files changed: dashboard/src/App.tsx, dashboard/src/main.tsx, dashboard/package.json
+- Installed react-router-dom dependency
+- Layout component with:
+  - Fixed AppBar with "Creel" name, connection status Chip (green "Connected"), dark mode toggle
+  - Permanent MUI Drawer (240px) on desktop, temporary Drawer on mobile (< md breakpoint)
+  - Sidebar nav grouped: Control (Overview, Tasks, Cron Jobs), Workspace (Files, Config), System (Logs)
+  - Active page highlighted via `selected` prop on ListItemButton with custom `isActive()` helper
+  - `useMediaQuery` for responsive drawer variant switching
+- React Router v6 routes: /, /tasks, /tasks/new, /tasks/:name, /cron, /files, /config, /logs, * (404)
+- BrowserRouter wraps the entire app in main.tsx
+- 404 page with "Go to Overview" button
+- All placeholder pages render their page title as h4 Typography
+- **Learnings for future iterations:**
+  - React Router `<Route path="tasks/new">` must come before `<Route path="tasks/:name">` to avoid matching "new" as a name param
+  - NavLink `selected` state needs custom logic — use `isActive()` helper checking pathname prefix for nested routes (e.g., /tasks/*)
+  - AppBar `position="fixed"` with `zIndex: theme.zIndex.drawer + 1` keeps it above the drawer
+  - Need `<Toolbar />` spacer in both drawer content and main content to offset fixed AppBar height
+  - `npm run build` succeeds — bundle is 415 KB (132 KB gzipped) with router + layout added
   - All 1373 existing tests still pass
 ---

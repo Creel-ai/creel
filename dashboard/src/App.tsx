@@ -1,32 +1,29 @@
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
-import Box from '@mui/material/Box';
-import Brightness4Icon from '@mui/icons-material/Brightness4';
-import Brightness7Icon from '@mui/icons-material/Brightness7';
-import { useThemeMode } from './ThemeContext';
+import { Routes, Route } from 'react-router-dom';
+import Layout from './Layout';
+import OverviewPage from './pages/OverviewPage';
+import TaskListPage from './pages/TaskListPage';
+import TaskDetailPage from './pages/TaskDetailPage';
+import TaskNewPage from './pages/TaskNewPage';
+import CronPage from './pages/CronPage';
+import FilesPage from './pages/FilesPage';
+import ConfigPage from './pages/ConfigPage';
+import LogsPage from './pages/LogsPage';
+import NotFoundPage from './pages/NotFoundPage';
 
-function App() {
-  const { mode, toggleTheme } = useThemeMode();
-
+export default function App() {
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Creel Dashboard
-          </Typography>
-          <IconButton color="inherit" onClick={toggleTheme} aria-label="toggle dark mode">
-            {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
-          </IconButton>
-        </Toolbar>
-      </AppBar>
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
-        <Typography>Dashboard is running.</Typography>
-      </Box>
-    </Box>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<OverviewPage />} />
+        <Route path="tasks" element={<TaskListPage />} />
+        <Route path="tasks/new" element={<TaskNewPage />} />
+        <Route path="tasks/:name" element={<TaskDetailPage />} />
+        <Route path="cron" element={<CronPage />} />
+        <Route path="files" element={<FilesPage />} />
+        <Route path="config" element={<ConfigPage />} />
+        <Route path="logs" element={<LogsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;

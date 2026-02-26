@@ -65,7 +65,7 @@
         "Each route renders a placeholder page component with the page title"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Use MUI Drawer (permanent on desktop, temporary on mobile), AppBar, List, ListItemButton, ListItemIcon, ListItemText. Use react-router-dom NavLink for active state."
     },
     {

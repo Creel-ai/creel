@@ -156,6 +156,66 @@ export function runTask(name: string): Promise<{ run_id: string; task_name: stri
   });
 }
 
+// ---- Cron types ----
+
+export interface CronJob {
+  name: string;
+  schedule: string;
+  schedule_human: string;
+  next_run: string | null;
+  last_run: string | null;
+  last_status: string | null;
+  enabled: boolean;
+}
+
+export interface CronRunRecord {
+  run_id: string;
+  job_name: string;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  status: string;
+  token_usage: unknown;
+  error: string | null;
+  summary: string | null;
+}
+
+export interface CronHistoryResponse {
+  runs: CronRunRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ---- Cron API methods ----
+
+export function fetchCronJobs(): Promise<CronJob[]> {
+  return request<CronJob[]>('/cron/jobs');
+}
+
+export function toggleCronJob(name: string): Promise<{ name: string; enabled: boolean; schedule: string }> {
+  return request(`/cron/jobs/${encodeURIComponent(name)}/toggle`, { method: 'POST' });
+}
+
+export function fetchCronHistory(params?: {
+  job?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<CronHistoryResponse> {
+  const sp = new URLSearchParams();
+  if (params?.job) sp.set('job', params.job);
+  if (params?.status) sp.set('status', params.status);
+  if (params?.limit) sp.set('limit', String(params.limit));
+  if (params?.offset) sp.set('offset', String(params.offset));
+  const qs = sp.toString();
+  return request<CronHistoryResponse>(`/cron/history${qs ? `?${qs}` : ''}`);
+}
+
+export function fetchCronRunDetail(runId: string): Promise<CronRunRecord> {
+  return request<CronRunRecord>(`/cron/history/${encodeURIComponent(runId)}`);
+}
+
 /**
  * Toggle a task's enabled field by reading the raw YAML, modifying it, and writing back.
  */

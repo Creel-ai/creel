@@ -156,7 +156,7 @@
         "Schedule preset helper: Select dropdown with common schedules (hourly, daily 9am, weekly Monday) that fills the cron field"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Install @codemirror/lang-yaml, @codemirror/view, @codemirror/state. Use js-yaml for YAML<->JSON conversion in the browser. Handle form<->raw sync carefully — only sync on tab switch, not on every keystroke."
     },
     {

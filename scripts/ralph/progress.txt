@@ -45,6 +45,11 @@ Started: 2026-02-25
 - Soft-delete pattern: move files to .deleted/ subdir instead of permanent removal
 - Task toggle pattern: read raw_yaml via GET /api/tasks/{name}, regex-replace `enabled:` line, PUT back with raw_yaml field
 - Types for API responses defined in dashboard/src/api/client.ts: TaskSummary, TaskDetail, TaskUpdateRequest
+- CodeMirror 6 packages: codemirror (basic setup), @codemirror/state, @codemirror/view, @codemirror/lang-yaml, @codemirror/theme-one-dark
+- js-yaml for YAML↔JSON conversion in browser; @types/js-yaml for TypeScript
+- CodeMirror editor must be recreated when dark mode changes — theme is set at EditorState creation time
+- Form↔YAML sync pattern: only convert on tab switch (not per-keystroke) to avoid feedback loops
+- TaskEditPage serves both /tasks/new (create) and /tasks/:name (edit) — `useParams().name` determines mode
 
 ---
 
@@ -209,5 +214,37 @@ Started: 2026-02-25
   - `toggleTaskEnabled()` reads task detail, regex-replaces `enabled:` line in YAML, then PUTs back — avoids losing other fields
   - The `stopPropagation()` on the Switch's parent TableCell prevents row click from navigating when toggling
   - `npm run build` produces 509 KB (158 KB gzipped) with task list page
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-009
+- Implemented Task edit and create page with form mode and raw YAML editing
+- Files created: dashboard/src/pages/TaskEditPage.tsx
+- Files changed: dashboard/src/App.tsx (routing to TaskEditPage), dashboard/src/api/client.ts (added createTask, deleteTask, runTask methods), dashboard/package.json (new deps)
+- New npm dependencies: @codemirror/lang-yaml, @codemirror/view, @codemirror/state, @codemirror/commands, @codemirror/language, @codemirror/theme-one-dark, codemirror, js-yaml, @types/js-yaml
+- Features:
+  - Form mode with MUI fields: Name (slug-validated), Description (multiline), Schedule (cron with human-readable preview), Prompt (multiline, required), Model override, Max tokens, Timeout, Output type (Select: stdout/imessage/file), Output target, Enabled (Checkbox)
+  - Raw YAML tab with CodeMirror 6 editor: YAML syntax highlighting, line numbers, one-dark theme for dark mode
+  - MUI Tabs to switch between Form and Raw modes
+  - Tab switching syncs content: form→raw serializes via js-yaml, raw→form parses YAML back to form fields
+  - Save button calls POST (create) or PUT (edit) — Snackbar success toast
+  - Save disabled when no changes (dirty tracking via rawYaml vs savedYaml comparison)
+  - Run Now button (edit mode only) triggers POST /api/tasks/{name}/run
+  - Delete button (edit mode only) with Dialog confirmation
+  - Form validation: required fields show error state, slug pattern validated on name
+  - Unsaved changes warning via beforeunload event
+  - Schedule preset helper: Select dropdown with common schedules (hourly, daily 9am, weekly Monday)
+  - After creating a new task, navigates to /tasks/{name} (edit mode)
+- API client additions: createTask(), deleteTask(), runTask()
+- Replaced TaskDetailPage and TaskNewPage placeholders with single TaskEditPage
+- **Learnings for future iterations:**
+  - CodeMirror 6 requires `codemirror` (basic setup bundle), `@codemirror/state`, `@codemirror/view`, `@codemirror/lang-yaml`, and `@codemirror/theme-one-dark` as separate packages
+  - Form↔YAML sync should only happen on tab switch, not on every keystroke, to avoid loops
+  - The `internalUpdate` ref pattern prevents the external value sync from firing when the change originated from the editor itself
+  - CodeMirror editor must be recreated when dark mode changes (theme is set at creation time)
+  - `erasableSyntaxOnly` in tsconfig means no `enum` syntax — use plain objects/arrays for constants
+  - js-yaml `dump()` with `lineWidth: -1` prevents unwanted line wrapping in generated YAML
+  - Dirty tracking for edit mode compares current rawYaml against savedYaml snapshot; for create mode, checks if name or prompt are non-empty
+  - `npm run build` produces 1016 KB (324 KB gzipped) — CodeMirror adds significant bundle size
   - All 1373 existing tests still pass
 ---

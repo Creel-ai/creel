@@ -136,6 +136,26 @@ export function updateTask(name: string, data: TaskUpdateRequest): Promise<unkno
   });
 }
 
+export function createTask(data: TaskUpdateRequest): Promise<TaskDetail> {
+  return request<TaskDetail>('/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteTask(name: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/tasks/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function runTask(name: string): Promise<{ run_id: string; task_name: string; status: string }> {
+  return request(`/tasks/${encodeURIComponent(name)}/run`, {
+    method: 'POST',
+  });
+}
+
 /**
  * Toggle a task's enabled field by reading the raw YAML, modifying it, and writing back.
  */

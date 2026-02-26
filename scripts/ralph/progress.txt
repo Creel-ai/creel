@@ -17,3 +17,27 @@ Started: 2026-02-25
 - Existing tests in tests/ — run with pytest
 - pyproject.toml uses hatchling build system
 - Bridge (FastAPI host bridge) is in src/bridge/ — separate from daemon
+- Dashboard static dir path: `_DASHBOARD_STATIC_DIR` computed from `Path(__file__).resolve().parent.parent / "dashboard_static"` in api.py
+- SPA fallback uses catch-all `/{full_path:path}` route — must be registered AFTER all other routes
+- `_mount_dashboard()` is a no-op when dashboard_static/ dir is missing (graceful degradation)
+- Tests run with `.venv/bin/python -m pytest tests/ -x -q`
+
+---
+
+## 2026-02-25 - DASH-001
+- Implemented static SPA serving from FastAPI daemon
+- Files changed: src/taskrunner/daemon/api.py
+- Added imports: Path, Request, FileResponse, StaticFiles
+- Added `_DASHBOARD_STATIC_DIR` module-level constant
+- Added `_mount_dashboard()` helper that:
+  - Checks if dashboard_static/ dir and index.html exist before mounting
+  - Mounts /assets via StaticFiles if assets/ subdir exists
+  - Registers catch-all GET route for SPA fallback
+  - Serves actual static files if they exist, otherwise returns index.html
+- Called at end of `create_daemon_app()` after all API routes are registered
+- **Learnings for future iterations:**
+  - The catch-all route must be registered last so it doesn't shadow API routes
+  - When dashboard_static/ is missing, all existing endpoints work unchanged
+  - FastAPI StaticFiles requires the directory to exist at mount time, so we guard with is_dir()
+  - All 1373 existing tests pass with no changes needed
+---

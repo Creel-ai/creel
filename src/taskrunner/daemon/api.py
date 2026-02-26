@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from taskrunner.daemon.contracts import (
     DaemonStatusResponse,
@@ -19,6 +21,8 @@ from taskrunner.daemon.contracts import (
     StreamEvent,
 )
 from taskrunner.daemon.service import DaemonService
+
+_DASHBOARD_STATIC_DIR = Path(__file__).resolve().parent.parent / "dashboard_static"
 
 
 def create_daemon_app(service: DaemonService) -> FastAPI:
@@ -174,4 +178,34 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
             else:
                 app.api_route(path, methods=[method])(handler)
 
+    # Serve the dashboard SPA if the built static files are present
+    _mount_dashboard(app)
+
     return app
+
+
+def _mount_dashboard(app: FastAPI) -> None:
+    """Mount dashboard static files and SPA fallback if the build directory exists."""
+    if not _DASHBOARD_STATIC_DIR.is_dir():
+        return
+
+    index_html = _DASHBOARD_STATIC_DIR / "index.html"
+    if not index_html.is_file():
+        return
+
+    # Mount static assets (JS/CSS/images) so they are served directly
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(_DASHBOARD_STATIC_DIR / "assets")),
+        name="dashboard-assets",
+    ) if (_DASHBOARD_STATIC_DIR / "assets").is_dir() else None
+
+    # SPA fallback: any GET request that isn't an API/v1/health route
+    # gets index.html so client-side routing works.
+    @app.get("/{full_path:path}")
+    async def _spa_fallback(request: Request, full_path: str) -> FileResponse:
+        # Serve actual static files if they exist (e.g. favicon.ico, manifest.json)
+        static_file = _DASHBOARD_STATIC_DIR / full_path
+        if full_path and static_file.is_file() and _DASHBOARD_STATIC_DIR in static_file.resolve().parents:
+            return FileResponse(str(static_file))
+        return FileResponse(str(index_html))

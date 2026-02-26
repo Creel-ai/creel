@@ -16,7 +16,7 @@
         "Typecheck passes, existing tests pass"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Modify src/taskrunner/daemon/api.py. Use FastAPI StaticFiles mount. SPA fallback: catch-all route that returns index.html for non-API paths."
     },
     {

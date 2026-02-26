@@ -33,6 +33,9 @@ Started: 2026-02-25
 - Sidebar nav groups: Control, Workspace, System — defined as `NAV_GROUPS` array in Layout.tsx
 - Page components in dashboard/src/pages/ — one file per page (OverviewPage.tsx, etc.)
 - Drawer width: 240px; mobile breakpoint: `theme.breakpoints.down('md')`
+- Dashboard API router in src/taskrunner/daemon/api_dashboard.py — prefix="/api", mounted via `app.include_router(dashboard_router)` in api.py
+- Access DaemonService in endpoint handlers via `request.app.state.service`
+- Agent definition accessible via `service._agent_def` (AgentDefinition model)
 
 ---
 
@@ -111,5 +114,24 @@ Started: 2026-02-25
   - AppBar `position="fixed"` with `zIndex: theme.zIndex.drawer + 1` keeps it above the drawer
   - Need `<Toolbar />` spacer in both drawer content and main content to offset fixed AppBar height
   - `npm run build` succeeds — bundle is 415 KB (132 KB gzipped) with router + layout added
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-005
+- Implemented GET /api/status endpoint returning daemon status, agent info, channels, task stats, cron info, and recent runs
+- Files created: src/taskrunner/daemon/api_dashboard.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included dashboard_router)
+- Created APIRouter with prefix="/api" in api_dashboard.py
+- Endpoint reads from DaemonService.status(), agent_def, load_all_tasks(), and cron-history.jsonl
+- Returns structured JSON: daemon (running, pid, uptime_seconds, socket), agent (name, model, provider), channels (with enabled/connected), tasks (total, scheduled), cron (enabled_jobs, total_jobs, next_run), recent_runs (last 5)
+- Sensible defaults when no tasks/channels/history exist
+- Router included in create_daemon_app() BEFORE webhook routes and SPA fallback
+- **Learnings for future iterations:**
+  - Dashboard API routes use `/api/*` prefix (via APIRouter prefix="/api"), distinct from existing `/v1/*` routes
+  - The dashboard router must be included before `_mount_dashboard()` call since the SPA catch-all would shadow `/api/*` routes
+  - `request.app.state.service` gives access to the DaemonService instance (set in lifespan)
+  - `service._agent_def` provides agent config (name, model, provider)
+  - Cron history JSONL path: `~/.creel/cron-history.jsonl` — doesn't exist yet (DASH-010 will create it)
+  - `load_all_tasks()` can throw FileNotFoundError if tasks dir doesn't exist — wrap in try/except
   - All 1373 existing tests still pass
 ---

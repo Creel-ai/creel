@@ -80,7 +80,7 @@
         "Existing tests still pass"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Create src/taskrunner/daemon/api_dashboard.py with an APIRouter. Mount it in api.py. Use existing model loading and service status methods where possible."
     },
     {

@@ -295,6 +295,17 @@ def _run_llm_container(prompt: str, config: LLMConfig) -> str:
             capture_output=True,
             text=True,
             timeout=120,
-            check=True,
         )
+
+    stderr = result.stderr.strip() if result.stderr else ""
+    if stderr:
+        if result.returncode == 0:
+            logger.debug("LLM runner stderr (success):\n%s", stderr)
+        else:
+            logger.error("LLM runner stderr (exit %d):\n%s", result.returncode, stderr)
+
+    if result.returncode != 0:
+        error_detail = stderr[:500] if stderr else f"exit code {result.returncode}"
+        raise RuntimeError(f"LLM runner failed: {error_detail}")
+
     return result.stdout.strip()

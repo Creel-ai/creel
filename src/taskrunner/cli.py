@@ -567,7 +567,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
     log_path = _daemon_log_path(args)
     plist_path = _daemon_plist_path(args)
     label = _daemon_label(args)
-    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 20.0))
 
     # If a launchd service is installed, use it as the startup path.
     if sys.platform == "darwin" and plist_path.exists():
@@ -676,7 +676,7 @@ def cmd_daemon_install(args: argparse.Namespace) -> int:
     log_path = _daemon_log_path(args)
     plist_path = _daemon_plist_path(args)
     label = _daemon_label(args)
-    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 20.0))
     launch_target = _daemon_launchd_target()
 
     cmd = _build_daemon_run_command(args, socket_path, pid_path)
@@ -851,6 +851,15 @@ def cmd_daemon_stop(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     return 1
+
+
+def cmd_daemon_restart(args: argparse.Namespace) -> int:
+    """Stop then start the daemon."""
+    import time
+
+    cmd_daemon_stop(args)
+    time.sleep(0.5)
+    return cmd_daemon_start(args)
 
 
 def cmd_daemon_status(args: argparse.Namespace) -> int:
@@ -1531,15 +1540,15 @@ def main() -> int:
     _daemon_runtime_parent.add_argument(
         "--wait-seconds",
         type=float,
-        default=8.0,
-        help="Seconds to wait for daemon health check (default: 8)",
+        default=20.0,
+        help="Seconds to wait for daemon health check (default: 20)",
     )
 
     # daemon command
     daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
     daemon_subparsers = daemon_parser.add_subparsers(
         dest="daemon_command",
-        metavar="{start,stop,status,install,uninstall}",
+        metavar="{start,stop,restart,status,install,uninstall}",
     )
 
     daemon_subparsers.add_parser(
@@ -1554,6 +1563,18 @@ def main() -> int:
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
     daemon_stop.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Stop timeout in seconds (default: 10)",
+    )
+
+    daemon_restart = daemon_subparsers.add_parser(
+        "restart",
+        help="Stop then start the daemon",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
+    )
+    daemon_restart.add_argument(
         "--timeout",
         type=float,
         default=10.0,
@@ -1723,6 +1744,7 @@ def main() -> int:
         daemon_commands = {
             "start": cmd_daemon_start,
             "stop": cmd_daemon_stop,
+            "restart": cmd_daemon_restart,
             "status": cmd_daemon_status,
             "install": cmd_daemon_install,
             "uninstall": cmd_daemon_uninstall,

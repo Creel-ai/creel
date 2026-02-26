@@ -17,7 +17,7 @@ from googleapiclient.http import MediaInMemoryUpload
 try:
     from executors.google_creds import get_credentials
 except ModuleNotFoundError:
-    from google_creds import get_credentials
+    from google_creds import get_credentials  # type: ignore[no-redef]
 
 
 def upload_file(

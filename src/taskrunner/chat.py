@@ -11,11 +11,15 @@ from typing import Any
 
 from taskrunner.agent import run_agent_loop
 from taskrunner.approvals import ApprovalQueue
+from taskrunner.channels.message import Attachment, AttachmentType
 from taskrunner.log import generate_request_id, request_id_var
 from taskrunner.memory import MemoryManager
 from taskrunner.models import AgentDefinition
 from taskrunner.prompt_builder import build_system_prompt
 from taskrunner.quiet_hours import should_suppress
+from taskrunner.services.media_store import MediaStore
+from taskrunner.services.transcription import TranscriptionService
+from taskrunner.services.vision import VisionProcessor
 from taskrunner.session import SessionManager
 from taskrunner.tools import execute_tool_call
 
@@ -127,6 +131,11 @@ class ChatServer:
             self._guardian.warm_up()
             logger.info("Guardian enabled")
 
+        # Initialize media services for attachment processing
+        self._media_store = MediaStore()
+        self._transcription = TranscriptionService()
+        self._vision = VisionProcessor(provider="anthropic")
+
     def handle_message(
         self,
         sender_id: str,
@@ -198,8 +207,20 @@ class ChatServer:
                 "Reply Y to approve or N to deny."
             )
 
-        # Add user message and get session with history
-        session = self._session_mgr.add_user_message(sender_id, text)
+        # Process media attachments (voice transcription + image vision)
+        text, image_content_blocks = self._process_attachments(
+            text, attachments, sender_id,
+        )
+
+        # Add user message: use content blocks when images are present
+        if image_content_blocks:
+            content_blocks: list[dict] = [{"type": "text", "text": text}]
+            content_blocks.extend(image_content_blocks)
+            session = self._session_mgr.add_user_message_blocks(
+                sender_id, content_blocks,
+            )
+        else:
+            session = self._session_mgr.add_user_message(sender_id, text)
 
         # Build system prompt using the prompt builder
         system_prompt = self._build_system_prompt()
@@ -298,6 +319,84 @@ class ChatServer:
         self._session_mgr.save_session(session)
 
         return result.text
+
+    def _process_attachments(
+        self,
+        text: str,
+        attachments: list[Any] | None,
+        sender_id: str,
+    ) -> tuple[str, list[dict]]:
+        """Process media attachments, returning updated text and image content blocks.
+
+        Voice/audio attachments are transcribed and their text is prepended to the
+        user message. Image attachments are converted to LLM content blocks.
+
+        Returns:
+            (updated_text, image_content_blocks) — text with transcriptions prepended
+            and a list of image content block dicts for the LLM.
+        """
+        if not attachments:
+            return text, []
+
+        voice_parts: list[str] = []
+        image_blocks: list[dict] = []
+
+        for attachment in attachments:
+            if not isinstance(attachment, Attachment):
+                continue
+
+            if attachment.type in (AttachmentType.VOICE, AttachmentType.AUDIO):
+                self._process_voice_attachment(attachment, sender_id, voice_parts)
+            elif attachment.type == AttachmentType.IMAGE:
+                self._process_image_attachment(attachment, sender_id, image_blocks)
+
+        # Prepend transcribed voice text to the user message
+        if voice_parts:
+            voice_text = "\n".join(voice_parts)
+            text = f"{voice_text}\n{text}" if text else voice_text
+
+        return text, image_blocks
+
+    def _process_voice_attachment(
+        self,
+        attachment: Attachment,
+        sender_id: str,
+        voice_parts: list[str],
+    ) -> None:
+        """Save, transcribe a voice attachment and append to voice_parts."""
+        try:
+            saved_path = self._media_store.save_media(attachment, sender_id)
+        except Exception:
+            logger.warning("Failed to save voice attachment", exc_info=True)
+            voice_parts.append("[Voice message: could not save audio file]")
+            return
+
+        transcribed = self._transcription.transcribe(saved_path)
+        if transcribed:
+            voice_parts.append(f"[Voice message]: {transcribed}")
+        else:
+            voice_parts.append(
+                f"[Voice message: transcription failed] (file: {saved_path.name})"
+            )
+
+    def _process_image_attachment(
+        self,
+        attachment: Attachment,
+        sender_id: str,
+        image_blocks: list[dict],
+    ) -> None:
+        """Save an image attachment and prepare it as an LLM content block."""
+        try:
+            saved_path = self._media_store.save_media(attachment, sender_id)
+        except Exception:
+            logger.warning("Failed to save image attachment", exc_info=True)
+            return
+
+        content_block = self._vision.prepare_image(saved_path)
+        if content_block is not None:
+            image_blocks.append(content_block)
+        else:
+            logger.warning("Image could not be processed: %s", saved_path)
 
     def _send_approval_request(self, sender_id: str, action) -> None:
         """Send an approval request message via iMessage (or log it)."""

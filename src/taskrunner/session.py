@@ -232,6 +232,23 @@ class SessionManager:
         self._save(session)
         return session
 
+    def add_user_message_blocks(self, sender_id: str, content_blocks: list[dict]) -> Session:
+        """Add a user message with content blocks (e.g. text + images).
+
+        Used when media attachments produce multi-modal content for the LLM.
+        """
+        session = self.get_or_create(sender_id)
+        session.messages.append({"role": "user", "content": content_blocks})
+        session.last_active = time.time()
+        # Set title from the first text block
+        if not session.title:
+            for block in content_blocks:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    session.title = block["text"][:60].strip()
+                    break
+        self._save(session)
+        return session
+
     def add_assistant_response(self, sender_id: str, content: list) -> None:
         """Add an assistant response (may include tool_use blocks), save."""
         session = self.get_or_create(sender_id)

@@ -442,14 +442,26 @@ def handle_graceful_shutdown(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     tasks_dir = ctx.run_dir / "runtime" / "graceful_shutdown" / "tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
 
+    runtime_dir = ctx.run_dir / "runtime" / "graceful_shutdown"
+    socket_path = runtime_dir / "daemon.sock"
+    pid_file = runtime_dir / "daemon.pid"
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+
     command = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "--tasks-dir",
         str(tasks_dir),
-        "serve",
+        "daemon",
+        "run",
+        "--socket-path",
+        str(socket_path),
+        "--pid-file",
+        str(pid_file),
+        "--no-scheduler",
         "--channel",
         "bluebubbles",
     ]
@@ -465,13 +477,13 @@ def handle_graceful_shutdown(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 
     ok = (
         result.returncode in {0, 130}
-        and "Received SIGINT" in output
-        and "Server stopped." in output
+        and "Creel agent ready" in output
+        and "Daemon stopped." in output
     )
     detail = (
         "clean shutdown observed"
         if ok
-        else "serve did not report expected SIGINT shutdown markers"
+        else "daemon did not report expected startup/shutdown markers"
     )
     return _result(
         case,
@@ -486,12 +498,24 @@ def handle_graceful_shutdown(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 def handle_poll_backoff(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     config_path = _build_minimal_agent_config(ctx, "poll_backoff")
+    runtime_dir = ctx.run_dir / "runtime" / "poll_backoff"
+    socket_path = runtime_dir / "daemon.sock"
+    pid_file = runtime_dir / "daemon.pid"
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+
     command = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
-        "listen",
+        "daemon",
+        "run",
+        "--socket-path",
+        str(socket_path),
+        "--pid-file",
+        str(pid_file),
+        "--no-scheduler",
         "--channel",
         "bluebubbles",
     ]
@@ -589,16 +613,26 @@ def handle_broken_secret_validation(case: dict[str, Any], ctx: SmokeContext) -> 
     env = os.environ.copy()
     env["AGE_IDENTITY_FILE"] = str(fake_age_key)
 
+    runtime_dir = ctx.run_dir / "runtime" / "broken_secret_validation"
+    socket_path = runtime_dir / "daemon.sock"
+    pid_file = runtime_dir / "daemon.pid"
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+
     command = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "--tasks-dir",
         str(tasks_dir),
-        "serve",
-        "--channel",
-        "bluebubbles",
+        "daemon",
+        "run",
+        "--socket-path",
+        str(socket_path),
+        "--pid-file",
+        str(pid_file),
+        "--no-scheduler",
     ]
 
     result = _run_command(
@@ -702,7 +736,8 @@ def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 
     cmd_tail = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "audit",
@@ -711,7 +746,8 @@ def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     ]
     cmd_blocked = [
         ctx.python_bin,
-        "runner.py",
+        "-m",
+        "taskrunner",
         "--agent-config",
         str(config_path),
         "audit",
@@ -1063,119 +1099,120 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
         from taskrunner.models import ToolConfig, ToolParameter
         from taskrunner.tools import execute_tool_call, build_tool_definitions
 
-        # Create a temporary workspace with test files
-        with tempfile.TemporaryDirectory(prefix="creel-smoke-ws-") as ws_dir:
-            ws = Path(ws_dir)
-            (ws / "greeting.txt").write_text("hello smoke test")
-            (ws / "sub").mkdir()
-            (ws / "sub" / "nested.txt").write_text("nested content")
+        # Create workspace under run_dir (macOS /var is blocked by security)
+        ws = ctx.run_dir / "runtime" / "set_workspace_e2e" / "workspace"
+        ws.mkdir(parents=True, exist_ok=True)
+        ws_dir = str(ws)
+        (ws / "greeting.txt").write_text("hello smoke test")
+        (ws / "sub").mkdir(exist_ok=True)
+        (ws / "sub" / "nested.txt").write_text("nested content")
 
-            tools_config = {
-                "read_file": ToolConfig(
-                    executor="file_ops",
-                    description="Read a file",
-                    parameters={
-                        "file_path": ToolParameter(type="string", description="Path", required=True),
-                    },
-                    fixed_args={"action": "read"},
-                ),
-                "write_file": ToolConfig(
-                    executor="file_ops",
-                    description="Write a file",
-                    parameters={
-                        "file_path": ToolParameter(type="string", description="Path", required=True),
-                        "content": ToolParameter(type="string", description="Content", required=True),
-                    },
-                    fixed_args={"action": "write"},
-                ),
-                "list_files": ToolConfig(
-                    executor="file_ops",
-                    description="List files",
-                    parameters={
-                        "directory": ToolParameter(type="string", description="Dir"),
-                    },
-                    fixed_args={"action": "list"},
-                ),
-            }
-            session_state: dict = {}
+        tools_config = {
+            "read_file": ToolConfig(
+                executor="file_ops",
+                description="Read a file",
+                parameters={
+                    "file_path": ToolParameter(type="string", description="Path", required=True),
+                },
+                fixed_args={"action": "read"},
+            ),
+            "write_file": ToolConfig(
+                executor="file_ops",
+                description="Write a file",
+                parameters={
+                    "file_path": ToolParameter(type="string", description="Path", required=True),
+                    "content": ToolParameter(type="string", description="Content", required=True),
+                },
+                fixed_args={"action": "write"},
+            ),
+            "list_files": ToolConfig(
+                executor="file_ops",
+                description="List files",
+                parameters={
+                    "directory": ToolParameter(type="string", description="Dir"),
+                },
+                fixed_args={"action": "list"},
+            ),
+        }
+        session_state: dict = {}
 
-            # Check 1: set_workspace tool appears in definitions
-            defs = build_tool_definitions(tools_config, include_workspace_tools=True)
-            ws_tools = [d for d in defs if d["name"] == "set_workspace"]
-            if ws_tools:
-                checks.append("set_workspace in tool definitions")
-            else:
-                failures.append("set_workspace missing from tool definitions")
+        # Check 1: set_workspace tool appears in definitions
+        defs = build_tool_definitions(tools_config, include_workspace_tools=True)
+        ws_tools = [d for d in defs if d["name"] == "set_workspace"]
+        if ws_tools:
+            checks.append("set_workspace in tool definitions")
+        else:
+            failures.append("set_workspace missing from tool definitions")
 
-            # Check 2: set_workspace validates and stores path
-            result = _json.loads(execute_tool_call(
-                "set_workspace", {"path": ws_dir}, tools_config, session_state=session_state,
-            ))
-            if result.get("status") == "ok" and session_state.get("workspace"):
-                checks.append(f"set_workspace stored: {session_state['workspace']}")
-            else:
-                failures.append(f"set_workspace failed: {result}")
+        # Check 2: set_workspace validates and stores path
+        result = _json.loads(execute_tool_call(
+            "set_workspace", {"path": ws_dir}, tools_config, session_state=session_state,
+        ))
+        if result.get("status") == "ok" and session_state.get("workspace"):
+            checks.append(f"set_workspace stored: {session_state['workspace']}")
+        else:
+            failures.append(f"set_workspace failed: {result}")
 
-            # Check 3: read_file uses workspace from session_state
-            result = _json.loads(execute_tool_call(
-                "read_file", {"file_path": "greeting.txt"}, tools_config, session_state=session_state,
-            ))
-            if result.get("content") == "hello smoke test":
-                checks.append("read_file returned correct content")
-            else:
-                failures.append(f"read_file wrong content: {result}")
+        # Check 3: read_file uses workspace from session_state
+        result = _json.loads(execute_tool_call(
+            "read_file", {"file_path": "greeting.txt"}, tools_config, session_state=session_state,
+        ))
+        if result.get("content") == "hello smoke test":
+            checks.append("read_file returned correct content")
+        else:
+            failures.append(f"read_file wrong content: {result}")
 
-            # Check 4: list_files works
-            result = _json.loads(execute_tool_call(
-                "list_files", {"directory": "."}, tools_config, session_state=session_state,
-            ))
-            names = [e["name"] for e in result.get("entries", [])]
-            if "greeting.txt" in names and "sub" in names:
-                checks.append(f"list_files found expected entries: {names}")
-            else:
-                failures.append(f"list_files missing entries: {names}")
+        # Check 4: list_files works
+        result = _json.loads(execute_tool_call(
+            "list_files", {"directory": "."}, tools_config, session_state=session_state,
+        ))
+        names = [e["name"] for e in result.get("entries", [])]
+        if "greeting.txt" in names and "sub" in names:
+            checks.append(f"list_files found expected entries: {names}")
+        else:
+            failures.append(f"list_files missing entries: {names}")
 
-            # Check 5: write_file creates a new file
-            result = _json.loads(execute_tool_call(
-                "write_file", {"file_path": "new.txt", "content": "smoke written"}, tools_config, session_state=session_state,
-            ))
-            if result.get("bytes_written") and (ws / "new.txt").read_text() == "smoke written":
-                checks.append("write_file created file successfully")
-            else:
-                failures.append(f"write_file failed: {result}")
+        # Check 5: write_file creates a new file
+        result = _json.loads(execute_tool_call(
+            "write_file", {"file_path": "new.txt", "content": "smoke written"}, tools_config, session_state=session_state,
+        ))
+        if result.get("bytes_written") and (ws / "new.txt").read_text() == "smoke written":
+            checks.append("write_file created file successfully")
+        else:
+            failures.append(f"write_file failed: {result}")
 
-            # Check 6: workspace change mid-session
-            ws2 = ws / "second_ws"
-            ws2.mkdir()
-            (ws2 / "other.txt").write_text("second workspace")
-            execute_tool_call(
-                "set_workspace", {"path": str(ws2)}, tools_config, session_state=session_state,
-            )
-            result = _json.loads(execute_tool_call(
-                "read_file", {"file_path": "other.txt"}, tools_config, session_state=session_state,
-            ))
-            if result.get("content") == "second workspace":
-                checks.append("workspace change mid-session works")
-            else:
-                failures.append(f"workspace change failed: {result}")
+        # Check 6: workspace change mid-session
+        ws2 = ws / "second_ws"
+        ws2.mkdir()
+        (ws2 / "other.txt").write_text("second workspace")
+        execute_tool_call(
+            "set_workspace", {"path": str(ws2)}, tools_config, session_state=session_state,
+        )
+        result = _json.loads(execute_tool_call(
+            "read_file", {"file_path": "other.txt"}, tools_config, session_state=session_state,
+        ))
+        if result.get("content") == "second workspace":
+            checks.append("workspace change mid-session works")
+        else:
+            failures.append(f"workspace change failed: {result}")
 
-            # Check 7: set_workspace rejects dangerous roots
-            result = _json.loads(execute_tool_call(
-                "set_workspace", {"path": "/"}, tools_config, session_state=session_state,
-            ))
-            if "error" in result and "dangerous" in result["error"].lower():
-                checks.append("dangerous root rejected")
-            else:
-                failures.append(f"dangerous root not rejected: {result}")
+        # Check 7: set_workspace rejects blocked roots
+        result = _json.loads(execute_tool_call(
+            "set_workspace", {"path": "/"}, tools_config, session_state=session_state,
+        ))
+        if "error" in result:
+            checks.append("dangerous root rejected")
+        else:
+            failures.append(f"dangerous root not rejected: {result}")
 
-            # Check 8: set_workspace rejects relative paths
-            result = _json.loads(execute_tool_call(
-                "set_workspace", {"path": "relative/path"}, tools_config, session_state=session_state,
-            ))
-            if "error" in result:
-                checks.append("relative path rejected")
-            else:
-                failures.append(f"relative path not rejected: {result}")
+        # Check 8: set_workspace rejects relative paths
+        result = _json.loads(execute_tool_call(
+            "set_workspace", {"path": "relative/path"}, tools_config, session_state=session_state,
+        ))
+        if "error" in result:
+            checks.append("relative path rejected")
+        else:
+            failures.append(f"relative path not rejected: {result}")
 
     except Exception as exc:
         failures.append(f"exception: {exc}")
@@ -1199,12 +1236,12 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 def handle_cli_help(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     commands = [
-        [ctx.python_bin, "runner.py", "--help"],
-        [ctx.python_bin, "runner.py", "chat", "--help"],
-        [ctx.python_bin, "runner.py", "listen", "--help"],
-        [ctx.python_bin, "runner.py", "serve", "--help"],
-        [ctx.python_bin, "runner.py", "audit", "--help"],
-        [ctx.python_bin, "runner.py", "run", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "run", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "audit", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "attach", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "send", "--help"],
+        [ctx.python_bin, "-m", "taskrunner", "daemon", "--help"],
     ]
 
     failures: list[str] = []
@@ -1235,7 +1272,7 @@ def handle_cli_help(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
         case,
         "pass",
         time.perf_counter() - started,
-        "runner.py help surfaces available",
+        "CLI help surfaces available for all subcommands",
         log_file=log_path,
         exit_code=0,
     )

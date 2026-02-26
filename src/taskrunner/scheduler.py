@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import traceback
 import uuid
@@ -62,8 +63,6 @@ def start_scheduler(
     Returns:
         The scheduler instance (useful for external shutdown).
     """
-    import threading
-
     tasks_dir = Path(tasks_dir)
     tasks = load_all_tasks(tasks_dir)
 
@@ -75,9 +74,7 @@ def start_scheduler(
 
     for task in tasks:
         task_file = tasks_dir / f"{task.name}.yaml"
-        logger.info(
-            "Scheduling task '%s' with cron: %s", task.name, task.schedule
-        )
+        logger.info("Scheduling task '%s' with cron: %s", task.name, task.schedule)
         scheduler.add_job(
             _run_task_safe,
             CronTrigger.from_crontab(task.schedule),
@@ -88,6 +85,7 @@ def start_scheduler(
 
     # If a shutdown event is provided, watch it in a background thread
     if shutdown_event is not None:
+
         def _watch_shutdown():
             shutdown_event.wait()
             logger.info("Shutdown event received, stopping scheduler")
@@ -98,6 +96,7 @@ def start_scheduler(
 
     # If a heartbeat event is provided, pulse it periodically in a daemon thread
     if heartbeat_event is not None:
+
         def _heartbeat_loop():
             while True:
                 heartbeat_event.set()

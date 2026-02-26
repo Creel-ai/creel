@@ -130,8 +130,10 @@ class DriftDetector:
             return
 
         self._baseline.known_tools = known_tools
-        self._baseline.output_lengths = deque(output_lengths[-_MAX_OUTPUT_SAMPLES:], maxlen=_MAX_OUTPUT_SAMPLES)
-        self._baseline.recent_results = recent_results[-self.error_window_size:]
+        self._baseline.output_lengths = deque(
+            output_lengths[-_MAX_OUTPUT_SAMPLES:], maxlen=_MAX_OUTPUT_SAMPLES
+        )
+        self._baseline.recent_results = recent_results[-self.error_window_size :]
         self._tool_call_counts = tool_counts
 
         # Compute output length statistics (sample variance)
@@ -145,8 +147,7 @@ class DriftDetector:
             self._baseline.output_length_std = 0.0
 
         logger.info(
-            "Drift baseline built: %d known tools, %d output samples, "
-            "mean_length=%.0f, std=%.0f",
+            "Drift baseline built: %d known tools, %d output samples, mean_length=%.0f, std=%.0f",
             len(known_tools),
             len(output_lengths),
             self._baseline.output_length_mean,
@@ -238,9 +239,7 @@ class DriftDetector:
 
         # Keep only the window
         if len(self._baseline.recent_results) > self.error_window_size:
-            self._baseline.recent_results = self._baseline.recent_results[
-                -self.error_window_size:
-            ]
+            self._baseline.recent_results = self._baseline.recent_results[-self.error_window_size :]
 
         # Need minimum sample to avoid false positives
         if len(self._baseline.recent_results) < 10:

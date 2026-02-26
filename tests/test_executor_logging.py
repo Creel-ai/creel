@@ -33,6 +33,7 @@ class TestRunExecutorContainer:
         )
 
         import logging
+
         with caplog.at_level(logging.DEBUG):
             result = _run_executor_container(config)
 
@@ -42,9 +43,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_failure_stderr_in_exception(
-        self, mock_decrypt, mock_run, mock_ensure, config
-    ):
+    def test_failure_stderr_in_exception(self, mock_decrypt, mock_run, mock_ensure, config):
         """Non-zero exit should raise RuntimeError with stderr content."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -60,9 +59,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_failure_no_stderr(
-        self, mock_decrypt, mock_run, mock_ensure, config
-    ):
+    def test_failure_no_stderr(self, mock_decrypt, mock_run, mock_ensure, config):
         """Non-zero exit with empty stderr should still include exit code."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -78,9 +75,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_timeout_raises_runtime_error(
-        self, mock_decrypt, mock_run, mock_ensure, config
-    ):
+    def test_timeout_raises_runtime_error(self, mock_decrypt, mock_run, mock_ensure, config):
         """Timeout should raise RuntimeError with executor name and timeout."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -94,9 +89,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_configurable_timeout(
-        self, mock_decrypt, mock_run, mock_ensure
-    ):
+    def test_configurable_timeout(self, mock_decrypt, mock_run, mock_ensure):
         """Timeout should use config.timeout, not hardcoded 60."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -134,9 +127,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_stderr_truncated_in_error(
-        self, mock_decrypt, mock_run, mock_ensure, config
-    ):
+    def test_stderr_truncated_in_error(self, mock_decrypt, mock_run, mock_ensure, config):
         """Very long stderr should be truncated in the error message."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -162,7 +153,9 @@ class TestRunExecutorContainer:
             ),
         },
     )
-    @patch("taskrunner.oauth.get_google_access_token_from_json", return_value="ya29.container-token")
+    @patch(
+        "taskrunner.oauth.get_google_access_token_from_json", return_value="ya29.container-token"
+    )
     @patch("taskrunner.orchestrator.tempfile.NamedTemporaryFile")
     def test_google_credentials_json_replaced_with_access_token(
         self,
@@ -208,6 +201,14 @@ class TestExecutorConfigTimeout:
 
 
 class TestEnsureImage:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        from taskrunner.orchestrator import _image_cache
+
+        _image_cache.clear()
+        yield
+        _image_cache.clear()
+
     @patch("taskrunner.orchestrator.subprocess.run")
     def test_build_failure_includes_stderr(self, mock_run, tmp_path):
         """Docker build failure should log and raise with stderr."""
@@ -217,13 +218,18 @@ class TestEnsureImage:
         # Second call: build (fails)
         mock_run.side_effect = [
             MagicMock(returncode=1),  # inspect
-            MagicMock(returncode=1, stderr="Step 3/5 : RUN pip install\nERROR: Could not find", stdout=""),  # build
+            MagicMock(
+                returncode=1, stderr="Step 3/5 : RUN pip install\nERROR: Could not find", stdout=""
+            ),  # build
         ]
 
         dockerfile = tmp_path / "src" / "executors" / "test" / "Dockerfile"
         dockerfile.parent.mkdir(parents=True)
         dockerfile.write_text("FROM python:3.11")
 
-        with patch("taskrunner.orchestrator.Path", side_effect=lambda x: tmp_path / x if not str(x).startswith("/") else x):
+        with patch(
+            "taskrunner.orchestrator.Path",
+            side_effect=lambda x: tmp_path / x if not str(x).startswith("/") else x,
+        ):
             with pytest.raises(RuntimeError, match="Could not find"):
                 _ensure_image("executor-test:latest")

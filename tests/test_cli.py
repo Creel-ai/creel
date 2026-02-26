@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import errno
 import os
 import signal
@@ -14,7 +13,6 @@ import pytest
 import yaml
 
 from taskrunner import cli
-
 
 # ---------------------------------------------------------------------------
 # Helper function tests
@@ -66,9 +64,7 @@ class TestCleanupStaleDaemonFiles:
         assert not sock.exists()
 
     def test_no_error_on_missing_files(self, tmp_path: Path) -> None:
-        cli._cleanup_stale_daemon_files(
-            tmp_path / "nope.pid", tmp_path / "nope.sock"
-        )
+        cli._cleanup_stale_daemon_files(tmp_path / "nope.pid", tmp_path / "nope.sock")
 
 
 class TestAllowLaunchdFailure:
@@ -97,9 +93,7 @@ class TestAllowLaunchdFailure:
 class TestBuildDaemonRunCommand:
     def test_basic(self, cli_args) -> None:
         args = cli_args()
-        cmd = cli._build_daemon_run_command(
-            args, args.socket_path, args.pid_file
-        )
+        cmd = cli._build_daemon_run_command(args, args.socket_path, args.pid_file)
         assert cmd[0] == cli.sys.executable
         assert "daemon" in cmd
         assert "run" in cmd
@@ -113,9 +107,7 @@ class TestBuildDaemonRunCommand:
             json_logs=True,
             no_scheduler=True,
         )
-        cmd = cli._build_daemon_run_command(
-            args, args.socket_path, args.pid_file
-        )
+        cmd = cli._build_daemon_run_command(args, args.socket_path, args.pid_file)
         assert "--containers" in cmd
         assert "--no-judge" in cmd
         assert "--verbose" in cmd
@@ -536,9 +528,7 @@ class TestCmdDaemonStatus:
 
         with (
             patch.object(cli, "_pid_is_running", return_value=True),
-            patch.object(
-                cli, "_daemon_request", side_effect=ConnectionError("refused")
-            ),
+            patch.object(cli, "_daemon_request", side_effect=ConnectionError("refused")),
         ):
             rc = cli.cmd_daemon_status(args)
         assert rc == 1
@@ -640,13 +630,16 @@ class TestCmdAudit:
 
         log_file = tmp_path / "audit.jsonl"
         log_file.write_text(
-            json.dumps({
-                "ts": "2025-01-01T00:00:00",
-                "event": "screen_input",
-                "blocked": True,
-                "source": "classifier",
-                "confidence": 0.95,
-            }) + "\n"
+            json.dumps(
+                {
+                    "ts": "2025-01-01T00:00:00",
+                    "event": "screen_input",
+                    "blocked": True,
+                    "source": "classifier",
+                    "confidence": 0.95,
+                }
+            )
+            + "\n"
         )
         config = {
             "system_prompt": "test",
@@ -666,13 +659,16 @@ class TestCmdAudit:
 
         log_file = tmp_path / "audit.jsonl"
         log_file.write_text(
-            json.dumps({
-                "ts": "2025-01-01T00:00:00",
-                "event": "validate_action",
-                "verdict": "allow",
-                "tool_name": "weather",
-                "matched_rule": "allow-weather",
-            }) + "\n"
+            json.dumps(
+                {
+                    "ts": "2025-01-01T00:00:00",
+                    "event": "validate_action",
+                    "verdict": "allow",
+                    "tool_name": "weather",
+                    "matched_rule": "allow-weather",
+                }
+            )
+            + "\n"
         )
         config = {
             "system_prompt": "test",
@@ -693,14 +689,17 @@ class TestCmdAudit:
 
         log_file = tmp_path / "audit.jsonl"
         log_file.write_text(
-            json.dumps({
-                "ts": "2025-01-01T00:00:00",
-                "event": "tool_result",
-                "success": True,
-                "tool_name": "weather",
-                "duration_ms": 123,
-                "output_length": 456,
-            }) + "\n"
+            json.dumps(
+                {
+                    "ts": "2025-01-01T00:00:00",
+                    "event": "tool_result",
+                    "success": True,
+                    "tool_name": "weather",
+                    "duration_ms": 123,
+                    "output_length": 456,
+                }
+            )
+            + "\n"
         )
         config = {
             "system_prompt": "test",
@@ -747,9 +746,7 @@ class TestCmdSendNonStreaming:
 
     def test_connection_error(self, cli_args, capsys) -> None:
         args = self._make_send_args(cli_args)
-        with patch.object(
-            cli, "_daemon_request", side_effect=ConnectionError("refused")
-        ):
+        with patch.object(cli, "_daemon_request", side_effect=ConnectionError("refused")):
             rc = cli.cmd_send(args)
         assert rc == 1
         assert "refused" in capsys.readouterr().err
@@ -775,6 +772,74 @@ class TestCmdSendNonStreaming:
             cli.cmd_send(args)
         call_kwargs = mock_req.call_args
         assert call_kwargs[1]["json_body"]["session_id"] == "sess-123"
+
+
+# ---------------------------------------------------------------------------
+# cmd_encrypt tests
+# ---------------------------------------------------------------------------
+
+
+class TestCmdEncrypt:
+    def test_encrypt_basic(self, cli_args, tmp_path, age_keypair, capsys) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("SECRET=hunter2\n")
+
+        args = cli_args(env_file=str(env_file), recipient=str(pub_file), output=None, delete=False)
+        rc = cli.cmd_encrypt(args)
+        assert rc == 0
+        assert (tmp_path / "test.env.enc").exists()
+        assert env_file.exists()  # not deleted
+        out = capsys.readouterr().out
+        assert "Encrypted:" in out
+        assert "Delete the plaintext" in out
+
+    def test_encrypt_delete(self, cli_args, tmp_path, age_keypair, capsys) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("SECRET=hunter2\n")
+
+        args = cli_args(env_file=str(env_file), recipient=str(pub_file), output=None, delete=True)
+        rc = cli.cmd_encrypt(args)
+        assert rc == 0
+        assert (tmp_path / "test.env.enc").exists()
+        assert not env_file.exists()  # deleted
+        out = capsys.readouterr().out
+        assert "Deleted plaintext" in out
+
+    def test_encrypt_custom_output(self, cli_args, tmp_path, age_keypair) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("KEY=val\n")
+        custom_out = tmp_path / "custom.enc"
+
+        args = cli_args(
+            env_file=str(env_file), recipient=str(pub_file), output=str(custom_out), delete=False
+        )
+        rc = cli.cmd_encrypt(args)
+        assert rc == 0
+        assert custom_out.exists()
+
+    def test_encrypt_missing_file(self, cli_args, tmp_path, capsys) -> None:
+        args = cli_args(
+            env_file=str(tmp_path / "missing.env"), recipient=None, output=None, delete=False
+        )
+        rc = cli.cmd_encrypt(args)
+        assert rc == 1
+        assert "not found" in capsys.readouterr().err.lower()
+
+    def test_encrypt_via_main(self, monkeypatch, tmp_path, age_keypair, capsys) -> None:
+        _, pub_file = age_keypair
+        env_file = tmp_path / "test.env"
+        env_file.write_text("TOK=abc\n")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["creel", "encrypt", str(env_file), "--recipient", str(pub_file)],
+        )
+        rc = cli.main()
+        assert rc == 0
+        assert (tmp_path / "test.env.enc").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ def search(query: str, count: int = 5) -> list[dict]:
     resp = requests.get(
         BRAVE_API_URL,
         headers={"X-Subscription-Token": api_key},
-        params={"q": query, "count": count},
+        params={"q": query, "count": count},  # type: ignore[arg-type]
         timeout=15,
     )
     resp.raise_for_status()
@@ -35,11 +35,13 @@ def search(query: str, count: int = 5) -> list[dict]:
 
     results = []
     for item in data.get("web", {}).get("results", []):
-        results.append({
-            "title": item.get("title", ""),
-            "url": item.get("url", ""),
-            "snippet": item.get("description", ""),
-        })
+        results.append(
+            {
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "snippet": item.get("description", ""),
+            }
+        )
 
     return results
 

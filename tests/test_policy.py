@@ -15,7 +15,8 @@ from guardian.types import ActionVerdict
 def policy_file(tmp_path: Path) -> Path:
     """Create a temporary policy file."""
     p = tmp_path / "policy.yaml"
-    p.write_text(textwrap.dedent("""\
+    p.write_text(
+        textwrap.dedent("""\
         allow:
           - check_weather
           - check_calendar
@@ -31,7 +32,8 @@ def policy_file(tmp_path: Path) -> Path:
         deny:
           - trash_*
           - delete_*
-    """))
+    """)
+    )
     return p
 
 
@@ -81,12 +83,14 @@ class TestPolicyEngine:
     def test_deny_wins_over_allow(self, tmp_path: Path) -> None:
         """If a tool matches both deny and allow, deny wins."""
         p = tmp_path / "conflict.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             allow:
               - delete_temp
             deny:
               - delete_*
-        """))
+        """)
+        )
         eng = PolicyEngine(p)
         decision = eng.evaluate("delete_temp")
         assert decision.verdict == ActionVerdict.DENY
@@ -94,12 +98,14 @@ class TestPolicyEngine:
     def test_deny_wins_over_review(self, tmp_path: Path) -> None:
         """If a tool matches both deny and review, deny wins."""
         p = tmp_path / "conflict.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             review:
               - trash_*
             deny:
               - trash_*
-        """))
+        """)
+        )
         eng = PolicyEngine(p)
         decision = eng.evaluate("trash_email")
         assert decision.verdict == ActionVerdict.DENY
@@ -107,12 +113,14 @@ class TestPolicyEngine:
     def test_review_wins_over_allow(self, tmp_path: Path) -> None:
         """If a tool matches both review and allow, review wins."""
         p = tmp_path / "conflict.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             allow:
               - send_*
             review:
               - send_*
-        """))
+        """)
+        )
         eng = PolicyEngine(p)
         decision = eng.evaluate("send_email")
         assert decision.verdict == ActionVerdict.REVIEW

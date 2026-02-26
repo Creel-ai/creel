@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from taskrunner.session import Session, SessionManager
+from taskrunner.session import SessionManager
 from taskrunner.tui import SENDER_ID, ChatApp, ChatInput, StatusBar
 
 
@@ -64,6 +64,7 @@ async def test_input_disabled_during_processing(tmp_path):
     def slow_handle(sender_id, text, **kwargs):
         # Block until we release
         import time
+
         for _ in range(50):
             if event.is_set():
                 break
@@ -241,6 +242,7 @@ async def test_server_command_no_thinking(tmp_path):
 @pytest.mark.asyncio
 async def test_tui_supports_backend_session_methods(tmp_path):
     """ChatApp should use get_or_create_session/new_session if backend exposes them."""
+
     class _Backend:
         def __init__(self) -> None:
             self.new_calls = 0
@@ -278,6 +280,7 @@ async def test_tui_supports_backend_session_methods(tmp_path):
 @pytest.mark.asyncio
 async def test_tui_prefers_backend_stream_events(tmp_path):
     """If backend provides stream_message, TUI should consume stream events."""
+
     class _StreamingBackend:
         def handle_message(self, sender_id, text, on_text_delta=None):
             raise AssertionError("TUI should use stream_message instead of handle_message")
@@ -311,6 +314,7 @@ async def test_tui_prefers_backend_stream_events(tmp_path):
         lines_text = "\n".join(str(line) for line in log.lines)
         assert "streamed response" in lines_text
 
+
 # --- New tests for TUI polish ---
 
 
@@ -334,6 +338,7 @@ async def test_status_bar_thinking_state(tmp_path):
 
     def slow_handle(sender_id, text, **kwargs):
         import time
+
         for _ in range(50):
             if event.is_set():
                 break
@@ -445,7 +450,9 @@ async def test_multiline_input(tmp_path):
 @pytest.mark.asyncio
 async def test_status_command(tmp_path):
     """/status should route to server and display status info."""
-    server = _make_mock_server(tmp_path, "Status:\n  Model: claude-sonnet-4-20250514\n  Session ID: abc123")
+    server = _make_mock_server(
+        tmp_path, "Status:\n  Model: claude-sonnet-4-20250514\n  Session ID: abc123"
+    )
     app = ChatApp(server)
 
     async with app.run_test() as pilot:

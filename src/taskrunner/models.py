@@ -59,7 +59,7 @@ class LLMConfig(BaseModel):
 
 class MountConfig(BaseModel):
     """Configuration for mounting a host path into an executor container."""
-    
+
     path: str
     mode: str = Field(default="ro", pattern="^(ro|rw)$")
 
@@ -182,9 +182,7 @@ class WhatsAppChannelConfig(BaseModel):
     @model_validator(mode="after")
     def check_webhook_verify_token(self) -> WhatsAppChannelConfig:
         if self.mode == "webhook" and not self.webhook_verify_token:
-            raise ValueError(
-                "webhook_verify_token must be set when mode is 'webhook'"
-            )
+            raise ValueError("webhook_verify_token must be set when mode is 'webhook'")
         return self
 
     @field_validator("mode")
@@ -203,6 +201,61 @@ class WhatsAppChannelConfig(BaseModel):
     @field_validator("allowed_senders", mode="before")
     @classmethod
     def expand_allowed_senders(cls, v: list[str] | str) -> list[str]:
+        if isinstance(v, str):
+            v = [v]
+        return [os.path.expandvars(s) for s in v]
+
+
+class TelegramChannelConfig(BaseModel):
+    """Telegram Bot API channel settings."""
+
+    bot_token: str = "$TELEGRAM_BOT_TOKEN"
+    secrets: str | None = None
+    mode: str = "polling"  # "polling" or "webhook"
+    poll_timeout: int = 30
+    webhook_path: str = "/webhooks/telegram"
+    webhook_secret: str = ""
+    allowed_senders: list[str] = Field(default_factory=list)
+    allowed_chats: list[str] = Field(default_factory=list)
+    send_typing: bool = True
+
+    @model_validator(mode="after")
+    def check_allowed_senders_required(self) -> TelegramChannelConfig:
+        if not self.allowed_senders:
+            raise ValueError(
+                "allowed_senders must not be empty — Telegram channel requires an explicit allow list"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_webhook_secret(self) -> TelegramChannelConfig:
+        if self.mode == "webhook" and not self.webhook_secret:
+            raise ValueError("webhook_secret must be set when mode is 'webhook'")
+        return self
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        allowed = {"polling", "webhook"}
+        if v not in allowed:
+            raise ValueError(f"mode must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("bot_token")
+    @classmethod
+    def expand_bot_token(cls, v: str) -> str:
+        return os.path.expandvars(v)
+
+    @field_validator("allowed_senders", mode="before")
+    @classmethod
+    def expand_allowed_senders(cls, v: list[str] | str) -> list[str]:
+        if isinstance(v, str):
+            v = [v]
+        return [os.path.expandvars(s) for s in v]
+
+    @field_validator("allowed_chats", mode="before")
+    @classmethod
+    def expand_allowed_chats(cls, v: list[str] | str) -> list[str]:
         if isinstance(v, str):
             v = [v]
         return [os.path.expandvars(s) for s in v]
@@ -242,6 +295,7 @@ class ChannelsConfig(BaseModel):
     imessage: IMessageChannelConfig | None = None
     bluebubbles: BlueBubblesChannelConfig | None = None
     whatsapp: WhatsAppChannelConfig | None = None
+    telegram: TelegramChannelConfig | None = None
 
     def configured_channels(self) -> list[str]:
         """Return IDs of channels that have configuration present."""
@@ -309,9 +363,7 @@ class TaskDefinition(BaseModel):
     def validate_cron(cls, v: str) -> str:
         parts = v.split()
         if len(parts) != 5:
-            raise ValueError(
-                f"schedule must be a 5-part cron expression, got {len(parts)} parts"
-            )
+            raise ValueError(f"schedule must be a 5-part cron expression, got {len(parts)} parts")
         return v
 
     @field_validator("mode")

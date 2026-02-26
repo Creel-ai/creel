@@ -1,11 +1,11 @@
 """Tests for the apple_notes executor."""
 
-import json
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from executors.apple_notes.executor import call_bridge, list_notes, search_notes, create_note
+import pytest
+
+from executors.apple_notes.executor import call_bridge, create_note, list_notes, search_notes
 
 
 class TestBridgeClient:
@@ -21,10 +21,9 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         # Mock environment variables
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             result = call_bridge("/notes/list")
 
         assert result["ok"] is True
@@ -38,7 +37,7 @@ class TestBridgeClient:
                 "Authorization": "Bearer test-token",
                 "Content-Type": "application/json",
             },
-            timeout=30
+            timeout=30,
         )
 
     @patch("executors.apple_notes.executor.requests.post")
@@ -49,10 +48,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": True, "output": "success"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             result = call_bridge("/notes/search", {"query": "test"})
 
         assert result["ok"] is True
@@ -65,7 +63,7 @@ class TestBridgeClient:
                 "Authorization": "Bearer test-token",
                 "Content-Type": "application/json",
             },
-            timeout=30
+            timeout=30,
         )
 
     def test_call_bridge_missing_url(self):
@@ -84,12 +82,12 @@ class TestBridgeClient:
     def test_call_bridge_http_error(self, mock_post):
         """Test handling of HTTP errors."""
         import requests
+
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection failed")
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             with pytest.raises(RuntimeError, match="Bridge request failed"):
                 call_bridge("/notes/list")
 
@@ -101,10 +99,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": False, "error": "Command failed"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/notes/list")
 
@@ -153,8 +150,7 @@ class TestNotesOperations:
 
         assert result["ok"] is True
         mock_call_bridge.assert_called_once_with(
-            "/notes/create", 
-            {"title": "Test Title", "body": "Test Body"}
+            "/notes/create", {"title": "Test Title", "body": "Test Body"}
         )
 
     @patch("executors.apple_notes.executor.call_bridge")
@@ -166,8 +162,7 @@ class TestNotesOperations:
 
         assert result["ok"] is True
         mock_call_bridge.assert_called_once_with(
-            "/notes/create", 
-            {"title": "Test Title", "body": "Test Body", "folder": "work"}
+            "/notes/create", {"title": "Test Title", "body": "Test Body", "folder": "work"}
         )
 
 
@@ -182,6 +177,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "list"}):
             from executors.apple_notes.executor import main
+
             main()
 
         mock_list_notes.assert_called_once_with(None)
@@ -195,6 +191,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "list", "FOLDER": "work"}):
             from executors.apple_notes.executor import main
+
             main()
 
         mock_list_notes.assert_called_once_with("work")
@@ -208,6 +205,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "search", "QUERY": "test query"}):
             from executors.apple_notes.executor import main
+
             main()
 
         mock_search_notes.assert_called_once_with("test query")
@@ -219,6 +217,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "search"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_notes.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -229,13 +228,12 @@ class TestMainFunction:
         """Test main function with create action."""
         mock_create_note.return_value = {"ok": True, "output": "note created"}
 
-        with patch.dict(os.environ, {
-            "ACTION": "create", 
-            "TITLE": "Test Note", 
-            "BODY": "Note content",
-            "FOLDER": "work"
-        }):
+        with patch.dict(
+            os.environ,
+            {"ACTION": "create", "TITLE": "Test Note", "BODY": "Note content", "FOLDER": "work"},
+        ):
             from executors.apple_notes.executor import main
+
             main()
 
         mock_create_note.assert_called_once_with("Test Note", "Note content", "work")
@@ -247,6 +245,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "create"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_notes.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -257,6 +256,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "read"}):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_notes.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -267,6 +267,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "unknown"}):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_notes.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -279,6 +280,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {}, clear=True):
             from executors.apple_notes.executor import main
+
             main()
 
         mock_list_notes.assert_called_once_with(None)

@@ -20,7 +20,7 @@ from googleapiclient.discovery import build
 try:
     from executors.google_creds import get_credentials
 except ModuleNotFoundError:
-    from google_creds import get_credentials
+    from google_creds import get_credentials  # type: ignore[no-redef]
 
 
 def fetch_emails(
@@ -43,10 +43,7 @@ def fetch_emails(
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     results = (
-        service.users()
-        .messages()
-        .list(userId="me", q=query, maxResults=max_results)
-        .execute()
+        service.users().messages().list(userId="me", q=query, maxResults=max_results).execute()
     )
 
     messages = results.get("messages", [])
@@ -104,12 +101,7 @@ def read_email(message_id: str) -> dict:
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-    msg = (
-        service.users()
-        .messages()
-        .get(userId="me", id=message_id, format="full")
-        .execute()
-    )
+    msg = service.users().messages().get(userId="me", id=message_id, format="full").execute()
 
     headers = msg.get("payload", {}).get("headers", [])
     extracted = _extract_headers(headers, ["Subject", "From", "To", "Date"])
@@ -162,18 +154,12 @@ def _extract_body(payload: dict) -> str:
         if part_mime == "text/plain":
             data = part.get("body", {}).get("data", "")
             if data:
-                plain_text = base64.urlsafe_b64decode(data).decode(
-                    "utf-8", errors="replace"
-                )
+                plain_text = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
         elif part_mime == "text/html":
             data = part.get("body", {}).get("data", "")
             if data:
-                html = base64.urlsafe_b64decode(data).decode(
-                    "utf-8", errors="replace"
-                )
-                html_text = BeautifulSoup(html, "html.parser").get_text(
-                    separator="\n", strip=True
-                )
+                html = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+                html_text = BeautifulSoup(html, "html.parser").get_text(separator="\n", strip=True)
         elif part_mime.startswith("multipart/"):
             # Nested multipart — recurse
             result = _extract_body(part)

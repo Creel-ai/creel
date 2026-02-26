@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import tempfile
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from guardian.types import ActionDecision, ActionVerdict
-from taskrunner.approvals import ApprovalQueue, PendingAction
-
+from taskrunner.approvals import ApprovalQueue
 
 # ── ApprovalQueue tests ─────────────────────────────────────────────
 
@@ -76,7 +70,7 @@ class TestApprovalQueue:
 
     def test_get_pending_returns_most_recent(self, tmp_path):
         q = ApprovalQueue(approvals_dir=str(tmp_path / "approvals"))
-        a1 = q.add("sender1", "tool1", {}, "reason")
+        q.add("sender1", "tool1", {}, "reason")
         a2 = q.add("sender1", "tool2", {}, "reason")
         found = q.get_pending("sender1")
         assert found.id == a2.id
@@ -102,7 +96,9 @@ class FakeGuardian:
     def log_action_outcome(self, tool_name, stage, outcome):
         pass
 
-    def check_coherence(self, user_request, tool_name, tool_input, prior_tools=None):
+    def check_coherence(
+        self, user_request, tool_name, tool_input, prior_tools=None, available_tools=None
+    ):
         return _FakeCoherence()
 
     def check_drift(self, tool_name, output_length, success):
@@ -114,6 +110,7 @@ class FakeGuardian:
 
 class FakeToolUse:
     type = "tool_use"
+
     def __init__(self, name="send_email", input=None):
         self.id = "tool_123"
         self.name = name
@@ -122,6 +119,7 @@ class FakeToolUse:
 
 class FakeTextBlock:
     type = "text"
+
     def __init__(self, text="Done."):
         self.text = text
 
@@ -209,38 +207,36 @@ def test_deny_still_denies(mock_llm, mock_exec):
 
 
 def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
-    """Create a ChatServer with minimal mocks."""
+    """Create a ChatServer with a real AgentDefinition so __init__ stays in sync."""
     from taskrunner.chat import ChatServer
+    from taskrunner.models import (
+        AgentDefinition,
+        SessionConfig,
+        ToolConfig,
+        WorkspaceConfig,
+    )
 
-    agent_def = MagicMock()
-    agent_def.session.sessions_dir = str(tmp_path / "sessions")
-    agent_def.session.max_history = 10
-    agent_def.guardian = None
-    agent_def.channels.imessage = None
-    agent_def.system_prompt = "You are a test agent."
-    agent_def.system_prompt_file = None
-    agent_def.workspace.path = str(tmp_path / "workspace")
-    agent_def.workspace.timezone = "UTC"
-    agent_def.workspace.memory_days = 2
-    agent_def.workspace.memory_max_chars = 1000
-    agent_def.workspace.max_chars_per_file = 500
-    agent_def.llm.secrets = None
-    agent_def.tools = {"send_email": MagicMock()}
+    agent_def = AgentDefinition(
+        system_prompt="You are a test agent.",
+        tools={
+            "send_email": ToolConfig(executor="mock", description="Send an email"),
+        },
+        session=SessionConfig(
+            sessions_dir=str(tmp_path / "sessions"),
+            max_history=10,
+            summarize_on_trim=False,
+        ),
+        workspace=WorkspaceConfig(
+            # Non-existent dir so MemoryManager is not created
+            path=str(tmp_path / "workspace-does-not-exist"),
+        ),
+        guardian=guardian,
+    )
 
-    server = ChatServer.__new__(ChatServer)
-    server._agent_def = agent_def
-    server._use_containers = False
-    server._reply_channel = imessage_channel
-    server._guardian = guardian
-    server._confirm_fn = None
-    server._memory = None
-    server._session_states = {}
-    server._approval_queue = ApprovalQueue(approvals_dir=str(tmp_path / "approvals"))
-
-    from taskrunner.session import SessionManager
-    server._session_mgr = SessionManager(
-        sessions_dir=str(tmp_path / "sessions"),
-        max_history=10,
+    server = ChatServer(
+        agent_def,
+        use_containers=False,
+        reply_channel=imessage_channel,
     )
     return server
 
@@ -313,7 +309,7 @@ def test_chat_no_pending_passes_to_agent(mock_run, tmp_path):
     )
 
     server = _make_chat_server(tmp_path)
-    response = server.handle_message("sender1", "Y")
+    server.handle_message("sender1", "Y")
 
     # Should have gone to agent loop, not approval handler
     mock_run.assert_called_once()
@@ -356,7 +352,7 @@ def test_chat_no_auto_approve_has_no_confirm(mock_run, tmp_path):
     )
 
     server = _make_chat_server(tmp_path)
-    response = server.handle_message("sender1", "hello")
+    server.handle_message("sender1", "hello")
 
     call_kwargs = mock_run.call_args
     confirm_fn = call_kwargs.kwargs.get("confirm_action") or call_kwargs[1].get("confirm_action")
@@ -385,9 +381,17 @@ def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
     mock_llm.return_value = FakeTextResponse("Recovered")
     messages = [
         {"role": "user", "content": "send email"},
-        {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "tool_orphan", "name": "send_email", "input": {"to": "x@y.com"}},
-        ]},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool_orphan",
+                    "name": "send_email",
+                    "input": {"to": "x@y.com"},
+                },
+            ],
+        },
         {"role": "user", "content": "actually nevermind"},
     ]
 
@@ -401,7 +405,8 @@ def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
 
     assert result.stop_reason == "end_turn"
     repaired = [
-        msg for msg in messages
+        msg
+        for msg in messages
         if msg.get("role") == "user"
         and isinstance(msg.get("content"), list)
         and any(
@@ -420,13 +425,24 @@ def test_partial_tool_results_repaired():
 
     messages = [
         {"role": "user", "content": "do two things"},
-        {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "tool_a", "name": "send_email", "input": {}},
-            {"type": "tool_use", "id": "tool_b", "name": "check_weather", "input": {}},
-        ]},
-        {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "tool_a", "content": "sent", "is_error": False},
-        ]},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "tool_a", "name": "send_email", "input": {}},
+                {"type": "tool_use", "id": "tool_b", "name": "check_weather", "input": {}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_a",
+                    "content": "sent",
+                    "is_error": False,
+                },
+            ],
+        },
         {"role": "user", "content": "what happened?"},
     ]
 
@@ -452,7 +468,6 @@ def test_chat_approval_sends_imessage(tmp_path):
     server = _make_chat_server(tmp_path, imessage_channel=mock_channel)
     server._agent_def.channels.imessage = agent_def.channels.imessage
 
-    from taskrunner.approvals import PendingAction
     action = server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
     server._send_approval_request("sender1", action)
 

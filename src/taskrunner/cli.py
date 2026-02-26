@@ -19,6 +19,7 @@ from __future__ import annotations
 # Use OS certificate store for HTTPS (fixes uv-managed Python SSL issues)
 try:
     import truststore
+
     truststore.inject_into_ssl()
 except ImportError:
     pass
@@ -29,13 +30,14 @@ import os
 import sys
 import threading
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
+from typing import Literal, cast
 
 from taskrunner.models import load_all_tasks, load_task
 from taskrunner.orchestrator import run_task
-from taskrunner.secrets import parse_env_file
 from taskrunner.scheduler import start_scheduler
+from taskrunner.secrets import parse_env_file
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TASKS_DIR = Path("tasks")
 DEFAULT_AGENT_CONFIG = Path("agent.yaml")
@@ -136,7 +138,9 @@ def _allow_launchd_bootstrap_failure(output: str) -> bool:
     return "already loaded" in output.lower()
 
 
-def _build_daemon_run_command(args: argparse.Namespace, socket_path: Path, pid_path: Path) -> list[str]:
+def _build_daemon_run_command(
+    args: argparse.Namespace, socket_path: Path, pid_path: Path
+) -> list[str]:
     cmd = [
         sys.executable,
         "-m",
@@ -186,6 +190,24 @@ def _build_daemon_env(repo_root: Path) -> dict[str, str]:
     return env
 
 
+def _print_log_errors(log_path: Path, offset: int = 0) -> None:
+    """Print recent error lines from the daemon log (only from bytes after *offset*)."""
+    try:
+        with log_path.open(encoding="utf-8") as f:
+            f.seek(offset)
+            new_text = f.read()
+        lines = new_text.splitlines()
+        error_lines = [line for line in lines if line.startswith("Error:")]
+        if error_lines:
+            for line in error_lines[-3:]:
+                print(f"  {line}", file=sys.stderr)
+        elif lines:
+            for line in lines[-3:]:
+                print(f"  {line}", file=sys.stderr)
+    except OSError:
+        pass
+
+
 def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
     import time
 
@@ -228,6 +250,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"Error running task '{args.task_name}': {e}", file=sys.stderr)
         if args.verbose:
             import traceback
+
             traceback.print_exc()
         return 1
 
@@ -264,7 +287,9 @@ def cmd_list(args: argparse.Namespace) -> int:
     print("-" * 90)
     for task in tasks:
         executors_list = ", ".join(task.executors.keys())
-        print(f"{task.name:<25} {task.schedule:<20} {executors_list:<30} {task.output.type}:{task.output.to}")
+        print(
+            f"{task.name:<25} {task.schedule:<20} {executors_list:<30} {task.output.type}:{task.output.to}"
+        )
 
     return 0
 
@@ -367,8 +392,8 @@ def _build_daemon_channel(agent_def, channel_type: str):
     if channel_type == "none":
         return None, None
 
-    from taskrunner.channels.registry import ChannelRegistry
     from taskrunner.channels.plugin import ChannelCapability
+    from taskrunner.channels.registry import ChannelRegistry
 
     registry = ChannelRegistry()
     registry.discover()
@@ -381,12 +406,8 @@ def _build_daemon_channel(agent_def, channel_type: str):
     entry = registry.get(channel_type)
     if entry is not None:
         channel = registry.create_channel(channel_type, config)
-        # Return channel as reply_channel if it supports WAIT_FOR_REPLY
-        reply_channel = (
-            channel
-            if ChannelCapability.WAIT_FOR_REPLY in entry.meta.capabilities
-            else None
-        )
+        # Return channel as reply_channel if it can send messages
+        reply_channel = channel if ChannelCapability.SEND in entry.meta.capabilities else None
         return channel, reply_channel
 
     raise ValueError(
@@ -403,16 +424,19 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     use them.
     """
     import secrets as _secrets
-    import uvicorn as _uvicorn
 
     # Parse host/port from bridge URL
     from urllib.parse import urlparse
+
+    import uvicorn as _uvicorn
+
     parsed = urlparse(bridge_config.url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 8099
 
     # Pre-generate scoped tokens so orchestrator can inject them into containers
     from taskrunner.orchestrator import _EXECUTOR_TO_BRIDGE_SCOPE
+
     scopes = sorted(set(_EXECUTOR_TO_BRIDGE_SCOPE.values()))
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -422,6 +446,7 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     def _run_bridge():
         try:
             from bridge.server import app as bridge_app
+
             logger.info("Starting bridge server on %s:%d", host, port)
             _uvicorn.run(
                 bridge_app,
@@ -503,10 +528,15 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     tool_count = len(agent_def.tools)
     print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
 
+    # Pre-build Docker images in background so they're ready before first use
+    if args.containers:
+        from taskrunner.orchestrator import prebuild_images
+
+        prebuild_images(agent_def)  # fire-and-forget; daemon threads
+
     # Start host bridge server if enabled
-    bridge_thread = None
     if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
-        bridge_thread = _start_bridge_server(agent_def.bridge)
+        _start_bridge_server(agent_def.bridge)
 
     app = create_daemon_app(service)
 
@@ -521,6 +551,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         pass
     finally:
         service.shutdown()
+        print("Daemon stopped.")
         pid_path.unlink(missing_ok=True)
         socket_path.unlink(missing_ok=True)
 
@@ -536,10 +567,11 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
     log_path = _daemon_log_path(args)
     plist_path = _daemon_plist_path(args)
     label = _daemon_label(args)
-    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 20.0))
 
     # If a launchd service is installed, use it as the startup path.
     if sys.platform == "darwin" and plist_path.exists():
+        launchd_log_offset = log_path.stat().st_size if log_path.exists() else 0
         launch_target = _daemon_launchd_target()
         existing = subprocess.run(
             ["launchctl", "bootstrap", launch_target, str(plist_path)],
@@ -581,6 +613,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
             f"Launchd service {label} did not become healthy within {wait_seconds:.1f}s. See {log_path}.",
             file=sys.stderr,
         )
+        _print_log_errors(log_path, launchd_log_offset)
         return 1
 
     pid = _read_pid(pid_path)
@@ -595,6 +628,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
     env = _build_daemon_env(repo_root)
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_offset = log_path.stat().st_size if log_path.exists() else 0
     with log_path.open("a", encoding="utf-8") as log_file:
         proc = subprocess.Popen(
             cmd,
@@ -610,6 +644,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
     while time.time() < deadline:
         if proc.poll() is not None:
             print(f"Daemon failed to start. See log: {log_path}", file=sys.stderr)
+            _print_log_errors(log_path, log_offset)
             return 1
         if _wait_for_daemon_health(socket_path, 0.2):
             daemon_pid = _read_pid(pid_path) or proc.pid
@@ -618,7 +653,11 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
             print(f"Log: {log_path}")
             return 0
 
-    print(f"Daemon did not become healthy within {wait_seconds:.1f}s. See {log_path}.", file=sys.stderr)
+    print(
+        f"Daemon did not become healthy within {wait_seconds:.1f}s. See {log_path}.",
+        file=sys.stderr,
+    )
+    _print_log_errors(log_path, log_offset)
     return 1
 
 
@@ -637,7 +676,7 @@ def cmd_daemon_install(args: argparse.Namespace) -> int:
     log_path = _daemon_log_path(args)
     plist_path = _daemon_plist_path(args)
     label = _daemon_label(args)
-    wait_seconds = max(1.0, getattr(args, "wait_seconds", 8.0))
+    wait_seconds = max(1.0, getattr(args, "wait_seconds", 20.0))
     launch_target = _daemon_launchd_target()
 
     cmd = _build_daemon_run_command(args, socket_path, pid_path)
@@ -808,11 +847,19 @@ def cmd_daemon_stop(args: argparse.Namespace) -> int:
         time.sleep(0.1)
 
     print(
-        f"Timed out waiting for daemon {pid} to stop. "
-        f"You can force-kill it with: kill -9 {pid}",
+        f"Timed out waiting for daemon {pid} to stop. You can force-kill it with: kill -9 {pid}",
         file=sys.stderr,
     )
     return 1
+
+
+def cmd_daemon_restart(args: argparse.Namespace) -> int:
+    """Stop then start the daemon."""
+    import time
+
+    cmd_daemon_stop(args)
+    time.sleep(0.5)
+    return cmd_daemon_start(args)
 
 
 def cmd_daemon_status(args: argparse.Namespace) -> int:
@@ -892,6 +939,7 @@ def cmd_daemon_status(args: argparse.Namespace) -> int:
         agent_def = _load_agent_def(args)
         if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
             import httpx
+
             bridge_url = agent_def.bridge.url.rstrip("/")
             try:
                 br = httpx.get(f"{bridge_url}/health", timeout=1.0)
@@ -985,10 +1033,258 @@ def cmd_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cron_store(args: argparse.Namespace):
+    """Create a JobStore from default or overridden paths."""
+    from taskrunner.cron.store import JobStore
+
+    cron_dir = Path(getattr(args, "cron_dir", _CREEL_STATE_DIR / "cron"))
+    return JobStore(
+        jobs_path=cron_dir / "jobs.json",
+        runs_path=cron_dir / "runs.json",
+    )
+
+
+def _format_schedule(schedule) -> str:
+    """Format a Schedule model for display."""
+    if schedule.kind == "cron":
+        return f"cron: {schedule.expr}"
+    elif schedule.kind == "every":
+        return f"every {schedule.expr}s"
+    elif schedule.kind == "at":
+        return f"at {schedule.expr}"
+    return str(schedule.expr)
+
+
+def cmd_cron_list(args: argparse.Namespace) -> int:
+    """List all cron jobs."""
+    store = _cron_store(args)
+    jobs = store.list()
+
+    if not jobs:
+        print("No cron jobs.")
+        return 0
+
+    print(f"{'ID':<14} {'Name':<25} {'Schedule':<22} {'Target':<10} {'Enabled'}")
+    print("-" * 80)
+    for job in jobs:
+        sched_str = _format_schedule(job.schedule)
+        enabled = "yes" if job.enabled else "no"
+        print(f"{job.id:<14} {job.name:<25} {sched_str:<22} {job.target:<10} {enabled}")
+
+    print(f"\n{len(jobs)} job(s).")
+    return 0
+
+
+def cmd_cron_add(args: argparse.Namespace) -> int:
+    """Add a new cron job."""
+    from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
+
+    store = _cron_store(args)
+    tz = getattr(args, "tz", "UTC") or "UTC"
+
+    # Determine schedule
+    if getattr(args, "cron", None):
+        schedule = Schedule(kind="cron", expr=args.cron, tz=tz)
+    elif getattr(args, "every", None):
+        schedule = Schedule(kind="every", expr=str(args.every), tz=tz)
+    elif getattr(args, "at", None):
+        schedule = Schedule(kind="at", expr=args.at, tz=tz)
+    else:
+        print("Error: must specify --cron, --every, or --at", file=sys.stderr)
+        return 1
+
+    # Determine payload
+    message = getattr(args, "message", None)
+    system_event = getattr(args, "system_event", None)
+    if message:
+        payload = Payload(kind="agentTurn", message=message)
+    elif system_event:
+        payload = Payload(kind="systemEvent", message=system_event)
+    else:
+        print("Error: must specify --message or --system-event", file=sys.stderr)
+        return 1
+
+    if getattr(args, "model", None):
+        payload.model = args.model
+    timeout = getattr(args, "timeout_seconds", None)
+    if timeout is not None:
+        payload.timeout_seconds = timeout
+
+    # Determine target
+    target_raw = getattr(args, "target", "isolated") or "isolated"
+    if system_event:
+        target_raw = "main"
+    target = cast(Literal["main", "isolated"], target_raw)
+
+    # Determine delivery
+    delivery_mode_raw = getattr(args, "delivery_mode", "none") or "none"
+    delivery_mode = cast(Literal["announce", "webhook", "none"], delivery_mode_raw)
+    delivery = Delivery(
+        mode=delivery_mode,
+        channel=getattr(args, "delivery_channel", None),
+        url=getattr(args, "delivery_url", None),
+    )
+
+    try:
+        job = CronJob(
+            name=args.name,
+            schedule=schedule,
+            target=target,
+            payload=payload,
+            delivery=delivery,
+            enabled=not getattr(args, "disabled", False),
+        )
+        store.add(job)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Created job '{job.name}' ({job.id}).")
+    return 0
+
+
+def cmd_cron_edit(args: argparse.Namespace) -> int:
+    """Edit an existing cron job."""
+    from taskrunner.cron.models import Schedule
+
+    store = _cron_store(args)
+    job = store.get(args.job_id)
+    if job is None:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    fields: dict = {}
+
+    if getattr(args, "name", None):
+        fields["name"] = args.name
+
+    # Schedule update
+    tz = getattr(args, "tz", None) or job.schedule.tz
+    if getattr(args, "cron", None):
+        fields["schedule"] = Schedule(kind="cron", expr=args.cron, tz=tz).model_dump()
+    elif getattr(args, "every", None):
+        fields["schedule"] = Schedule(kind="every", expr=str(args.every), tz=tz).model_dump()
+    elif getattr(args, "at", None):
+        fields["schedule"] = Schedule(kind="at", expr=args.at, tz=tz).model_dump()
+
+    if getattr(args, "enable", False):
+        fields["enabled"] = True
+    elif getattr(args, "disable", False):
+        fields["enabled"] = False
+
+    if not fields:
+        print("No changes specified.")
+        return 0
+
+    try:
+        updated = store.update(args.job_id, **fields)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Updated job '{updated.name}' ({updated.id}).")
+    return 0
+
+
+def cmd_cron_remove(args: argparse.Namespace) -> int:
+    """Remove a cron job."""
+    store = _cron_store(args)
+    try:
+        job = store.remove(args.job_id)
+    except KeyError:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    print(f"Removed job '{job.name}' ({job.id}).")
+    return 0
+
+
+def cmd_cron_run(args: argparse.Namespace) -> int:
+    """Trigger a cron job immediately."""
+    from taskrunner.cron.executor import JobExecutor
+    from taskrunner.cron.manager import CronManager
+    from taskrunner.cron.models import RunStatus
+
+    store = _cron_store(args)
+    job = store.get(args.job_id)
+    if job is None:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    # Set up executor: main-session jobs print to stdout, isolated need agent config
+    def cli_inject_event(text: str) -> None:
+        print(text)
+
+    agent_def = None
+    try:
+        agent_def = _load_agent_def(args)
+    except Exception:
+        pass
+
+    executor = JobExecutor(
+        agent_def=agent_def,
+        inject_event=cli_inject_event,
+    )
+    manager = CronManager(store=store, executor=executor)
+
+    print(f"Running job '{job.name}' ({args.job_id})...")
+    manager.trigger_job(args.job_id)
+
+    # Check latest run record for status
+    runs = store.get_runs(args.job_id)
+    if runs:
+        latest = runs[-1]
+        if latest.status == RunStatus.FAILURE:
+            print(f"Job failed: {latest.error}", file=sys.stderr)
+            return 1
+
+    print(f"Job '{job.name}' completed successfully.")
+    return 0
+
+
+def cmd_cron_runs(args: argparse.Namespace) -> int:
+    """Show run history for a cron job."""
+    store = _cron_store(args)
+    job = store.get(args.job_id)
+    if job is None:
+        print(f"Error: Job '{args.job_id}' not found", file=sys.stderr)
+        return 1
+
+    runs = store.get_runs(args.job_id)
+    if not runs:
+        print(f"No runs recorded for '{job.name}' ({args.job_id}).")
+        return 0
+
+    tail = getattr(args, "tail", 20)
+    if tail and tail < len(runs):
+        runs = runs[-tail:]
+
+    print(f"Run history for '{job.name}' ({args.job_id}):")
+    from datetime import datetime
+
+    print(f"{'Started':<28} {'Status':<10} {'Duration':<12} {'Error'}")
+    print("-" * 70)
+    for run in runs:
+        duration = ""
+        if run.ended_at and run.started_at:
+            try:
+                start = datetime.fromisoformat(run.started_at)
+                end = datetime.fromisoformat(run.ended_at)
+                secs = (end - start).total_seconds()
+                duration = f"{secs:.1f}s"
+            except ValueError:
+                pass
+        error = run.error or ""
+        print(f"{run.started_at:<28} {run.status.value:<10} {duration:<12} {error}")
+
+    print(f"\n{len(runs)} run(s) shown.")
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Query the guardian audit log."""
+
     from guardian.audit import read_audit_log
-    from datetime import datetime
 
     try:
         agent_def = _load_agent_def(args)
@@ -1051,30 +1347,59 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_encrypt(args: argparse.Namespace) -> int:
+    """Encrypt a plaintext .env file with age."""
+    from taskrunner.secrets import encrypt_env_file
+
+    env_path = Path(args.env_file)
+    try:
+        output_path = encrypt_env_file(
+            env_path=env_path,
+            recipient_path=args.recipient,
+            output_path=args.output,
+        )
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Error encrypting: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Encrypted: {env_path} -> {output_path}")
+
+    if args.delete:
+        env_path.unlink()
+        print(f"Deleted plaintext: {env_path}")
+    else:
+        print(f"\nIMPORTANT: Delete the plaintext file:\n  rm {env_path}")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
         description="LLM Task Runner - secure, scheduled LLM task execution",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument(
         "--containers", action="store_true", help="Run executors/LLM in Docker containers"
     )
+    parser.add_argument("--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory")
     parser.add_argument(
-        "--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory"
-    )
-    parser.add_argument(
-        "--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG,
+        "--agent-config",
+        type=Path,
+        default=DEFAULT_AGENT_CONFIG,
         help="Path to agent.yaml config",
     )
     parser.add_argument(
-        "--json-logs", action="store_true",
+        "--json-logs",
+        action="store_true",
         help="Output structured JSON log lines (for production)",
     )
     parser.add_argument(
-        "--no-judge", action="store_true",
+        "--no-judge",
+        action="store_true",
         help="Disable the LLM judge (Stage 2) to save API calls during development",
     )
 
@@ -1083,9 +1408,7 @@ def main() -> int:
     # run command
     run_parser = subparsers.add_parser("run", help="Run a task immediately")
     run_parser.add_argument("task_name", help="Name of the task to run")
-    run_parser.add_argument(
-        "--dry", action="store_true", help="Dry run (render prompt only)"
-    )
+    run_parser.add_argument("--dry", action="store_true", help="Dry run (render prompt only)")
 
     # schedule command
     subparsers.add_parser("schedule", help="Start scheduler for all tasks")
@@ -1123,7 +1446,6 @@ def main() -> int:
         help="Request timeout in seconds (default: 300)",
     )
 
-
     # audit command
     audit_parser = subparsers.add_parser("audit", help="Query the guardian audit log")
     audit_parser.add_argument(
@@ -1136,103 +1458,157 @@ def main() -> int:
         "--denied", action="store_true", help="Show only denied action events"
     )
     audit_parser.add_argument(
-        "--event", type=str, default=None,
-        help="Filter by event type (screen_input, validate_action, tool_result)"
+        "--event",
+        type=str,
+        default=None,
+        help="Filter by event type (screen_input, validate_action, tool_result)",
     )
+    audit_parser.add_argument("--all", action="store_true", help="Show all entries (no tail limit)")
+    audit_parser.add_argument("--tool", type=str, default=None, help="Filter by tool name")
     audit_parser.add_argument(
-        "--all", action="store_true", help="Show all entries (no tail limit)"
+        "--since",
+        type=str,
+        default=None,
+        help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     )
-    audit_parser.add_argument(
-        "--tool", type=str, default=None,
-        help="Filter by tool name"
+
+    # encrypt command
+    encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
+    encrypt_parser.add_argument("env_file", help="Path to plaintext .env file")
+    encrypt_parser.add_argument(
+        "--recipient",
+        default=None,
+        help="Age recipient (public key) file (default: ~/.age/key.pub or AGE_RECIPIENT_FILE)",
     )
-    audit_parser.add_argument(
-        "--since", type=str, default=None,
-        help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
+    encrypt_parser.add_argument(
+        "--output",
+        default=None,
+        help="Output file path (default: <env_file>.enc)",
+    )
+    encrypt_parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete the plaintext file after encryption",
     )
 
     # --- Shared daemon parent parsers (to avoid option duplication) ---
     _daemon_paths_parent = argparse.ArgumentParser(add_help=False)
     _daemon_paths_parent.add_argument(
-        "--socket-path", type=Path, default=DEFAULT_DAEMON_SOCKET,
+        "--socket-path",
+        type=Path,
+        default=DEFAULT_DAEMON_SOCKET,
         help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
     )
     _daemon_paths_parent.add_argument(
-        "--pid-file", type=Path, default=DEFAULT_DAEMON_PID_FILE,
+        "--pid-file",
+        type=Path,
+        default=DEFAULT_DAEMON_PID_FILE,
         help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
     )
 
     _daemon_launchd_parent = argparse.ArgumentParser(add_help=False)
     _daemon_launchd_parent.add_argument(
-        "--label", default=DEFAULT_DAEMON_LABEL,
+        "--label",
+        default=DEFAULT_DAEMON_LABEL,
         help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
     )
     _daemon_launchd_parent.add_argument(
-        "--plist-path", type=Path, default=DEFAULT_DAEMON_PLIST_FILE,
+        "--plist-path",
+        type=Path,
+        default=DEFAULT_DAEMON_PLIST_FILE,
         help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
     )
 
     _daemon_runtime_parent = argparse.ArgumentParser(add_help=False)
     _daemon_runtime_parent.add_argument(
-        "--log-file", type=Path, default=DEFAULT_DAEMON_LOG_FILE,
+        "--log-file",
+        type=Path,
+        default=DEFAULT_DAEMON_LOG_FILE,
         help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
     )
     _daemon_runtime_parent.add_argument(
-        "--channel", dest="channel_type", default="imessage",
+        "--channel",
+        dest="channel_type",
+        default="imessage",
         help="Channel plugin to run inside daemon (default: imessage). Use 'none' to disable.",
     )
     _daemon_runtime_parent.add_argument(
-        "--no-scheduler", action="store_true",
+        "--no-scheduler",
+        action="store_true",
         help="Disable scheduler in daemon runtime",
     )
     _daemon_runtime_parent.add_argument(
-        "--wait-seconds", type=float, default=8.0,
-        help="Seconds to wait for daemon health check (default: 8)",
+        "--wait-seconds",
+        type=float,
+        default=20.0,
+        help="Seconds to wait for daemon health check (default: 20)",
     )
 
     # daemon command
     daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
     daemon_subparsers = daemon_parser.add_subparsers(
         dest="daemon_command",
-        metavar="{start,stop,status,install,uninstall}",
+        metavar="{start,stop,restart,status,install,uninstall}",
     )
 
     daemon_subparsers.add_parser(
-        "start", help="Start the background daemon",
+        "start",
+        help="Start the background daemon",
         parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
     )
 
     daemon_stop = daemon_subparsers.add_parser(
-        "stop", help="Stop the background daemon",
+        "stop",
+        help="Stop the background daemon",
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
     daemon_stop.add_argument(
-        "--timeout", type=float, default=10.0,
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Stop timeout in seconds (default: 10)",
+    )
+
+    daemon_restart = daemon_subparsers.add_parser(
+        "restart",
+        help="Stop then start the daemon",
+        parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
+    )
+    daemon_restart.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
         help="Stop timeout in seconds (default: 10)",
     )
 
     daemon_subparsers.add_parser(
-        "status", help="Show daemon status",
+        "status",
+        help="Show daemon status",
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
 
     daemon_subparsers.add_parser(
-        "install", help="Install daemon as a launchd service",
+        "install",
+        help="Install daemon as a launchd service",
         parents=[_daemon_paths_parent, _daemon_launchd_parent, _daemon_runtime_parent],
     )
 
     daemon_subparsers.add_parser(
-        "uninstall", help="Uninstall daemon launchd service",
+        "uninstall",
+        help="Uninstall daemon launchd service",
         parents=[_daemon_paths_parent, _daemon_launchd_parent],
     )
 
     # Internal foreground command used by `daemon start`
     daemon_run = daemon_subparsers.add_parser(
-        "run", help=argparse.SUPPRESS,
+        "run",
+        help=argparse.SUPPRESS,
         parents=[_daemon_paths_parent],
     )
     daemon_run.add_argument(
-        "--channel", dest="channel_type", default="imessage",
+        "--channel",
+        dest="channel_type",
+        default="imessage",
     )
     daemon_run.add_argument("--no-scheduler", action="store_true")
     daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]
@@ -1278,6 +1654,74 @@ def main() -> int:
         help="Auto-approve Guardian REVIEW actions instead of queuing them",
     )
 
+    # cron command group
+    cron_parser = subparsers.add_parser("cron", help="Manage scheduled cron jobs")
+    cron_subparsers = cron_parser.add_subparsers(
+        dest="cron_command",
+        metavar="{list,add,edit,remove,run,runs}",
+    )
+
+    # cron list
+    cron_subparsers.add_parser("list", help="List all cron jobs")
+
+    # cron add
+    cron_add_parser = cron_subparsers.add_parser("add", help="Add a new cron job")
+    cron_add_parser.add_argument("--name", required=True, help="Job name")
+    cron_add_parser.add_argument("--cron", help="Cron expression (e.g., '0 8 * * *')")
+    cron_add_parser.add_argument("--every", type=int, help="Interval in seconds")
+    cron_add_parser.add_argument("--at", help="One-shot ISO 8601 timestamp")
+    cron_add_parser.add_argument("--message", help="Agent turn message")
+    cron_add_parser.add_argument("--system-event", help="System event message (main session)")
+    cron_add_parser.add_argument("--model", help="Model override")
+    cron_add_parser.add_argument("--timeout-seconds", type=int, help="Timeout in seconds")
+    cron_add_parser.add_argument(
+        "--target",
+        choices=["main", "isolated"],
+        default="isolated",
+        help="Execution target (default: isolated)",
+    )
+    cron_add_parser.add_argument(
+        "--delivery-mode",
+        choices=["announce", "webhook", "none"],
+        default="none",
+        help="Delivery mode (default: none)",
+    )
+    cron_add_parser.add_argument("--delivery-channel", help="Channel name for announce delivery")
+    cron_add_parser.add_argument("--delivery-url", help="URL for webhook delivery")
+    cron_add_parser.add_argument("--tz", default="UTC", help="Timezone (default: UTC)")
+    cron_add_parser.add_argument(
+        "--disabled", action="store_true", help="Create job in disabled state"
+    )
+
+    # cron edit
+    cron_edit_parser = cron_subparsers.add_parser("edit", help="Edit a cron job")
+    cron_edit_parser.add_argument("job_id", help="Job ID to edit")
+    cron_edit_parser.add_argument("--name", help="New name")
+    cron_edit_parser.add_argument("--cron", help="New cron expression")
+    cron_edit_parser.add_argument("--every", type=int, help="New interval in seconds")
+    cron_edit_parser.add_argument("--at", help="New one-shot timestamp")
+    cron_edit_parser.add_argument("--tz", help="New timezone")
+    cron_edit_parser.add_argument("--enable", action="store_true", help="Enable job")
+    cron_edit_parser.add_argument("--disable", action="store_true", help="Disable job")
+
+    # cron remove
+    cron_remove_parser = cron_subparsers.add_parser("remove", help="Remove a cron job")
+    cron_remove_parser.add_argument("job_id", help="Job ID to remove")
+
+    # cron run
+    cron_run_parser = cron_subparsers.add_parser("run", help="Trigger a job immediately")
+    cron_run_parser.add_argument("job_id", help="Job ID to run")
+
+    # cron runs
+    cron_runs_parser = cron_subparsers.add_parser("runs", help="Show run history for a job")
+    cron_runs_parser.add_argument("job_id", help="Job ID to show runs for")
+    cron_runs_parser.add_argument(
+        "--tail",
+        type=int,
+        default=20,
+        help="Show last N runs (default: 20)",
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -1300,6 +1744,7 @@ def main() -> int:
         daemon_commands = {
             "start": cmd_daemon_start,
             "stop": cmd_daemon_stop,
+            "restart": cmd_daemon_restart,
             "status": cmd_daemon_status,
             "install": cmd_daemon_install,
             "uninstall": cmd_daemon_uninstall,
@@ -1310,6 +1755,20 @@ def main() -> int:
             return 1
         return daemon_commands[args.daemon_command](args)
 
+    if args.command == "cron":
+        cron_commands = {
+            "list": cmd_cron_list,
+            "add": cmd_cron_add,
+            "edit": cmd_cron_edit,
+            "remove": cmd_cron_remove,
+            "run": cmd_cron_run,
+            "runs": cmd_cron_runs,
+        }
+        if args.cron_command not in cron_commands:
+            cron_parser.print_help()
+            return 1
+        return cron_commands[args.cron_command](args)
+
     commands = {
         "run": cmd_run,
         "schedule": cmd_schedule,
@@ -1318,6 +1777,7 @@ def main() -> int:
         "attach": cmd_attach,
         "audit": cmd_audit,
         "send": cmd_send,
+        "encrypt": cmd_encrypt,
     }
 
     return commands[args.command](args)

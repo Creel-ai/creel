@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from guardian.audit import AuditLogger, _hash_text
 from guardian.coherence import CoherenceChecker
@@ -38,9 +37,7 @@ class Guardian:
         self._config = config
         self._classifier = FastClassifier(config.fast_classifier)
         self._judge = LLMJudge(config.llm_judge)
-        self._policy = (
-            PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
-        )
+        self._policy = PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
         self._coherence = CoherenceChecker(config.coherence)
         self._audit = (
             AuditLogger(
@@ -62,11 +59,13 @@ class Guardian:
             if config.drift.enabled
             else None
         )
-        logger.info("Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s)",
-                     config.fast_classifier.enabled,
-                     config.llm_judge.enabled,
-                     config.policy.enabled,
-                     config.drift.enabled)
+        logger.info(
+            "Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s)",
+            config.fast_classifier.enabled,
+            config.llm_judge.enabled,
+            config.policy.enabled,
+            config.drift.enabled,
+        )
 
     def warm_up(self) -> None:
         """Eagerly warm up the fast classifier at startup."""
@@ -142,10 +141,7 @@ class Guardian:
 
         rejection_message = ""
         if blocked:
-            rejection_message = (
-                "I can't process that request. "
-                "Please rephrase your message."
-            )
+            rejection_message = "I can't process that request. Please rephrase your message."
 
         return ScreenResult(
             blocked=blocked,
@@ -166,24 +162,78 @@ class Guardian:
         """
         import html
         import re
+
         # Remove script/style blocks entirely
-        text = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
         # Remove HTML tags
-        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r"<[^>]+>", " ", text)
         # Decode HTML entities
         text = html.unescape(text)
         # Collapse whitespace
-        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r"\s+", " ", text).strip()
         return text
+
+    @staticmethod
+    def _extract_page_text(text: str) -> str:
+        """Extract plain text from tool output for classification.
+
+        Tool output (especially browser tools) may be JSON containing
+        accessibility tree nodes, HTML, or other structured formats.
+        The DeBERTa classifier works on natural language, so we extract
+        just the human-readable text content.
+        """
+        import json
+
+        # Try to parse as JSON and extract text fields from a11y tree nodes
+        try:
+            data = json.loads(text)
+
+            # Handle {"content": [...nodes...]} or {"result": {..., "content": [...]}}
+            nodes = None
+            if isinstance(data, dict):
+                nodes = data.get("content") or data.get("nodes")
+                if nodes is None and "result" in data:
+                    inner = data["result"]
+                    if isinstance(inner, dict):
+                        nodes = inner.get("content") or inner.get("nodes")
+            elif isinstance(data, list):
+                nodes = data
+
+            if isinstance(nodes, list):
+                # Extract name and value fields — skip structural keys
+                # like role, level, depth
+                texts = []
+                for node in nodes:
+                    if isinstance(node, dict):
+                        for key in ("name", "value", "text"):
+                            val = node.get(key)
+                            if val and isinstance(val, str):
+                                texts.append(val)
+                if texts:
+                    return " ".join(texts)
+
+            # If it's JSON but not a node list, just stringify values
+            if isinstance(data, dict):
+                parts = []
+                for v in data.values():
+                    if isinstance(v, str):
+                        parts.append(v)
+                if parts:
+                    return " ".join(parts)
+        except (json.JSONDecodeError, TypeError, KeyError):
+            pass
+
+        # Fall back to HTML stripping for non-JSON content
+        return Guardian._strip_html(text)
 
     def screen_tool_result(self, tool_name: str, text: str) -> ScreenResult:
         """Screen a tool result for prompt injection and log details.
 
-        Like ``screen_input`` but additionally writes the raw text and tool
-        name to the audit log so blocked results can be debugged offline.
-        Strips HTML before classification to reduce false positives on web content.
+        Extracts plain text from structured tool output (JSON a11y trees,
+        HTML, etc.) before classification so the DeBERTa model sees natural
+        language instead of structural markup that triggers false positives.
         """
-        cleaned = self._strip_html(text)
+        cleaned = self._extract_page_text(text)
         result = self.screen_input(cleaned)
 
         if result.blocked and self._audit:
@@ -234,18 +284,23 @@ class Guardian:
         tool_name: str,
         tool_args: dict,
         prior_tools: list[str] | None = None,
+        available_tools: list[str] | None = None,
     ) -> CoherenceResult:
         """Check if a tool call is coherent with the user's original request.
 
         Returns a CoherenceResult. When coherence checking is disabled,
         returns coherent=True.
         """
-        result = self._coherence.check(user_request, tool_name, tool_args, prior_tools=prior_tools)
+        result = self._coherence.check(
+            user_request,
+            tool_name,
+            tool_args,
+            prior_tools=prior_tools,
+            available_tools=available_tools,
+        )
 
         if not result.coherent:
-            logger.warning(
-                "Action coherence failed: %s — %s", tool_name, result.reasoning
-            )
+            logger.warning("Action coherence failed: %s — %s", tool_name, result.reasoning)
 
         if self._audit:
             self._audit.log_coherence_check(
@@ -295,8 +350,7 @@ class Guardian:
             self._audit.log_credential_leak(
                 tool_name=tool_name,
                 patterns_found=[
-                    {"pattern": m.pattern_name, "redacted": m.matched_text}
-                    for m in matches
+                    {"pattern": m.pattern_name, "redacted": m.matched_text} for m in matches
                 ],
                 count=len(matches),
             )

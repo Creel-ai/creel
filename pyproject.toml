@@ -31,6 +31,9 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=7.0",
     "playwright>=1.40.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+    "types-PyYAML>=6.0.12.20240311",
 ]
 guardian = [
     "transformers>=4.36.0",
@@ -58,6 +61,7 @@ creel = "taskrunner.cli:main"
 imessage = "taskrunner.channels.imessage:register_plugin"
 bluebubbles = "taskrunner.channels.bluebubbles:register_plugin"
 whatsapp = "taskrunner.channels.whatsapp:register_plugin"
+telegram = "taskrunner.channels.telegram:register_plugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/taskrunner", "src/guardian", "src/bridge"]
@@ -79,7 +83,27 @@ source = ["taskrunner", "guardian", "bridge"]
 show_missing = true
 skip_empty = true
 
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/taskrunner", "src/guardian", "src/bridge"]
+mypy_path = "src"
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_configs = true
+show_error_codes = true
+
 [dependency-groups]
 dev = [
     "pytest-cov>=7.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+    "types-PyYAML>=6.0.12.20240311",
 ]

@@ -1,11 +1,16 @@
 """Tests for the apple_reminders executor."""
 
-import json
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from executors.apple_reminders.executor import call_bridge, list_reminders, add_reminder, complete_reminder
+import pytest
+
+from executors.apple_reminders.executor import (
+    add_reminder,
+    call_bridge,
+    complete_reminder,
+    list_reminders,
+)
 
 
 class TestBridgeClient:
@@ -21,10 +26,9 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         # Mock environment variables
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             result = call_bridge("/reminders/list")
 
         assert result["ok"] is True
@@ -38,7 +42,7 @@ class TestBridgeClient:
                 "Authorization": "Bearer test-token",
                 "Content-Type": "application/json",
             },
-            timeout=30
+            timeout=30,
         )
 
     def test_call_bridge_missing_url(self):
@@ -61,10 +65,9 @@ class TestBridgeClient:
         mock_response.json.return_value = {"ok": False, "error": "Command failed"}
         mock_post.return_value = mock_response
 
-        with patch.dict(os.environ, {
-            "BRIDGE_URL": "http://localhost:8099",
-            "BRIDGE_TOKEN": "test-token"
-        }):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+        ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/reminders/list")
 
@@ -121,10 +124,7 @@ class TestRemindersOperations:
         result = add_reminder("Test Reminder")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/reminders/add", 
-            {"title": "Test Reminder"}
-        )
+        mock_call_bridge.assert_called_once_with("/reminders/add", {"title": "Test Reminder"})
 
     @patch("executors.apple_reminders.executor.call_bridge")
     def test_add_reminder_with_list_and_due(self, mock_call_bridge):
@@ -135,8 +135,7 @@ class TestRemindersOperations:
 
         assert result["ok"] is True
         mock_call_bridge.assert_called_once_with(
-            "/reminders/add", 
-            {"title": "Test Reminder", "list": "Work", "due": "tomorrow"}
+            "/reminders/add", {"title": "Test Reminder", "list": "Work", "due": "tomorrow"}
         )
 
     @patch("executors.apple_reminders.executor.call_bridge")
@@ -147,10 +146,7 @@ class TestRemindersOperations:
         result = complete_reminder("123")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/reminders/complete", 
-            {"id": "123"}
-        )
+        mock_call_bridge.assert_called_once_with("/reminders/complete", {"id": "123"})
 
 
 class TestMainFunction:
@@ -164,6 +160,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "list"}):
             from executors.apple_reminders.executor import main
+
             main()
 
         mock_list_reminders.assert_called_once_with("all")
@@ -177,6 +174,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "list", "FILTER": "today"}):
             from executors.apple_reminders.executor import main
+
             main()
 
         mock_list_reminders.assert_called_once_with("today")
@@ -188,13 +186,12 @@ class TestMainFunction:
         """Test main function with add action."""
         mock_add_reminder.return_value = {"ok": True, "output": "reminder added"}
 
-        with patch.dict(os.environ, {
-            "ACTION": "add", 
-            "TITLE": "Test Reminder", 
-            "LIST": "Work",
-            "DUE": "tomorrow"
-        }):
+        with patch.dict(
+            os.environ,
+            {"ACTION": "add", "TITLE": "Test Reminder", "LIST": "Work", "DUE": "tomorrow"},
+        ):
             from executors.apple_reminders.executor import main
+
             main()
 
         mock_add_reminder.assert_called_once_with("Test Reminder", "Work", "tomorrow")
@@ -206,6 +203,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "add"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_reminders.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -218,6 +216,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {"ACTION": "complete", "ID": "123"}):
             from executors.apple_reminders.executor import main
+
             main()
 
         mock_complete_reminder.assert_called_once_with("123")
@@ -229,6 +228,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "complete"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_reminders.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -239,6 +239,7 @@ class TestMainFunction:
         with patch.dict(os.environ, {"ACTION": "unknown"}):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_reminders.executor import main
+
                 main()
 
         assert excinfo.value.code == 1
@@ -251,6 +252,7 @@ class TestMainFunction:
 
         with patch.dict(os.environ, {}, clear=True):
             from executors.apple_reminders.executor import main
+
             main()
 
         mock_list_reminders.assert_called_once_with("all")

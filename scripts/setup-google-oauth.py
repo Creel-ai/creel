@@ -7,13 +7,19 @@ can then be encrypted with age (automatically via --encrypt, or
 manually with encrypt-secret.sh).
 
 Supported services:
-  gcal         — Google Calendar (read-only)
-  gcal_write   — Google Calendar (write events)
-  gmail        — Gmail (read-only)
-  gmail_send   — Gmail (send emails)
-  gmail_modify — Gmail (modify/trash/delete)
-  drive        — Google Drive (read-only)
-  drive_write  — Google Drive (upload files)
+  gcal          — Google Calendar (read-only)
+  gcal_write    — Google Calendar (write events)
+  gmail         — Gmail (read-only)
+  gmail_send    — Gmail (send emails)
+  gmail_modify  — Gmail (modify/trash/delete)
+  drive         — Google Drive (read-only)
+  drive_write   — Google Drive (upload files)
+  docs_read     — Google Docs (read-only)
+  docs_write    — Google Docs (read/write)
+  sheets_read   — Google Sheets (read-only)
+  sheets_write  — Google Sheets (read/write)
+  slides_read   — Google Slides (read-only)
+  slides_write  — Google Slides (read/write)
 
 Usage:
     # Single service
@@ -82,6 +88,36 @@ SERVICES: dict[str, dict[str, str]] = {
         "scope": "https://www.googleapis.com/auth/drive.file",
         "output": "secrets/drive_write.env",
         "api_name": "Google Drive (write)",
+    },
+    "docs_read": {
+        "scope": "https://www.googleapis.com/auth/documents.readonly",
+        "output": "secrets/docs_read.env",
+        "api_name": "Google Docs (read-only)",
+    },
+    "docs_write": {
+        "scope": "https://www.googleapis.com/auth/documents",
+        "output": "secrets/docs_write.env",
+        "api_name": "Google Docs (read/write)",
+    },
+    "sheets_read": {
+        "scope": "https://www.googleapis.com/auth/spreadsheets.readonly",
+        "output": "secrets/sheets_read.env",
+        "api_name": "Google Sheets (read-only)",
+    },
+    "sheets_write": {
+        "scope": "https://www.googleapis.com/auth/spreadsheets",
+        "output": "secrets/sheets_write.env",
+        "api_name": "Google Sheets (read/write)",
+    },
+    "slides_read": {
+        "scope": "https://www.googleapis.com/auth/presentations.readonly",
+        "output": "secrets/slides_read.env",
+        "api_name": "Google Slides (read-only)",
+    },
+    "slides_write": {
+        "scope": "https://www.googleapis.com/auth/presentations",
+        "output": "secrets/slides_write.env",
+        "api_name": "Google Slides (read/write)",
     },
 }
 

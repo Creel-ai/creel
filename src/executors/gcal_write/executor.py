@@ -16,7 +16,7 @@ from googleapiclient.discovery import build
 try:
     from executors.google_creds import get_credentials
 except ModuleNotFoundError:
-    from google_creds import get_credentials
+    from google_creds import get_credentials  # type: ignore[no-redef]
 
 
 def create_event(
@@ -51,11 +51,7 @@ def create_event(
     if location:
         event_body["location"] = location
 
-    created = (
-        service.events()
-        .insert(calendarId="primary", body=event_body)
-        .execute()
-    )
+    created = service.events().insert(calendarId="primary", body=event_body).execute()
 
     return {
         "id": created["id"],

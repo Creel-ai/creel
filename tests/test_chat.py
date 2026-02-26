@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from taskrunner.chat import ChatServer
 from taskrunner.models import (
     AgentConfig,
@@ -65,9 +63,7 @@ class TestChatServerInit:
     def test_workspace_enables_memory(self, tmp_path) -> None:
         ws = tmp_path / "workspace"
         ws.mkdir()
-        agent_def = _make_agent_def(
-            tmp_path, workspace=WorkspaceConfig(path=str(ws))
-        )
+        agent_def = _make_agent_def(tmp_path, workspace=WorkspaceConfig(path=str(ws)))
         server = ChatServer(agent_def)
         assert server._memory is not None
 
@@ -149,12 +145,13 @@ class TestContainerMode:
         server = ChatServer(agent_def, use_containers=True)
 
         mock_result = _make_agent_result("container response")
-        with patch(
-            "taskrunner.chat.run_agent_loop"
-        ), patch(
-            "taskrunner.container_agent.run_agent_loop_container",
-            return_value=mock_result,
-        ) as mock_container:
+        with (
+            patch("taskrunner.chat.run_agent_loop"),
+            patch(
+                "taskrunner.container_agent.run_agent_loop_container",
+                return_value=mock_result,
+            ) as mock_container,
+        ):
             result = server.handle_message("user1", "hello")
 
         assert result == "container response"
@@ -190,17 +187,13 @@ class TestSystemPrompt:
     def test_uses_prompt_file_if_exists(self, tmp_path) -> None:
         prompt_file = tmp_path / "system.txt"
         prompt_file.write_text("Custom system prompt from file")
-        agent_def = _make_agent_def(
-            tmp_path, system_prompt_file=str(prompt_file)
-        )
+        agent_def = _make_agent_def(tmp_path, system_prompt_file=str(prompt_file))
         server = ChatServer(agent_def)
         prompt = server._build_system_prompt()
         assert "Custom system prompt from file" in prompt
 
     def test_falls_back_to_inline_if_file_missing(self, tmp_path) -> None:
-        agent_def = _make_agent_def(
-            tmp_path, system_prompt_file="/nonexistent/file.txt"
-        )
+        agent_def = _make_agent_def(tmp_path, system_prompt_file="/nonexistent/file.txt")
         server = ChatServer(agent_def)
         prompt = server._build_system_prompt()
         assert "test assistant" in prompt
@@ -208,9 +201,7 @@ class TestSystemPrompt:
     def test_memory_context_screened_by_guardian(self, tmp_path) -> None:
         ws = tmp_path / "workspace"
         ws.mkdir()
-        agent_def = _make_agent_def(
-            tmp_path, workspace=WorkspaceConfig(path=str(ws))
-        )
+        agent_def = _make_agent_def(tmp_path, workspace=WorkspaceConfig(path=str(ws)))
         server = ChatServer(agent_def)
 
         # Mock guardian that blocks memory content
@@ -262,7 +253,7 @@ class TestApprovalFlow:
         server = ChatServer(agent_def)
 
         # Add a pending approval
-        action = server._approval_queue.add(
+        server._approval_queue.add(
             sender_id="user1",
             tool_name="gmail_send",
             tool_input={"to": "x@y.com"},
@@ -276,7 +267,7 @@ class TestApprovalFlow:
         agent_def = _make_agent_def(tmp_path)
         server = ChatServer(agent_def)
 
-        action = server._approval_queue.add(
+        server._approval_queue.add(
             sender_id="user1",
             tool_name="weather",
             tool_input={"location": "Denver"},
@@ -296,7 +287,7 @@ class TestApprovalFlow:
         agent_def = _make_agent_def(tmp_path)
         server = ChatServer(agent_def)
 
-        action = server._approval_queue.add(
+        server._approval_queue.add(
             sender_id="user1",
             tool_name="weather",
             tool_input={},
@@ -356,9 +347,7 @@ class TestSendIMessage:
 
         agent_def = _make_agent_def(
             tmp_path,
-            channels=ChannelsConfig(
-                imessage=IMessageChannelConfig(listen_to="+1234567890")
-            ),
+            channels=ChannelsConfig(imessage=IMessageChannelConfig(listen_to="+1234567890")),
         )
         server = ChatServer(agent_def)
 

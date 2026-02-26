@@ -11,6 +11,10 @@ import logging
 import os
 import threading
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from google.oauth2.credentials import Credentials
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +93,7 @@ def get_google_access_token_from_json(
         token_age,
         max_token_age_seconds,
     )
+    assert cached_token is not None
     return cached_token
 
 

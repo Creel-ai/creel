@@ -16,11 +16,11 @@ from pathlib import Path
 
 def run_command(command: str, workdir: str | None = None) -> dict:
     """Run a shell command via bash and return structured results.
-    
+
     Args:
         command: Shell command to execute
         workdir: Working directory for command execution
-        
+
     Returns:
         Dict with stdout, stderr, exit_code, and command info
     """
@@ -30,13 +30,13 @@ def run_command(command: str, workdir: str | None = None) -> dict:
         if not workdir_path.is_absolute():
             # Resolve relative paths from current working directory
             workdir_path = Path.cwd() / workdir_path
-        
+
         if not workdir_path.exists():
             raise FileNotFoundError(f"Working directory does not exist: {workdir_path}")
-        
+
         if not workdir_path.is_dir():
             raise NotADirectoryError(f"Working directory is not a directory: {workdir_path}")
-        
+
         workdir = str(workdir_path)
 
     try:
@@ -47,7 +47,7 @@ def run_command(command: str, workdir: str | None = None) -> dict:
             text=True,
             timeout=300,  # 5 minute timeout
         )
-        
+
         return {
             "command": command,
             "workdir": workdir,
@@ -56,7 +56,7 @@ def run_command(command: str, workdir: str | None = None) -> dict:
             "stderr": result.stderr,
             "success": result.returncode == 0,
         }
-        
+
     except subprocess.TimeoutExpired as e:
         return {
             "command": command,
@@ -83,13 +83,13 @@ def main() -> None:
     """Main entry point - reads command from env or CLI args."""
     command = os.environ.get("COMMAND", "")
     workdir = os.environ.get("WORKDIR")
-    
+
     # Also accept as CLI args
     if len(sys.argv) > 1:
         command = sys.argv[1]
     if len(sys.argv) > 2:
         workdir = sys.argv[2]
-    
+
     if not command:
         result = {
             "error": "No command provided",
@@ -100,14 +100,13 @@ def main() -> None:
         }
         print(json.dumps(result, indent=2), file=sys.stderr)
         sys.exit(1)
-    
+
     try:
         result = run_command(command, workdir)
         print(json.dumps(result, indent=2))
-        
-        # Exit with the original command's exit code
-        sys.exit(result["exit_code"])
-        
+        # Always exit 0 — the JSON result carries the command's exit code.
+        # A non-zero inner command is not an executor infrastructure failure.
+
     except Exception as e:
         result = {
             "error": str(e),

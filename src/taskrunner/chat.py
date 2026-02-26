@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from taskrunner.agent import run_agent_loop
 from taskrunner.approvals import ApprovalQueue
@@ -36,23 +38,28 @@ class ChatServer:
         self,
         agent_def: AgentDefinition,
         use_containers: bool = False,
-        reply_channel: object | None = None,
-        confirm_fn: object | None = None,
+        reply_channel: Any | None = None,
+        confirm_fn: Callable[[str, dict, str], bool] | None = None,
         # Backward compat alias
-        imessage_channel: object | None = None,
+        imessage_channel: Any | None = None,
+        cron_manager: object | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
+        self._cron_manager = cron_manager
         self._start_time = datetime.now(timezone.utc)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
         # Build summarize_fn if summarization is enabled
         summarize_fn = None
         if agent_def.session.summarize_on_trim:
+
             def _do_summarize(messages: list[dict]) -> str:
                 from taskrunner.llm import summarize_messages
+
                 if agent_def.llm.secrets:
                     from taskrunner.orchestrator import _load_secrets_to_env
+
                     _load_secrets_to_env(agent_def.llm.secrets)
                 return summarize_messages(
                     messages,
@@ -60,6 +67,7 @@ class ChatServer:
                     max_tokens=agent_def.session.summary_max_tokens,
                     use_container=use_containers,
                 )
+
             summarize_fn = _do_summarize
 
         self._session_mgr = SessionManager(
@@ -88,6 +96,14 @@ class ChatServer:
 
         # Per-sender session state (e.g. workspace path for file_ops)
         self._session_states: dict[str, dict] = {}
+
+        # Rate limiter for inject_system_event: per-sender list of timestamps.
+        # Note: stale sender entries are never pruned from this dict. This is
+        # fine because only cron_sender_id typically injects events, so the
+        # dict stays small. If many unique senders start injecting events,
+        # consider periodic cleanup.
+        self._event_injection_times: dict[str, list[float]] = {}
+        self._max_events_per_minute: int = 10
 
         # Initialize approval queue
         # Keep approval state scoped with session storage by default so tests
@@ -160,7 +176,9 @@ class ChatServer:
             pending = self._approval_queue.get_pending(sender_id)
             if pending is not None:
                 return self._handle_approval_response(
-                    sender_id, pending, stripped.lower() in _APPROVE_WORDS,
+                    sender_id,
+                    pending,
+                    stripped.lower() in _APPROVE_WORDS,
                 )
 
         # Screen input through guardian (before adding to session)
@@ -188,6 +206,7 @@ class ChatServer:
         # Load LLM secrets if configured
         if self._agent_def.llm.secrets:
             from taskrunner.orchestrator import _load_secrets_to_env
+
             _load_secrets_to_env(self._agent_def.llm.secrets)
 
         # Build the confirm_action callback for this request.
@@ -196,13 +215,17 @@ class ChatServer:
         # being queued for async approval the CLI caller can never answer.
         confirm_action = self._confirm_fn
         if auto_approve and confirm_action is not None:
-            logger.debug("auto_approve requested but confirm_fn already set; using existing confirm_fn")
+            logger.debug(
+                "auto_approve requested but confirm_fn already set; using existing confirm_fn"
+            )
         elif auto_approve:
+
             def _auto_confirm(tool_name: str, tool_input: dict, reason: str) -> bool:
                 logger.info("Auto-approving %s (reason: %s)", tool_name, reason)
                 if self._guardian is not None:
                     self._guardian.log_action_outcome(tool_name, "review", "auto_approved_by_cli")
                 return True
+
             confirm_action = _auto_confirm
 
         # Look up per-sender session state (workspace path, etc.)
@@ -239,6 +262,7 @@ class ChatServer:
                 on_text_delta=on_text_delta,
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
+                cron_manager=self._cron_manager,
             )
 
         logger.info(
@@ -307,15 +331,16 @@ class ChatServer:
             logger.info("Approval request (no reply channel): %s", msg)
 
     def _handle_approval_response(
-        self, sender_id: str, pending, approved: bool,
+        self,
+        sender_id: str,
+        pending,
+        approved: bool,
     ) -> str:
         """Resolve a pending action and execute if approved."""
         self._approval_queue.resolve(pending.id, approved)
 
         if not approved:
-            result_msg = f"❌ Action denied: {pending.tool_name}"
-            self._send_reply(sender_id, result_msg, proactive=False)  # Direct reply to approval
-            return result_msg
+            return f"❌ Action denied: {pending.tool_name}"
 
         # Execute the tool with full context (session_state, memory)
         session_state = self._session_states.get(sender_id)
@@ -334,10 +359,11 @@ class ChatServer:
             logger.exception("Tool execution failed after approval")
             result_msg = f"✅ Approved but execution failed: {e}"
 
-        self._send_reply(sender_id, result_msg, proactive=False)  # Direct reply to approval
         return result_msg
 
-    def _send_reply(self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False) -> None:
+    def _send_reply(
+        self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False
+    ) -> None:
         """Send a message via the reply channel if available.
 
         Args:
@@ -348,7 +374,9 @@ class ChatServer:
         """
         # Check quiet hours for proactive messages only
         if proactive and should_suppress(self._agent_def.quiet_hours, urgent=urgent):
-            logger.info("Message suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent)
+            logger.info(
+                "Message suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent
+            )
             return
 
         if self._reply_channel:
@@ -356,6 +384,34 @@ class ChatServer:
                 self._reply_channel.send(sender_id, msg)
             except Exception:
                 logger.exception("Failed to send message via reply channel")
+
+    def inject_system_event(self, sender_id: str, text: str) -> None:
+        """Inject a system event into a sender's active session.
+
+        The event is wrapped with a [SYSTEM EVENT] prefix so the LLM can
+        distinguish it from real user input.  Used by the cron subsystem
+        for main-session jobs.
+
+        Rate-limited to _max_events_per_minute per sender to prevent
+        misfiring cron jobs from flooding a session.
+        """
+        now = time.monotonic()
+        window = self._event_injection_times.setdefault(sender_id, [])
+        # Prune entries older than 60s
+        cutoff = now - 60
+        window[:] = [t for t in window if t > cutoff]
+        if len(window) >= self._max_events_per_minute:
+            logger.warning(
+                "Rate limit hit: dropping system event for %s (%d events in last 60s)",
+                sender_id,
+                len(window),
+            )
+            return
+        window.append(now)
+
+        wrapped = f"[SYSTEM EVENT]\n{text}"
+        self._session_mgr.add_user_message(sender_id, wrapped)
+        logger.info("Injected system event into session for %s", sender_id)
 
     def get_or_create_session(self, sender_id: str):
         """Get the active session for a sender, creating one if needed."""
@@ -379,8 +435,7 @@ class ChatServer:
             date_str = dt.strftime("%Y-%m-%d %H:%M")
             title = s["title"] or "(untitled)"
             lines.append(
-                f"  {s['session_id']}{marker}  {title}  "
-                f"({s['message_count']} msgs, {date_str})"
+                f"  {s['session_id']}{marker}  {title}  ({s['message_count']} msgs, {date_str})"
             )
         lines.append("")
         lines.append("* = active session. Use /resume <id> to switch.")
@@ -459,8 +514,7 @@ class ChatServer:
                 screen_result = self._guardian.screen_input(memory_context)
                 if screen_result.blocked:
                     logger.warning(
-                        "Guardian blocked memory context from system prompt "
-                        "(confidence=%.3f)",
+                        "Guardian blocked memory context from system prompt (confidence=%.3f)",
                         screen_result.classifier_result.confidence
                         if screen_result.classifier_result
                         else 0.0,

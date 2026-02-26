@@ -4,6 +4,9 @@ allow:
   - check_email
   - read_email
   - check_drive
+  - read_doc
+  - read_sheet
+  - read_slides
   - notion_api
   - check_messages
   - get_chats
@@ -39,6 +42,12 @@ review:
   - complete_*
   - mark_*
   - trash_*
+  - write_to_sheet
+  - append_to_doc
+  - append_to_sheet
+  - replace_in_doc
+  - replace_in_slides
+  - add_slide
   - edit_memory
   # Workspace management (requires user approval for each directory)
   - set_workspace
@@ -46,6 +55,8 @@ review:
   - git_commit
   - git_branch
   - git_push
+  # Notion write (all actions require review)
+  - notion_write
   # Browser tools (state-changing)
   - browser_open
   - browser_navigate

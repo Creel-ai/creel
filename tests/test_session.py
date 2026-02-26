@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from taskrunner.session import Session, SessionManager, _sanitize_sender_id
-
+from taskrunner.session import SessionManager, _sanitize_sender_id
 
 # -- existing tests (updated for new session_id / title fields) --
 
@@ -55,9 +54,12 @@ def test_add_tool_results(tmp_path: Path) -> None:
     """add_tool_results should append as user message."""
     mgr = SessionManager(sessions_dir=str(tmp_path))
     mgr.add_user_message("cli", "Check weather")
-    mgr.add_tool_results("cli", [
-        {"type": "tool_result", "tool_use_id": "t1", "content": "sunny"},
-    ])
+    mgr.add_tool_results(
+        "cli",
+        [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "sunny"},
+        ],
+    )
 
     session = mgr.get_or_create("cli")
     assert len(session.messages) == 2
@@ -116,12 +118,18 @@ def test_max_history_trimming_skips_orphaned_tool_results(tmp_path: Path) -> Non
     session = mgr.get_or_create("cli")
     session.messages = [
         {"role": "user", "content": "Check weather"},
-        {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "t1", "name": "weather", "input": {}},
-        ]},
-        {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "t1", "content": "sunny"},
-        ]},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "weather", "input": {}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "sunny"},
+            ],
+        },
         {"role": "assistant", "content": [{"type": "text", "text": "It's sunny!"}]},
         {"role": "user", "content": "Thanks"},
         {"role": "assistant", "content": [{"type": "text", "text": "You're welcome!"}]},
@@ -384,6 +392,7 @@ def test_compaction_on_token_threshold(tmp_path: Path) -> None:
 
 def test_compaction_replaces_old_messages_with_summary(tmp_path: Path) -> None:
     """After compaction, older messages should be replaced with a summary message."""
+
     def fake_summarize(messages):
         return "Compact summary."
 
@@ -411,6 +420,7 @@ def test_compaction_replaces_old_messages_with_summary(tmp_path: Path) -> None:
 
 def test_compaction_resets_token_count(tmp_path: Path) -> None:
     """Token count should be reset to 0 after compaction."""
+
     def fake_summarize(messages):
         return "Summary."
 
@@ -433,6 +443,7 @@ def test_compaction_resets_token_count(tmp_path: Path) -> None:
 
 def test_compaction_fallback_on_error(tmp_path: Path) -> None:
     """When summarize_fn raises, should fall back to trim."""
+
     def bad_summarize(messages):
         raise RuntimeError("API error")
 
@@ -501,7 +512,9 @@ def test_incremental_compaction(tmp_path: Path) -> None:
     # Add more messages to simulate continued conversation
     for i in range(10):
         session.messages.append({"role": "user", "content": f"New message {i}"})
-        session.messages.append({"role": "assistant", "content": [{"type": "text", "text": f"New reply {i}"}]})
+        session.messages.append(
+            {"role": "assistant", "content": [{"type": "text", "text": f"New reply {i}"}]}
+        )
     mgr._save(session)
 
     # Second compaction
@@ -516,6 +529,7 @@ def test_incremental_compaction(tmp_path: Path) -> None:
 
 def test_summary_and_tokens_persisted_in_json(tmp_path: Path) -> None:
     """Raw JSON should contain summary and token_count fields."""
+
     def fake_summarize(messages):
         return "Persisted summary."
 

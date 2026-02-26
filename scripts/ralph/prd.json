@@ -287,7 +287,7 @@
         "Unsaved changes Chip badge next to save button showing change count"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Dynamically generate form from JSON Schema where possible. Fall back to TextField for unknown field types. Use MUI Accordion, AccordionSummary, AccordionDetails for sections."
     },
     {

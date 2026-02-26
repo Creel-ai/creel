@@ -273,6 +273,41 @@ export function deleteFile(filePath: string): Promise<{ status: string; path: st
   });
 }
 
+// ---- Config types ----
+
+export interface ConfigResponse {
+  config: Record<string, unknown>;
+  raw_yaml: string;
+}
+
+export interface ConfigSaveResponse {
+  status: string;
+  config: Record<string, unknown>;
+  raw_yaml: string;
+}
+
+// ---- Config API methods ----
+
+export function fetchConfig(): Promise<ConfigResponse> {
+  return request<ConfigResponse>('/config');
+}
+
+export function fetchConfigSchema(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/config/schema');
+}
+
+export function updateConfig(data: { json?: Record<string, unknown>; raw_yaml?: string }): Promise<ConfigSaveResponse> {
+  return request<ConfigSaveResponse>('/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function applyConfig(): Promise<{ status: string }> {
+  return request<{ status: string }>('/config/apply', { method: 'POST' });
+}
+
 /**
  * Toggle a task's enabled field by reading the raw YAML, modifying it, and writing back.
  */

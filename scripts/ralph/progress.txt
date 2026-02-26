@@ -71,6 +71,9 @@ Started: 2026-02-25
 - Custom tree rendering with List/ListItemButton (not @mui/x-tree-view) — simpler for recursive FileTreeNode data
 - CodeMirror language auto-detection: `langExtension(filePath)` returns yamlMode/jsonMode/markdownMode/[] based on extension
 - react-markdown v10 for .md preview: `import Markdown from 'react-markdown'` (ESM-only)
+- Config API types in client.ts: ConfigResponse, ConfigSaveResponse; methods: fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
+- ConfigPage pattern: form↔raw sync on tab switch; `formToConfig()` preserves unknown keys via `...original` spread
+- Channels/Tools config too dynamic for static form — redirect to Raw YAML mode with explanatory note
 
 ---
 
@@ -420,5 +423,33 @@ Started: 2026-02-25
   - `AgentDefinition.model_json_schema()` generates full JSON Schema including all nested models (GuardianConfig, ChannelsConfig, etc.)
   - SIGHUP is the standard Unix signal for config reload — uvicorn doesn't handle it natively but process managers do
   - Config path discovery mirrors `_get_tasks_dir()` pattern from other API modules
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-016
+- Implemented Config editor page with form mode and raw YAML mode
+- Files changed: dashboard/src/pages/ConfigPage.tsx (full implementation), dashboard/src/api/client.ts (added config API methods)
+- API client additions: ConfigResponse, ConfigSaveResponse interfaces, fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
+- Form mode features:
+  - Collapsible MUI Accordion sections: Agent (system_prompt, model, max_tokens, max_turns), Session (dir, history, summarization, TTL, encryption), Workspace (path, timezone, memory settings), Guardian (enabled/debug, fast classifier, LLM judge, policy, audit), Quiet Hours (enabled, start/end, timezone), Bridge (enabled, URL, token), Browser (enabled, mode, sessions, timeouts, resources), Daemon (log level, port), Channels (note to use Raw mode), Tools (note to use Raw mode)
+  - Field types: TextField, Switch, Select, TextField type=number — all with FormHelperText descriptions
+  - Validation: system_prompt required, max_tokens >= 1, max_turns 1-50
+  - Validation errors shown inline via TextField error prop + helperText
+- Raw mode: full CodeMirror 6 YAML editor (reuses same YamlEditor pattern from TaskEditPage)
+- Switching tabs syncs content: form→raw serializes via yaml.dump, raw→form parses YAML back to form fields
+- Save button writes via PUT /api/config — Snackbar toast
+- Apply button saves AND triggers POST /api/config/apply with Dialog confirmation warning about daemon restart
+- Unsaved changes Chip badge next to save button showing section-level change count
+- Dirty tracking compares current YAML against savedYaml snapshot
+- Unsaved changes warning via beforeunload event
+- configToForm() and formToConfig() handle bidirectional conversion, preserving unknown keys from original config
+- **Learnings for future iterations:**
+  - Channels and Tools sections are too dynamic/complex for a static form — better to redirect users to Raw YAML mode for those
+  - The `countChanges()` function compares top-level YAML keys to compute a meaningful change count (not just "changed/not changed")
+  - `formToConfig()` spreads `...original` to preserve keys not represented in the form (e.g. tools, channels) — critical for round-trip fidelity
+  - Schema descriptions from `model_json_schema()` can be used for help text, but hardcoded descriptions are more user-friendly
+  - `npm run build` produces 1401 KB (453 KB gzipped) — ConfigPage adds ~30 KB (mostly MUI Accordion components)
+  - The `get()` helper avoids `in` operator TypeScript issues when accessing nested properties of unknown types
+  - Config API types in client.ts: ConfigResponse, ConfigSaveResponse; methods: fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
   - All 1373 existing tests still pass
 ---

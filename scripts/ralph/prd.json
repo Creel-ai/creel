@@ -231,7 +231,7 @@
         "Existing tests still pass"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Create src/taskrunner/daemon/api_files.py. Use pathlib for path resolution and security validation. Resolve symlinks before checking containment."
     },
     {
@@ -252,7 +252,7 @@
         "Empty state when no file selected: 'Select a file from the tree to edit'"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "Use MUI TreeView from @mui/x-tree-view. Install @codemirror/lang-json, @codemirror/lang-markdown in addition to yaml. For markdown preview, use react-markdown or marked."
     },
     {

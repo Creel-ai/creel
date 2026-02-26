@@ -57,6 +57,15 @@ Started: 2026-02-25
 - MUI ToggleButton `value` must not be `null` — use sentinel string (e.g. 'all') instead
 - Cron API types in client.ts: CronJob, CronRunRecord, CronHistoryResponse; methods: fetchCronJobs(), toggleCronJob(), fetchCronHistory(), fetchCronRunDetail()
 - Expandable table rows pattern: wrap data row + collapse row in `<Box component="tbody">`, Collapse in a colSpan cell
+- Files API router in src/taskrunner/daemon/api_files.py — prefix="/api/files", mounted via `app.include_router(files_router)` in api.py
+- `_validate_path()` in api_files.py resolves symlinks and checks containment within CREEL_HOME — reject ../ with 400
+- `_creel_home()` helper returns `Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))` — reusable pattern for CREEL_HOME
+- File tree excludes: __pycache__, .pyc, daemon.sock, daemon.pid, *.bak, .git, .deleted; max depth 5
+- Soft-delete for files uses .trash/ subdir (vs .deleted/ for tasks) — preserves relative path structure
+- File browser API types in client.ts: FileTreeNode, FileContent, FileWriteResult; methods: fetchFileTree(), fetchFileContent(), updateFile(), createFile(), deleteFile()
+- Custom tree rendering with List/ListItemButton (not @mui/x-tree-view) — simpler for recursive FileTreeNode data
+- CodeMirror language auto-detection: `langExtension(filePath)` returns yamlMode/jsonMode/markdownMode/[] based on extension
+- react-markdown v10 for .md preview: `import Markdown from 'react-markdown'` (ESM-only)
 
 ---
 
@@ -328,5 +337,63 @@ Started: 2026-02-25
   - History status filter uses 'all' as sentinel value, converted to `undefined` when calling API
   - The `useNavigate` import was unused and had to be removed to pass TypeScript strict checks
   - `npm run build` produces 1040 KB (330 KB gzipped) — cron page adds minimal to bundle since it reuses MUI components
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-013
+- Implemented File browser API endpoints for browsing and editing files in ~/.creel/
+- Files created: src/taskrunner/daemon/api_files.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included files_router)
+- Endpoints:
+  - GET /api/files/tree — recursive directory tree of ~/.creel/ with name, path, type, size_bytes, modified_at, children
+  - GET /api/files/{path} — file contents with binary detection; returns binary:true for non-text files; 1MB max
+  - PUT /api/files/{path} — write file with .bak backup, creates parent dirs if needed
+  - POST /api/files/{path} — create new file, 409 if exists, creates parent dirs
+  - DELETE /api/files/{path} — soft-delete to .trash/ subdir, 400 for protected files (agent.yaml, daemon.pid, daemon.sock)
+- Exclusions: __pycache__, .pyc, daemon.sock, daemon.pid, *.bak, .git, .deleted
+- Max tree depth: 5 levels
+- Path traversal protection: validates all paths resolve within CREEL_HOME, rejects ../ with 400
+- Text detection heuristic: known extensions + null-byte check for unknown extensions
+- **Learnings for future iterations:**
+  - Files API router uses prefix="/api/files" — same pattern as other dashboard routers
+  - `_validate_path()` resolves symlinks before checking containment to prevent symlink-based traversal
+  - `_should_exclude()` filters both exact names (daemon.sock) and suffixes (.bak, .pyc)
+  - `_is_text_file()` uses known extension list + null-byte heuristic for safe content serving
+  - Protected files check uses `target.name` (basename only) so agent.yaml is protected regardless of subdirectory
+  - `.trash/` preserves relative path structure to avoid name collisions from different subdirectories
+  - CREEL_HOME defaults to ~/.creel/ via `os.environ.get("CREEL_HOME", Path.home() / ".creel")`
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-014
+- Implemented File browser page with tree navigation and CodeMirror code editor
+- Files changed: dashboard/src/pages/FilesPage.tsx (full implementation), dashboard/src/api/client.ts (added file browser API methods), dashboard/package.json (new deps)
+- New npm dependencies: @mui/x-tree-view, @codemirror/lang-json, @codemirror/lang-markdown, react-markdown
+- API client additions: FileTreeNode, FileContent, FileWriteResult interfaces, fetchFileTree(), fetchFileContent(), updateFile(), createFile(), deleteFile()
+- Left panel features:
+  - Quick Access section pinned at top: agent.yaml, SOUL.md, USER.md, MEMORY.md
+  - Recursive expandable directory tree using custom List/ListItemButton components
+  - File icons by extension: DescriptionIcon (.yaml), ArticleIcon (.md), DataObjectIcon (.json), InsertDriveFileIcon (other), FolderIcon/FolderOpenIcon (dirs)
+  - Click file opens in right panel editor
+- Right panel features:
+  - CodeMirror 6 editor with auto-detected language mode (YAML, Markdown, JSON, plain text)
+  - Line numbers, active line highlighting, bracket matching via basicSetup
+  - Breadcrumb above editor showing ~/.creel/ + file path segments
+  - Save button and Ctrl/Cmd+S keyboard shortcut (both in CodeMirror keymap and global window listener)
+  - Unsaved changes "modified" Chip indicator next to filename in breadcrumb
+  - Markdown preview toggle: IconButton switches between Edit (CodeMirror) and Preview (react-markdown) modes
+  - Binary file detection: shows message instead of editor for non-text files
+  - Loading skeleton while fetching file content
+  - Error state on file load or save failure
+- New File dialog: TextField for path, Select for template (Blank, YAML Task, Markdown Note)
+- Empty state: "Select a file from the tree to edit" when no file selected
+- Unsaved changes warning via beforeunload event
+- **Learnings for future iterations:**
+  - Used custom tree rendering with List/ListItemButton instead of @mui/x-tree-view RichTreeView — simpler for our hierarchical data model and avoids complex item-to-component mapping
+  - react-markdown v10 is ESM-only; works fine with Vite/React 19 setup, import as `import Markdown from 'react-markdown'`
+  - CodeMirror `keymap.of()` extension allows custom keybindings like Mod-s for save within the editor
+  - The `filePath` dependency in FileEditor's useEffect ensures the editor is fully recreated when switching files (new language mode, fresh content)
+  - Global window keydown handler for Ctrl/Cmd+S provides save fallback when focus isn't in the editor
+  - `npm run build` produces 1370 KB (445 KB gzipped) — react-markdown and additional CodeMirror language modes add ~330 KB to bundle
   - All 1373 existing tests still pass
 ---

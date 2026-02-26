@@ -216,6 +216,63 @@ export function fetchCronRunDetail(runId: string): Promise<CronRunRecord> {
   return request<CronRunRecord>(`/cron/history/${encodeURIComponent(runId)}`);
 }
 
+// ---- File browser types ----
+
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  size_bytes: number;
+  modified_at: string | null;
+  children?: FileTreeNode[];
+}
+
+export interface FileContent {
+  path: string;
+  content: string | null;
+  binary: boolean;
+  size_bytes: number;
+  modified_at: string;
+}
+
+export interface FileWriteResult {
+  path: string;
+  size_bytes: number;
+  modified_at: string;
+}
+
+// ---- File browser API methods ----
+
+export function fetchFileTree(): Promise<FileTreeNode> {
+  return request<FileTreeNode>('/files/tree');
+}
+
+export function fetchFileContent(filePath: string): Promise<FileContent> {
+  return request<FileContent>(`/files/${filePath}`);
+}
+
+export function updateFile(filePath: string, content: string): Promise<FileWriteResult> {
+  return request<FileWriteResult>(`/files/${filePath}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function createFile(filePath: string, content: string): Promise<FileWriteResult> {
+  return request<FileWriteResult>(`/files/${filePath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function deleteFile(filePath: string): Promise<{ status: string; path: string }> {
+  return request<{ status: string; path: string }>(`/files/${filePath}`, {
+    method: 'DELETE',
+  });
+}
+
 /**
  * Toggle a task's enabled field by reading the raw YAML, modifying it, and writing back.
  */

@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from taskrunner.models import TaskDefinition, load_all_tasks, load_task
+from taskrunner.models import TaskDefinition, load_task
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -153,16 +153,18 @@ async def list_tasks() -> list[TaskSummary]:
             if not isinstance(raw, dict):
                 continue
             stat = path.stat()
-            results.append(TaskSummary(
-                name=raw.get("name", path.stem),
-                description=raw.get("description", ""),
-                schedule=raw.get("schedule", ""),
-                enabled=raw.get("enabled", True),
-                last_modified=datetime.datetime.fromtimestamp(
-                    stat.st_mtime, tz=datetime.timezone.utc
-                ).isoformat(),
-                file_path=str(path),
-            ))
+            results.append(
+                TaskSummary(
+                    name=raw.get("name", path.stem),
+                    description=raw.get("description", ""),
+                    schedule=raw.get("schedule", ""),
+                    enabled=raw.get("enabled", True),
+                    last_modified=datetime.datetime.fromtimestamp(
+                        stat.st_mtime, tz=datetime.timezone.utc
+                    ).isoformat(),
+                    file_path=str(path),
+                )
+            )
         except Exception:
             continue
 
@@ -320,6 +322,7 @@ async def run_task_endpoint(name: str) -> TaskRunResponse:
 
     def _run():
         from taskrunner.orchestrator import run_task
+
         try:
             run_task(str(path))
         except Exception:

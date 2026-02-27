@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -124,9 +124,27 @@ def _build_tree(path: Path, depth: int = 0) -> dict[str, Any] | None:
 def _is_text_file(path: Path) -> bool:
     """Heuristic check if a file is likely text (not binary)."""
     text_extensions = {
-        ".yaml", ".yml", ".json", ".md", ".txt", ".toml", ".cfg",
-        ".ini", ".log", ".py", ".sh", ".bash", ".zsh", ".conf",
-        ".env", ".csv", ".xml", ".html", ".css", ".js", ".ts",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".md",
+        ".txt",
+        ".toml",
+        ".cfg",
+        ".ini",
+        ".log",
+        ".py",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".conf",
+        ".env",
+        ".csv",
+        ".xml",
+        ".html",
+        ".css",
+        ".js",
+        ".ts",
         ".jsonl",
     }
     if path.suffix.lower() in text_extensions:

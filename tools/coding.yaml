@@ -1,0 +1,18 @@
+# Tool configuration for the coding executor
+tools:
+  coding:
+    executor: coding
+    description: "Development environment for building software — run commands, install packages, edit files"
+    network: false
+    parameters:
+      command:
+        type: string
+        description: "Shell command to execute in the dev container (e.g., 'python -m pytest', 'npm install', 'git status')"
+        required: true
+      workdir:
+        type: string
+        description: "Working directory inside the container. Maps to a mounted host path."
+      mount:
+        type: string
+        description: "Host path to mount into the container at /workspace. Allows working on real projects."
+    timeout: 300

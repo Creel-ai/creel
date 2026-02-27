@@ -1,0 +1,22 @@
+# Ralph Progress Log — Test Harness
+Started: 2026-02-26
+---
+
+## Codebase Patterns
+- **Package:** src/taskrunner/ (being renamed to creel in PR #165, but use taskrunner for now on main)
+- **Daemon API:** src/taskrunner/daemon/api.py — FastAPI app with /health, /v1/* endpoints
+- **Daemon service:** src/taskrunner/daemon/service.py — bridges channels to ChatServer
+- **ChatServer:** src/taskrunner/chat.py — handle_message(sender_id, text, ...) → LLM → tools → response
+- **Channels:** src/taskrunner/channels/ — Telegram, iMessage, WhatsApp, each extends Channel base
+- **Telegram:** src/taskrunner/channels/telegram.py + telegram_bridge.py — webhook + polling modes
+- **Cron:** src/taskrunner/cron/ — manager.py, store.py (JSON persistence), executor.py, tool.py
+- **Guardian:** src/taskrunner/guardian/ — core.py checks tool calls against policies
+- **Sessions:** src/taskrunner/session.py — session persistence
+- **Media:** src/taskrunner/services/ — media_store.py, transcription.py, vision.py (on ralph/media-messages branch)
+- **Models:** src/taskrunner/models.py — AgentDefinition, AgentConfig, all channel configs
+- **CLI:** src/taskrunner/cli.py — entry point, daemon start/stop/run
+- **Tests:** tests/ — 108 test files, run with `uv run pytest tests/ -x -q`
+- **CREEL_HOME:** defaults to ~/.creel/, overridable via env var
+- **Daemon port:** configurable, check cli.py for default (likely 8099)
+- **LLM calls:** src/taskrunner/agent.py — call_llm() calls OpenAI-compatible API
+- **LLM config:** agent.yaml llm.base_url can override the API endpoint — THIS IS HOW WE POINT AT MOCK

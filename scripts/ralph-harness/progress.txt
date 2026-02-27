@@ -18,5 +18,27 @@ Started: 2026-02-26
 - **Tests:** tests/ — 108 test files, run with `uv run pytest tests/ -x -q`
 - **CREEL_HOME:** defaults to ~/.creel/, overridable via env var
 - **Daemon port:** configurable, check cli.py for default (likely 8099)
-- **LLM calls:** src/taskrunner/agent.py — call_llm() calls OpenAI-compatible API
-- **LLM config:** agent.yaml llm.base_url can override the API endpoint — THIS IS HOW WE POINT AT MOCK
+- **LLM calls:** src/taskrunner/llm.py — call_llm() uses anthropic Python SDK (NOT OpenAI)
+- **LLM config:** Anthropic SDK reads ANTHROPIC_BASE_URL from env — THIS IS HOW WE POINT AT MOCK
+- **LLM format:** Anthropic Messages API: POST /v1/messages, content blocks (text/tool_use), stop_reason, usage
+- **Streaming:** client.messages.stream() with text_stream iterator, SSE events: message_start, content_block_start/delta/stop, message_delta, message_stop
+
+## 2026-02-26 — HARNESS-001: Mock LLM Server
+- Implemented mock Anthropic Messages API server at scripts/test-harness/mock_llm_server.py
+- Supports: echo mode, scripted triggers (regex), tool_call mode with followup, SSE streaming, error injection, reset, call history
+- Created fixtures/llm_triggers.json with 11 triggers (greeting, exec, dangerous commands, prompt injection, unknown tool, echo fallback)
+- 23 tests in scripts/test-harness/tests/test_mock_llm_server.py — all pass
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Files created:
+  - scripts/test-harness/mock_llm_server.py
+  - scripts/test-harness/fixtures/llm_triggers.json
+  - scripts/test-harness/tests/__init__.py
+  - scripts/test-harness/tests/conftest.py (adds test-harness dir to sys.path)
+  - scripts/test-harness/tests/test_mock_llm_server.py
+- **Learnings:**
+  - Creel uses anthropic SDK, NOT OpenAI — mock must implement /v1/messages with Anthropic format
+  - anthropic.Anthropic() reads ANTHROPIC_BASE_URL from env (no code changes needed to redirect)
+  - Tool calls use content blocks with type=tool_use (not OpenAI function calling format)
+  - Streaming uses SSE with message_start/content_block_start/delta/stop/message_delta/message_stop events
+  - The catch-all .* trigger in llm_triggers.json matches empty strings — need to skip triggers for empty input
+---

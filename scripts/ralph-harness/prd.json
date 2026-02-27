@@ -21,8 +21,8 @@
         "Tests for echo, scripted, tool call, and streaming modes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "Use FastAPI + uvicorn. Keep it minimal. The triggers file maps regex patterns to responses. Tool call format must match OpenAI exactly: {choices: [{message: {role: assistant, tool_calls: [{id, type: function, function: {name, arguments}}]}}]}. See specs/test-harness.md for full detail."
+      "passes": true,
+      "notes": "Implemented using Anthropic Messages API format (POST /v1/messages) since Creel uses the anthropic SDK, not OpenAI. Set ANTHROPIC_BASE_URL to point at mock server. Uses FastAPI + uvicorn. The triggers file maps regex patterns to responses. 23 tests covering echo, scripted, tool call, streaming, error injection, reset, and history."
     },
     {
       "id": "HARNESS-002",

@@ -78,3 +78,28 @@ Started: 2026-02-26
   - Channel --channel none skips channel registration (avoid needing real channel infrastructure)
   - Daemon --no-scheduler avoids needing tasks/ directory
 ---
+
+## 2026-02-26 — HARNESS-003: Basic Chat Scenario
+- Created scenarios/conftest.py with shared fixtures: daemon_client (UDS), mock_client (HTTP), autouse reset_mock_llm
+- Created scenarios/test_basic_chat.py with 11 tests in 5 classes:
+  - TestSimpleChat: greeting trigger match, echo fallback, LLM history verification
+  - TestSessionCreation: session appears in list, history contains user+assistant messages
+  - TestConversationContext: second message includes prior history in LLM call
+  - TestClearCommand: /clear resets session, LLM no longer receives prior messages
+  - TestEmptyAndEdgeCases: empty text returns 422, whitespace handled gracefully
+  - TestConcurrentSenders: separate sessions per sender, isolated LLM context
+- All 11 scenario tests pass via harness.py
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Mock LLM tests: 23 passed (unchanged)
+- Files created:
+  - scripts/test-harness/scenarios/__init__.py
+  - scripts/test-harness/scenarios/conftest.py
+  - scripts/test-harness/scenarios/test_basic_chat.py
+- **Learnings:**
+  - Daemon chat endpoint is POST /v1/messages (not /v1/chat) with Pydantic validation (min_length=1 on text → empty string returns 422)
+  - UDS transport via httpx.HTTPTransport(uds=socket_path) with base_url="http://daemon"
+  - Mock LLM reset between tests is essential for history-based assertions
+  - /clear command returns "Session cleared." — match on lowercase "clear" or "session"
+  - Session IDs are 32-char hex strings from secrets.token_hex(16)
+  - The .* catch-all trigger returns "Echo: {user_message}" for messages that don't match specific patterns
+---

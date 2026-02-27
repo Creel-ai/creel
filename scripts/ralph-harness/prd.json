@@ -63,8 +63,8 @@
         "All tests pass via test-harness.sh"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "The daemon API endpoint for chat may be POST /v1/chat or POST /v1/message — check daemon/api.py. Tests should use a shared httpx client fixture pointing at the daemon port. Use the mock LLM history endpoint to verify what messages were sent to the LLM."
+      "passes": true,
+      "notes": "Daemon chat endpoint is POST /v1/messages (Pydantic-validated: sender_id, text, session_id, auto_approve). Tests use shared httpx fixtures from scenarios/conftest.py: daemon_client (UDS transport), mock_client (HTTP), autouse reset_mock_llm fixture. 11 tests in 5 classes: TestSimpleChat (greeting trigger, echo fallback, LLM history verification), TestSessionCreation (session appears in list, history has user+assistant), TestConversationContext (second message includes prior history), TestClearCommand (/clear resets context), TestEmptyAndEdgeCases (empty=422, whitespace), TestConcurrentSenders (separate sessions, isolated LLM context)."
     },
     {
       "id": "HARNESS-004",

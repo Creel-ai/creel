@@ -1,0 +1,31 @@
+# Tool configuration for the sub-agent executor.
+# Sub-agents are handled as a built-in tool in execute_tool_call(), not via
+# the standard executor pipeline, because they need direct access to the
+# SubAgentManager instance.
+tools:
+  subagent:
+    executor: subagent
+    description: "Spawn a background sub-agent for parallel or long-running tasks"
+    parameters:
+      action:
+        type: string
+        description: "Action to perform: spawn, list, steer, or kill"
+        required: true
+      task:
+        type: string
+        description: "Task description for the sub-agent (required for spawn)"
+      label:
+        type: string
+        description: "Human-readable label for this sub-agent"
+      model:
+        type: string
+        description: "Override model for this sub-agent (default: same as parent)"
+      timeout:
+        type: integer
+        description: "Timeout in seconds (default: 300)"
+      agent_id:
+        type: string
+        description: "Sub-agent ID (required for steer/kill)"
+      message:
+        type: string
+        description: "Follow-up message to inject (required for steer)"

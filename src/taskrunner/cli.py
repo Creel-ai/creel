@@ -514,7 +514,10 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         from taskrunner.daemon.service import DaemonService
 
         channel_type = getattr(args, "channel_type", "imessage")
-        channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
+        try:
+            channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
+        except ValueError as e:
+            raise RuntimeError(f"Channel configuration error: {e}") from e
 
         server = ChatServer(
             agent_def,
@@ -564,7 +567,8 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        # Lifespan handles service.shutdown(); we just clean up files.
+        # Lifespan teardown calls service.shutdown() if a service was created.
+        # We only need to clean up PID/socket files here.
         print("Daemon stopped.")
         pid_path.unlink(missing_ok=True)
         socket_path.unlink(missing_ok=True)

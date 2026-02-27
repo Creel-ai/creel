@@ -27,7 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 def _mount_webhook_routes(app: FastAPI, service: DaemonService) -> None:
-    """Mount webhook routes from any channels that provide them."""
+    """Mount webhook routes from any channels that provide them.
+
+    NOTE: In deferred-init mode this is called from the background init thread.
+    This is safe because the 503 middleware blocks all non-health requests until
+    ``ready`` is set (which happens after this function returns).
+    """
     for name, channel in service.get_channels().items():
         routes = channel.get_webhook_routes()
         if not routes:
@@ -92,6 +97,7 @@ def create_daemon_app(
         yield
 
         if init_thread is not None:
+            # Best-effort wait; the thread is a daemon so it won't block exit.
             init_thread.join(timeout=5.0)
         svc = getattr(app.state, "service", None)
         if svc is not None:
@@ -103,6 +109,8 @@ def create_daemon_app(
         lifespan=lifespan,
     )
 
+    # NOTE: Starlette HTTP middleware does not intercept WebSocket upgrades.
+    # If WebSocket routes are added, they need their own readiness guard.
     @app.middleware("http")
     async def _require_ready(request: Request, call_next):
         if request.url.path != "/health" and not ready.is_set():

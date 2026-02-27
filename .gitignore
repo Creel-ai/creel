@@ -52,7 +52,8 @@ workspace/memory/
 # Dashboard build artifacts
 dashboard/node_modules/
 dashboard/dist/
-src/taskrunner/dashboard_static/
+src/taskrunner/dashboard_static/*
+!src/taskrunner/dashboard_static/.gitkeep
 
 # Coverage
 .coverage

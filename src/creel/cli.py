@@ -38,31 +38,47 @@ from creel.orchestrator import run_task
 from creel.secrets import parse_env_file
 from creel.scheduler import start_scheduler
 
-DEFAULT_TASKS_DIR = Path("tasks")
-DEFAULT_AGENT_CONFIG = paths.agent_config()
-DEFAULT_DAEMON_SOCKET = paths.creel_home() / "daemon.sock"
-DEFAULT_DAEMON_PID_FILE = paths.creel_home() / "daemon.pid"
-DEFAULT_DAEMON_LOG_FILE = paths.creel_home() / "daemon.log"
 DEFAULT_DAEMON_LABEL = "com.creel.daemon"
-DEFAULT_DAEMON_PLIST_FILE = (
-    Path.home() / "Library" / "LaunchAgents" / f"{DEFAULT_DAEMON_LABEL}.plist"
-)
+
+
+def _default_tasks_dir() -> Path:
+    return paths.tasks_dir()
+
+
+def _default_agent_config() -> Path:
+    return paths.agent_config()
+
+
+def _default_daemon_socket() -> Path:
+    return paths.creel_home() / "daemon.sock"
+
+
+def _default_daemon_pid_file() -> Path:
+    return paths.creel_home() / "daemon.pid"
+
+
+def _default_daemon_log_file() -> Path:
+    return paths.creel_home() / "daemon.log"
+
+
+def _default_daemon_plist_file() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{DEFAULT_DAEMON_LABEL}.plist"
 
 
 def _tasks_dir(args: argparse.Namespace) -> Path:
-    return args.tasks_dir
+    return args.tasks_dir or _default_tasks_dir()
 
 
 def _daemon_socket_path(args: argparse.Namespace) -> Path:
-    return Path(getattr(args, "socket_path", DEFAULT_DAEMON_SOCKET))
+    return Path(getattr(args, "socket_path", None) or _default_daemon_socket())
 
 
 def _daemon_pid_path(args: argparse.Namespace) -> Path:
-    return Path(getattr(args, "pid_file", DEFAULT_DAEMON_PID_FILE))
+    return Path(getattr(args, "pid_file", None) or _default_daemon_pid_file())
 
 
 def _daemon_log_path(args: argparse.Namespace) -> Path:
-    return Path(getattr(args, "log_file", DEFAULT_DAEMON_LOG_FILE))
+    return Path(getattr(args, "log_file", None) or _default_daemon_log_file())
 
 
 def _daemon_label(args: argparse.Namespace) -> str:
@@ -70,7 +86,7 @@ def _daemon_label(args: argparse.Namespace) -> str:
 
 
 def _daemon_plist_path(args: argparse.Namespace) -> Path:
-    return Path(getattr(args, "plist_path", DEFAULT_DAEMON_PLIST_FILE))
+    return Path(getattr(args, "plist_path", None) or _default_daemon_plist_file())
 
 
 def _read_pid(path: Path) -> int | None:
@@ -144,7 +160,7 @@ def _build_daemon_run_command(args: argparse.Namespace, socket_path: Path, pid_p
         cmd = [sys.executable, "-m", "creel"]
     cmd.extend([
         "--agent-config",
-        str(Path(args.agent_config).resolve()),
+        str(Path(args.agent_config or _default_agent_config()).resolve()),
     ])
     if args.containers:
         cmd.append("--containers")
@@ -329,7 +345,7 @@ def _load_agent_def(args: argparse.Namespace):
     """Load the global agent definition from agent.yaml."""
     from creel.models import load_agent_config
 
-    config_path = args.agent_config
+    config_path = args.agent_config or _default_agent_config()
     agent_def = load_agent_config(config_path)
 
     # CLI overrides
@@ -485,7 +501,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        print(f"Error: Agent config not found at {args.agent_config or _default_agent_config()}", file=sys.stderr)
         return 1
 
     try:
@@ -1281,7 +1297,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
+        print(f"Error: Agent config not found at {args.agent_config or _default_agent_config()}", file=sys.stderr)
         return 1
 
     log_file = agent_def.guardian.audit.log_file if (agent_def.guardian and agent_def.guardian.audit.log_file) else str(paths.audit_log())
@@ -1380,11 +1396,12 @@ def main() -> int:
         "--containers", action="store_true", help="Run executors/LLM in Docker containers"
     )
     parser.add_argument(
-        "--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory"
+        "--tasks-dir", type=Path, default=None,
+        help=f"Tasks directory (default: {_default_tasks_dir()})",
     )
     parser.add_argument(
-        "--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG,
-        help="Path to agent.yaml config",
+        "--agent-config", type=Path, default=None,
+        help=f"Path to agent.yaml config (default: {_default_agent_config()})",
     )
     parser.add_argument(
         "--json-logs", action="store_true",
@@ -1443,8 +1460,8 @@ def main() -> int:
     attach_parser.add_argument(
         "--socket-path",
         type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+        default=None,
+        help="Unix socket path (default: ~/.creel/daemon.sock)",
     )
     attach_parser.add_argument(
         "--timeout",
@@ -1500,12 +1517,12 @@ def main() -> int:
     # --- Shared daemon parent parsers (to avoid option duplication) ---
     _daemon_paths_parent = argparse.ArgumentParser(add_help=False)
     _daemon_paths_parent.add_argument(
-        "--socket-path", type=Path, default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+        "--socket-path", type=Path, default=None,
+        help="Unix socket path (default: ~/.creel/daemon.sock)",
     )
     _daemon_paths_parent.add_argument(
-        "--pid-file", type=Path, default=DEFAULT_DAEMON_PID_FILE,
-        help=f"PID file path (default: {DEFAULT_DAEMON_PID_FILE})",
+        "--pid-file", type=Path, default=None,
+        help="PID file path (default: ~/.creel/daemon.pid)",
     )
 
     _daemon_launchd_parent = argparse.ArgumentParser(add_help=False)
@@ -1514,14 +1531,14 @@ def main() -> int:
         help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
     )
     _daemon_launchd_parent.add_argument(
-        "--plist-path", type=Path, default=DEFAULT_DAEMON_PLIST_FILE,
-        help=f"launchd plist path (default: {DEFAULT_DAEMON_PLIST_FILE})",
+        "--plist-path", type=Path, default=None,
+        help="launchd plist path (default: ~/Library/LaunchAgents/com.creel.daemon.plist)",
     )
 
     _daemon_runtime_parent = argparse.ArgumentParser(add_help=False)
     _daemon_runtime_parent.add_argument(
-        "--log-file", type=Path, default=DEFAULT_DAEMON_LOG_FILE,
-        help=f"Daemon log file (default: {DEFAULT_DAEMON_LOG_FILE})",
+        "--log-file", type=Path, default=None,
+        help="Daemon log file (default: ~/.creel/daemon.log)",
     )
     _daemon_runtime_parent.add_argument(
         "--channel", dest="channel_type", default="imessage",
@@ -1603,8 +1620,8 @@ def main() -> int:
     send_parser.add_argument(
         "--socket-path",
         type=Path,
-        default=DEFAULT_DAEMON_SOCKET,
-        help=f"Unix socket path (default: {DEFAULT_DAEMON_SOCKET})",
+        default=None,
+        help="Unix socket path (default: ~/.creel/daemon.sock)",
     )
     send_parser.add_argument(
         "--timeout",

@@ -67,8 +67,8 @@ def validate_secrets(agent_def) -> None:
         # Try to decrypt
         if not errors:  # Only try if identity exists
             try:
-                decrypt_env_file(path)
-                logger.debug("Validated %s: %s ✓", label, path)
+                decrypt_env_file(str(p))
+                logger.debug("Validated %s: %s ✓", label, p)
             except Exception as e:
                 errors.append(f"{label}: failed to decrypt {path}: {e}")
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 def creel_home() -> Path:
     """Return the Creel home directory (~/.creel/ by default)."""
-    return Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))
+    return Path(os.environ.get("CREEL_HOME", str(Path.home() / ".creel")))
 
 
 def agent_config() -> Path:
@@ -33,6 +33,10 @@ def sessions_dir() -> Path:
 
 def workspace_dir() -> Path:
     return creel_home() / "workspace"
+
+
+def tasks_dir() -> Path:
+    return creel_home() / "tasks"
 
 
 def cron_dir() -> Path:

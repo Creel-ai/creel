@@ -14,8 +14,6 @@ from creel.cron.models import CronJob, RunRecord
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_JOBS_PATH = paths.cron_dir() / "jobs.json"
-DEFAULT_RUNS_PATH = paths.cron_dir() / "runs.json"
 DEFAULT_MAX_RUNS_PER_JOB = 50
 
 
@@ -29,10 +27,14 @@ class JobStore:
 
     def __init__(
         self,
-        jobs_path: Path | str = DEFAULT_JOBS_PATH,
-        runs_path: Path | str = DEFAULT_RUNS_PATH,
+        jobs_path: Path | str | None = None,
+        runs_path: Path | str | None = None,
         max_runs_per_job: int = DEFAULT_MAX_RUNS_PER_JOB,
     ) -> None:
+        if jobs_path is None:
+            jobs_path = paths.cron_dir() / "jobs.json"
+        if runs_path is None:
+            runs_path = paths.cron_dir() / "runs.json"
         self._jobs_path = Path(jobs_path)
         self._runs_path = Path(runs_path)
         self._max_runs_per_job = max_runs_per_job

@@ -40,11 +40,13 @@ def init(*, force: bool = False) -> list[str]:
         paths.secrets_dir,
         paths.sessions_dir,
         paths.workspace_dir,
+        paths.tasks_dir,
         paths.cron_dir,
     ):
         d = dir_fn()
+        already_existed = d.exists()
         d.mkdir(parents=True, exist_ok=True)
-        lines.append(f"  {'exists' if d.exists() else 'created'}: {d}")
+        lines.append(f"  {'exists' if already_existed else 'created'}: {d}")
 
     # Copy templates
     wrote = _copy_template("agent.yaml", paths.agent_config(), force=force)
@@ -86,6 +88,7 @@ def migrate(repo_root: Path, *, force: bool = False) -> list[str]:
         ("secrets", paths.secrets_dir()),
         ("workspace", paths.workspace_dir()),
         ("sessions", paths.sessions_dir()),
+        ("tasks", paths.tasks_dir()),
     ]
 
     for dirname, dest_dir in dir_mappings:

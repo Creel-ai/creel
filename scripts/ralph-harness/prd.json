@@ -43,8 +43,8 @@
         "All existing tests still pass"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "CREEL_HOME env var points the daemon at the test config dir. The daemon binary is 'creel' or 'python -m taskrunner.cli' depending on install. Check how the CLI resolves config. Use pytest-json-report for report generation if available, otherwise write a simple JSON report. See specs/test-harness.md for directory structure."
+      "passes": true,
+      "notes": "Daemon uses Unix domain socket (not TCP port), pointed via --socket-path flag. Config loaded via --agent-config flag (no CREEL_HOME env var). ANTHROPIC_BASE_URL env var redirects anthropic SDK to mock server. Daemon CWD set to config dir so relative paths (policies/test-policy.yaml) resolve correctly. harness.py manages full lifecycle: start mock LLM (port 18999), start daemon (UDS), run pytest, generate report.json, cleanup. test-harness.sh is a thin wrapper that delegates to harness.py via uv run. Guardian classifier/judge disabled in test config (no ONNX/real LLM needed), only policy engine active. Media not included in config — will be added when media scenarios are implemented."
     },
     {
       "id": "HARNESS-003",

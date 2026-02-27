@@ -16,8 +16,9 @@ Started: 2026-02-26
 - **Models:** src/taskrunner/models.py — AgentDefinition, AgentConfig, all channel configs
 - **CLI:** src/taskrunner/cli.py — entry point, daemon start/stop/run
 - **Tests:** tests/ — 108 test files, run with `uv run pytest tests/ -x -q`
-- **CREEL_HOME:** defaults to ~/.creel/, overridable via env var
-- **Daemon port:** configurable, check cli.py for default (likely 8099)
+- **CREEL_HOME:** No env var; config loaded via --agent-config CLI flag, state dir is ~/.creel/
+- **Daemon socket:** Unix domain socket at ~/.creel/daemon.sock (--socket-path to override)
+- **Daemon CLI:** `python -m taskrunner daemon run --socket-path X --channel none --no-scheduler`
 - **LLM calls:** src/taskrunner/llm.py — call_llm() uses anthropic Python SDK (NOT OpenAI)
 - **LLM config:** Anthropic SDK reads ANTHROPIC_BASE_URL from env — THIS IS HOW WE POINT AT MOCK
 - **LLM format:** Anthropic Messages API: POST /v1/messages, content blocks (text/tool_use), stop_reason, usage
@@ -41,4 +42,39 @@ Started: 2026-02-26
   - Tool calls use content blocks with type=tool_use (not OpenAI function calling format)
   - Streaming uses SSE with message_start/content_block_start/delta/stop/message_delta/message_stop events
   - The catch-all .* trigger in llm_triggers.json matches empty strings — need to skip triggers for empty input
+---
+
+## 2026-02-26 — HARNESS-002: Test config and harness runner
+- Created test agent config at scripts/test-harness/config/agent.yaml
+  - Points LLM at mock server via ANTHROPIC_BASE_URL env var (set by harness.py)
+  - exec tool with executor: host (no Docker)
+  - Telegram channel with fake token, webhook mode, webhook_secret, allowed_senders
+  - Guardian enabled with policy only (fast_classifier and llm_judge disabled for test env)
+- Created test policy at scripts/test-harness/config/policies/test-policy.yaml
+  - Blocks rm -rf, curl|bash, fork bomb, crontab, chmod 777, reverse shells
+  - Allows exec tool, denies delete_* tools
+- Created harness.py orchestrator with setup(), teardown(), run_scenarios(), generate_report()
+  - Manages mock LLM server (port 18999) and daemon (Unix domain socket) lifecycle
+  - Daemon CWD set to config dir so relative policy paths resolve correctly
+  - Generates test-results/report.json with pass/fail/timing
+  - Signal handling for clean SIGINT/SIGTERM shutdown
+- Created test-harness.sh entry script with trap cleanup on EXIT/INT/TERM
+- Smoke test passes: mock LLM starts, daemon starts with Guardian active, both stop cleanly
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Mock LLM tests: 23 passed (unchanged)
+- Files created:
+  - scripts/test-harness/config/agent.yaml
+  - scripts/test-harness/config/policies/test-policy.yaml
+  - scripts/test-harness/harness.py
+  - scripts/test-harness.sh
+  - scripts/test-harness/scenarios/ (empty dir for future scenario tests)
+- **Learnings:**
+  - No CREEL_HOME env var — daemon config is passed via --agent-config CLI flag
+  - Daemon uses Unix domain socket (--socket-path), NOT TCP port — httpx needs HTTPTransport(uds=...)
+  - Must set CWD to config dir when starting daemon so relative paths (policies/test-policy.yaml) resolve
+  - Telegram webhook mode requires webhook_secret (not just bot_token)
+  - Guardian fast_classifier needs ONNX runtime — disable for tests (policy engine is sufficient)
+  - validate_secrets() checks .enc files — avoid by not setting llm.secrets in test config
+  - Channel --channel none skips channel registration (avoid needing real channel infrastructure)
+  - Daemon --no-scheduler avoids needing tasks/ directory
 ---

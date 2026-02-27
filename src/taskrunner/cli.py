@@ -209,6 +209,11 @@ def _print_log_errors(log_path: Path, offset: int = 0) -> None:
 
 
 def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
+    """Wait until the daemon health endpoint responds.
+
+    Accepts both ``"starting"`` and ``"ok"`` statuses — any 200 response
+    means the socket is bound and the process is alive.
+    """
     import time
 
     deadline = time.time() + wait_seconds
@@ -217,7 +222,9 @@ def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
             try:
                 resp = _daemon_request(socket_path, "GET", "/health", timeout=0.5)
                 if resp.status_code == 200:
-                    return True
+                    body = resp.json()
+                    if body.get("status") in ("ok", "starting"):
+                        return True
             except Exception:
                 pass
         time.sleep(0.1)
@@ -464,14 +471,18 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
 
 
 def cmd_daemon_run(args: argparse.Namespace) -> int:
-    """Run the daemon server in the foreground (internal command)."""
+    """Run the daemon server in the foreground (internal command).
+
+    Starts uvicorn **first** so the Unix socket is available immediately for
+    health checks, then performs heavy initialization (ChatServer, Guardian,
+    channels, scheduler, etc.) in a background thread via the FastAPI lifespan.
+    """
     import uvicorn
 
-    from taskrunner.chat import ChatServer
     from taskrunner.daemon.api import create_daemon_app
-    from taskrunner.daemon.service import DaemonService
     from taskrunner.startup import SecretsValidationError, validate_secrets
 
+    # --- Fast, required pre-checks (before socket bind) ---
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
@@ -489,33 +500,6 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
         _load_secrets_to_env(agent_def.llm.secrets)
 
-    channel_type = getattr(args, "channel_type", "imessage")
-    try:
-        channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-
-    server = ChatServer(
-        agent_def,
-        use_containers=args.containers,
-        reply_channel=reply_channel,
-    )
-    service = DaemonService(
-        agent_def,
-        use_containers=args.containers,
-        server=server,
-    )
-
-    if not getattr(args, "no_scheduler", False):
-        tasks_dir = _tasks_dir(args)
-        if tasks_dir.is_dir():
-            service.start_scheduler(tasks_dir)
-
-    if channel is not None:
-        service.register_channel(channel_type, channel)
-        service.start_channel(channel_type)
-
     socket_path = _daemon_socket_path(args)
     pid_path = _daemon_pid_path(args)
 
@@ -524,21 +508,51 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     socket_path.unlink(missing_ok=True)
     pid_path.write_text(f"{os.getpid()}\n")
 
-    guardian_status = "active" if server._guardian else "inactive"
-    tool_count = len(agent_def.tools)
-    print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
+    # --- Deferred heavy init (runs after socket is bound) ---
+    def _deferred_init():
+        from taskrunner.chat import ChatServer
+        from taskrunner.daemon.service import DaemonService
 
-    # Pre-build Docker images in background so they're ready before first use
-    if args.containers:
-        from taskrunner.orchestrator import prebuild_images
+        channel_type = getattr(args, "channel_type", "imessage")
+        channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
 
-        prebuild_images(agent_def)  # fire-and-forget; daemon threads
+        server = ChatServer(
+            agent_def,
+            use_containers=args.containers,
+            reply_channel=reply_channel,
+        )
+        service = DaemonService(
+            agent_def,
+            use_containers=args.containers,
+            server=server,
+        )
 
-    # Start host bridge server if enabled
-    if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
-        _start_bridge_server(agent_def.bridge)
+        if not getattr(args, "no_scheduler", False):
+            tasks_dir = _tasks_dir(args)
+            if tasks_dir.is_dir():
+                service.start_scheduler(tasks_dir)
 
-    app = create_daemon_app(service)
+        if channel is not None:
+            service.register_channel(channel_type, channel)
+            service.start_channel(channel_type)
+
+        guardian_status = "active" if server._guardian else "inactive"
+        tool_count = len(agent_def.tools)
+        print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
+
+        # Pre-build Docker images in background so they're ready before first use
+        if args.containers:
+            from taskrunner.orchestrator import prebuild_images
+
+            prebuild_images(agent_def)  # fire-and-forget; daemon threads
+
+        # Start host bridge server if enabled
+        if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
+            _start_bridge_server(agent_def.bridge)
+
+        return service
+
+    app = create_daemon_app(init_factory=_deferred_init)
 
     try:
         uvicorn.run(
@@ -550,7 +564,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        service.shutdown()
+        # Lifespan handles service.shutdown(); we just clean up files.
         print("Daemon stopped.")
         pid_path.unlink(missing_ok=True)
         socket_path.unlink(missing_ok=True)

@@ -139,7 +139,9 @@ def _validate_raw_yaml_name(raw: dict[str, Any], expected_name: str) -> None:
     """Require raw YAML task name to match the task file identity."""
     raw_name = raw.get("name")
     if not isinstance(raw_name, str) or not raw_name.strip():
-        raise HTTPException(status_code=400, detail="Task YAML must include a non-empty 'name' field")
+        raise HTTPException(
+            status_code=400, detail="Task YAML must include a non-empty 'name' field"
+        )
     if raw_name != expected_name:
         raise HTTPException(
             status_code=400,

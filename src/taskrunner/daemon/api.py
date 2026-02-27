@@ -9,14 +9,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
 from taskrunner.daemon.contracts import (
+    CreateCronJobRequest,
+    CronJobResponse,
     DaemonStatusResponse,
+    RunRecordResponse,
     SendMessageRequest,
     SendMessageResponse,
     SessionHistoryResponse,
     SessionRequest,
     SessionSummary,
     StreamEvent,
+    UpdateCronJobRequest,
 )
 from taskrunner.daemon.service import DaemonService
 
@@ -151,6 +156,111 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # --- Cron job management ---
+
+    def _job_to_response(job: CronJob) -> CronJobResponse:
+        return CronJobResponse(**job.model_dump())
+
+    @app.post("/v1/cron/jobs", response_model=CronJobResponse, status_code=201)
+    async def create_cron_job(request: CreateCronJobRequest) -> CronJobResponse:
+        try:
+            delivery = (
+                Delivery(**request.delivery)
+                if request.delivery
+                else Delivery(mode="none")
+            )
+            job = CronJob(
+                name=request.name,
+                schedule=Schedule(**request.schedule),
+                target=request.target,
+                payload=Payload(**request.payload),
+                delivery=delivery,
+                enabled=request.enabled,
+            )
+            created = await asyncio.to_thread(service.cron_manager.add_job, job)
+            return _job_to_response(created)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/v1/cron/jobs", response_model=list[CronJobResponse])
+    async def list_cron_jobs() -> list[CronJobResponse]:
+        jobs = await asyncio.to_thread(service.cron_manager.list_jobs)
+        return [_job_to_response(j) for j in jobs]
+
+    @app.get("/v1/cron/jobs/{job_id}", response_model=CronJobResponse)
+    async def get_cron_job(job_id: str) -> CronJobResponse:
+        job = await asyncio.to_thread(service.cron_manager.get_job, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        return _job_to_response(job)
+
+    @app.put("/v1/cron/jobs/{job_id}", response_model=CronJobResponse)
+    async def update_cron_job(
+        job_id: str, request: UpdateCronJobRequest
+    ) -> CronJobResponse:
+        fields: dict = {}
+        if request.name is not None:
+            fields["name"] = request.name
+        if request.schedule is not None:
+            fields["schedule"] = Schedule(**request.schedule)
+        if request.payload is not None:
+            fields["payload"] = Payload(**request.payload)
+        if request.delivery is not None:
+            fields["delivery"] = Delivery(**request.delivery)
+        if request.enabled is not None:
+            fields["enabled"] = request.enabled
+
+        try:
+            updated = await asyncio.to_thread(
+                service.cron_manager.update_job, job_id, **fields
+            )
+            return _job_to_response(updated)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.delete("/v1/cron/jobs/{job_id}", response_model=CronJobResponse)
+    async def delete_cron_job(job_id: str) -> CronJobResponse:
+        try:
+            removed = await asyncio.to_thread(service.cron_manager.remove_job, job_id)
+            return _job_to_response(removed)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/v1/cron/jobs/{job_id}/run", status_code=202)
+    async def trigger_cron_job(job_id: str) -> dict[str, str]:
+        try:
+            await asyncio.to_thread(service.cron_manager.trigger_job, job_id)
+            return {"status": "triggered", "job_id": job_id}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/v1/cron/jobs/{job_id}/enable", response_model=CronJobResponse)
+    async def enable_cron_job(job_id: str) -> CronJobResponse:
+        try:
+            job = await asyncio.to_thread(service.cron_manager.enable_job, job_id)
+            return _job_to_response(job)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/v1/cron/jobs/{job_id}/disable", response_model=CronJobResponse)
+    async def disable_cron_job(job_id: str) -> CronJobResponse:
+        try:
+            job = await asyncio.to_thread(service.cron_manager.disable_job, job_id)
+            return _job_to_response(job)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/v1/cron/jobs/{job_id}/runs", response_model=list[RunRecordResponse])
+    async def get_cron_job_runs(job_id: str) -> list[RunRecordResponse]:
+        # Verify job exists first
+        job = await asyncio.to_thread(service.cron_manager.get_job, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        runs = await asyncio.to_thread(service.cron_manager.get_runs, job_id)
+        return [RunRecordResponse(**r.model_dump()) for r in runs]
 
     # Mount webhook routes from any channels that provide them
     for name, channel in service.get_channels().items():

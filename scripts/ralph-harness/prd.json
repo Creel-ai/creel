@@ -81,8 +81,8 @@
         "All tests pass via test-harness.sh"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "The mock LLM needs to be in scripted mode for these tests. Configure triggers so specific messages produce tool_call responses. After the tool runs, the mock LLM gets called again with the tool result — configure a followup response. Guardian test: configure a trigger that asks for 'rm -rf /', verify the tool is blocked and the LLM receives a blocked message."
+      "passes": true,
+      "notes": "10 tests in 4 classes: TestToolExecution (exec runs, output in LLM history, JSON structure), TestNonZeroExitCode (false command has exit_code!=0), TestGuardianBlocking (rm -rf denied, is_error=True, curl|bash denied), TestUnknownTool (no crash, error in history). Each test uses a unique sender_id to avoid session contamination. Helper _get_tool_result_from_followup_call inspects the second mock LLM call to find the tool_result. Fixed config executor from 'host' to 'exec' (matching production agent.yaml). Added 'run failing command' trigger to llm_triggers.json."
     },
     {
       "id": "HARNESS-005",

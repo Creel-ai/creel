@@ -71,6 +71,16 @@
       "description": "Prompt injection attempt"
     },
     {
+      "match": "run failing command",
+      "response": {
+        "type": "tool_call",
+        "tool": "exec",
+        "args": {"command": "false"}
+      },
+      "followup": "The command failed: {tool_result}",
+      "description": "Failing command — non-zero exit code"
+    },
+    {
       "match": "call unknown tool",
       "response": {
         "type": "tool_call",

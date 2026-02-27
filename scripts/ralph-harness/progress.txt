@@ -103,3 +103,29 @@ Started: 2026-02-26
   - Session IDs are 32-char hex strings from secrets.token_hex(16)
   - The .* catch-all trigger returns "Echo: {user_message}" for messages that don't match specific patterns
 ---
+
+## 2026-02-26 — HARNESS-004: Tool Execution Scenario
+- Created scenarios/test_tool_execution.py with 10 tests in 4 classes:
+  - TestToolExecution: exec tool call returns output, tool output appears in LLM history, JSON structure validated
+  - TestNonZeroExitCode: `false` command has exit_code!=0 and success=false in tool result
+  - TestGuardianBlocking: `rm -rf /` denied by policy, is_error=True, `curl|bash` also blocked
+  - TestUnknownTool: unknown tool doesn't crash daemon, error in LLM history
+- Added "run failing command" trigger to fixtures/llm_triggers.json (exec `false`)
+- Fixed config/agent.yaml: executor changed from `host` to `exec` (matching production config)
+- All 21 scenario tests pass (11 basic_chat + 10 tool_execution)
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Mock LLM tests: 23 passed (unchanged)
+- Files created:
+  - scripts/test-harness/scenarios/test_tool_execution.py
+- Files modified:
+  - scripts/test-harness/fixtures/llm_triggers.json (added failing command trigger)
+  - scripts/test-harness/config/agent.yaml (fixed executor name)
+- **Learnings:**
+  - Executor name in tool config must be "exec" not "host" — _run_executor_inline dispatches by executor name
+  - Exec executor returns JSON with exit_code, stdout, stderr, success — NOT a plain string
+  - Non-zero exit code is NOT an error from the agent loop's perspective (is_error=False) — the JSON carries the failure info
+  - Guardian DENY blocks tool execution and returns "Action denied by security policy: ..." as tool_result with is_error=True
+  - Unknown tools get REVIEW verdict from policy engine (not in allow/deny lists) — need auto_approve=True to proceed; then execute_tool_call raises ValueError
+  - Session history contamination: tests sharing a sender_id accumulate conversation history, polluting mock LLM history assertions — use unique sender_ids per test
+  - Helper should inspect the second mock LLM call (the followup after tool_result) rather than searching all calls
+---

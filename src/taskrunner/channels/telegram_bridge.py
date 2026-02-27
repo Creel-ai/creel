@@ -80,9 +80,10 @@ class TelegramBridge(ABC):
 class HttpTelegramBridge(TelegramBridge):
     """Concrete bridge that calls the Telegram Bot API over HTTPS."""
 
-    def __init__(self, bot_token: str) -> None:
+    def __init__(self, bot_token: str, api_base_url: str | None = None) -> None:
         self._token = bot_token
-        self._base_url = f"https://api.telegram.org/bot{bot_token}"
+        self._api_base_url = (api_base_url or "https://api.telegram.org").rstrip("/")
+        self._base_url = f"{self._api_base_url}/bot{bot_token}"
         self._bot_info: dict | None = None
 
     def _call(self, method: str, **kwargs) -> dict:
@@ -148,7 +149,7 @@ class HttpTelegramBridge(TelegramBridge):
 
         result = self._call("getFile", file_id=file_id)
         file_path = result.get("file_path", "")
-        url = f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+        url = f"{self._api_base_url}/file/bot{self._token}/{file_path}"
         resp = httpx.get(url, timeout=30)
         resp.raise_for_status()
         return resp.content

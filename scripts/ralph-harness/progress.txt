@@ -1,3 +1,166 @@
 # Ralph Progress Log — Test Harness
 Started: 2026-02-26
 ---
+
+## Codebase Patterns
+- **Package:** src/taskrunner/ (being renamed to creel in PR #165, but use taskrunner for now on main)
+- **Daemon API:** src/taskrunner/daemon/api.py — FastAPI app with /health, /v1/* endpoints
+- **Daemon service:** src/taskrunner/daemon/service.py — bridges channels to ChatServer
+- **ChatServer:** src/taskrunner/chat.py — handle_message(sender_id, text, ...) → LLM → tools → response
+- **Channels:** src/taskrunner/channels/ — Telegram, iMessage, WhatsApp, each extends Channel base
+- **Telegram:** src/taskrunner/channels/telegram.py + telegram_bridge.py — webhook + polling modes
+- **Cron:** src/taskrunner/cron/ — manager.py, store.py (JSON persistence), executor.py, tool.py
+- **Guardian:** src/taskrunner/guardian/ — core.py checks tool calls against policies
+- **Sessions:** src/taskrunner/session.py — session persistence
+- **Media:** src/taskrunner/services/ — media_store.py, transcription.py, vision.py (on ralph/media-messages branch)
+- **Models:** src/taskrunner/models.py — AgentDefinition, AgentConfig, all channel configs
+- **CLI:** src/taskrunner/cli.py — entry point, daemon start/stop/run
+- **Tests:** tests/ — 108 test files, run with `uv run pytest tests/ -x -q`
+- **CREEL_HOME:** No env var; config loaded via --agent-config CLI flag, state dir is ~/.creel/
+- **Daemon socket:** Unix domain socket at ~/.creel/daemon.sock (--socket-path to override)
+- **Daemon CLI:** `python -m taskrunner daemon run --socket-path X --channel none --no-scheduler`
+- **LLM calls:** src/taskrunner/llm.py — call_llm() uses anthropic Python SDK (NOT OpenAI)
+- **LLM config:** Anthropic SDK reads ANTHROPIC_BASE_URL from env — THIS IS HOW WE POINT AT MOCK
+- **LLM format:** Anthropic Messages API: POST /v1/messages, content blocks (text/tool_use), stop_reason, usage
+- **Streaming:** client.messages.stream() with text_stream iterator, SSE events: message_start, content_block_start/delta/stop, message_delta, message_stop
+
+## 2026-02-26 — HARNESS-001: Mock LLM Server
+- Implemented mock Anthropic Messages API server at scripts/test-harness/mock_llm_server.py
+- Supports: echo mode, scripted triggers (regex), tool_call mode with followup, SSE streaming, error injection, reset, call history
+- Created fixtures/llm_triggers.json with 11 triggers (greeting, exec, dangerous commands, prompt injection, unknown tool, echo fallback)
+- 23 tests in scripts/test-harness/tests/test_mock_llm_server.py — all pass
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Files created:
+  - scripts/test-harness/mock_llm_server.py
+  - scripts/test-harness/fixtures/llm_triggers.json
+  - scripts/test-harness/tests/__init__.py
+  - scripts/test-harness/tests/conftest.py (adds test-harness dir to sys.path)
+  - scripts/test-harness/tests/test_mock_llm_server.py
+- **Learnings:**
+  - Creel uses anthropic SDK, NOT OpenAI — mock must implement /v1/messages with Anthropic format
+  - anthropic.Anthropic() reads ANTHROPIC_BASE_URL from env (no code changes needed to redirect)
+  - Tool calls use content blocks with type=tool_use (not OpenAI function calling format)
+  - Streaming uses SSE with message_start/content_block_start/delta/stop/message_delta/message_stop events
+  - The catch-all .* trigger in llm_triggers.json matches empty strings — need to skip triggers for empty input
+---
+
+## 2026-02-26 — HARNESS-002: Test config and harness runner
+- Created test agent config at scripts/test-harness/config/agent.yaml
+  - Points LLM at mock server via ANTHROPIC_BASE_URL env var (set by harness.py)
+  - exec tool with executor: host (no Docker)
+  - Telegram channel with fake token, webhook mode, webhook_secret, allowed_senders
+  - Guardian enabled with policy only (fast_classifier and llm_judge disabled for test env)
+- Created test policy at scripts/test-harness/config/policies/test-policy.yaml
+  - Blocks rm -rf, curl|bash, fork bomb, crontab, chmod 777, reverse shells
+  - Allows exec tool, denies delete_* tools
+- Created harness.py orchestrator with setup(), teardown(), run_scenarios(), generate_report()
+  - Manages mock LLM server (port 18999) and daemon (Unix domain socket) lifecycle
+  - Daemon CWD set to config dir so relative policy paths resolve correctly
+  - Generates test-results/report.json with pass/fail/timing
+  - Signal handling for clean SIGINT/SIGTERM shutdown
+- Created test-harness.sh entry script with trap cleanup on EXIT/INT/TERM
+- Smoke test passes: mock LLM starts, daemon starts with Guardian active, both stop cleanly
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Mock LLM tests: 23 passed (unchanged)
+- Files created:
+  - scripts/test-harness/config/agent.yaml
+  - scripts/test-harness/config/policies/test-policy.yaml
+  - scripts/test-harness/harness.py
+  - scripts/test-harness.sh
+  - scripts/test-harness/scenarios/ (empty dir for future scenario tests)
+- **Learnings:**
+  - No CREEL_HOME env var — daemon config is passed via --agent-config CLI flag
+  - Daemon uses Unix domain socket (--socket-path), NOT TCP port — httpx needs HTTPTransport(uds=...)
+  - Must set CWD to config dir when starting daemon so relative paths (policies/test-policy.yaml) resolve
+  - Telegram webhook mode requires webhook_secret (not just bot_token)
+  - Guardian fast_classifier needs ONNX runtime — disable for tests (policy engine is sufficient)
+  - validate_secrets() checks .enc files — avoid by not setting llm.secrets in test config
+  - Channel --channel none skips channel registration (avoid needing real channel infrastructure)
+  - Daemon --no-scheduler avoids needing tasks/ directory
+---
+
+## 2026-02-26 — HARNESS-003: Basic Chat Scenario
+- Created scenarios/conftest.py with shared fixtures: daemon_client (UDS), mock_client (HTTP), autouse reset_mock_llm
+- Created scenarios/test_basic_chat.py with 11 tests in 5 classes:
+  - TestSimpleChat: greeting trigger match, echo fallback, LLM history verification
+  - TestSessionCreation: session appears in list, history contains user+assistant messages
+  - TestConversationContext: second message includes prior history in LLM call
+  - TestClearCommand: /clear resets session, LLM no longer receives prior messages
+  - TestEmptyAndEdgeCases: empty text returns 422, whitespace handled gracefully
+  - TestConcurrentSenders: separate sessions per sender, isolated LLM context
+- All 11 scenario tests pass via harness.py
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Mock LLM tests: 23 passed (unchanged)
+- Files created:
+  - scripts/test-harness/scenarios/__init__.py
+  - scripts/test-harness/scenarios/conftest.py
+  - scripts/test-harness/scenarios/test_basic_chat.py
+- **Learnings:**
+  - Daemon chat endpoint is POST /v1/messages (not /v1/chat) with Pydantic validation (min_length=1 on text → empty string returns 422)
+  - UDS transport via httpx.HTTPTransport(uds=socket_path) with base_url="http://daemon"
+  - Mock LLM reset between tests is essential for history-based assertions
+  - /clear command returns "Session cleared." — match on lowercase "clear" or "session"
+  - Session IDs are 32-char hex strings from secrets.token_hex(16)
+  - The .* catch-all trigger returns "Echo: {user_message}" for messages that don't match specific patterns
+---
+
+## 2026-02-26 — HARNESS-004: Tool Execution Scenario
+- Created scenarios/test_tool_execution.py with 10 tests in 4 classes:
+  - TestToolExecution: exec tool call returns output, tool output appears in LLM history, JSON structure validated
+  - TestNonZeroExitCode: `false` command has exit_code!=0 and success=false in tool result
+  - TestGuardianBlocking: `rm -rf /` denied by policy, is_error=True, `curl|bash` also blocked
+  - TestUnknownTool: unknown tool doesn't crash daemon, error in LLM history
+- Added "run failing command" trigger to fixtures/llm_triggers.json (exec `false`)
+- Fixed config/agent.yaml: executor changed from `host` to `exec` (matching production config)
+- All 21 scenario tests pass (11 basic_chat + 10 tool_execution)
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Mock LLM tests: 23 passed (unchanged)
+- Files created:
+  - scripts/test-harness/scenarios/test_tool_execution.py
+- Files modified:
+  - scripts/test-harness/fixtures/llm_triggers.json (added failing command trigger)
+  - scripts/test-harness/config/agent.yaml (fixed executor name)
+- **Learnings:**
+  - Executor name in tool config must be "exec" not "host" — _run_executor_inline dispatches by executor name
+  - Exec executor returns JSON with exit_code, stdout, stderr, success — NOT a plain string
+  - Non-zero exit code is NOT an error from the agent loop's perspective (is_error=False) — the JSON carries the failure info
+  - Guardian DENY blocks tool execution and returns "Action denied by security policy: ..." as tool_result with is_error=True
+  - Unknown tools get REVIEW verdict from policy engine (not in allow/deny lists) — need auto_approve=True to proceed; then execute_tool_call raises ValueError
+  - Session history contamination: tests sharing a sender_id accumulate conversation history, polluting mock LLM history assertions — use unique sender_ids per test
+  - Helper should inspect the second mock LLM call (the followup after tool_result) rather than searching all calls
+---
+
+## 2026-02-26 — HARNESS-005: Telegram Webhook Scenario
+- Added api_base_url to TelegramChannelConfig (models.py) and HttpTelegramBridge (telegram_bridge.py) — small production code change that also supports Telegram Bot API Local Server
+- Fixed webhook handler type annotation: untyped `request` param was treated by FastAPI as a query param (422 error); added `Request` type annotation via starlette import
+- Added mock Telegram Bot API endpoints to mock_llm_server.py: getMe, sendMessage, sendChatAction, getFile, file download, setWebhook, deleteWebhook, /v1/mock/telegram/messages (for assertions), /v1/mock/telegram/reset
+- Updated config/agent.yaml: added api_base_url pointing at mock server, added numeric sender ID "111222333" to allowed_senders
+- Updated harness.py: daemon started with --channel telegram (was --channel none)
+- Created scenarios/test_telegram.py with 18 tests in 7 classes:
+  - TestTextMessageWebhook (5): webhook returns ok, sendMessage called with correct chat_id, greeting trigger match, echo fallback, LLM receives webhook text
+  - TestPhotoCaption (3): photo with caption processed as text, photo without caption silently ignored, returns ok
+  - TestVoiceMessage (1): voice without text silently ignored
+  - TestUnknownSender (3): unknown sender ignored, returns ok, no LLM call
+  - TestMalformedUpdates (3): no message field, empty body, no text/caption — all return ok
+  - TestWebhookSecret (3): valid secret accepted (200), invalid secret rejected (403), missing secret rejected (403)
+- All 39 scenario tests pass (11 basic_chat + 10 tool_execution + 18 telegram)
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Mock LLM tests: 23 passed (unchanged)
+- Files created:
+  - scripts/test-harness/scenarios/test_telegram.py
+- Files modified:
+  - src/taskrunner/models.py (added api_base_url field to TelegramChannelConfig)
+  - src/taskrunner/channels/telegram_bridge.py (api_base_url param in HttpTelegramBridge)
+  - src/taskrunner/channels/telegram.py (fixed webhook handler type annotation, pass api_base_url to bridge)
+  - scripts/test-harness/mock_llm_server.py (added mock Telegram Bot API endpoints)
+  - scripts/test-harness/config/agent.yaml (added api_base_url and numeric sender ID)
+  - scripts/test-harness/harness.py (changed --channel none to --channel telegram)
+- **Learnings:**
+  - Telegram Bot API uses numeric user IDs — allowed_senders must include the numeric ID that matches from.id in the webhook update
+  - FastAPI requires type annotations on handler params or it treats them as query/body params — `request: Request` is essential for webhook handlers
+  - `from __future__ import annotations` makes all annotations lazy strings — FastAPI resolves them at runtime via `get_type_hints()`, so the type must be importable at module level
+  - The webhook handler only extracts text/caption from messages — photo/voice file download + media processing is NOT implemented in the webhook handler (deferred to media scenario)
+  - Mock Telegram Bot API can live on the same server as the mock LLM (port 18999) since paths don't overlap (/v1/messages vs /bot{token}/...)
+  - The send() method checks _allowed_recipients before sending — the webhook handler adds chat_id to _allowed_recipients on each valid message, so the response sendMessage goes through
+  - Webhook secret validation uses hmac.compare_digest() (constant-time) — missing header results in empty string comparison → 403
+---

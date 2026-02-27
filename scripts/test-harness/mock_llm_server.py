@@ -54,6 +54,13 @@ _triggers: list[dict] = []
 _pending_followups: dict[str, str] = {}
 _followup_lock = Lock()
 
+# Mock Telegram Bot API state
+_telegram_sent_messages: list[dict] = []
+_telegram_lock = Lock()
+
+BOT_USERNAME = "test_creel_bot"
+BOT_ID = 999999999
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
@@ -343,7 +350,7 @@ async def set_error(request: Request):
 
 @app.post("/v1/mock/reset")
 async def reset():
-    """Reset all mock state: error injection, call history, pending followups."""
+    """Reset all mock state: error injection, call history, pending followups, telegram."""
     with _error_lock:
         _error_state["remaining"] = 0
         _error_state["status_code"] = 500
@@ -354,6 +361,9 @@ async def reset():
     with _followup_lock:
         _pending_followups.clear()
 
+    with _telegram_lock:
+        _telegram_sent_messages.clear()
+
     return JSONResponse(content={"status": "ok"})
 
 
@@ -362,6 +372,104 @@ async def get_history():
     """Return all recorded request history for test assertions."""
     with _history_lock:
         return JSONResponse(content={"calls": list(_call_history)})
+
+
+# ---------------------------------------------------------------------------
+# Mock Telegram Bot API
+# ---------------------------------------------------------------------------
+
+
+@app.post("/bot{token}/getMe")
+async def telegram_get_me(token: str):
+    """Mock Telegram getMe — returns fake bot info."""
+    return JSONResponse(content={
+        "ok": True,
+        "result": {
+            "id": BOT_ID,
+            "is_bot": True,
+            "first_name": "TestCreelBot",
+            "username": BOT_USERNAME,
+        },
+    })
+
+
+@app.post("/bot{token}/sendMessage")
+async def telegram_send_message(token: str, request: Request):
+    """Mock Telegram sendMessage — records the message for test assertions."""
+    body = await request.json()
+    with _telegram_lock:
+        _telegram_sent_messages.append({
+            "method": "sendMessage",
+            "timestamp": time.time(),
+            "params": body,
+        })
+    return JSONResponse(content={
+        "ok": True,
+        "result": {
+            "message_id": len(_telegram_sent_messages),
+            "chat": {"id": int(body.get("chat_id", 0)), "type": "private"},
+            "text": body.get("text", ""),
+            "date": int(time.time()),
+        },
+    })
+
+
+@app.post("/bot{token}/sendChatAction")
+async def telegram_send_chat_action(token: str, request: Request):
+    """Mock Telegram sendChatAction (typing indicator)."""
+    return JSONResponse(content={"ok": True, "result": True})
+
+
+@app.post("/bot{token}/getFile")
+async def telegram_get_file(token: str, request: Request):
+    """Mock Telegram getFile — returns a fake file path."""
+    body = await request.json()
+    file_id = body.get("file_id", "unknown")
+    return JSONResponse(content={
+        "ok": True,
+        "result": {
+            "file_id": file_id,
+            "file_unique_id": f"unique_{file_id}",
+            "file_path": f"photos/{file_id}.jpg",
+            "file_size": 1024,
+        },
+    })
+
+
+@app.get("/file/bot{token}/{path:path}")
+async def telegram_download_file(token: str, path: str):
+    """Mock Telegram file download — returns fake image bytes."""
+    return JSONResponse(
+        content={"mock": "file_content", "path": path},
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+
+@app.post("/bot{token}/deleteWebhook")
+async def telegram_delete_webhook(token: str):
+    """Mock Telegram deleteWebhook."""
+    return JSONResponse(content={"ok": True, "result": True})
+
+
+@app.post("/bot{token}/setWebhook")
+async def telegram_set_webhook(token: str, request: Request):
+    """Mock Telegram setWebhook."""
+    return JSONResponse(content={"ok": True, "result": True})
+
+
+@app.get("/v1/mock/telegram/messages")
+async def telegram_get_sent_messages():
+    """Return all messages sent via mock sendMessage (for test assertions)."""
+    with _telegram_lock:
+        return JSONResponse(content={"messages": list(_telegram_sent_messages)})
+
+
+@app.post("/v1/mock/telegram/reset")
+async def telegram_reset():
+    """Reset mock Telegram state."""
+    with _telegram_lock:
+        _telegram_sent_messages.clear()
+    return JSONResponse(content={"status": "ok"})
 
 
 @app.get("/health")

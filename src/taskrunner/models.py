@@ -218,6 +218,7 @@ class TelegramChannelConfig(BaseModel):
     allowed_senders: list[str] = Field(default_factory=list)
     allowed_chats: list[str] = Field(default_factory=list)
     send_typing: bool = True
+    api_base_url: str | None = None  # Custom Bot API server (e.g. local test server)
 
     @model_validator(mode="after")
     def check_allowed_senders_required(self) -> TelegramChannelConfig:

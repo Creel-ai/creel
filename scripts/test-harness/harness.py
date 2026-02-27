@@ -138,7 +138,7 @@ class TestHarness:
                 "daemon", "run",
                 "--socket-path", str(DAEMON_SOCKET),
                 "--pid-file", str(DAEMON_PID_FILE),
-                "--channel", "none",
+                "--channel", "telegram",
                 "--no-scheduler",
             ],
             stdout=log_daemon,

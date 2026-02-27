@@ -40,8 +40,10 @@ channels:
     mode: webhook
     webhook_path: /webhooks/telegram
     webhook_secret: "test-webhook-secret"
+    api_base_url: "http://127.0.0.1:18999"
     allowed_senders:
       - "test-user-123"
+      - "111222333"
     send_typing: false
 
 guardian:

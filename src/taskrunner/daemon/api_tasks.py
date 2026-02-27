@@ -135,6 +135,18 @@ def _build_task_yaml(req: TaskCreateRequest) -> dict[str, Any]:
     return data
 
 
+def _validate_raw_yaml_name(raw: dict[str, Any], expected_name: str) -> None:
+    """Require raw YAML task name to match the task file identity."""
+    raw_name = raw.get("name")
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        raise HTTPException(status_code=400, detail="Task YAML must include a non-empty 'name' field")
+    if raw_name != expected_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task YAML name '{raw_name}' must match task name '{expected_name}'",
+        )
+
+
 # --- Endpoints ---
 
 
@@ -222,6 +234,7 @@ async def create_task(req: TaskCreateRequest) -> TaskDetail:
             raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}")
         if not isinstance(raw, dict):
             raise HTTPException(status_code=400, detail="YAML must be a mapping")
+        _validate_raw_yaml_name(raw, req.name)
         # Validate by loading as TaskDefinition
         try:
             TaskDefinition(**raw)
@@ -245,15 +258,17 @@ async def create_task(req: TaskCreateRequest) -> TaskDetail:
 @router.put("/{name}")
 async def update_task(name: str, req: TaskCreateRequest) -> TaskDetail:
     """Update an existing task YAML file."""
+    if req.name != name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Request task name '{req.name}' must match route name '{name}'",
+        )
+
     tasks_dir = _get_tasks_dir()
     path = _task_file_path(tasks_dir, name)
 
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"Task '{name}' not found")
-
-    # Create .bak backup before overwriting
-    bak_path = path.with_suffix(".yaml.bak")
-    shutil.copy2(path, bak_path)
 
     if req.raw_yaml:
         raw_yaml_str = req.raw_yaml
@@ -263,6 +278,7 @@ async def update_task(name: str, req: TaskCreateRequest) -> TaskDetail:
             raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}")
         if not isinstance(raw, dict):
             raise HTTPException(status_code=400, detail="YAML must be a mapping")
+        _validate_raw_yaml_name(raw, name)
         try:
             TaskDefinition(**raw)
         except Exception as exc:
@@ -274,6 +290,10 @@ async def update_task(name: str, req: TaskCreateRequest) -> TaskDetail:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Validation error: {exc}")
         raw_yaml_str = yaml.dump(data, default_flow_style=False, sort_keys=False)
+
+    # Create .bak backup before overwriting
+    bak_path = path.with_suffix(".yaml.bak")
+    shutil.copy2(path, bak_path)
 
     path.write_text(raw_yaml_str)
 

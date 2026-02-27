@@ -27,6 +27,12 @@ export function setOnUnauthorized(cb: (() => void) | null): void {
   _onUnauthorized = cb;
 }
 
+export function notifyUnauthorized(): void {
+  if (_onUnauthorized) {
+    _onUnauthorized();
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   detail: string;

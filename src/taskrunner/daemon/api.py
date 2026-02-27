@@ -7,7 +7,7 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -215,8 +215,15 @@ def _mount_dashboard(app: FastAPI) -> None:
 
     # SPA fallback: any GET request that isn't an API/v1/health route
     # gets index.html so client-side routing works.
+    backend_prefixes = ("api/", "v1/", "health/", "docs/", "redoc/")
+    backend_exact = {"api", "v1", "health", "docs", "redoc", "openapi.json"}
+
     @app.get("/{full_path:path}")
-    async def _spa_fallback(request: Request, full_path: str) -> FileResponse:
+    async def _spa_fallback(full_path: str) -> FileResponse:
+        # Preserve proper 404 semantics for backend/API namespaces.
+        if full_path in backend_exact or full_path.startswith(backend_prefixes):
+            raise HTTPException(status_code=404, detail="Not Found")
+
         # Serve actual static files if they exist (e.g. favicon.ico, manifest.json)
         static_file = _DASHBOARD_STATIC_DIR / full_path
         if (

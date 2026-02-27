@@ -14,7 +14,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { List, useListRef } from 'react-window';
 import { useThemeMode } from '../ThemeContext';
-import { type LogEntry, fetchRecentLogs, createLogsWebSocket } from '../api/client';
+import { type LogEntry, fetchRecentLogs, createLogsWebSocket, notifyUnauthorized } from '../api/client';
 
 const MAX_LINES = 1000;
 const LEVELS = ['ALL', 'DEBUG', 'INFO', 'WARN', 'ERROR'] as const;
@@ -124,12 +124,15 @@ export default function LogsPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(0);
+  const connectWebSocketRef = useRef<() => void>(() => {});
   const listRef = useListRef(null);
   const pauseRef = useRef(paused);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Keep refs in sync
-  pauseRef.current = paused;
+  useEffect(() => {
+    pauseRef.current = paused;
+  }, [paused]);
 
   // Measure container height
   useEffect(() => {
@@ -220,15 +223,27 @@ export default function LogsPage() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         setConnected(false);
         wsRef.current = null;
+
+        if (event.code === 4401) {
+          if (reconnectTimer.current) {
+            clearTimeout(reconnectTimer.current);
+            reconnectTimer.current = null;
+          }
+          setReconnecting(false);
+          setError('Authentication required. Please re-enter your dashboard token.');
+          notifyUnauthorized();
+          return;
+        }
+
         // Auto-reconnect with exponential backoff
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempt.current), 30000);
         reconnectAttempt.current += 1;
         setReconnecting(true);
         reconnectTimer.current = setTimeout(() => {
-          connectWebSocket();
+          connectWebSocketRef.current();
         }, delay);
       };
 
@@ -241,6 +256,10 @@ export default function LogsPage() {
       fallbackToREST();
     }
   }, [fallbackToREST]);
+
+  useEffect(() => {
+    connectWebSocketRef.current = connectWebSocket;
+  }, [connectWebSocket]);
 
   // Initial connection
   useEffect(() => {
@@ -286,9 +305,8 @@ export default function LogsPage() {
   // Download full log
   const handleDownload = async () => {
     try {
-      const res = await fetch('/api/logs/recent?limit=1000');
-      const data = await res.json();
-      const lines = (data.lines as LogEntry[])
+      const data = await fetchRecentLogs({ limit: 1000 });
+      const lines = data.lines
         .map((e) => `${e.timestamp} [${e.level}] ${e.module}: ${e.message}`)
         .join('\n');
       const blob = new Blob([lines], { type: 'text/plain' });
@@ -298,8 +316,8 @@ export default function LogsPage() {
       a.download = 'daemon.log';
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      // silently fail
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download logs');
     }
   };
 

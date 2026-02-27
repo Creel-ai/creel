@@ -119,8 +119,8 @@
         "All tests pass via test-harness.sh"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "Check the cron API endpoints in daemon/api.py or cron/manager.py. The daemon's cron system may use /v1/cron/* endpoints. Jobs are stored in ~/.creel/cron/jobs.json (test config dir in this case). The manual trigger endpoint runs the job immediately without waiting for schedule."
+      "passes": true,
+      "notes": "Cron API endpoints did not exist — added POST/GET/PUT/DELETE /v1/cron/jobs, /run, /enable, /disable, /runs to daemon/api.py with contracts in contracts.py. CronManager CRUD works without APScheduler running (--no-scheduler only prevents automatic scheduling). trigger_job() executes immediately regardless of enabled status. 17 tests in 7 classes: TestCreateCronJob (201 response, appears in list), TestListAndGetCronJobs (list 200, get single, 404), TestTriggerCronJob (202, creates run record, 404), TestUpdateCronJob (update prompt, update name, 404), TestDeleteCronJob (removes from list, 404), TestDisableEnableCronJob (disable/enable toggle, disabled manual trigger still works), TestUpdateAndRetrigger (update prompt + verify LLM receives new prompt, 2 run records)."
     },
     {
       "id": "HARNESS-007",
@@ -136,8 +136,8 @@
         "All tests pass via test-harness.sh"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": "Guardian checks happen between the LLM tool_call and actual tool execution. The test policy must define what's blocked. Configure mock LLM triggers to produce dangerous tool calls. Verify via: 1) the response to the user indicates blocking, 2) the tool was not actually executed (e.g., no file deleted), 3) audit log records the block."
+      "passes": true,
+      "notes": "11 tests in 4 classes: TestGuardianBlocksDangerous (rm -rf blocked with denial message and is_error=True, curl|bash blocked, command not actually executed), TestGuardianAllowsSafe (echo hello allowed with real exec output, is_error not set), TestPromptInjectionInArgs (command with 'ignore previous instructions' blocked by deny_when policy rule, not executed), TestGuardianAuditLog (validate_action event with verdict=deny logged, matched_rule present, action_outcome with denied_by_policy logged, allow events also logged). Added 2 triggers to llm_triggers.json ('inject in command', 'run allowed echo'). Added 2 deny_when rules to test-policy.yaml for prompt injection patterns. Added audit_log_path and config_dir fixtures to conftest.py."
     },
     {
       "id": "HARNESS-008",

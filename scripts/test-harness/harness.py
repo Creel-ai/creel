@@ -176,6 +176,12 @@ class TestHarness:
                 import shutil
                 shutil.rmtree(d, ignore_errors=True)
 
+        # Clean up cron store (uses default ~/.creel/cron/ path)
+        cron_dir = Path.home() / ".creel" / "cron"
+        if cron_dir.exists():
+            import shutil
+            shutil.rmtree(cron_dir, ignore_errors=True)
+
         # Clean up daemon runtime files
         DAEMON_SOCKET.unlink(missing_ok=True)
         DAEMON_PID_FILE.unlink(missing_ok=True)

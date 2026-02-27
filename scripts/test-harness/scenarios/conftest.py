@@ -6,6 +6,7 @@ Provides httpx clients connected to the daemon (via UDS) and mock LLM server.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import httpx
 import pytest
@@ -47,6 +48,18 @@ def mock_client(mock_llm_url: str) -> httpx.Client:
     """httpx client connected to the mock LLM server."""
     with httpx.Client(base_url=mock_llm_url, timeout=10.0) as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def config_dir() -> Path:
+    """Path to the test harness config directory (daemon CWD)."""
+    return Path(__file__).resolve().parent.parent / "config"
+
+
+@pytest.fixture(scope="session")
+def audit_log_path(config_dir: Path) -> Path:
+    """Path to the Guardian audit log (JSONL)."""
+    return config_dir / "guardian_audit.jsonl"
 
 
 @pytest.fixture(autouse=True)

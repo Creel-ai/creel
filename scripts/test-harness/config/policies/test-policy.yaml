@@ -62,6 +62,13 @@ deny_when:
   - tool: exec
     arg: command
     pattern: "*chmod 777*"
+  # Prompt injection in tool arguments
+  - tool: exec
+    arg: command
+    pattern: "*ignore previous instructions*"
+  - tool: exec
+    arg: command
+    pattern: "*disregard*system*"
 
 # Flag risky but potentially legitimate commands for review
 review_when:

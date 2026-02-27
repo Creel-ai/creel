@@ -127,16 +127,38 @@ def _has_tool_result(messages: list[dict]) -> tuple[bool, str | None, str | None
     return False, None, None
 
 
-def _match_trigger(text: str) -> dict | None:
-    """Find the first trigger whose regex matches the user text."""
+def _match_trigger(text: str) -> tuple[dict | None, re.Match | None]:
+    """Find the first trigger whose regex matches the user text.
+
+    Returns (trigger, match) so callers can use capture groups via {match_1}, etc.
+    """
     for trigger in _triggers:
         pattern = trigger.get("match", "")
         try:
-            if re.search(pattern, text, re.IGNORECASE):
-                return trigger
+            m = re.search(pattern, text, re.IGNORECASE)
+            if m:
+                return trigger, m
         except re.error:
             logger.warning("Invalid regex in trigger: %s", pattern)
-    return None
+    return None, None
+
+
+def _substitute_templates(value: Any, user_text: str, match: re.Match | None) -> Any:
+    """Substitute {user_message} and {match_N} placeholders in a value.
+
+    Works recursively on dicts and lists so tool args can use templates.
+    """
+    if isinstance(value, str):
+        result = value.replace("{user_message}", user_text)
+        if match:
+            for i, group in enumerate(match.groups(), 1):
+                result = result.replace(f"{{match_{i}}}", group or "")
+        return result
+    if isinstance(value, dict):
+        return {k: _substitute_templates(v, user_text, match) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_substitute_templates(v, user_text, match) for v in value]
+    return value
 
 
 def _build_text_response(
@@ -213,19 +235,21 @@ def _generate_response(body: dict) -> dict:
     user_text = _extract_last_user_text(messages)
 
     # Try scripted triggers (skip for empty input — fall through to echo)
-    trigger = _match_trigger(user_text) if user_text else None
+    trigger, match = _match_trigger(user_text) if user_text else (None, None)
     if trigger:
         response_spec = trigger.get("response", {})
         resp_type = response_spec.get("type", "text")
 
         if resp_type == "text":
             content = response_spec.get("content", "")
-            content = content.replace("{user_message}", user_text)
+            content = _substitute_templates(content, user_text, match)
             return _build_text_response(content, model=model)
 
         elif resp_type == "tool_call":
             tool_name = response_spec.get("tool", "exec")
-            tool_args = response_spec.get("args", {})
+            tool_args = _substitute_templates(
+                response_spec.get("args", {}), user_text, match
+            )
             followup = trigger.get("followup", "Done.")
             resp = _build_tool_call_response(tool_name, tool_args, model=model)
             # Store followup for when tool result comes back

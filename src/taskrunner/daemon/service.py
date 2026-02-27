@@ -79,6 +79,11 @@ class DaemonService:
             cron_manager=self._cron_manager,
         )
 
+        # Ensure cron tools are available even when the server was provided
+        # externally (e.g., by the daemon CLI which creates ChatServer first).
+        if getattr(self._server, "_cron_manager", None) is None:
+            self._server._cron_manager = self._cron_manager
+
     # --- Message and session API ---
 
     def send_message(self, sender_id: str, text: str, *, auto_approve: bool = False) -> str:

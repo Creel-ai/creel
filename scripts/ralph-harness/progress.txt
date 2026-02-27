@@ -234,3 +234,24 @@ Started: 2026-02-26
   - Policy deny_when rules use fnmatch glob patterns — "*ignore previous instructions*" matches the substring anywhere in the command value
   - Tests read the audit log file directly via Path since the config dir path is deterministic relative to the test harness directory
 ---
+
+## 2026-02-26 — HARNESS-008: Sessions Scenario
+- Created scenarios/test_sessions.py with 13 tests in 5 classes:
+  - TestSeparateSessions (2): distinct session IDs per sender, stable session across messages
+  - TestSessionHistoryPerSender (3): user+assistant in history, multiple exchanges reflected, history isolated between senders
+  - TestSessionContextMaintained (2): LLM receives prior history on second message, full conversation on third message
+  - TestClearIsolation (2): /clear only affects target sender's history, LLM context reset after clear
+  - TestSessionListAPI (4): session in list, metadata fields present, list scoped to sender, active session endpoint
+- All 80 scenario tests pass (67 existing + 13 new)
+- Existing test suite: 1782 passed, 2 skipped, 11 deselected (unchanged)
+- Files created:
+  - scripts/test-harness/scenarios/test_sessions.py
+- **Learnings:**
+  - Session API is comprehensive: GET /v1/sessions (list), GET /v1/sessions/{id}/history (history), GET /v1/sessions/active (active session), POST /v1/sessions/new (new session)
+  - SessionManager persists sessions as JSON files in a sessions/ directory, with an _active.json index mapping sender_id → session_id
+  - Session IDs are 32-char hex strings from secrets.token_hex(16)
+  - /clear empties messages list but keeps the session file (same session_id, just empty messages)
+  - list_sessions() scans all JSON files in the sessions dir and filters by sender_id — naturally isolated per sender
+  - Each test uses unique sender_ids to avoid cross-test contamination from accumulated session state
+  - Mock LLM /v1/mock/history is the key tool for verifying conversation context — reset between related assertions to isolate calls
+---

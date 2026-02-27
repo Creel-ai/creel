@@ -153,8 +153,8 @@
         "All tests pass via test-harness.sh"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": "Sessions may be stored as JSON files in the sessions/ directory under CREEL_HOME. Check session manager in chat.py or session.py. The mock LLM history endpoint is useful here — verify that subsequent messages include prior conversation history."
+      "passes": true,
+      "notes": "13 tests in 5 classes: TestSeparateSessions (2: distinct session IDs per sender, stable session across messages), TestSessionHistoryPerSender (3: user+assistant in history, multiple exchanges reflected, history isolated between senders), TestSessionContextMaintained (2: LLM receives prior history on second message, full conversation on third message), TestClearIsolation (2: /clear only affects target sender's history, LLM context reset after clear), TestSessionListAPI (4: session appears in list, metadata fields present, list scoped to sender, active session endpoint). Each test uses unique sender_ids for isolation. Tests leverage daemon API endpoints: GET /v1/sessions, GET /v1/sessions/{id}/history, GET /v1/sessions/active, and mock LLM /v1/mock/history for context verification."
     }
   ]
 }

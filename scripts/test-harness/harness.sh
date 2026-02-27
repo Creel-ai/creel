@@ -5,7 +5,7 @@
 # runs unit tests, API integration tests, and Playwright e2e tests, then tears
 # down cleanly.
 #
-# Requires: ANTHROPIC_API_KEY set in environment.
+# Requires: ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN set in environment.
 #
 # Usage:
 #   ./scripts/test-harness/harness.sh [OPTIONS]
@@ -67,8 +67,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-    echo "ERROR: ANTHROPIC_API_KEY is not set. Required for real LLM calls." >&2
+if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
+    echo "ERROR: ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is not set. Required for real LLM calls." >&2
     exit 1
 fi
 
@@ -150,7 +150,7 @@ start_daemon() {
 
     # Start daemon in background, pointing at test config
     # CWD is set to test home so relative paths in agent.yml resolve there
-    python -m taskrunner \
+    uv run python -m taskrunner \
         --agent-config "$TEST_HOME/agent.yml" \
         --tasks-dir "$TEST_HOME/tasks" \
         --no-judge \
@@ -167,15 +167,6 @@ start_daemon() {
     # Wait for the daemon to become healthy (up to 20s)
     local deadline=$((SECONDS + 20))
     while [[ $SECONDS -lt $deadline ]]; do
-        if ! kill -0 "$daemon_pid" 2>/dev/null; then
-            echo "ERROR: Daemon process exited prematurely." >&2
-            if [[ "$VERBOSE" == "true" ]] && [[ -f "$DAEMON_LOG" ]]; then
-                echo "--- daemon.log (last 50 lines) ---"
-                tail -50 "$DAEMON_LOG"
-                echo "--- end ---"
-            fi
-            return 1
-        fi
         if [[ -S "$DAEMON_SOCKET" ]]; then
             # Try health check via Unix socket
             local health
@@ -242,7 +233,7 @@ run_integration_tests() {
 
     if HARNESS_DAEMON_SOCKET="$DAEMON_SOCKET" \
        HARNESS_TEST_HOME="$TEST_HOME" \
-       python "$test_script" > "$log_file" 2>&1; then
+       uv run python "$test_script" > "$log_file" 2>&1; then
         INTEGRATION_PASS=1
         INTEGRATION_COUNT=$(grep -c 'PASS' "$log_file" || echo 0)
         echo "  PASSED ($INTEGRATION_COUNT tests)"

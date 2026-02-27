@@ -25,8 +25,10 @@ except ImportError:
     pass
 
 import argparse
+import asyncio
 import logging
 import os
+import socket as _socket
 import sys
 import threading
 from pathlib import Path
@@ -173,6 +175,8 @@ def _build_daemon_run_command(
     )
     if args.no_scheduler:
         cmd.append("--no-scheduler")
+    if getattr(args, "http_port", None) is not None:
+        cmd.extend(["--http-port", str(args.http_port)])
     return cmd
 
 
@@ -540,16 +544,43 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
     app = create_daemon_app(service)
 
+    http_port = getattr(args, "http_port", None) or None
+
+    # Build sockets: always a unix socket for CLI clients, optionally a TCP
+    # socket for browser access.  Passing both to a single uvicorn Server
+    # means one lifespan, one event loop, and WebSocket support on both.
+    _sockets: list[_socket.socket] = []
+
+    _unix_sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    _unix_sock.bind(str(socket_path))
+    _unix_sock.listen(128)
+    _sockets.append(_unix_sock)
+
+    if http_port:
+        _tcp_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        _tcp_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        _tcp_sock.bind(("127.0.0.1", http_port))
+        _tcp_sock.listen(128)
+        _sockets.append(_tcp_sock)
+        print(f"Dashboard available at http://localhost:{http_port}")
+
+    _config = uvicorn.Config(
+        app,
+        access_log=False,
+        log_level="debug" if args.verbose else "info",
+    )
+    _server = uvicorn.Server(_config)
+
     try:
-        uvicorn.run(
-            app,
-            uds=str(socket_path),
-            access_log=False,
-            log_level="debug" if args.verbose else "info",
-        )
+        asyncio.run(_server.serve(sockets=_sockets))
     except KeyboardInterrupt:
         pass
     finally:
+        for _sock in _sockets:
+            try:
+                _sock.close()
+            except Exception:
+                pass
         service.shutdown()
         print("Daemon stopped.")
         pid_path.unlink(missing_ok=True)
@@ -1543,6 +1574,12 @@ def main() -> int:
         default=20.0,
         help="Seconds to wait for daemon health check (default: 20)",
     )
+    _daemon_runtime_parent.add_argument(
+        "--http-port",
+        type=int,
+        default=8100,
+        help="Also listen on this TCP port for dashboard access (default: 8100). Use 0 to disable.",
+    )
 
     # daemon command
     daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
@@ -1611,6 +1648,7 @@ def main() -> int:
         default="imessage",
     )
     daemon_run.add_argument("--no-scheduler", action="store_true")
+    daemon_run.add_argument("--http-port", type=int, default=8100)
     daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]
         action
         for action in daemon_subparsers._choices_actions  # type: ignore[attr-defined]

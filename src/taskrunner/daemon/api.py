@@ -5,10 +5,20 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
+from taskrunner.daemon.api_auth import ensure_dashboard_token, require_dashboard_token
+from taskrunner.daemon.api_config import router as config_router
+from taskrunner.daemon.api_cron import router as cron_router
+from taskrunner.daemon.api_dashboard import router as dashboard_router
+from taskrunner.daemon.api_files import router as files_router
+from taskrunner.daemon.api_logs import router as logs_router
+from taskrunner.daemon.api_logs import ws_router as logs_ws_router
+from taskrunner.daemon.api_tasks import router as tasks_router
 from taskrunner.daemon.contracts import (
     DaemonStatusResponse,
     SendMessageRequest,
@@ -20,6 +30,8 @@ from taskrunner.daemon.contracts import (
 )
 from taskrunner.daemon.service import DaemonService
 
+_DASHBOARD_STATIC_DIR = Path(__file__).resolve().parent.parent / "dashboard_static"
+
 
 def create_daemon_app(service: DaemonService) -> FastAPI:
     """Create a FastAPI app bound to a daemon service instance."""
@@ -27,6 +39,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.service = service
+        app.state.dashboard_token = ensure_dashboard_token()
         yield
         # Shutdown is handled by the CLI finally block; service.shutdown()
         # is idempotent so calling it here is safe but not required.
@@ -152,6 +165,16 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    # Mount dashboard API routes (/api/*) — all require auth
+    _auth_deps = [Depends(require_dashboard_token)]
+    app.include_router(dashboard_router, dependencies=_auth_deps)
+    app.include_router(tasks_router, dependencies=_auth_deps)
+    app.include_router(cron_router, dependencies=_auth_deps)
+    app.include_router(files_router, dependencies=_auth_deps)
+    app.include_router(config_router, dependencies=_auth_deps)
+    app.include_router(logs_router, dependencies=_auth_deps)
+    app.include_router(logs_ws_router)  # WebSocket — handles its own auth
+
     # Mount webhook routes from any channels that provide them
     for name, channel in service.get_channels().items():
         routes = channel.get_webhook_routes()
@@ -168,4 +191,45 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
             else:
                 app.api_route(path, methods=[method])(handler)
 
+    # Serve the dashboard SPA if the built static files are present
+    _mount_dashboard(app)
+
     return app
+
+
+def _mount_dashboard(app: FastAPI) -> None:
+    """Mount dashboard static files and SPA fallback if the build directory exists."""
+    if not _DASHBOARD_STATIC_DIR.is_dir():
+        return
+
+    index_html = _DASHBOARD_STATIC_DIR / "index.html"
+    if not index_html.is_file():
+        return
+
+    # Mount static assets (JS/CSS/images) so they are served directly
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(_DASHBOARD_STATIC_DIR / "assets")),
+        name="dashboard-assets",
+    ) if (_DASHBOARD_STATIC_DIR / "assets").is_dir() else None
+
+    # SPA fallback: any GET request that isn't an API/v1/health route
+    # gets index.html so client-side routing works.
+    backend_prefixes = ("api/", "v1/", "health/", "docs/", "redoc/")
+    backend_exact = {"api", "v1", "health", "docs", "redoc", "openapi.json"}
+
+    @app.get("/{full_path:path}")
+    async def _spa_fallback(full_path: str) -> FileResponse:
+        # Preserve proper 404 semantics for backend/API namespaces.
+        if full_path in backend_exact or full_path.startswith(backend_prefixes):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        # Serve actual static files if they exist (e.g. favicon.ico, manifest.json)
+        static_file = _DASHBOARD_STATIC_DIR / full_path
+        if (
+            full_path
+            and static_file.is_file()
+            and _DASHBOARD_STATIC_DIR in static_file.resolve().parents
+        ):
+            return FileResponse(str(static_file))
+        return FileResponse(str(index_html))

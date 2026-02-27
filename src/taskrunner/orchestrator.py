@@ -403,6 +403,8 @@ def _run_executor_inline_locked(
             return _exec_exec_inline(config)
         elif name == "file_ops":
             return _exec_file_ops_inline(config)
+        elif name == "github":
+            return _exec_github_inline(config)
         else:
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
@@ -969,6 +971,20 @@ def _exec_file_ops_inline(config: ExecutorConfig) -> str:
                 old_value = old_env[env_key]
                 assert old_value is not None
                 os.environ[env_key] = old_value
+
+
+def _exec_github_inline(config: ExecutorConfig) -> str:
+    """Run github executor inline."""
+    from executors.github.executor import run_gh_command
+
+    command = config.args.get("command", "")
+    repo = config.args.get("repo") or None
+
+    if not command:
+        raise ValueError("github executor requires a 'command' argument")
+
+    result = run_gh_command(command, repo)
+    return json.dumps(result, indent=2)
 
 
 def _ensure_image(image: str) -> str:

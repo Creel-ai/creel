@@ -12,8 +12,6 @@ from typing import Any
 import yaml
 from fastapi import APIRouter, HTTPException, Query
 
-from taskrunner.models import load_all_tasks
-
 router = APIRouter(prefix="/api/cron", tags=["cron"])
 
 
@@ -106,13 +104,7 @@ def _cron_to_human(expr: str) -> str:
         return f"Every {n} hours"
 
     # Daily at HH:MM
-    if (
-        minute.isdigit()
-        and hour.isdigit()
-        and dom == "*"
-        and month == "*"
-        and dow == "*"
-    ):
+    if minute.isdigit() and hour.isdigit() and dom == "*" and month == "*" and dow == "*":
         h = int(hour)
         mm = int(minute)
         ampm = "AM" if h < 12 else "PM"
@@ -218,15 +210,17 @@ async def list_cron_jobs() -> list[dict[str, Any]]:
                     last_status = run.get("status")
                     break
 
-            results.append({
-                "name": name,
-                "schedule": schedule,
-                "schedule_human": _cron_to_human(schedule),
-                "next_run": None,  # Would need APScheduler access for real next-run time
-                "last_run": last_run,
-                "last_status": last_status,
-                "enabled": enabled,
-            })
+            results.append(
+                {
+                    "name": name,
+                    "schedule": schedule,
+                    "schedule_human": _cron_to_human(schedule),
+                    "next_run": None,  # Would need APScheduler access for real next-run time
+                    "last_run": last_run,
+                    "last_status": last_status,
+                    "enabled": enabled,
+                }
+            )
         except Exception:
             continue
 

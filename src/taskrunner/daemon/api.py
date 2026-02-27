@@ -11,6 +11,14 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from taskrunner.daemon.api_auth import ensure_dashboard_token, require_dashboard_token
+from taskrunner.daemon.api_config import router as config_router
+from taskrunner.daemon.api_cron import router as cron_router
+from taskrunner.daemon.api_dashboard import router as dashboard_router
+from taskrunner.daemon.api_files import router as files_router
+from taskrunner.daemon.api_logs import router as logs_router
+from taskrunner.daemon.api_logs import ws_router as logs_ws_router
+from taskrunner.daemon.api_tasks import router as tasks_router
 from taskrunner.daemon.contracts import (
     DaemonStatusResponse,
     SendMessageRequest,
@@ -20,13 +28,6 @@ from taskrunner.daemon.contracts import (
     SessionSummary,
     StreamEvent,
 )
-from taskrunner.daemon.api_auth import ensure_dashboard_token, require_dashboard_token
-from taskrunner.daemon.api_config import router as config_router
-from taskrunner.daemon.api_cron import router as cron_router
-from taskrunner.daemon.api_dashboard import router as dashboard_router
-from taskrunner.daemon.api_files import router as files_router
-from taskrunner.daemon.api_logs import router as logs_router, ws_router as logs_ws_router
-from taskrunner.daemon.api_tasks import router as tasks_router
 from taskrunner.daemon.service import DaemonService
 
 _DASHBOARD_STATIC_DIR = Path(__file__).resolve().parent.parent / "dashboard_static"
@@ -218,6 +219,10 @@ def _mount_dashboard(app: FastAPI) -> None:
     async def _spa_fallback(request: Request, full_path: str) -> FileResponse:
         # Serve actual static files if they exist (e.g. favicon.ico, manifest.json)
         static_file = _DASHBOARD_STATIC_DIR / full_path
-        if full_path and static_file.is_file() and _DASHBOARD_STATIC_DIR in static_file.resolve().parents:
+        if (
+            full_path
+            and static_file.is_file()
+            and _DASHBOARD_STATIC_DIR in static_file.resolve().parents
+        ):
             return FileResponse(str(static_file))
         return FileResponse(str(index_html))

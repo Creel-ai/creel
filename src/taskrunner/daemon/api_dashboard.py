@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -77,7 +76,6 @@ async def dashboard_status(request: Request) -> dict[str, Any]:
     svc_status = service.status()
     pid = os.getpid()
     uptime = svc_status.get("uptime_seconds", 0)
-    started_at = svc_status.get("started_at", 0)
 
     # Socket path
     creel_home = Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))
@@ -95,20 +93,24 @@ async def dashboard_status(request: Request) -> dict[str, Any]:
     channels_raw = svc_status.get("channels", [])
     channels = []
     for ch in channels_raw:
-        channels.append({
-            "name": ch["name"],
-            "enabled": True,
-            "connected": ch.get("running", False),
-        })
+        channels.append(
+            {
+                "name": ch["name"],
+                "enabled": True,
+                "connected": ch.get("running", False),
+            }
+        )
 
     # If no channels are registered yet, enumerate configured ones
     if not channels:
         for ch_id in agent_def.channels.configured_channels():
-            channels.append({
-                "name": ch_id,
-                "enabled": True,
-                "connected": False,
-            })
+            channels.append(
+                {
+                    "name": ch_id,
+                    "enabled": True,
+                    "connected": False,
+                }
+            )
 
     # Task stats
     tasks_dir = _get_tasks_dir()
@@ -120,9 +122,6 @@ async def dashboard_status(request: Request) -> dict[str, Any]:
         scheduled_tasks = sum(1 for t in task_defs if t.schedule)
     except (FileNotFoundError, Exception):
         pass
-
-    # Cron info
-    scheduler_running = svc_status.get("scheduler", {}).get("running", False)
 
     # Count cron jobs (tasks with schedules)
     enabled_cron_jobs = scheduled_tasks
@@ -136,12 +135,14 @@ async def dashboard_status(request: Request) -> dict[str, Any]:
     recent_runs_raw = _read_recent_runs(5)
     recent_runs = []
     for run in recent_runs_raw:
-        recent_runs.append({
-            "task_name": run.get("job_name", run.get("task_name", "unknown")),
-            "status": run.get("status", "unknown"),
-            "finished_at": run.get("finished_at"),
-            "duration_ms": run.get("duration_ms"),
-        })
+        recent_runs.append(
+            {
+                "task_name": run.get("job_name", run.get("task_name", "unknown")),
+                "status": run.get("status", "unknown"),
+                "finished_at": run.get("finished_at"),
+                "duration_ms": run.get("duration_ms"),
+            }
+        )
 
     return {
         "daemon": {

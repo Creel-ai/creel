@@ -68,7 +68,7 @@ class MediaStore:
     # Public API
     # ------------------------------------------------------------------
 
-    def save_media(self, attachment: Attachment, sender_id: str, channel: str = "unknown") -> Path:
+    def save_media(self, attachment: Attachment, channel: str = "unknown") -> Path:
         """Persist an attachment to disk and return the saved file path.
 
         Supports three sources (checked in order):

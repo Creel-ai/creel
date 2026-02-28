@@ -389,7 +389,7 @@ class ChatServer:
     ) -> None:
         """Save, transcribe a voice attachment and append to voice_parts."""
         try:
-            saved_path = self._media_store.save_media(attachment, sender_id, channel=channel)
+            saved_path = self._media_store.save_media(attachment, channel=channel)
         except Exception:
             logger.warning("Failed to save voice attachment", exc_info=True)
             voice_parts.append("[Voice message: could not save audio file]")
@@ -412,7 +412,7 @@ class ChatServer:
     ) -> None:
         """Save an image attachment and prepare it as an LLM content block."""
         try:
-            saved_path = self._media_store.save_media(attachment, sender_id, channel=channel)
+            saved_path = self._media_store.save_media(attachment, channel=channel)
         except Exception:
             logger.warning("Failed to save image attachment", exc_info=True)
             return

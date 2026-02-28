@@ -22,7 +22,7 @@ class TestSaveFromBytes:
             data=b"\x89PNG\r\n\x1a\n" + b"\x00" * 100,
             mime_type="image/png",
         )
-        path = store.save_media(att, sender_id="user1", channel="telegram")
+        path = store.save_media(att, channel="telegram")
         assert path.exists()
         assert path.suffix == ".png"
         assert path.read_bytes() == att.data
@@ -36,7 +36,7 @@ class TestSaveFromBytes:
             data=b"OggS" + b"\x00" * 50,
             mime_type="audio/ogg",
         )
-        path = store.save_media(att, sender_id="user1", channel="telegram")
+        path = store.save_media(att, channel="telegram")
         assert path.exists()
         assert path.suffix == ".ogg"
 
@@ -44,7 +44,7 @@ class TestSaveFromBytes:
         """Files are organized as base_dir/channel/YYYY-MM-DD/uuid.ext."""
         store = MediaStore(base_dir=tmp_path / "media")
         att = Attachment(type=AttachmentType.IMAGE, data=b"fake-jpg", mime_type="image/jpeg")
-        path = store.save_media(att, sender_id="user1", channel="imessage")
+        path = store.save_media(att, channel="imessage")
         parts = path.relative_to(tmp_path / "media").parts
         assert len(parts) == 3  # channel / date / file
         assert parts[0] == "imessage"
@@ -54,14 +54,14 @@ class TestSaveFromBytes:
     def test_default_channel(self, tmp_path: Path):
         store = MediaStore(base_dir=tmp_path / "media")
         att = Attachment(type=AttachmentType.IMAGE, data=b"data")
-        path = store.save_media(att, sender_id="u")
+        path = store.save_media(att)
         assert "unknown" in str(path)
 
     def test_max_file_size_exceeded(self, tmp_path: Path):
         store = MediaStore(base_dir=tmp_path / "media", max_file_size=100)
         att = Attachment(type=AttachmentType.IMAGE, data=b"x" * 200)
         with pytest.raises(ValueError, match="exceeds max file size"):
-            store.save_media(att, sender_id="u")
+            store.save_media(att)
 
 
 class TestSaveFromFilePath:
@@ -77,7 +77,7 @@ class TestSaveFromFilePath:
             file_path=source,
             mime_type="image/jpeg",
         )
-        path = store.save_media(att, sender_id="user1", channel="imessage")
+        path = store.save_media(att, channel="imessage")
         assert path.exists()
         assert path.read_bytes() == b"jpeg-data-here"
         assert path != source  # saved to a new location
@@ -89,7 +89,7 @@ class TestSaveFromFilePath:
             file_path=Path("/nonexistent/file.jpg"),
         )
         with pytest.raises(FileNotFoundError):
-            store.save_media(att, sender_id="u")
+            store.save_media(att)
 
     def test_file_exceeds_max_size(self, tmp_path: Path):
         source = tmp_path / "big.jpg"
@@ -97,7 +97,7 @@ class TestSaveFromFilePath:
         store = MediaStore(base_dir=tmp_path / "media", max_file_size=100)
         att = Attachment(type=AttachmentType.IMAGE, file_path=source)
         with pytest.raises(ValueError, match="exceeds max file size"):
-            store.save_media(att, sender_id="u")
+            store.save_media(att)
 
     def test_extension_from_filename(self, tmp_path: Path):
         source = tmp_path / "recording.m4a"
@@ -108,7 +108,7 @@ class TestSaveFromFilePath:
             file_path=source,
             file_name="recording.m4a",
         )
-        path = store.save_media(att, sender_id="u", channel="telegram")
+        path = store.save_media(att, channel="telegram")
         assert path.suffix == ".m4a"
 
 
@@ -131,7 +131,7 @@ class TestSaveFromURL:
         fake_response.__exit__ = MagicMock(return_value=False)
 
         with patch("httpx.stream", return_value=fake_response):
-            path = store.save_media(att, sender_id="user1", channel="telegram")
+            path = store.save_media(att, channel="telegram")
 
         assert path.exists()
         assert path.read_bytes() == b"jpeg-bytes-here"
@@ -152,7 +152,7 @@ class TestSaveFromURL:
 
         with patch("httpx.stream", return_value=fake_response):
             with pytest.raises(ValueError, match="exceeds max size"):
-                store.save_media(att, sender_id="u")
+                store.save_media(att)
 
     def test_download_exceeds_size_during_streaming(self, tmp_path: Path):
         store = MediaStore(base_dir=tmp_path / "media", max_file_size=100)
@@ -167,7 +167,7 @@ class TestSaveFromURL:
 
         with patch("httpx.stream", return_value=fake_response):
             with pytest.raises(ValueError, match="exceeded max file size"):
-                store.save_media(att, sender_id="u")
+                store.save_media(att)
 
 
 class TestNoSourceError:
@@ -177,7 +177,7 @@ class TestNoSourceError:
         store = MediaStore(base_dir=tmp_path / "media")
         att = Attachment(type=AttachmentType.IMAGE)
         with pytest.raises(ValueError, match="no data, file_path, or url"):
-            store.save_media(att, sender_id="u")
+            store.save_media(att)
 
 
 class TestDeduplication:
@@ -189,8 +189,8 @@ class TestDeduplication:
         att1 = Attachment(type=AttachmentType.IMAGE, data=data, mime_type="image/jpeg")
         att2 = Attachment(type=AttachmentType.IMAGE, data=data, mime_type="image/jpeg")
 
-        path1 = store.save_media(att1, sender_id="u1", channel="telegram")
-        path2 = store.save_media(att2, sender_id="u2", channel="telegram")
+        path1 = store.save_media(att1, channel="telegram")
+        path2 = store.save_media(att2, channel="telegram")
         assert path1 == path2
 
     def test_different_content_saves_separately(self, tmp_path: Path):
@@ -198,8 +198,8 @@ class TestDeduplication:
         att1 = Attachment(type=AttachmentType.IMAGE, data=b"content-a", mime_type="image/jpeg")
         att2 = Attachment(type=AttachmentType.IMAGE, data=b"content-b", mime_type="image/jpeg")
 
-        path1 = store.save_media(att1, sender_id="u", channel="telegram")
-        path2 = store.save_media(att2, sender_id="u", channel="telegram")
+        path1 = store.save_media(att1, channel="telegram")
+        path2 = store.save_media(att2, channel="telegram")
         assert path1 != path2
 
     def test_dedup_falls_back_if_file_deleted(self, tmp_path: Path):
@@ -208,10 +208,10 @@ class TestDeduplication:
         data = b"will-be-deleted"
         att = Attachment(type=AttachmentType.IMAGE, data=data, mime_type="image/png")
 
-        path1 = store.save_media(att, sender_id="u", channel="c")
+        path1 = store.save_media(att, channel="c")
         path1.unlink()  # remove the file
 
-        path2 = store.save_media(att, sender_id="u", channel="c")
+        path2 = store.save_media(att, channel="c")
         assert path2 != path1
         assert path2.exists()
 
@@ -285,7 +285,7 @@ class TestExtensionResolution:
             data=b"data",
             file_name="photo.heic",
         )
-        path = store.save_media(att, sender_id="u", channel="c")
+        path = store.save_media(att, channel="c")
         assert path.suffix == ".heic"
 
     def test_from_mime_type(self, tmp_path: Path):
@@ -295,19 +295,19 @@ class TestExtensionResolution:
             data=b"data",
             mime_type="image/webp",
         )
-        path = store.save_media(att, sender_id="u", channel="c")
+        path = store.save_media(att, channel="c")
         assert path.suffix == ".webp"
 
     def test_fallback_to_type(self, tmp_path: Path):
         store = MediaStore(base_dir=tmp_path / "media")
         att = Attachment(type=AttachmentType.VOICE, data=b"data")
-        path = store.save_media(att, sender_id="u", channel="c")
+        path = store.save_media(att, channel="c")
         assert path.suffix == ".ogg"
 
     def test_file_type_fallback(self, tmp_path: Path):
         store = MediaStore(base_dir=tmp_path / "media")
         att = Attachment(type=AttachmentType.FILE, data=b"data")
-        path = store.save_media(att, sender_id="u", channel="c")
+        path = store.save_media(att, channel="c")
         assert path.suffix == ".bin"
 
 
@@ -323,5 +323,5 @@ class TestBaseDirCreatedOnFirstUse:
         assert not media_dir.exists()
         store = MediaStore(base_dir=media_dir)
         att = Attachment(type=AttachmentType.IMAGE, data=b"data", mime_type="image/jpeg")
-        store.save_media(att, sender_id="u", channel="c")
+        store.save_media(att, channel="c")
         assert media_dir.exists()

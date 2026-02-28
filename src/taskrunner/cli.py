@@ -211,8 +211,11 @@ def _print_log_errors(log_path: Path, offset: int = 0) -> None:
 def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
     """Wait until the daemon health endpoint responds.
 
-    Accepts both ``"starting"`` and ``"ok"`` statuses — any 200 response
-    means the socket is bound and the process is alive.
+    Accepts ``"starting"``, ``"ok"``, and ``"error"`` statuses — any 200
+    response means the socket is bound and the process is alive.  An
+    ``"error"`` status means initialization failed but the process is
+    reachable, so we still return ``True`` (the caller can inspect the
+    health body for details).
     """
     import time
 
@@ -223,7 +226,7 @@ def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
                 resp = _daemon_request(socket_path, "GET", "/health", timeout=0.5)
                 if resp.status_code == 200:
                     body = resp.json()
-                    if body.get("status") in ("ok", "starting"):
+                    if body.get("status") in ("ok", "starting", "error"):
                         return True
             except Exception:
                 pass
@@ -514,7 +517,10 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         from taskrunner.daemon.service import DaemonService
 
         channel_type = getattr(args, "channel_type", "imessage")
-        channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
+        try:
+            channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
+        except ValueError as e:
+            raise RuntimeError(f"Channel setup failed: {e}") from e
 
         server = ChatServer(
             agent_def,

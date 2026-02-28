@@ -90,9 +90,16 @@ class ChatServer:
                 max_daily_entries=agent_def.workspace.max_daily_entries,
                 max_long_term_lines=agent_def.workspace.max_long_term_lines,
             )
+            def _compact() -> None:
+                try:
+                    self._memory.compact_daily_files(  # type: ignore[union-attr]
+                        days_to_keep=agent_def.workspace.compact_after_days,
+                    )
+                except Exception:
+                    logger.exception("Background memory compaction failed")
+
             threading.Thread(
-                target=self._memory.compact_daily_files,
-                kwargs={"days_to_keep": agent_def.workspace.compact_after_days},
+                target=_compact,
                 daemon=True,
                 name="creel-memory-compact",
             ).start()

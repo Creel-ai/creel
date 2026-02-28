@@ -22,6 +22,9 @@ class PollingChannelMixin:
         _stop_requested: bool
     """
 
+    #: Seconds between successful polls.  Also used as the base for exponential
+    #: backoff on errors: ``poll_interval * 2^consecutive_errors``, capped at
+    #: ``_max_backoff``.
     _poll_interval: int | float = 5
     _max_backoff: int | float = 60
     _stop_requested: bool = False
@@ -32,6 +35,12 @@ class PollingChannelMixin:
 
         Called once per polling cycle.  Return an empty list when there is
         nothing new.  Raise on transient errors — the loop will back off.
+        """
+
+    def _before_dispatch(self, msg: IncomingMessage) -> None:
+        """Hook called for each message right before the callback runs.
+
+        Override to send typing indicators, log, etc.  The default is a no-op.
         """
 
     def _run_poll_loop(self, callback: LegacyCallback) -> None:
@@ -49,6 +58,7 @@ class PollingChannelMixin:
                 consecutive_errors = 0
 
                 for msg in messages:
+                    self._before_dispatch(msg)
                     response = callback(msg.sender_id, msg.text)
                     self.send(msg.sender_id, response)  # type: ignore[attr-defined]
 

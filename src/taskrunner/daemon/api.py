@@ -63,12 +63,16 @@ def create_daemon_app(
        returns, the app transitions to fully ready.
     """
     ready = threading.Event()
+    failed = threading.Event()
+    init_error: list[BaseException] = []  # mutable container for thread-safe error capture
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         init_thread: threading.Thread | None = None
         if service is not None:
             app.state.service = service
+            # Safe to mutate routes here: the 503 middleware blocks all
+            # non-health requests until ``ready`` is set (after this returns).
             _mount_webhook_routes(app, service)
             ready.set()
         elif init_factory is not None:
@@ -77,10 +81,14 @@ def create_daemon_app(
                 try:
                     svc = init_factory()
                     app.state.service = svc
+                    # Safe to mutate routes here: the 503 middleware blocks all
+                    # non-health requests until ``ready`` is set (after this returns).
                     _mount_webhook_routes(app, svc)
                     ready.set()
-                except Exception:
+                except Exception as exc:
                     logger.exception("Deferred daemon initialization failed")
+                    init_error.append(exc)
+                    failed.set()
 
             init_thread = threading.Thread(target=_init, daemon=True, name="creel-deferred-init")
             init_thread.start()
@@ -88,6 +96,7 @@ def create_daemon_app(
         yield
 
         if init_thread is not None:
+            # Best-effort wait; the thread is a daemon so it won't block exit.
             init_thread.join(timeout=5.0)
         svc = getattr(app.state, "service", None)
         if svc is not None:
@@ -102,14 +111,20 @@ def create_daemon_app(
     @app.middleware("http")
     async def _require_ready(request: Request, call_next):
         if request.url.path != "/health" and not ready.is_set():
+            detail = "Service initialization failed" if failed.is_set() else "Service is starting"
             return JSONResponse(
                 status_code=503,
-                content={"detail": "Service is starting"},
+                content={"detail": detail},
             )
         return await call_next(request)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
+        if failed.is_set():
+            result: dict[str, str] = {"status": "error", "service": "creel-daemon"}
+            if init_error:
+                result["error"] = str(init_error[0])
+            return result
         status = "ok" if ready.is_set() else "starting"
         return {"status": status, "service": "creel-daemon"}
 

@@ -20,6 +20,12 @@ class SubAgentManager:
     Each sub-agent runs an isolated agent loop in a daemon thread with its own
     session (message history).  On completion the result is injected back into
     the parent session via a callback.
+
+    Current limitations:
+    - Sub-agents do not have access to memory tools or cron tools.
+    - Nested sub-agent spawning is not supported (no subagent_manager passed).
+    - Each sub-agent gets an empty session_state — it cannot read/write the
+      parent's workspace or other per-session data.
     """
 
     def __init__(

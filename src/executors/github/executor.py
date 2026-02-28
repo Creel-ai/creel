@@ -99,10 +99,7 @@ def validate_command(command: str) -> str | None:
     # Validate top-level subcommand
     top_level = command.split()[0]
     if top_level not in VALID_PREFIXES:
-        return (
-            f"Unknown gh subcommand: '{top_level}'. "
-            f"Allowed: {', '.join(sorted(VALID_PREFIXES))}"
-        )
+        return f"Unknown gh subcommand: '{top_level}'. Allowed: {', '.join(sorted(VALID_PREFIXES))}"
 
     # 'api' subcommand: allow by default (GET); DELETE/PUT already blocked above
     if top_level == "api":

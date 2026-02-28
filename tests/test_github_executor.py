@@ -464,8 +464,9 @@ class TestMainFunction:
         import os
         import sys
 
-        with patch.dict(os.environ, {"COMMAND": "issue list"}), patch.object(
-            sys, "argv", ["executor.py"]
+        with (
+            patch.dict(os.environ, {"COMMAND": "issue list"}),
+            patch.object(sys, "argv", ["executor.py"]),
         ):
             from executors.github.executor import main
 
@@ -488,8 +489,9 @@ class TestMainFunction:
         import os
         import sys
 
-        with patch.dict(os.environ, {"COMMAND": "issue list", "REPO": "owner/repo"}), patch.object(
-            sys, "argv", ["executor.py"]
+        with (
+            patch.dict(os.environ, {"COMMAND": "issue list", "REPO": "owner/repo"}),
+            patch.object(sys, "argv", ["executor.py"]),
         ):
             from executors.github.executor import main
 
@@ -526,8 +528,9 @@ class TestMainFunction:
         import os
         import sys
 
-        with patch.dict(os.environ, {"COMMAND": "issue list"}), patch.object(
-            sys, "argv", ["executor.py"]
+        with (
+            patch.dict(os.environ, {"COMMAND": "issue list"}),
+            patch.object(sys, "argv", ["executor.py"]),
         ):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.github.executor import main

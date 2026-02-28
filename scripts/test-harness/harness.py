@@ -30,6 +30,7 @@ RESULTS_DIR = REPO_ROOT / "test-results"
 MOCK_LLM_PORT = 18999
 DAEMON_SOCKET = HARNESS_DIR / "run" / "daemon.sock"
 DAEMON_PID_FILE = HARNESS_DIR / "run" / "daemon.pid"
+TEST_STATE_DIR = HARNESS_DIR / "run" / "state"
 
 
 def _wait_for_url(url: str, timeout: float = 10.0, interval: float = 0.3) -> bool:
@@ -135,6 +136,9 @@ class TestHarness:
         env = os.environ.copy()
         env["ANTHROPIC_API_KEY"] = "test-key-not-real"
         env["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{MOCK_LLM_PORT}"
+        # Redirect state dir so the daemon doesn't touch ~/.creel/
+        TEST_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        env["CREEL_STATE_DIR"] = str(TEST_STATE_DIR)
 
         self.daemon_proc = subprocess.Popen(
             [
@@ -189,10 +193,9 @@ class TestHarness:
             if d.exists():
                 shutil.rmtree(d, ignore_errors=True)
 
-        # Clean up cron store (uses default ~/.creel/cron/ path)
-        cron_dir = Path.home() / ".creel" / "cron"
-        if cron_dir.exists():
-            shutil.rmtree(cron_dir, ignore_errors=True)
+        # Clean up test-scoped state dir (cron store, etc.)
+        if TEST_STATE_DIR.exists():
+            shutil.rmtree(TEST_STATE_DIR, ignore_errors=True)
 
         # Clean up daemon runtime files
         DAEMON_SOCKET.unlink(missing_ok=True)

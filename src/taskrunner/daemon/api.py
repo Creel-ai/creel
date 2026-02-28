@@ -165,11 +165,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
     @app.post("/v1/cron/jobs", response_model=CronJobResponse, status_code=201)
     async def create_cron_job(request: CreateCronJobRequest) -> CronJobResponse:
         try:
-            delivery = (
-                Delivery(**request.delivery)
-                if request.delivery
-                else Delivery(mode="none")
-            )
+            delivery = Delivery(**request.delivery) if request.delivery else Delivery(mode="none")
             job = CronJob(
                 name=request.name,
                 schedule=Schedule(**request.schedule),
@@ -196,9 +192,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         return _job_to_response(job)
 
     @app.put("/v1/cron/jobs/{job_id}", response_model=CronJobResponse)
-    async def update_cron_job(
-        job_id: str, request: UpdateCronJobRequest
-    ) -> CronJobResponse:
+    async def update_cron_job(job_id: str, request: UpdateCronJobRequest) -> CronJobResponse:
         fields: dict = {}
         if request.name is not None:
             fields["name"] = request.name
@@ -212,9 +206,7 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
             fields["enabled"] = request.enabled
 
         try:
-            updated = await asyncio.to_thread(
-                service.cron_manager.update_job, job_id, **fields
-            )
+            updated = await asyncio.to_thread(service.cron_manager.update_job, job_id, **fields)
             return _job_to_response(updated)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

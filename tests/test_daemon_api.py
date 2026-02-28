@@ -98,6 +98,20 @@ def test_session_endpoints(client: TestClient) -> None:
     assert len(history.json()["messages"]) >= 2
 
 
+def _wait_for_init(client: TestClient, timeout: float = 2.0) -> dict:
+    """Poll /health until init completes (status != 'starting')."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        resp = client.get("/health")
+        body = resp.json()
+        if body["status"] != "starting":
+            return body
+        time.sleep(0.05)
+    return body
+
+
 def test_deferred_init_failure_health(tmp_path: Path) -> None:
     """When init_factory raises, /health reports failed status."""
 
@@ -106,9 +120,7 @@ def test_deferred_init_failure_health(tmp_path: Path) -> None:
 
     app = create_daemon_app(init_factory=_boom)
     with TestClient(app) as c:
-        resp = c.get("/health")
-        assert resp.status_code == 200
-        body = resp.json()
+        body = _wait_for_init(c)
         assert body["status"] == "failed"
         assert "config file missing" in body["error"]
 
@@ -121,8 +133,7 @@ def test_deferred_init_failure_returns_500(tmp_path: Path) -> None:
 
     app = create_daemon_app(init_factory=_boom)
     with TestClient(app) as c:
-        # Wait for init to settle by hitting /health first
-        c.get("/health")
+        _wait_for_init(c)
         resp = c.get("/v1/status")
         assert resp.status_code == 500
         assert "Initialization failed" in resp.json()["detail"]

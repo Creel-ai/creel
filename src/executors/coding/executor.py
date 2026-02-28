@@ -50,8 +50,8 @@ BLOCKED_MOUNT_PATHS = frozenset(
 
 # Patterns that are always blocked (destructive / exfiltration)
 BLOCKED_PATTERNS = [
-    re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f\b.*\s+/\s*$"),  # rm -rf /
-    re.compile(r"\brm\s+-[a-zA-Z]*f[a-zA-Z]*r\b.*\s+/\s*$"),  # rm -fr /
+    re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f\b.*\s+/(\s|$)"),  # rm -rf /
+    re.compile(r"\brm\s+-[a-zA-Z]*f[a-zA-Z]*r\b.*\s+/(\s|$)"),  # rm -fr /
     re.compile(r"\bmkfs\b"),
     re.compile(r"\bdd\b.*\bof=/dev/"),
     # Reverse shell patterns

@@ -514,7 +514,11 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         from taskrunner.daemon.service import DaemonService
 
         channel_type = getattr(args, "channel_type", "imessage")
-        channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
+        try:
+            channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
+        except Exception as exc:
+            print(f"Error building {channel_type} channel: {exc}", file=sys.stderr)
+            raise
 
         server = ChatServer(
             agent_def,

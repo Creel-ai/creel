@@ -116,6 +116,16 @@ class TranscriptionService:
             logger.warning("ffmpeg conversion failed for %s: %s", file_path, exc)
             return file_path
 
+    @staticmethod
+    def _cleanup_converted(original: Path, converted: Path) -> None:
+        """Remove the converted temp file if it differs from the original."""
+        if converted != original and converted.exists():
+            try:
+                converted.unlink()
+                logger.debug("Cleaned up converted file: %s", converted)
+            except OSError:
+                logger.debug("Could not remove converted file: %s", converted)
+
     def _transcribe_openai(self, file_path: Path) -> str:
         """Call the OpenAI Whisper API."""
         api_key = self._resolve_api_key()
@@ -126,25 +136,27 @@ class TranscriptionService:
             )
             return ""
 
-        file_path = self._maybe_convert(file_path)
+        converted_path = self._maybe_convert(file_path)
+        try:
+            with open(converted_path, "rb") as f:
+                response = httpx.post(
+                    _API_URL,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    files={"file": (converted_path.name, f, "application/octet-stream")},
+                    data={"model": self._model},
+                    timeout=_API_TIMEOUT,
+                )
 
-        with open(file_path, "rb") as f:
-            response = httpx.post(
-                _API_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                files={"file": (file_path.name, f, "application/octet-stream")},
-                data={"model": self._model},
-                timeout=_API_TIMEOUT,
+            response.raise_for_status()
+            text = response.json().get("text", "").strip()
+            logger.info(
+                "Transcribed %s (%d chars)",
+                converted_path.name,
+                len(text),
             )
-
-        response.raise_for_status()
-        text = response.json().get("text", "").strip()
-        logger.info(
-            "Transcribed %s (%d chars)",
-            file_path.name,
-            len(text),
-        )
-        return text
+            return text
+        finally:
+            self._cleanup_converted(file_path, converted_path)
 
     def _transcribe_local(self, file_path: Path) -> str:
         """Shell out to the ``whisper`` CLI.  Falls back to the API."""
@@ -152,31 +164,33 @@ class TranscriptionService:
             logger.info("Local whisper CLI not found, falling back to OpenAI API")
             return self._transcribe_openai(file_path)
 
-        file_path = self._maybe_convert(file_path)
+        converted_path = self._maybe_convert(file_path)
+        try:
+            result = subprocess.run(
+                [
+                    "whisper",
+                    str(converted_path),
+                    "--model", self._model,
+                    "--output_format", "txt",
+                    "--output_dir", str(converted_path.parent),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
 
-        result = subprocess.run(
-            [
-                "whisper",
-                str(file_path),
-                "--model", self._model,
-                "--output_format", "txt",
-                "--output_dir", str(file_path.parent),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+            if result.returncode != 0:
+                logger.warning("Local whisper failed: %s", result.stderr)
+                return self._transcribe_openai(file_path)
 
-        if result.returncode != 0:
-            logger.warning("Local whisper failed: %s", result.stderr)
-            return self._transcribe_openai(file_path)
+            txt_path = converted_path.with_suffix(".txt")
+            if txt_path.exists():
+                text = txt_path.read_text().strip()
+                txt_path.unlink(missing_ok=True)
+                logger.info("Transcribed (local) %s (%d chars)", converted_path.name, len(text))
+                return text
 
-        txt_path = file_path.with_suffix(".txt")
-        if txt_path.exists():
-            text = txt_path.read_text().strip()
-            txt_path.unlink(missing_ok=True)
-            logger.info("Transcribed (local) %s (%d chars)", file_path.name, len(text))
-            return text
-
-        logger.warning("Whisper produced no output for %s", file_path)
-        return ""
+            logger.warning("Whisper produced no output for %s", converted_path)
+            return ""
+        finally:
+            self._cleanup_converted(file_path, converted_path)

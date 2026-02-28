@@ -20,6 +20,7 @@ allow:
   - git_status
   - git_diff
   - git_log
+  - github
   - web_search
   - fetch_url
   # File operations (read-only)
@@ -142,6 +143,36 @@ deny_when:
   - tool: exec
     arg: command
     pattern: "*chmod -R 777*"
+  # GitHub: block destructive operations
+  # NOTE: The executor also enforces an allowlist of subcommands
+  # (see src/executors/github/executor.py). Keep both in sync.
+  - tool: github
+    arg: command
+    pattern: "repo delete*"
+  - tool: github
+    arg: command
+    pattern: "issue delete*"
+  - tool: github
+    arg: command
+    pattern: "*--admin*"
+  - tool: github
+    arg: command
+    pattern: "api*-X DELETE*"
+  - tool: github
+    arg: command
+    pattern: "api*--method DELETE*"
+  - tool: github
+    arg: command
+    pattern: "api*-X PUT*"
+  - tool: github
+    arg: command
+    pattern: "api*--method PUT*"
+  - tool: github
+    arg: command
+    pattern: "api*-X PATCH*"
+  - tool: github
+    arg: command
+    pattern: "api*--method PATCH*"
   # URL scheme allowlist (http/https only) is enforced in BrowserRelay._validate_url.
   # These rules provide defense-in-depth at the policy layer.
   - tool: browser_navigate
@@ -212,6 +243,36 @@ review_when:
   - tool: exec
     arg: command
     pattern: "*zip*|*curl*"
+  # GitHub: flag state-changing operations for review
+  # NOTE: The executor also enforces an allowlist of subcommands
+  # (see src/executors/github/executor.py). Keep both in sync.
+  - tool: github
+    arg: command
+    pattern: "pr merge*"
+  - tool: github
+    arg: command
+    pattern: "issue close*"
+  - tool: github
+    arg: command
+    pattern: "pr close*"
+  - tool: github
+    arg: command
+    pattern: "issue create*"
+  - tool: github
+    arg: command
+    pattern: "pr create*"
+  - tool: github
+    arg: command
+    pattern: "issue comment*"
+  - tool: github
+    arg: command
+    pattern: "pr comment*"
+  - tool: github
+    arg: command
+    pattern: "api*-X POST*"
+  - tool: github
+    arg: command
+    pattern: "api*--method POST*"
   # Notion is read-only by default; flag write-like actions for explicit review.
   # NOTE: The executor also enforces a READ_ONLY_ACTIONS allowlist
   # (see src/executors/notion/executor.py). Keep both in sync.

@@ -1,0 +1,15 @@
+# Tool configuration for the github executor
+tools:
+  github:
+    executor: github
+    description: "Manage GitHub repositories — issues, PRs, CI runs, code search"
+    network: true
+    parameters:
+      command:
+        type: string
+        description: "The gh CLI subcommand to run (e.g., 'issue list', 'pr view 42', 'run list')"
+        required: true
+      repo:
+        type: string
+        description: "Repository in owner/repo format. Optional — uses current repo context if not specified."
+    timeout: 120

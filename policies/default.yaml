@@ -20,6 +20,7 @@ allow:
   - git_status
   - git_diff
   - git_log
+  - github
   - web_search
   - fetch_url
   # File operations (read-only)
@@ -63,6 +64,8 @@ review:
   - browser_click
   - browser_type
   - browser_screenshot
+  # Coding tool (runs arbitrary commands)
+  - coding
 
 deny:
   - delete_*
@@ -107,13 +110,13 @@ deny_when:
     pattern: "*| bash*"
   - tool: exec
     arg: command
-    pattern: "*| sh *"
+    pattern: "*| sh*"
   - tool: exec
     arg: command
     pattern: "*|bash*"
   - tool: exec
     arg: command
-    pattern: "*|sh *"
+    pattern: "*|sh*"
   - tool: exec
     arg: command
     pattern: "*curl*|*sh*"
@@ -142,6 +145,133 @@ deny_when:
   - tool: exec
     arg: command
     pattern: "*chmod -R 777*"
+  # Coding tool: block same dangerous patterns as exec
+  # NOTE: The executor also enforces a blocklist internally
+  # (see src/executors/coding/executor.py). Keep both in sync.
+  - tool: coding
+    arg: command
+    pattern: "*rm -rf*"
+  - tool: coding
+    arg: command
+    pattern: "*rm -fr*"
+  - tool: coding
+    arg: command
+    pattern: "*mkfs*"
+  - tool: coding
+    arg: command
+    pattern: "*dd if=*of=/dev/*"
+  - tool: coding
+    arg: command
+    pattern: "*>/dev/tcp/*"
+  - tool: coding
+    arg: command
+    pattern: "*/dev/udp/*"
+  - tool: coding
+    arg: command
+    pattern: "*bash -i*"
+  - tool: coding
+    arg: command
+    pattern: "*nc -e*"
+  - tool: coding
+    arg: command
+    pattern: "*ncat -e*"
+  - tool: coding
+    arg: command
+    pattern: "*| bash*"
+  - tool: coding
+    arg: command
+    pattern: "*| sh*"
+  - tool: coding
+    arg: command
+    pattern: "*|bash*"
+  - tool: coding
+    arg: command
+    pattern: "*|sh*"
+  - tool: coding
+    arg: command
+    pattern: "*curl*|*sh*"
+  - tool: coding
+    arg: command
+    pattern: "*wget*|*sh*"
+  - tool: coding
+    arg: command
+    pattern: "*$(curl*"
+  - tool: coding
+    arg: command
+    pattern: "*$(wget*"
+  - tool: coding
+    arg: command
+    pattern: "*:(){ :|:& };:*"
+  - tool: coding
+    arg: command
+    pattern: "*crontab*"
+  - tool: coding
+    arg: command
+    pattern: "*chmod 777*"
+  - tool: coding
+    arg: command
+    pattern: "*chmod -R 777*"
+  # Coding tool: block mounting system paths
+  - tool: coding
+    arg: mount
+    pattern: "/"
+  - tool: coding
+    arg: mount
+    pattern: "/etc*"
+  - tool: coding
+    arg: mount
+    pattern: "/var*"
+  - tool: coding
+    arg: mount
+    pattern: "/usr*"
+  - tool: coding
+    arg: mount
+    pattern: "/bin*"
+  - tool: coding
+    arg: mount
+    pattern: "/sbin*"
+  - tool: coding
+    arg: mount
+    pattern: "/boot*"
+  - tool: coding
+    arg: mount
+    pattern: "/dev*"
+  - tool: coding
+    arg: mount
+    pattern: "/sys*"
+  - tool: coding
+    arg: mount
+    pattern: "/proc*"
+  # GitHub: block destructive operations
+  # NOTE: The executor also enforces an allowlist of subcommands
+  # (see src/executors/github/executor.py). Keep both in sync.
+  - tool: github
+    arg: command
+    pattern: "repo delete*"
+  - tool: github
+    arg: command
+    pattern: "issue delete*"
+  - tool: github
+    arg: command
+    pattern: "*--admin*"
+  - tool: github
+    arg: command
+    pattern: "api*-X DELETE*"
+  - tool: github
+    arg: command
+    pattern: "api*--method DELETE*"
+  - tool: github
+    arg: command
+    pattern: "api*-X PUT*"
+  - tool: github
+    arg: command
+    pattern: "api*--method PUT*"
+  - tool: github
+    arg: command
+    pattern: "api*-X PATCH*"
+  - tool: github
+    arg: command
+    pattern: "api*--method PATCH*"
   # URL scheme allowlist (http/https only) is enforced in BrowserRelay._validate_url.
   # These rules provide defense-in-depth at the policy layer.
   - tool: browser_navigate
@@ -212,6 +342,67 @@ review_when:
   - tool: exec
     arg: command
     pattern: "*zip*|*curl*"
+  # Coding tool: flag risky but legitimate commands for review
+  - tool: coding
+    arg: command
+    pattern: "*env*KEY*"
+  - tool: coding
+    arg: command
+    pattern: "*env*SECRET*"
+  - tool: coding
+    arg: command
+    pattern: "*env*TOKEN*"
+  - tool: coding
+    arg: command
+    pattern: "*env*PASSWORD*"
+  - tool: coding
+    arg: command
+    pattern: "*git push --force*"
+  - tool: coding
+    arg: command
+    pattern: "*git push -f*"
+  - tool: coding
+    arg: command
+    pattern: "*git reset --hard*"
+  - tool: coding
+    arg: command
+    pattern: "*sudo*"
+  - tool: coding
+    arg: command
+    pattern: "*ssh *"
+  - tool: coding
+    arg: command
+    pattern: "*scp *"
+  # GitHub: flag state-changing operations for review
+  # NOTE: The executor also enforces an allowlist of subcommands
+  # (see src/executors/github/executor.py). Keep both in sync.
+  - tool: github
+    arg: command
+    pattern: "pr merge*"
+  - tool: github
+    arg: command
+    pattern: "issue close*"
+  - tool: github
+    arg: command
+    pattern: "pr close*"
+  - tool: github
+    arg: command
+    pattern: "issue create*"
+  - tool: github
+    arg: command
+    pattern: "pr create*"
+  - tool: github
+    arg: command
+    pattern: "issue comment*"
+  - tool: github
+    arg: command
+    pattern: "pr comment*"
+  - tool: github
+    arg: command
+    pattern: "api*-X POST*"
+  - tool: github
+    arg: command
+    pattern: "api*--method POST*"
   # Notion is read-only by default; flag write-like actions for explicit review.
   # NOTE: The executor also enforces a READ_ONLY_ACTIONS allowlist
   # (see src/executors/notion/executor.py). Keep both in sync.

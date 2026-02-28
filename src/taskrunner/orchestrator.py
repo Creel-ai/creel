@@ -403,6 +403,10 @@ def _run_executor_inline_locked(
             return _exec_exec_inline(config)
         elif name == "file_ops":
             return _exec_file_ops_inline(config)
+        elif name == "github":
+            return _exec_github_inline(config)
+        elif name == "coding":
+            return _exec_coding_inline(config)
         else:
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
@@ -969,6 +973,43 @@ def _exec_file_ops_inline(config: ExecutorConfig) -> str:
                 old_value = old_env[env_key]
                 assert old_value is not None
                 os.environ[env_key] = old_value
+
+
+def _exec_github_inline(config: ExecutorConfig) -> str:
+    """Run github executor inline."""
+    from executors.github.executor import run_gh_command
+
+    command = config.args.get("command", "")
+    repo = config.args.get("repo") or None
+
+    if not command:
+        raise ValueError("github executor requires a 'command' argument")
+
+    result = run_gh_command(command, repo)
+    return json.dumps(result, indent=2)
+
+
+def _exec_coding_inline(config: ExecutorConfig) -> str:
+    """Run coding executor inline."""
+    from executors.coding.executor import run_command
+
+    command = config.args.get("command", "")
+    workdir = config.args.get("workdir") or None
+    mount = config.args.get("mount") or None
+    timeout_str = config.args.get("timeout") or None
+
+    if not command:
+        raise ValueError("coding executor requires a 'command' argument")
+
+    timeout = None
+    if timeout_str:
+        try:
+            timeout = int(timeout_str)
+        except ValueError:
+            pass
+
+    result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
+    return json.dumps(result, indent=2)
 
 
 def _ensure_image(image: str) -> str:

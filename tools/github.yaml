@@ -1,128 +1,15 @@
-# GitHub tool — interact with GitHub repos, issues, PRs, and CI
-# Uses the `gh` CLI inside a container with a mounted token
-
+# Tool configuration for the github executor
 tools:
   github:
-    executor: exec
-    description: "Interact with GitHub repositories — issues, PRs, code review, CI, and API queries"
-    image: creel-exec:github
+    executor: github
+    description: "Manage GitHub repositories — issues, PRs, CI runs, code search"
+    network: true
     parameters:
       command:
         type: string
-        description: "gh CLI command to execute (e.g. 'gh issue list --repo owner/repo')"
+        description: "The gh CLI subcommand to run (e.g., 'issue list', 'pr view 42', 'run list')"
         required: true
       repo:
         type: string
-        description: "Default repo in owner/repo format (sets GH_REPO env var)"
-      workdir:
-        type: string
-        description: "Working directory for git operations"
-
-    # Environment — token injected at runtime, never passed by the agent
-    env:
-      GH_TOKEN: "{{secrets.github_token}}"
-      GH_REPO: "{{params.repo}}"
-
-    # Capabilities exposed to the agent as sub-commands
-    capabilities:
-      # --- Issues ---
-      issue_list:
-        description: "List issues with optional filters"
-        usage: "gh issue list [--state open|closed|all] [--label bug] [--assignee @me] [--limit 30]"
-      issue_view:
-        description: "View a single issue with comments"
-        usage: "gh issue view <number> [--comments]"
-      issue_create:
-        description: "Create a new issue"
-        usage: "gh issue create --title '...' --body '...' [--label bug] [--assignee user]"
-      issue_comment:
-        description: "Comment on an issue"
-        usage: "gh issue comment <number> --body '...'"
-      issue_edit:
-        description: "Edit issue metadata (title, body, labels, assignees, milestone)"
-        usage: "gh issue edit <number> [--title '...'] [--add-label '...'] [--milestone '...']"
-      issue_close:
-        description: "Close an issue"
-        usage: "gh issue close <number> [--reason completed|not_planned]"
-
-      # --- Pull Requests ---
-      pr_list:
-        description: "List pull requests"
-        usage: "gh pr list [--state open|closed|merged|all] [--label ...] [--base main]"
-      pr_view:
-        description: "View a PR with diff stats and review status"
-        usage: "gh pr view <number> [--comments]"
-      pr_create:
-        description: "Create a pull request from the current branch"
-        usage: "gh pr create --title '...' --body '...' [--base main] [--draft] [--label ...]"
-      pr_checkout:
-        description: "Check out a PR branch locally"
-        usage: "gh pr checkout <number>"
-      pr_diff:
-        description: "View the diff for a PR"
-        usage: "gh pr diff <number>"
-      pr_review:
-        description: "Submit a review on a PR"
-        usage: "gh pr review <number> --approve|--request-changes|--comment --body '...'"
-      pr_merge:
-        description: "Merge a PR"
-        usage: "gh pr merge <number> [--squash|--merge|--rebase] [--delete-branch]"
-      pr_close:
-        description: "Close a PR without merging"
-        usage: "gh pr close <number>"
-
-      # --- CI / Actions ---
-      run_list:
-        description: "List recent workflow runs"
-        usage: "gh run list [--workflow build.yml] [--branch main] [--limit 10]"
-      run_view:
-        description: "View a workflow run and its jobs"
-        usage: "gh run view <run_id> [--log]"
-      run_rerun:
-        description: "Re-run a failed workflow"
-        usage: "gh run rerun <run_id> [--failed]"
-      run_watch:
-        description: "Watch a run until it completes"
-        usage: "gh run watch <run_id>"
-
-      # --- Releases ---
-      release_list:
-        description: "List releases"
-        usage: "gh release list [--limit 10]"
-      release_create:
-        description: "Create a release"
-        usage: "gh release create <tag> [--title '...'] [--notes '...'] [--draft] [--prerelease]"
-
-      # --- Repo ---
-      repo_view:
-        description: "View repo info"
-        usage: "gh repo view [owner/repo]"
-      repo_clone:
-        description: "Clone a repository"
-        usage: "gh repo clone <owner/repo> [<directory>]"
-
-      # --- API (escape hatch) ---
-      api:
-        description: "Raw GitHub API call for anything not covered above"
-        usage: "gh api <endpoint> [--method GET|POST|PATCH|DELETE] [-f key=value]"
-
-    # Security
-    mounts:
-      - path: ~/.creel/workspace
-        mode: rw
-      - path: ~/.creel/secrets/github_token
-        mode: ro
-        target: /run/secrets/github_token
-    network: true          # GitHub API requires outbound HTTPS
+        description: "Repository in owner/repo format. Optional — uses current repo context if not specified."
     timeout: 120
-    max_output: 65536      # 64KB — prevent runaway log dumps
-
-    # Container image spec
-    # Based on alpine + gh CLI, no extra tools
-    # Build: see dockerfiles/github.Dockerfile
-    dockerfile: |
-      FROM alpine:3.19
-      RUN apk add --no-cache git github-cli jq
-      RUN adduser -D creel
-      USER creel
-      WORKDIR /workspace

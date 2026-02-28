@@ -271,7 +271,7 @@ class IMessageChannel(Channel):
             # Resolve the file path (chat.db stores paths with ~ prefix)
             file_path: Path | None = None
             if raw_filename:
-                expanded = Path(raw_filename.replace("~", str(Path.home()), 1))
+                expanded = Path(raw_filename).expanduser()
                 if expanded.exists():
                     file_path = expanded
                 else:

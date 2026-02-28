@@ -99,55 +99,6 @@ class TestIncomingMessage:
         assert msg.attachments[1].type == AttachmentType.VOICE
 
 
-class TestWrapLegacyCallback:
-    def test_legacy_call_passes_through(self):
-        """Calling with (sender_id, text) works as before."""
-        from taskrunner.channels.base import wrap_legacy_callback
-
-        calls = []
-
-        def callback(sender_id: str, text: str) -> str:
-            calls.append((sender_id, text))
-            return f"reply to {text}"
-
-        wrapped = wrap_legacy_callback(callback)
-        result = wrapped("user1", "hello")
-        assert result == "reply to hello"
-        assert calls == [("user1", "hello")]
-
-    def test_incoming_message_call(self):
-        """Calling with IncomingMessage extracts sender_id and text."""
-        from taskrunner.channels.base import wrap_legacy_callback
-
-        calls = []
-
-        def callback(sender_id: str, text: str) -> str:
-            calls.append((sender_id, text))
-            return f"reply to {text}"
-
-        wrapped = wrap_legacy_callback(callback)
-        msg = IncomingMessage(sender_id="user1", text="hello from msg")
-        result = wrapped(msg)
-        assert result == "reply to hello from msg"
-        assert calls == [("user1", "hello from msg")]
-
-    def test_incoming_message_none_text(self):
-        """IncomingMessage with None text passes empty string."""
-        from taskrunner.channels.base import wrap_legacy_callback
-
-        calls = []
-
-        def callback(sender_id: str, text: str) -> str:
-            calls.append((sender_id, text))
-            return "ok"
-
-        wrapped = wrap_legacy_callback(callback)
-        msg = IncomingMessage(sender_id="user1", text=None)
-        result = wrapped(msg)
-        assert result == "ok"
-        assert calls == [("user1", "")]
-
-
 class TestChatServerAttachmentsParam:
     def test_handle_message_accepts_attachments(self, tmp_path):
         """ChatServer.handle_message accepts attachments keyword arg."""

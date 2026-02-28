@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+CronTarget = Literal["main", "isolated"]
+
 StreamEventType = Literal[
     "start",
     "token",
@@ -85,7 +87,7 @@ class CreateCronJobRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=256)
     schedule: dict[str, Any]
-    target: str = "isolated"
+    target: CronTarget = "isolated"
     payload: dict[str, Any]
     delivery: dict[str, Any] | None = None
     enabled: bool = True

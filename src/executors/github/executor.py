@@ -27,6 +27,8 @@ ALLOWED_SUBCOMMANDS = frozenset(
         "issue view",
         "pr list",
         "pr view",
+        "pr diff",
+        "pr checks",
         "run list",
         "run view",
         "run watch",

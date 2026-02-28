@@ -28,6 +28,8 @@ class TestValidateCommand:
         """Test allowed commands with additional arguments."""
         assert validate_command("issue list --state open") is None
         assert validate_command("pr view 42") is None
+        assert validate_command("pr diff 42") is None
+        assert validate_command("pr checks 42") is None
         assert validate_command("run list --limit 10") is None
         assert validate_command("search code 'def main'") is None
         assert validate_command("search issues 'bug fix'") is None

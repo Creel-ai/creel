@@ -6,7 +6,7 @@ import contextvars
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Context variable for threading request IDs through async call chains
 request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -24,7 +24,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         entry: dict = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -65,7 +65,7 @@ class _JSONFormatterOpt(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         entry: dict = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

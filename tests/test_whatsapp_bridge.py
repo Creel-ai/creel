@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -44,7 +44,7 @@ class TestHttpWhatsAppBridge:
 
     def test_get_messages_since(self):
         bridge = HttpWhatsAppBridge("http://localhost:8080")
-        ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        ts = datetime(2025, 1, 1, tzinfo=UTC)
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
@@ -114,7 +114,7 @@ class TestNeonizeWhatsAppBridge:
 
     def test_get_messages_not_implemented(self):
         bridge = NeonizeWhatsAppBridge("/tmp/auth")
-        ts = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        ts = datetime(2025, 1, 1, tzinfo=UTC)
 
         with pytest.raises(NotImplementedError):
             bridge.get_messages_since(ts)

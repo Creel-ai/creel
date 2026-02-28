@@ -45,7 +45,7 @@ def _mount_webhook_routes(app: FastAPI, service: DaemonService) -> None:
     This is safe because the 503 middleware blocks all non-health requests until
     ``ready`` is set (which happens after this function returns).
     """
-    for name, channel in service.get_channels().items():
+    for _name, channel in service.get_channels().items():
         routes = channel.get_webhook_routes()
         if not routes:
             continue

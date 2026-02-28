@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -19,9 +20,9 @@ logger = logging.getLogger(__name__)
 def start_scheduler(
     tasks_dir: str | Path = "tasks",
     use_containers: bool = False,
-    shutdown_event: "threading.Event | None" = None,
+    shutdown_event: threading.Event | None = None,
     on_failure: Callable[[str, Exception], None] | None = None,
-    heartbeat_event: "threading.Event | None" = None,
+    heartbeat_event: threading.Event | None = None,
     heartbeat_interval: int = 30,
 ) -> BlockingScheduler:
     """Load all tasks and start the blocking scheduler.
@@ -99,6 +100,15 @@ def _run_task_safe(
     on_failure: Callable[[str, Exception], None] | None = None,
 ) -> None:
     """Run a task with error handling so the scheduler doesn't crash."""
+    run_id = str(uuid.uuid4())
+    job_name = Path(task_path).stem
+    started_at = datetime.now(UTC).isoformat()
+    start_time = time.monotonic()
+
+    status = "success"
+    error_str: str | None = None
+    summary: str | None = None
+
     try:
         result = run_task(task_path, use_containers=use_containers)
         logger.info("Task %s completed successfully (%d chars)", task_path, len(result))
@@ -109,3 +119,19 @@ def _run_task_safe(
                 on_failure(task_path, exc)
             except Exception:
                 logger.exception("on_failure callback raised for task %s", task_path)
+
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    finished_at = datetime.now(UTC).isoformat()
+
+    record = {
+        "run_id": run_id,
+        "job_name": job_name,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_ms": duration_ms,
+        "status": status,
+        "token_usage": None,
+        "error": error_str,
+        "summary": summary,
+    }
+    _append_cron_history(record)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ from taskrunner.models import AgentDefinition
 from taskrunner.prompt_builder import build_system_prompt
 from taskrunner.quiet_hours import should_suppress
 from taskrunner.session import SessionManager
+from taskrunner.subagents import SubAgentManager
 from taskrunner.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class ChatServer:
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._cron_manager = cron_manager
-        self._start_time = datetime.now(timezone.utc)
+        self._start_time = datetime.now(UTC)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
         # Build summarize_fn if summarization is enabled
@@ -126,6 +127,18 @@ class ChatServer:
             self._guardian = Guardian(agent_def.guardian)
             self._guardian.warm_up()
             logger.info("Guardian enabled")
+
+        # Initialize sub-agent manager
+        self._subagent_manager = SubAgentManager(
+            llm_config=agent_def.llm,
+            tools_config=agent_def.tools,
+            agent_config=agent_def.agent,
+            system_prompt=None,  # built lazily per request
+            use_containers=use_containers,
+            guardian=self._guardian,
+            bridge_config=agent_def.bridge,
+            result_callback=self._on_subagent_result,
+        )
 
     def handle_message(
         self,
@@ -230,6 +243,7 @@ class ChatServer:
 
         # Look up per-sender session state (workspace path, etc.)
         session_state = self._session_states.setdefault(sender_id, {})
+        session_state["sender_id"] = sender_id
 
         # Run the agent loop (containerized or direct)
         if self._use_containers:
@@ -263,6 +277,7 @@ class ChatServer:
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
                 cron_manager=self._cron_manager,
+                subagent_manager=self._subagent_manager,
             )
 
         logger.info(
@@ -297,6 +312,25 @@ class ChatServer:
         self._session_mgr.save_session(session)
 
         return result.text
+
+    def _on_subagent_result(self, agent_id: str, result_text: str) -> None:
+        """Callback fired when a sub-agent completes, fails, or times out.
+
+        Injects a system event into the parent sender's session so the LLM
+        sees the result on the next interaction.
+        """
+        info = self._subagent_manager.get(agent_id)
+        label = info.label if info else agent_id
+        status = info.status.value if info else "unknown"
+        if info and info.error:
+            event = f"[Sub-agent '{label}' {status}] {info.error}"
+        else:
+            summary = result_text[:500] + "..." if len(result_text) > 500 else result_text
+            event = f"[Sub-agent '{label}' {status}] {summary}"
+        logger.info("Sub-agent %s result: %s", agent_id, status)
+        sender_id = info.sender_id if info else ""
+        if sender_id:
+            self.inject_system_event(sender_id, event)
 
     def _send_approval_request(self, sender_id: str, action) -> None:
         """Send an approval request message via iMessage (or log it)."""
@@ -431,7 +465,7 @@ class ChatServer:
         lines = ["Sessions:", ""]
         for s in sessions:
             marker = " *" if s["session_id"] == active_id else ""
-            dt = datetime.fromtimestamp(s["last_active"], tz=timezone.utc)
+            dt = datetime.fromtimestamp(s["last_active"], tz=UTC)
             date_str = dt.strftime("%Y-%m-%d %H:%M")
             title = s["title"] or "(untitled)"
             lines.append(
@@ -457,7 +491,7 @@ class ChatServer:
     def _format_status(self, sender_id: str) -> str:
         """Format server status information."""
         session = self._session_mgr.get_or_create(sender_id)
-        uptime = datetime.now(timezone.utc) - self._start_time
+        uptime = datetime.now(UTC) - self._start_time
         hours, remainder = divmod(int(uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
 

@@ -10,7 +10,7 @@ import logging
 import subprocess
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -225,7 +225,7 @@ def run_task(
     logger.info("Running task: %s (mode=%s)", task.name, task.mode)
 
     # Build context with date info
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     context: dict[str, str] = {
         "date": now.strftime("%A, %B %d, %Y"),
     }
@@ -1108,7 +1108,7 @@ def _build_image(
         raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
 
 
-def collect_required_images(agent_def: "AgentDefinition") -> list[str]:
+def collect_required_images(agent_def: AgentDefinition) -> list[str]:
     """Derive the set of Docker images needed by an agent's tools.
 
     Uses the same naming convention as :pyattr:`ExecutorConfig.image`:
@@ -1130,7 +1130,7 @@ def collect_required_images(agent_def: "AgentDefinition") -> list[str]:
     return sorted(images)
 
 
-def prebuild_images(agent_def: "AgentDefinition") -> list[threading.Thread]:
+def prebuild_images(agent_def: AgentDefinition) -> list[threading.Thread]:
     """Kick off background image builds for all tools in the agent definition.
 
     Returns the list of spawned threads (callers are not expected to join).
@@ -1142,7 +1142,7 @@ def prebuild_images(agent_def: "AgentDefinition") -> list[threading.Thread]:
 
 def _run_executor_container(
     config: ExecutorConfig,
-    tool_config: "ToolConfig | None" = None,
+    tool_config: ToolConfig | None = None,
     bridge_config: BridgeConfig | None = None,
 ) -> str:
     """Run an executor in an isolated Docker container.

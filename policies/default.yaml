@@ -399,6 +399,12 @@ review_when:
     pattern: "pr comment*"
   - tool: github
     arg: command
+    pattern: "issue reopen*"
+  - tool: github
+    arg: command
+    pattern: "pr reopen*"
+  - tool: github
+    arg: command
     pattern: "api*-X POST*"
   - tool: github
     arg: command

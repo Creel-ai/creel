@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from taskrunner.channels.base import Channel
+from taskrunner.channels.message import IncomingMessage
 from taskrunner.chat import ChatServer
 from taskrunner.cron.executor import JobExecutor
 from taskrunner.cron.manager import CronManager
@@ -82,15 +83,13 @@ class DaemonService:
     # --- Message and session API ---
 
     def send_message(
-        self, sender_id_or_msg: str | Any, text: str = "", *, auto_approve: bool = False
+        self, sender_id_or_msg: str | IncomingMessage, text: str = "", *, auto_approve: bool = False
     ) -> str:
         """Route a message through the agent loop and return the response text.
 
         Accepts either ``(sender_id, text)`` for plain text messages or a
         single :class:`IncomingMessage` for messages with media attachments.
         """
-        from taskrunner.channels.message import IncomingMessage
-
         if isinstance(sender_id_or_msg, IncomingMessage):
             msg: IncomingMessage = sender_id_or_msg
             with self._lock:

@@ -661,6 +661,7 @@ class TestDaemonServiceIncomingMessage:
             "look at this",
             auto_approve=False,
             attachments=[attachment],
+            channel="imessage",
         )
 
     def test_plain_text_still_works(self) -> None:

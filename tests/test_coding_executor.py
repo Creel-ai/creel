@@ -44,6 +44,11 @@ class TestValidateCommand:
         assert result is not None
         assert "dangerous" in result.lower()
 
+    def test_rm_rf_root_with_extra_args_blocked(self) -> None:
+        """Test that rm -rf / with extra flags is still blocked."""
+        assert validate_command("rm -rf / --no-preserve-root") is not None
+        assert validate_command("rm -fr / --no-preserve-root") is not None
+
     def test_mkfs_blocked(self) -> None:
         """Test that mkfs commands are blocked."""
         result = validate_command("mkfs.ext4 /dev/sda1")

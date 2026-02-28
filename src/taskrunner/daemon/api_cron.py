@@ -240,7 +240,7 @@ async def toggle_cron_job(name: str) -> dict[str, Any]:
     try:
         raw = yaml.safe_load(raw_yaml_str)
     except yaml.YAMLError as exc:
-        raise HTTPException(status_code=500, detail=f"Invalid YAML: {exc}")
+        raise HTTPException(status_code=500, detail=f"Invalid YAML: {exc}") from exc
 
     if not isinstance(raw, dict):
         raise HTTPException(status_code=500, detail="Task file is not a YAML mapping")

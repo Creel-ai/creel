@@ -156,7 +156,7 @@ async def ws_logs(websocket: WebSocket) -> None:
                 if isinstance(msg, dict) and "level" in msg:
                     level_filter = msg["level"] if msg["level"] else None
                 continue
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             except WebSocketDisconnect:
                 return

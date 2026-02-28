@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,7 +43,7 @@ class MockBridge(WhatsAppBridge):
     def get_latest_timestamp(self):
         if self._initial_ts is not None:
             return self._initial_ts
-        return datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        return datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     def health(self):
         return {"healthy": self.connected}
@@ -53,7 +53,7 @@ def _make_msg(sender="user1", text="hello", ts_seconds=1):
     return WhatsAppMessage(
         sender=sender,
         text=text,
-        timestamp=datetime(2025, 1, 1, 12, 0, ts_seconds, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, ts_seconds, tzinfo=UTC),
         message_id=f"msg-{ts_seconds}",
     )
 

@@ -8,7 +8,7 @@ the system prompt at the start of each session.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, tzinfo
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -92,7 +92,7 @@ def _build_datetime_section(timezone_name: str) -> str:
         tz: tzinfo = ZoneInfo(timezone_name)
     except (KeyError, ValueError):
         logger.warning("Invalid timezone %r, falling back to UTC", timezone_name)
-        tz = timezone.utc
+        tz = UTC
 
     now = datetime.now(tz)
     formatted = now.strftime("%A, %B %d, %Y %I:%M %p %Z")

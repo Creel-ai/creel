@@ -300,7 +300,7 @@ class ChannelsConfig(BaseModel):
     def configured_channels(self) -> list[str]:
         """Return IDs of channels that have configuration present."""
         result = []
-        for name, field_info in self.model_fields.items():
+        for name, _field_info in self.model_fields.items():
             val = getattr(self, name, None)
             if val is not None and isinstance(val, BaseModel):
                 result.append(name)

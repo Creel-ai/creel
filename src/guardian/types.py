@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 
-class ActionVerdict(str, enum.Enum):
+class ActionVerdict(enum.StrEnum):
     ALLOW = "allow"
     REVIEW = "review"
     DENY = "deny"

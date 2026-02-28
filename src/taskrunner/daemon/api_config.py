@@ -56,7 +56,7 @@ async def get_config() -> dict[str, Any]:
     try:
         raw = yaml.safe_load(raw_yaml_str)
     except yaml.YAMLError as exc:
-        raise HTTPException(status_code=500, detail=f"Invalid YAML: {exc}")
+        raise HTTPException(status_code=500, detail=f"Invalid YAML: {exc}") from exc
 
     if not isinstance(raw, dict):
         raise HTTPException(status_code=500, detail="Config file is not a YAML mapping")
@@ -80,7 +80,7 @@ async def update_config(req: ConfigUpdateRequest) -> dict[str, Any]:
         try:
             raw = yaml.safe_load(raw_yaml_str)
         except yaml.YAMLError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}")
+            raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}") from exc
         if not isinstance(raw, dict):
             raise HTTPException(status_code=400, detail="YAML must be a mapping")
     elif req.config_json is not None:
@@ -96,7 +96,7 @@ async def update_config(req: ConfigUpdateRequest) -> dict[str, Any]:
     try:
         AgentDefinition(**raw)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Validation error: {exc}")
+        raise HTTPException(status_code=400, detail=f"Validation error: {exc}") from exc
 
     # Create .bak backup before overwriting
     bak_path = config_path.with_suffix(".yaml.bak")

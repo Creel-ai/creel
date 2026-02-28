@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from guardian.types import ActionDecision, ActionVerdict
@@ -59,9 +59,7 @@ class TestApprovalQueue:
         q = ApprovalQueue(approvals_dir=str(tmp_path / "approvals"))
         action = q.add("sender1", "tool", {}, "reason")
         # Manually backdate
-        q._actions[action.id].created_at = (
-            datetime.now(timezone.utc) - timedelta(hours=25)
-        ).isoformat()
+        q._actions[action.id].created_at = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
         q._save()
 
         removed = q.cleanup(max_age_hours=24)

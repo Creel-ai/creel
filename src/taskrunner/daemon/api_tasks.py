@@ -174,7 +174,7 @@ async def list_tasks() -> list[TaskSummary]:
                     schedule=raw.get("schedule", ""),
                     enabled=raw.get("enabled", True),
                     last_modified=datetime.datetime.fromtimestamp(
-                        stat.st_mtime, tz=datetime.timezone.utc
+                        stat.st_mtime, tz=datetime.UTC
                     ).isoformat(),
                     file_path=str(path),
                 )
@@ -198,7 +198,7 @@ async def get_task(name: str) -> TaskDetail:
     try:
         raw = yaml.safe_load(raw_yaml_str)
     except yaml.YAMLError as exc:
-        raise HTTPException(status_code=500, detail=f"Invalid YAML: {exc}")
+        raise HTTPException(status_code=500, detail=f"Invalid YAML: {exc}") from exc
 
     if not isinstance(raw, dict):
         raise HTTPException(status_code=500, detail="Task file is not a YAML mapping")
@@ -210,9 +210,7 @@ async def get_task(name: str) -> TaskDetail:
         name=raw.get("name", name),
         raw_yaml=raw_yaml_str,
         file_path=str(path),
-        last_modified=datetime.datetime.fromtimestamp(
-            stat.st_mtime, tz=datetime.timezone.utc
-        ).isoformat(),
+        last_modified=datetime.datetime.fromtimestamp(stat.st_mtime, tz=datetime.UTC).isoformat(),
         **parsed,
     )
 
@@ -233,7 +231,7 @@ async def create_task(req: TaskCreateRequest) -> TaskDetail:
         try:
             raw = yaml.safe_load(raw_yaml_str)
         except yaml.YAMLError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}")
+            raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}") from exc
         if not isinstance(raw, dict):
             raise HTTPException(status_code=400, detail="YAML must be a mapping")
         _validate_raw_yaml_name(raw, req.name)
@@ -241,14 +239,14 @@ async def create_task(req: TaskCreateRequest) -> TaskDetail:
         try:
             TaskDefinition(**raw)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Validation error: {exc}")
+            raise HTTPException(status_code=400, detail=f"Validation error: {exc}") from exc
     else:
         data = _build_task_yaml(req)
         # Validate by loading as TaskDefinition
         try:
             TaskDefinition(**data)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Validation error: {exc}")
+            raise HTTPException(status_code=400, detail=f"Validation error: {exc}") from exc
         raw_yaml_str = yaml.dump(data, default_flow_style=False, sort_keys=False)
 
     path.write_text(raw_yaml_str)
@@ -277,20 +275,20 @@ async def update_task(name: str, req: TaskCreateRequest) -> TaskDetail:
         try:
             raw = yaml.safe_load(raw_yaml_str)
         except yaml.YAMLError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}")
+            raise HTTPException(status_code=400, detail=f"Invalid YAML: {exc}") from exc
         if not isinstance(raw, dict):
             raise HTTPException(status_code=400, detail="YAML must be a mapping")
         _validate_raw_yaml_name(raw, name)
         try:
             TaskDefinition(**raw)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Validation error: {exc}")
+            raise HTTPException(status_code=400, detail=f"Validation error: {exc}") from exc
     else:
         data = _build_task_yaml(req)
         try:
             TaskDefinition(**data)
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Validation error: {exc}")
+            raise HTTPException(status_code=400, detail=f"Validation error: {exc}") from exc
         raw_yaml_str = yaml.dump(data, default_flow_style=False, sort_keys=False)
 
     # Create .bak backup before overwriting
@@ -317,7 +315,7 @@ async def delete_task(name: str) -> dict[str, str]:
     dest = deleted_dir / path.name
     # Add timestamp suffix if a file with the same name already exists in .deleted/
     if dest.exists():
-        ts = datetime.datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+        ts = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
         dest = deleted_dir / f"{path.stem}.{ts}.yaml"
 
     shutil.move(str(path), str(dest))
@@ -338,7 +336,7 @@ async def run_task_endpoint(name: str) -> TaskRunResponse:
     try:
         load_task(path)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Task load error: {exc}")
+        raise HTTPException(status_code=400, detail=f"Task load error: {exc}") from exc
 
     run_id = str(uuid.uuid4())
 

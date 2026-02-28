@@ -273,7 +273,7 @@ def run_agent_loop(
     tool_history: list[dict] = []
     last_input_tokens = 0
 
-    for turn in range(agent_config.max_turns):
+    for _turn in range(agent_config.max_turns):
         turns_used += 1
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
         _ensure_tool_call_integrity(messages)

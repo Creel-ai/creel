@@ -58,7 +58,7 @@ class SubAgentManager:
     # Public API
     # ------------------------------------------------------------------
 
-    def spawn(self, config: SubAgentConfig) -> str:
+    def spawn(self, config: SubAgentConfig, *, sender_id: str = "") -> str:
         """Spawn a new sub-agent and return its ID immediately."""
         agent_id = secrets.token_hex(4)
         label = config.label or f"subagent-{agent_id}"
@@ -68,6 +68,7 @@ class SubAgentManager:
             id=agent_id,
             label=label,
             status=SubAgentStatus.RUNNING,
+            sender_id=sender_id,
         )
 
         with self._lock:

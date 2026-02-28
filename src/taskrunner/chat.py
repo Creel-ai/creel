@@ -247,6 +247,7 @@ class ChatServer:
 
         # Look up per-sender session state (workspace path, etc.)
         session_state = self._session_states.setdefault(sender_id, {})
+        session_state["sender_id"] = sender_id
 
         # Run the agent loop (containerized or direct)
         if self._use_containers:
@@ -317,7 +318,11 @@ class ChatServer:
         return result.text
 
     def _on_subagent_result(self, agent_id: str, result_text: str) -> None:
-        """Callback fired when a sub-agent completes, fails, or times out."""
+        """Callback fired when a sub-agent completes, fails, or times out.
+
+        Injects a system event into the parent sender's session so the LLM
+        sees the result on the next interaction.
+        """
         info = self._subagent_manager.get(agent_id)
         label = info.label if info else agent_id
         status = info.status.value if info else "unknown"
@@ -326,11 +331,10 @@ class ChatServer:
         else:
             summary = result_text[:500] + "..." if len(result_text) > 500 else result_text
             event = f"[Sub-agent '{label}' {status}] {summary}"
-        # Inject into a default sender session — sub-agents are spawned from
-        # the main conversation, so use a well-known sender ID.
-        # The parent sender_id isn't tracked per sub-agent in this MVP;
-        # the event will be visible on the next interaction.
         logger.info("Sub-agent %s result: %s", agent_id, status)
+        sender_id = info.sender_id if info else ""
+        if sender_id:
+            self.inject_system_event(sender_id, event)
 
     def _send_approval_request(self, sender_id: str, action) -> None:
         """Send an approval request message via iMessage (or log it)."""

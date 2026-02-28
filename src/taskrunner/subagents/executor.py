@@ -12,7 +12,12 @@ from taskrunner.subagents.models import SubAgentConfig
 logger = logging.getLogger(__name__)
 
 
-def handle_subagent_tool(tool_input: dict[str, Any], manager: SubAgentManager) -> str:
+def handle_subagent_tool(
+    tool_input: dict[str, Any],
+    manager: SubAgentManager,
+    *,
+    sender_id: str = "",
+) -> str:
     """Handle a sub-agent tool call by dispatching on ``action``.
 
     Returns a JSON string suitable for a tool_result.
@@ -20,7 +25,7 @@ def handle_subagent_tool(tool_input: dict[str, Any], manager: SubAgentManager) -
     action = tool_input.get("action", "")
 
     if action == "spawn":
-        return _handle_spawn(tool_input, manager)
+        return _handle_spawn(tool_input, manager, sender_id=sender_id)
     elif action == "list":
         return _handle_list(manager)
     elif action == "steer":
@@ -31,7 +36,9 @@ def handle_subagent_tool(tool_input: dict[str, Any], manager: SubAgentManager) -
         return json.dumps({"error": f"Unknown action: {action!r}. Use spawn, list, steer, or kill."})
 
 
-def _handle_spawn(tool_input: dict[str, Any], manager: SubAgentManager) -> str:
+def _handle_spawn(
+    tool_input: dict[str, Any], manager: SubAgentManager, *, sender_id: str = ""
+) -> str:
     task = tool_input.get("task", "")
     if not task:
         return json.dumps({"error": "task is required for spawn"})
@@ -42,7 +49,7 @@ def _handle_spawn(tool_input: dict[str, Any], manager: SubAgentManager) -> str:
         model=tool_input.get("model") or None,
         timeout_seconds=int(tool_input.get("timeout", 300)),
     )
-    agent_id = manager.spawn(config)
+    agent_id = manager.spawn(config, sender_id=sender_id)
     return json.dumps({
         "agent_id": agent_id,
         "label": config.label or f"subagent-{agent_id}",

@@ -33,6 +33,7 @@ class SubAgentInfo(BaseModel):
     id: str
     label: str
     status: SubAgentStatus
+    sender_id: str = ""  # parent sender who spawned this agent
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
     result_summary: str = ""

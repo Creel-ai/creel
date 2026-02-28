@@ -413,7 +413,8 @@ def execute_tool_call(
     if tool_name == "subagent" and subagent_manager is not None:
         from taskrunner.subagents.executor import handle_subagent_tool
 
-        return handle_subagent_tool(tool_input, subagent_manager)
+        sender_id = (session_state or {}).get("sender_id", "")
+        return handle_subagent_tool(tool_input, manager=subagent_manager, sender_id=sender_id)
 
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")

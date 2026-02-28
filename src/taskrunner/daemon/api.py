@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import threading
+import traceback
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 
@@ -63,6 +64,7 @@ def create_daemon_app(
        returns, the app transitions to fully ready.
     """
     ready = threading.Event()
+    init_error: list[str] = []  # mutable container for thread-safe error capture
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -78,9 +80,11 @@ def create_daemon_app(
                     svc = init_factory()
                     app.state.service = svc
                     _mount_webhook_routes(app, svc)
-                    ready.set()
                 except Exception:
                     logger.exception("Deferred daemon initialization failed")
+                    init_error.append(traceback.format_exc())
+                finally:
+                    ready.set()
 
             init_thread = threading.Thread(target=_init, daemon=True, name="creel-deferred-init")
             init_thread.start()
@@ -106,10 +110,17 @@ def create_daemon_app(
                 status_code=503,
                 content={"detail": "Service is starting"},
             )
+        if request.url.path != "/health" and init_error:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service failed to initialize"},
+            )
         return await call_next(request)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
+        if init_error:
+            return {"status": "error", "service": "creel-daemon", "detail": init_error[0]}
         status = "ok" if ready.is_set() else "starting"
         return {"status": status, "service": "creel-daemon"}
 

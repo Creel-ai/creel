@@ -347,6 +347,36 @@ class TestSecurityRules:
             mock_run.assert_not_called()
 
     @patch("shutil.which", return_value="/usr/local/bin/gh")
+    def test_api_patch_blocked(self, mock_which) -> None:
+        """Test that API PATCH requests are blocked (always a mutation)."""
+        with patch("subprocess.run") as mock_run:
+            result = run_gh_command("api /repos/owner/repo/issues/1 -X PATCH -f state=closed")
+            assert result["success"] is False
+            assert "destructive" in result["error"].lower()
+            mock_run.assert_not_called()
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    def test_api_patch_method_flag_blocked(self, mock_which) -> None:
+        """Test that API PATCH via --method flag is blocked."""
+        with patch("subprocess.run") as mock_run:
+            result = run_gh_command("api /repos/owner/repo/pulls/1 --method PATCH -f title=new")
+            assert result["success"] is False
+            mock_run.assert_not_called()
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    def test_api_post_passes_executor(self, mock_run, mock_which) -> None:
+        """Test that API POST passes executor validation (policy gates it separately)."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"id": 1}',
+            stderr="",
+        )
+        result = run_gh_command("api /repos/owner/repo/issues -X POST -f title=test")
+        assert result["success"] is True
+        mock_run.assert_called_once()
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
     @patch("subprocess.run")
     def test_pr_merge_without_admin_allowed(self, mock_run, mock_which) -> None:
         """Test that regular pr merge is allowed (Guardian gates it)."""

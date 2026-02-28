@@ -56,6 +56,9 @@ REVIEW_SUBCOMMANDS = frozenset(
 BLOCKED_PATTERNS = [
     re.compile(r"^repo\s+delete\b"),
     re.compile(r"^issue\s+delete\b"),
+    # Executor narrows to `pr merge --admin` specifically.  The policy
+    # deny_when rule uses the broader glob "*--admin*" as a safety net to
+    # catch --admin on any subcommand (e.g. via `gh api`).
     re.compile(r"^pr\s+merge\s+.*--admin\b"),
     # Block api calls with destructive HTTP methods
     re.compile(r"^api\s+.*(-X|--method)\s+(DELETE|PUT|PATCH)\b", re.IGNORECASE),

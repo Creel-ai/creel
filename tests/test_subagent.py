@@ -14,10 +14,10 @@ from taskrunner.subagents.executor import handle_subagent_tool
 from taskrunner.subagents.manager import SubAgentManager
 from taskrunner.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_llm_config() -> LLMConfig:
     return LLMConfig(model="claude-sonnet-4-20250514", max_tokens=1024)
@@ -80,7 +80,9 @@ class TestSubAgentModels:
         assert cfg.timeout_seconds == 300
 
     def test_config_custom(self):
-        cfg = SubAgentConfig(task="build it", label="builder", model="claude-haiku-4-5-20251001", timeout_seconds=60)
+        cfg = SubAgentConfig(
+            task="build it", label="builder", model="claude-haiku-4-5-20251001", timeout_seconds=60
+        )
         assert cfg.label == "builder"
         assert cfg.model == "claude-haiku-4-5-20251001"
         assert cfg.timeout_seconds == 60
@@ -153,7 +155,7 @@ class TestSubAgentManager:
         mock_loop.return_value = _mock_agent_result()
         manager = _make_manager()
 
-        id1 = manager.spawn(SubAgentConfig(task="task 1"))
+        manager.spawn(SubAgentConfig(task="task 1"))
         time.sleep(0.05)
         id2 = manager.spawn(SubAgentConfig(task="task 2"))
 
@@ -302,7 +304,6 @@ class TestSubAgentManager:
     @patch("taskrunner.agent.run_agent_loop")
     def test_concurrent_spawns(self, mock_loop):
         """Multiple sub-agents can run concurrently."""
-        results = {}
 
         def per_task_loop(**kwargs):
             messages = kwargs.get("messages", [])
@@ -391,10 +392,12 @@ class TestSubAgentExecutor:
         mock_loop.return_value = _mock_agent_result("spawned ok")
         manager = self._manager()
 
-        result = json.loads(handle_subagent_tool(
-            {"action": "spawn", "task": "build something", "label": "builder"},
-            manager,
-        ))
+        result = json.loads(
+            handle_subagent_tool(
+                {"action": "spawn", "task": "build something", "label": "builder"},
+                manager,
+            )
+        )
 
         assert "agent_id" in result
         assert result["status"] == "running"
@@ -438,17 +441,21 @@ class TestSubAgentExecutor:
         mock_loop.side_effect = blocking
         manager = self._manager()
 
-        spawn_result = json.loads(handle_subagent_tool(
-            {"action": "spawn", "task": "long"},
-            manager,
-        ))
+        spawn_result = json.loads(
+            handle_subagent_tool(
+                {"action": "spawn", "task": "long"},
+                manager,
+            )
+        )
         agent_id = spawn_result["agent_id"]
         time.sleep(0.1)
 
-        kill_result = json.loads(handle_subagent_tool(
-            {"action": "kill", "agent_id": agent_id},
-            manager,
-        ))
+        kill_result = json.loads(
+            handle_subagent_tool(
+                {"action": "kill", "agent_id": agent_id},
+                manager,
+            )
+        )
         assert kill_result["status"] == "killed"
         block.set()
         time.sleep(0.1)
@@ -460,18 +467,22 @@ class TestSubAgentExecutor:
 
     def test_steer_missing_id(self):
         manager = self._manager()
-        result = json.loads(handle_subagent_tool(
-            {"action": "steer", "message": "hi"},
-            manager,
-        ))
+        result = json.loads(
+            handle_subagent_tool(
+                {"action": "steer", "message": "hi"},
+                manager,
+            )
+        )
         assert "error" in result
 
     def test_steer_missing_message(self):
         manager = self._manager()
-        result = json.loads(handle_subagent_tool(
-            {"action": "steer", "agent_id": "abc"},
-            manager,
-        ))
+        result = json.loads(
+            handle_subagent_tool(
+                {"action": "steer", "agent_id": "abc"},
+                manager,
+            )
+        )
         assert "error" in result
 
     def test_unknown_action(self):

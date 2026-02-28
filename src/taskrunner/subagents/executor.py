@@ -33,7 +33,9 @@ def handle_subagent_tool(
     elif action == "kill":
         return _handle_kill(tool_input, manager)
     else:
-        return json.dumps({"error": f"Unknown action: {action!r}. Use spawn, list, steer, or kill."})
+        return json.dumps(
+            {"error": f"Unknown action: {action!r}. Use spawn, list, steer, or kill."}
+        )
 
 
 def _handle_spawn(
@@ -50,12 +52,14 @@ def _handle_spawn(
         timeout_seconds=int(tool_input.get("timeout", 300)),
     )
     agent_id = manager.spawn(config, sender_id=sender_id)
-    return json.dumps({
-        "agent_id": agent_id,
-        "label": config.label or f"subagent-{agent_id}",
-        "status": "running",
-        "message": f"Sub-agent spawned. Use action='list' to check status.",
-    })
+    return json.dumps(
+        {
+            "agent_id": agent_id,
+            "label": config.label or f"subagent-{agent_id}",
+            "status": "running",
+            "message": "Sub-agent spawned. Use action='list' to check status.",
+        }
+    )
 
 
 def _handle_list(manager: SubAgentManager) -> str:

@@ -287,11 +287,12 @@ def _mount_dashboard(app: FastAPI) -> None:
         return
 
     # Mount static assets (JS/CSS/images) so they are served directly
-    app.mount(
-        "/assets",
-        StaticFiles(directory=str(_DASHBOARD_STATIC_DIR / "assets")),
-        name="dashboard-assets",
-    ) if (_DASHBOARD_STATIC_DIR / "assets").is_dir() else None
+    if (_DASHBOARD_STATIC_DIR / "assets").is_dir():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=str(_DASHBOARD_STATIC_DIR / "assets")),
+            name="dashboard-assets",
+        )
 
     # SPA fallback: any GET request that isn't an API/v1/health route
     # gets index.html so client-side routing works.

@@ -13,66 +13,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def send_message(
-    client: httpx.Client,
-    text: str,
-    sender_id: str = "guardian-test-sender",
-    auto_approve: bool = False,
-) -> httpx.Response:
-    """POST /v1/messages and return the raw response."""
-    body: dict = {"sender_id": sender_id, "text": text, "auto_approve": auto_approve}
-    return client.post("/v1/messages", json=body)
-
-
-def _get_tool_result_from_followup_call(history: dict) -> dict | None:
-    """Get the tool_result block from the second (followup) mock LLM call.
-
-    In a tool-call flow with a clean mock reset:
-      Call 0: user text -> LLM returns tool_use
-      Call 1: messages include tool_result -> LLM returns followup text
-
-    The tool_result in Call 1's LAST user message is the one from the
-    current test's tool execution (or Guardian block).
-    """
-    calls = history.get("calls", [])
-    if len(calls) < 2:
-        return None
-
-    followup_call = calls[1]
-    messages = followup_call.get("body", {}).get("messages", [])
-
-    for msg in reversed(messages):
-        if msg.get("role") != "user":
-            continue
-        content = msg.get("content", [])
-        if isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_result":
-                    return block
-    return None
-
-
-def _read_audit_entries(audit_log_path: Path) -> list[dict]:
-    """Read all entries from the JSONL audit log."""
-    if not audit_log_path.exists():
-        return []
-    entries = []
-    with open(audit_log_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return entries
+from conftest import get_tool_result_from_followup_call, read_audit_entries, send_message
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +34,7 @@ class TestGuardianBlocksDangerous:
         assert resp.status_code == 200
 
         history = mock_client.get("/v1/mock/history").json()
-        tool_result = _get_tool_result_from_followup_call(history)
+        tool_result = get_tool_result_from_followup_call(history)
         assert tool_result is not None, "No tool_result found after blocked rm -rf"
 
         result_content = str(tool_result.get("content", ""))
@@ -110,7 +51,7 @@ class TestGuardianBlocksDangerous:
         assert resp.status_code == 200
 
         history = mock_client.get("/v1/mock/history").json()
-        tool_result = _get_tool_result_from_followup_call(history)
+        tool_result = get_tool_result_from_followup_call(history)
         assert tool_result is not None, "No tool_result found after blocked curl|bash"
 
         result_content = str(tool_result.get("content", ""))
@@ -127,7 +68,7 @@ class TestGuardianBlocksDangerous:
         send_message(daemon_client, "delete everything", sender_id="guardian-rm-2")
 
         history = mock_client.get("/v1/mock/history").json()
-        tool_result = _get_tool_result_from_followup_call(history)
+        tool_result = get_tool_result_from_followup_call(history)
         assert tool_result is not None
 
         result_content = str(tool_result.get("content", ""))
@@ -159,7 +100,7 @@ class TestGuardianAllowsSafe:
         assert resp.status_code == 200
 
         history = mock_client.get("/v1/mock/history").json()
-        tool_result = _get_tool_result_from_followup_call(history)
+        tool_result = get_tool_result_from_followup_call(history)
         assert tool_result is not None, "No tool_result found for allowed echo command"
 
         result_content = str(tool_result.get("content", ""))
@@ -176,7 +117,7 @@ class TestGuardianAllowsSafe:
         send_message(daemon_client, "run allowed echo", sender_id="guardian-allow-2")
 
         history = mock_client.get("/v1/mock/history").json()
-        tool_result = _get_tool_result_from_followup_call(history)
+        tool_result = get_tool_result_from_followup_call(history)
         assert tool_result is not None
 
         # Allowed tools should NOT have is_error=True
@@ -203,7 +144,7 @@ class TestPromptInjectionInArgs:
         assert resp.status_code == 200
 
         history = mock_client.get("/v1/mock/history").json()
-        tool_result = _get_tool_result_from_followup_call(history)
+        tool_result = get_tool_result_from_followup_call(history)
         assert tool_result is not None, "No tool_result found after prompt injection attempt"
 
         result_content = str(tool_result.get("content", ""))
@@ -219,7 +160,7 @@ class TestPromptInjectionInArgs:
         send_message(daemon_client, "inject in command", sender_id="guardian-inject-2")
 
         history = mock_client.get("/v1/mock/history").json()
-        tool_result = _get_tool_result_from_followup_call(history)
+        tool_result = get_tool_result_from_followup_call(history)
         assert tool_result is not None
 
         result_content = str(tool_result.get("content", ""))
@@ -246,7 +187,7 @@ class TestGuardianAuditLog:
         validate_action event with verdict=deny for tool exec."""
         send_message(daemon_client, "delete everything", sender_id="guardian-audit-1")
 
-        entries = _read_audit_entries(audit_log_path)
+        entries = read_audit_entries(audit_log_path)
         deny_entries = [
             e for e in entries
             if e.get("event") == "validate_action"
@@ -265,7 +206,7 @@ class TestGuardianAuditLog:
         """The deny audit entry includes the matched_rule that triggered the block."""
         send_message(daemon_client, "delete everything", sender_id="guardian-audit-2")
 
-        entries = _read_audit_entries(audit_log_path)
+        entries = read_audit_entries(audit_log_path)
         deny_entries = [
             e for e in entries
             if e.get("event") == "validate_action"
@@ -285,7 +226,7 @@ class TestGuardianAuditLog:
         """After a deny, an action_outcome event is logged with outcome=denied_by_policy."""
         send_message(daemon_client, "delete everything", sender_id="guardian-audit-3")
 
-        entries = _read_audit_entries(audit_log_path)
+        entries = read_audit_entries(audit_log_path)
         outcome_entries = [
             e for e in entries
             if e.get("event") == "action_outcome"
@@ -303,7 +244,7 @@ class TestGuardianAuditLog:
         with verdict=allow."""
         send_message(daemon_client, "run allowed echo", sender_id="guardian-audit-4")
 
-        entries = _read_audit_entries(audit_log_path)
+        entries = read_audit_entries(audit_log_path)
         allow_entries = [
             e for e in entries
             if e.get("event") == "validate_action"

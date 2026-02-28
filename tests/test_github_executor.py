@@ -9,6 +9,7 @@ import pytest
 
 from executors.github.executor import (
     ALLOWED_SUBCOMMANDS,
+    DEFAULT_MAX_CHARS,
     REVIEW_SUBCOMMANDS,
     build_gh_command,
     run_gh_command,
@@ -388,6 +389,61 @@ class TestSecurityRules:
 
         result = run_gh_command("pr merge 42")
         assert result["success"] is True
+
+
+class TestOutputTruncation:
+    """Tests for stdout size limiting."""
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    def test_output_truncated_when_exceeds_max_chars(self, mock_run, mock_which) -> None:
+        """Test that large stdout is truncated and flagged."""
+        big_output = "x" * (DEFAULT_MAX_CHARS + 1000)
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=big_output,
+            stderr="",
+        )
+
+        result = run_gh_command("issue list")
+
+        assert result["success"] is True
+        assert len(result["stdout"]) == DEFAULT_MAX_CHARS
+        assert result["truncated"] is True
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    def test_output_not_truncated_when_within_limit(self, mock_run, mock_which) -> None:
+        """Test that output within the limit is not truncated."""
+        small_output = "x" * 100
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=small_output,
+            stderr="",
+        )
+
+        result = run_gh_command("issue list")
+
+        assert result["success"] is True
+        assert result["stdout"] == small_output
+        assert "truncated" not in result
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    @patch.dict("os.environ", {"MAX_CHARS": "50"})
+    def test_max_chars_env_override(self, mock_run, mock_which) -> None:
+        """Test that MAX_CHARS env var overrides the default limit."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="x" * 100,
+            stderr="",
+        )
+
+        result = run_gh_command("issue list")
+
+        assert result["success"] is True
+        assert len(result["stdout"]) == 50
+        assert result["truncated"] is True
 
 
 class TestMainFunction:

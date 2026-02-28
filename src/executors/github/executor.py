@@ -19,6 +19,8 @@ import shutil
 import subprocess
 import sys
 
+DEFAULT_MAX_CHARS = 50_000
+
 # Subcommands that are always allowed (read-only operations)
 ALLOWED_SUBCOMMANDS = frozenset(
     {
@@ -178,6 +180,8 @@ def run_gh_command(command: str, repo: str | None = None) -> dict:
             "command": command,
         }
 
+    max_chars = int(os.environ.get("MAX_CHARS", str(DEFAULT_MAX_CHARS)))
+
     try:
         result = subprocess.run(
             cmd,
@@ -186,13 +190,21 @@ def run_gh_command(command: str, repo: str | None = None) -> dict:
             timeout=120,  # 2 minute timeout
         )
 
-        return {
+        stdout = result.stdout
+        truncated = len(stdout) > max_chars
+        if truncated:
+            stdout = stdout[:max_chars]
+
+        out = {
             "command": " ".join(cmd),
             "exit_code": result.returncode,
-            "stdout": result.stdout,
+            "stdout": stdout,
             "stderr": result.stderr,
             "success": result.returncode == 0,
         }
+        if truncated:
+            out["truncated"] = True
+        return out
 
     except subprocess.TimeoutExpired as e:
         return {

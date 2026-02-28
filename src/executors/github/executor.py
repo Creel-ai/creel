@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -123,7 +124,7 @@ def build_gh_command(command: str, repo: str | None = None) -> list[str]:
     Returns:
         List of command arguments for subprocess.run
     """
-    cmd = ["gh"] + command.strip().split()
+    cmd = ["gh"] + shlex.split(command.strip())
 
     if repo:
         if not re.match(r"^[\w.-]+/[\w.-]+$", repo):

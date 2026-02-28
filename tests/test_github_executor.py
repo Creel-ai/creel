@@ -156,6 +156,11 @@ class TestBuildGhCommand:
         cmd = build_gh_command("  issue list  ")
         assert cmd == ["gh", "issue", "list"]
 
+    def test_quoted_args_preserved(self) -> None:
+        """Test that quoted arguments are kept as single tokens."""
+        cmd = build_gh_command("issue create --title 'Bug with spaces'")
+        assert cmd == ["gh", "issue", "create", "--title", "Bug with spaces"]
+
 
 class TestRunGhCommand:
     """Tests for running gh commands via subprocess."""

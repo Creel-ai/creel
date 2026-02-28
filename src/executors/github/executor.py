@@ -57,7 +57,7 @@ BLOCKED_PATTERNS = [
     re.compile(r"^issue\s+delete\b"),
     re.compile(r"^pr\s+merge\s+.*--admin\b"),
     # Block api calls with destructive HTTP methods
-    re.compile(r"^api\s+.*(-X|--method)\s+(DELETE|PUT)\b", re.IGNORECASE),
+    re.compile(r"^api\s+.*(-X|--method)\s+(DELETE|PUT|PATCH)\b", re.IGNORECASE),
 ]
 
 # All valid top-level subcommand prefixes

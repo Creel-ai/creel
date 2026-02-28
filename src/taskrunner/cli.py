@@ -545,7 +545,9 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
         guardian_status = "active" if server._guardian else "inactive"
         tool_count = len(agent_def.tools)
-        print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
+        logger.info(
+            "Creel agent ready. Tools loaded: %d. Guardian: %s.", tool_count, guardian_status
+        )
 
         # Pre-build Docker images in background so they're ready before first use
         if args.containers:

@@ -524,6 +524,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         try:
             channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
         except ValueError as e:
+            print(f"Error building {channel_type} channel: {e}", file=sys.stderr)
             raise RuntimeError(f"Channel configuration error: {e}") from e
 
         server = ChatServer(

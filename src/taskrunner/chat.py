@@ -18,6 +18,7 @@ from taskrunner.models import AgentDefinition
 from taskrunner.prompt_builder import build_system_prompt
 from taskrunner.quiet_hours import should_suppress
 from taskrunner.session import SessionManager
+from taskrunner.subagents import SubAgentManager
 from taskrunner.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,18 @@ class ChatServer:
             self._guardian.warm_up()
             logger.info("Guardian enabled")
 
+        # Initialize sub-agent manager
+        self._subagent_manager = SubAgentManager(
+            llm_config=agent_def.llm,
+            tools_config=agent_def.tools,
+            agent_config=agent_def.agent,
+            system_prompt=None,  # built lazily per request
+            use_containers=use_containers,
+            guardian=self._guardian,
+            bridge_config=agent_def.bridge,
+            result_callback=self._on_subagent_result,
+        )
+
     def handle_message(
         self,
         sender_id: str,
@@ -244,6 +257,7 @@ class ChatServer:
 
         # Look up per-sender session state (workspace path, etc.)
         session_state = self._session_states.setdefault(sender_id, {})
+        session_state["sender_id"] = sender_id
 
         # Run the agent loop (containerized or direct)
         if self._use_containers:
@@ -277,6 +291,7 @@ class ChatServer:
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
                 cron_manager=self._cron_manager,
+                subagent_manager=self._subagent_manager,
             )
 
         logger.info(
@@ -311,6 +326,25 @@ class ChatServer:
         self._session_mgr.save_session(session)
 
         return result.text
+
+    def _on_subagent_result(self, agent_id: str, result_text: str) -> None:
+        """Callback fired when a sub-agent completes, fails, or times out.
+
+        Injects a system event into the parent sender's session so the LLM
+        sees the result on the next interaction.
+        """
+        info = self._subagent_manager.get(agent_id)
+        label = info.label if info else agent_id
+        status = info.status.value if info else "unknown"
+        if info and info.error:
+            event = f"[Sub-agent '{label}' {status}] {info.error}"
+        else:
+            summary = result_text[:500] + "..." if len(result_text) > 500 else result_text
+            event = f"[Sub-agent '{label}' {status}] {summary}"
+        logger.info("Sub-agent %s result: %s", agent_id, status)
+        sender_id = info.sender_id if info else ""
+        if sender_id:
+            self.inject_system_event(sender_id, event)
 
     def _send_approval_request(self, sender_id: str, action) -> None:
         """Send an approval request message via iMessage (or log it)."""

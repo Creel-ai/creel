@@ -12,11 +12,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import shutil
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import IO
 
 HARNESS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = HARNESS_DIR.parent.parent
@@ -89,6 +92,7 @@ class TestHarness:
         self.results_dir = results_dir
         self.mock_proc: subprocess.Popen | None = None
         self.daemon_proc: subprocess.Popen | None = None
+        self._log_handles: list[IO] = []
         self._start_time: float = 0
 
     def setup(self) -> bool:
@@ -106,6 +110,7 @@ class TestHarness:
         # 1. Start mock LLM server
         print("Starting mock LLM server...")
         log_mock = open(self.results_dir / "logs" / "mock-llm.log", "w")
+        self._log_handles.append(log_mock)
         self.mock_proc = subprocess.Popen(
             [
                 sys.executable,
@@ -126,6 +131,7 @@ class TestHarness:
         # 2. Start Creel daemon
         print("Starting Creel daemon...")
         log_daemon = open(self.results_dir / "logs" / "daemon.log", "w")
+        self._log_handles.append(log_daemon)
         env = os.environ.copy()
         env["ANTHROPIC_API_KEY"] = "test-key-not-real"
         env["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{MOCK_LLM_PORT}"
@@ -169,17 +175,23 @@ class TestHarness:
         if self.mock_proc:
             _kill_process(self.mock_proc, "mock-llm")
 
+        # Close log file handles
+        for fh in self._log_handles:
+            try:
+                fh.close()
+            except OSError:
+                pass
+        self._log_handles.clear()
+
         # Clean up test data directories
         for subdir in ("sessions", "workspace", "media", "approvals"):
             d = CONFIG_DIR / subdir
             if d.exists():
-                import shutil
                 shutil.rmtree(d, ignore_errors=True)
 
         # Clean up cron store (uses default ~/.creel/cron/ path)
         cron_dir = Path.home() / ".creel" / "cron"
         if cron_dir.exists():
-            import shutil
             shutil.rmtree(cron_dir, ignore_errors=True)
 
         # Clean up daemon runtime files
@@ -239,7 +251,6 @@ class TestHarness:
         if log_path.exists():
             output = log_path.read_text()
             # Parse pytest summary line like "5 passed, 2 failed in 1.23s"
-            import re
             m = re.search(r"(\d+) passed", output)
             if m:
                 passed = int(m.group(1))

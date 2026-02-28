@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import textwrap
+import threading
 from pathlib import Path
 
 import pytest
@@ -259,3 +260,88 @@ def test_update_task_rejects_body_name_mismatch(client: TestClient, tmp_path: Pa
     assert resp.status_code == 400
     assert "must match route name 'foo'" in resp.json()["detail"]
     assert "name: foo" in task_path.read_text()
+
+
+# --- Deferred init tests ---
+
+
+def test_deferred_init_health_starting_then_ok(minimal_agent_def, tmp_path: Path) -> None:
+    """Health returns 'starting' before factory completes, then 'ok' after."""
+    gate = threading.Event()
+
+    def _factory():
+        gate.wait()  # block until test releases
+        server = _StubChatServer(tmp_path / "sessions")
+        return DaemonService(minimal_agent_def, server=server)
+
+    app = daemon_api.create_daemon_app(init_factory=_factory)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        # Before init completes
+        resp = c.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "starting"
+
+        # Non-health endpoints should 503
+        resp = c.get("/v1/status")
+        assert resp.status_code == 503
+
+        # Release init
+        gate.set()
+
+        # Poll until ready (should be near-instant)
+        import time
+
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            resp = c.get("/health")
+            if resp.json()["status"] == "ok":
+                break
+            time.sleep(0.05)
+
+        assert resp.json()["status"] == "ok"
+
+        # Endpoints should now work
+        resp = c.get("/v1/status")
+        assert resp.status_code == 200
+
+
+def test_deferred_init_factory_failure(minimal_agent_def) -> None:
+    """If init_factory raises, health transitions to 'error' and endpoints stay 503."""
+
+    def _factory():
+        raise RuntimeError("init boom")
+
+    app = daemon_api.create_daemon_app(init_factory=_factory)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        # Poll until failure is detected
+        import time
+
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            resp = c.get("/health")
+            if resp.json()["status"] == "error":
+                break
+            time.sleep(0.05)
+
+        body = resp.json()
+        assert body["status"] == "error"
+        assert "init boom" in body["error"]
+
+        # Non-health endpoints should still 503
+        resp = c.get("/v1/status")
+        assert resp.status_code == 503
+        assert "failed" in resp.json()["detail"].lower()
+
+
+def test_immediate_init_still_works(minimal_agent_def, tmp_path: Path) -> None:
+    """Passing service= directly (the test/simple path) still works as before."""
+    server = _StubChatServer(tmp_path / "sessions")
+    service = DaemonService(minimal_agent_def, server=server)
+    app = daemon_api.create_daemon_app(service)
+    with TestClient(app) as c:
+        resp = c.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+        resp = c.get("/v1/status")
+        assert resp.status_code == 200

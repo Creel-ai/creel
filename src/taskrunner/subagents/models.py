@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import enum
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class SubAgentStatus(str, enum.Enum):
+class SubAgentStatus(StrEnum):
     """Lifecycle status of a sub-agent."""
 
     RUNNING = "running"

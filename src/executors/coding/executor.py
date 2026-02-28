@@ -75,6 +75,19 @@ BLOCKED_PATTERNS = [
 ]
 
 
+def _error_result(error: str, *, command: str = "", **extra) -> dict:
+    """Build a standard error-result dict."""
+    return {
+        "command": command,
+        "exit_code": -1,
+        "stdout": "",
+        "stderr": error,
+        "error": error,
+        "success": False,
+        **extra,
+    }
+
+
 def validate_mount_path(path: str) -> str | None:
     """Validate a host mount path for safety.
 
@@ -138,27 +151,13 @@ def run_command(
     # Validate command against security rules
     error = validate_command(command)
     if error:
-        return {
-            "command": command,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": error,
-            "error": error,
-            "success": False,
-        }
+        return _error_result(error, command=command)
 
     # Validate and resolve mount path if provided
     if mount:
         mount_error = validate_mount_path(mount)
         if mount_error:
-            return {
-                "command": command,
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": mount_error,
-                "error": mount_error,
-                "success": False,
-            }
+            return _error_result(mount_error, command=command)
         # Resolve mount to absolute path
         mount = os.path.realpath(os.path.expanduser(mount))
 
@@ -177,26 +176,18 @@ def run_command(
                 workdir_path = Path.cwd() / workdir_path
 
         if not workdir_path.exists():
-            return {
-                "command": command,
-                "workdir": str(workdir_path),
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": f"Working directory does not exist: {workdir_path}",
-                "error": f"Working directory does not exist: {workdir_path}",
-                "success": False,
-            }
+            return _error_result(
+                f"Working directory does not exist: {workdir_path}",
+                command=command,
+                workdir=str(workdir_path),
+            )
 
         if not workdir_path.is_dir():
-            return {
-                "command": command,
-                "workdir": str(workdir_path),
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": f"Working directory is not a directory: {workdir_path}",
-                "error": f"Working directory is not a directory: {workdir_path}",
-                "success": False,
-            }
+            return _error_result(
+                f"Working directory is not a directory: {workdir_path}",
+                command=command,
+                workdir=str(workdir_path),
+            )
 
         effective_workdir = str(workdir_path)
 
@@ -224,25 +215,19 @@ def run_command(
         }
 
     except subprocess.TimeoutExpired as e:
-        return {
-            "command": command,
-            "workdir": effective_workdir,
-            "exit_code": -1,
-            "stdout": e.stdout.decode() if e.stdout else "",
-            "stderr": e.stderr.decode() if e.stderr else "",
-            "error": f"Command timed out after {timeout} seconds",
-            "success": False,
-        }
+        return _error_result(
+            f"Command timed out after {timeout} seconds",
+            command=command,
+            workdir=effective_workdir,
+            stdout=e.stdout.decode() if e.stdout else "",
+            stderr=e.stderr.decode() if e.stderr else "",
+        )
     except Exception as e:
-        return {
-            "command": command,
-            "workdir": effective_workdir,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": str(e),
-            "error": f"Execution failed: {e}",
-            "success": False,
-        }
+        return _error_result(
+            f"Execution failed: {e}",
+            command=command,
+            workdir=effective_workdir,
+        )
 
 
 def main() -> None:
@@ -261,13 +246,10 @@ def main() -> None:
         mount = sys.argv[3]
 
     if not command:
-        result = {
-            "error": "No command provided",
-            "success": False,
-            "exit_code": 1,
-            "stdout": "",
-            "stderr": "COMMAND environment variable or first argument required",
-        }
+        result = _error_result(
+            "COMMAND environment variable or first argument required",
+            exit_code=1,
+        )
         print(json.dumps(result, indent=2), file=sys.stderr)
         sys.exit(1)
 
@@ -285,14 +267,7 @@ def main() -> None:
         # A non-zero inner command is not an executor infrastructure failure.
 
     except Exception as e:
-        result = {
-            "error": str(e),
-            "success": False,
-            "exit_code": 1,
-            "stdout": "",
-            "stderr": str(e),
-            "command": command,
-        }
+        result = _error_result(str(e), command=command, exit_code=1)
         print(json.dumps(result, indent=2), file=sys.stderr)
         sys.exit(1)
 

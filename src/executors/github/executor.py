@@ -66,6 +66,19 @@ BLOCKED_PATTERNS = [
 VALID_PREFIXES = frozenset({"issue", "pr", "run", "search", "api"})
 
 
+def _error_result(error: str, *, command: str = "", **extra) -> dict:
+    """Build a standard error-result dict."""
+    return {
+        "command": command,
+        "exit_code": -1,
+        "stdout": "",
+        "stderr": error,
+        "error": error,
+        "success": False,
+        **extra,
+    }
+
+
 def _parse_subcommand(command: str) -> str:
     """Extract the two-word gh subcommand from the command string.
 
@@ -148,38 +161,21 @@ def run_gh_command(command: str, repo: str | None = None) -> dict:
     """
     # Check gh is installed
     if not shutil.which("gh"):
-        return {
-            "error": "gh CLI is not installed. Install from https://cli.github.com/",
-            "success": False,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": "gh: command not found",
-        }
+        return _error_result(
+            "gh CLI is not installed. Install from https://cli.github.com/",
+            stderr="gh: command not found",
+        )
 
     # Validate command against security rules
     error = validate_command(command)
     if error:
-        return {
-            "error": error,
-            "success": False,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": error,
-            "command": command,
-        }
+        return _error_result(error, command=command)
 
     # Build the full command
     try:
         cmd = build_gh_command(command, repo)
     except ValueError as e:
-        return {
-            "error": str(e),
-            "success": False,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": str(e),
-            "command": command,
-        }
+        return _error_result(str(e), command=command)
 
     try:
         result = subprocess.run(
@@ -198,23 +194,14 @@ def run_gh_command(command: str, repo: str | None = None) -> dict:
         }
 
     except subprocess.TimeoutExpired as e:
-        return {
-            "command": " ".join(cmd),
-            "exit_code": -1,
-            "stdout": e.stdout.decode() if e.stdout else "",
-            "stderr": e.stderr.decode() if e.stderr else "",
-            "error": "Command timed out after 2 minutes",
-            "success": False,
-        }
+        return _error_result(
+            "Command timed out after 2 minutes",
+            command=" ".join(cmd),
+            stdout=e.stdout.decode() if e.stdout else "",
+            stderr=e.stderr.decode() if e.stderr else "",
+        )
     except Exception as e:
-        return {
-            "command": command,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": str(e),
-            "error": f"Execution failed: {e}",
-            "success": False,
-        }
+        return _error_result(f"Execution failed: {e}", command=command)
 
 
 def main() -> None:
@@ -229,13 +216,10 @@ def main() -> None:
         repo = sys.argv[2]
 
     if not command:
-        result = {
-            "error": "No command provided",
-            "success": False,
-            "exit_code": 1,
-            "stdout": "",
-            "stderr": "COMMAND environment variable or first argument required",
-        }
+        result = _error_result(
+            "COMMAND environment variable or first argument required",
+            exit_code=1,
+        )
         print(json.dumps(result, indent=2), file=sys.stderr)
         sys.exit(1)
 

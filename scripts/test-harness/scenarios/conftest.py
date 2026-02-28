@@ -134,7 +134,10 @@ def audit_log_path(config_dir: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def reset_mock_llm(mock_client: httpx.Client):
-    """Reset mock LLM state before each test for isolation."""
+def reset_mock_llm(mock_client: httpx.Client, audit_log_path: Path):
+    """Reset mock LLM state and truncate audit log before each test."""
     mock_client.post("/v1/mock/reset")
+    # Truncate the audit log so each test only sees its own entries
+    if audit_log_path.exists():
+        audit_log_path.write_text("")
     yield

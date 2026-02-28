@@ -112,8 +112,12 @@ class PolicyEngine:
         # Conditional deny_when rules
         for rule in self._deny_when:
             tool_pattern = rule.get("tool", "")
-            if fnmatch.fnmatch(tool_name, tool_pattern) and _match_condition(rule, tool_args):
-                rule_desc = f"deny_when:{tool_pattern}:{rule.get('arg')}={rule.get('pattern')}"
+            if fnmatch.fnmatch(tool_name, tool_pattern) and _match_condition(
+                rule, tool_args
+            ):
+                rule_desc = (
+                    f"deny_when:{tool_pattern}:{rule.get('arg')}={rule.get('pattern')}"
+                )
                 return ActionDecision(
                     verdict=ActionVerdict.DENY,
                     tool_name=tool_name,
@@ -143,7 +147,9 @@ class PolicyEngine:
         # Conditional review_when rules
         for rule in self._review_when:
             tool_pattern = rule.get("tool", "")
-            if fnmatch.fnmatch(tool_name, tool_pattern) and _match_condition(rule, tool_args):
+            if fnmatch.fnmatch(tool_name, tool_pattern) and _match_condition(
+                rule, tool_args
+            ):
                 rule_desc = f"review_when:{tool_pattern}:{rule.get('arg')}={rule.get('pattern')}"
                 return ActionDecision(
                     verdict=ActionVerdict.REVIEW,

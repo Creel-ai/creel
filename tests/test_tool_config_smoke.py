@@ -44,7 +44,9 @@ def _get_executor_actions(executor_name: str) -> set[str]:
             # Match: action == "something" or action == 'something'
             actions = set(re.findall(r'action\s*==\s*["\']([^"\']+)["\']', content))
             # Also match default: os.environ.get("ACTION", "something")
-            defaults = re.findall(r'environ\.get\(["\']ACTION["\'],\s*["\']([^"\']+)["\']', content)
+            defaults = re.findall(
+                r'environ\.get\(["\']ACTION["\'],\s*["\']([^"\']+)["\']', content
+            )
             actions.update(defaults)
             return actions
     return set()
@@ -190,7 +192,9 @@ class TestDockerfiles:
             if _executor_uses_requests(executor) and not _has_requirements(executor):
                 missing.append(f"{executor} (used by {tool_name})")
 
-        assert not missing, "Executors using requests but missing requirements.txt:\n" + "\n".join(
+        assert (
+            not missing
+        ), "Executors using requests but missing requirements.txt:\n" + "\n".join(
             missing
         )
 
@@ -232,7 +236,9 @@ class TestBridgeConfig:
                 if not tool_cfg.get("network"):
                     issues.append(f"{tool_name} (executor: {executor})")
 
-        assert not issues, "HTTP-calling tools missing network: true:\n" + "\n".join(issues)
+        assert not issues, "HTTP-calling tools missing network: true:\n" + "\n".join(
+            issues
+        )
 
 
 # ---- Tests: Policy Coverage ----
@@ -294,4 +300,6 @@ class TestParameterMapping:
 
         # This is advisory — some params go through fixed_args or other mapping
         if warnings:
-            pytest.skip(f"Possible param mismatches (may be false positives): {warnings[:5]}")
+            pytest.skip(
+                f"Possible param mismatches (may be false positives): {warnings[:5]}"
+            )

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 import yaml
 
 from taskrunner.models import (
@@ -20,7 +18,6 @@ from taskrunner.models import (
     WorkspaceConfig,
     load_agent_config,
 )
-
 
 # ---------------------------------------------------------------------------
 # MediaConfig model tests
@@ -260,7 +257,6 @@ class TestChatServerMediaConfig:
 
     def test_media_disabled_attachments_ignored(self, tmp_path: Path) -> None:
         """Attachments are silently ignored when media is disabled."""
-        from unittest.mock import MagicMock
 
         from taskrunner.channels.message import Attachment, AttachmentType
         from taskrunner.chat import ChatServer
@@ -288,6 +284,4 @@ class TestChatServerMediaConfig:
         server = ChatServer(agent_def)
         assert server._media_store is not None
         assert "~" not in str(server._media_store._base_dir)
-        assert str(server._media_store._base_dir) == str(
-            Path.home() / "test-media"
-        )
+        assert str(server._media_store._base_dir) == str(Path.home() / "test-media")

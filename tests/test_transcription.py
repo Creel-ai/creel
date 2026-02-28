@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from taskrunner.services.transcription import (
     NEEDS_CONVERSION,
     WHISPER_SUPPORTED_FORMATS,
@@ -82,9 +80,12 @@ class TestTranscribeOpenAI:
         svc = TranscriptionService(api_key="sk-test")
         import httpx
 
-        with patch("httpx.post", side_effect=httpx.HTTPStatusError(
-            "Server error", request=MagicMock(), response=MagicMock()
-        )):
+        with patch(
+            "httpx.post",
+            side_effect=httpx.HTTPStatusError(
+                "Server error", request=MagicMock(), response=MagicMock()
+            ),
+        ):
             result = svc.transcribe(audio)
 
         assert result == ""
@@ -157,9 +158,10 @@ class TestTranscribeLocal:
 
         with (
             patch("shutil.which", return_value="/usr/local/bin/whisper"),
-            patch("subprocess.run", return_value=MagicMock(
-                returncode=1, stderr="whisper error"
-            )),
+            patch(
+                "subprocess.run",
+                return_value=MagicMock(returncode=1, stderr="whisper error"),
+            ),
             patch("httpx.post", return_value=fake_resp),
         ):
             result = svc.transcribe(audio)
@@ -244,7 +246,9 @@ class TestAudioConversion:
 
         with (
             patch("shutil.which", return_value="/usr/local/bin/ffmpeg"),
-            patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "ffmpeg")),
+            patch(
+                "subprocess.run", side_effect=subprocess.CalledProcessError(1, "ffmpeg")
+            ),
             patch("httpx.post", return_value=fake_resp) as mock_post,
         ):
             result = svc.transcribe(audio)

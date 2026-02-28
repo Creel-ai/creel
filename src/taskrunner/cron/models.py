@@ -60,7 +60,9 @@ class Schedule(BaseModel):
             try:
                 seconds = int(v)
             except ValueError:
-                raise ValueError(f"'every' schedule expr must be an integer (seconds), got '{v}'")
+                raise ValueError(
+                    f"'every' schedule expr must be an integer (seconds), got '{v}'"
+                )
             if seconds < 1:
                 raise ValueError(f"'every' interval must be >= 1 second, got {seconds}")
         elif kind == "at":

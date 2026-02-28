@@ -35,7 +35,9 @@ def run_command(command: str, workdir: str | None = None) -> dict:
             raise FileNotFoundError(f"Working directory does not exist: {workdir_path}")
 
         if not workdir_path.is_dir():
-            raise NotADirectoryError(f"Working directory is not a directory: {workdir_path}")
+            raise NotADirectoryError(
+                f"Working directory is not a directory: {workdir_path}"
+            )
 
         workdir = str(workdir_path)
 

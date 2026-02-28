@@ -13,6 +13,5 @@ if str(SRC) not in sys.path:
 
 from taskrunner.migrations.openclaw import cli_main
 
-
 if __name__ == "__main__":
     raise SystemExit(cli_main(["--phases", "3", *sys.argv[1:]]))

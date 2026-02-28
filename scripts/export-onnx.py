@@ -72,7 +72,9 @@ def main() -> int:
 
     model_name: str = args.model_name
     slug = model_name.replace("/", "--")
-    output_dir = Path(args.output_dir) if args.output_dir else Path("onnx-export") / slug
+    output_dir = (
+        Path(args.output_dir) if args.output_dir else Path("onnx-export") / slug
+    )
 
     print(f"Exporting {model_name!r} to ONNX ...")
     print(f"  Output directory: {output_dir}")
@@ -108,7 +110,9 @@ def main() -> int:
 
         loaded_model = ORTModelForSequenceClassification.from_pretrained(output_dir)
         loaded_tokenizer = AutoTokenizer.from_pretrained(output_dir)
-        pipe = pipeline("text-classification", model=loaded_model, tokenizer=loaded_tokenizer)
+        pipe = pipeline(
+            "text-classification", model=loaded_model, tokenizer=loaded_tokenizer
+        )
 
         test_inputs = [
             "What's the weather today?",

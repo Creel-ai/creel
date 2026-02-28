@@ -257,7 +257,9 @@ class TestResourceBlocking:
         assert args[0][0] == "**/*"
 
     @pytest.mark.asyncio
-    async def test_resource_blocking_not_installed_when_disabled(self, relay_no_blocking):
+    async def test_resource_blocking_not_installed_when_disabled(
+        self, relay_no_blocking
+    ):
         """Verify page.route is NOT called when block_heavy_resources is False."""
         page = MagicMock()
         page.route = AsyncMock()
@@ -319,7 +321,9 @@ class TestCleanupLoop:
         # Run one cleanup cycle manually
         now = time.time()
         expired = [
-            sid for sid, s in relay._sessions.items() if now - s.last_used > relay._session_timeout
+            sid
+            for sid, s in relay._sessions.items()
+            if now - s.last_used > relay._session_timeout
         ]
         for sid in expired:
             await relay.close_session(sid)
@@ -344,7 +348,9 @@ class TestCleanupLoop:
         # Run one cleanup cycle manually
         now = time.time()
         expired = [
-            sid for sid, s in relay._sessions.items() if now - s.last_used > relay._session_timeout
+            sid
+            for sid, s in relay._sessions.items()
+            if now - s.last_used > relay._session_timeout
         ]
         for sid in expired:
             await relay.close_session(sid)

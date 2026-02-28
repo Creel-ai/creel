@@ -313,7 +313,9 @@ def execute_tool_call(
     if tool_name == "set_workspace":
         # set_workspace requires an active session (not task mode)
         if session_state is None:
-            return json.dumps({"error": "set_workspace is only available in interactive sessions"})
+            return json.dumps(
+                {"error": "set_workspace is only available in interactive sessions"}
+            )
         path = tool_input.get("path", "")
         if not path:
             return json.dumps({"error": "path is required"})
@@ -377,7 +379,9 @@ def execute_tool_call(
         # Re-validate: workspace may have been removed since set_workspace
         if not os.path.isdir(workspace):
             return json.dumps(
-                {"error": "Workspace is no longer valid (directory removed or inaccessible)"}
+                {
+                    "error": "Workspace is no longer valid (directory removed or inaccessible)"
+                }
             )
         merged_args["workspace"] = workspace
 

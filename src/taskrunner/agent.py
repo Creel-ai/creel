@@ -82,7 +82,9 @@ def _extract_user_request_for_coherence(messages: list[dict]) -> str:
         if isinstance(content, str):
             text = content
         elif isinstance(content, list):
-            text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
+            text = " ".join(
+                b.get("text", "") for b in content if b.get("type") == "text"
+            )
         else:
             continue
         if text.strip():
@@ -95,7 +97,9 @@ def _extract_user_request_for_coherence(messages: list[dict]) -> str:
 
     # Check if the latest message is a short retry phrase
     normalised = latest.lower().rstrip("!?.").strip()
-    is_retry = normalised in _RETRY_PHRASES or any(normalised.startswith(p) for p in _RETRY_PHRASES)
+    is_retry = normalised in _RETRY_PHRASES or any(
+        normalised.startswith(p) for p in _RETRY_PHRASES
+    )
 
     if is_retry and len(user_messages) >= 2:
         prior = user_messages[-2]
@@ -127,7 +131,9 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
         tool_uses = [
             block
             for block in content
-            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("id")
+            if isinstance(block, dict)
+            and block.get("type") == "tool_use"
+            and block.get("id")
         ]
         if not tool_uses:
             i += 1
@@ -156,7 +162,9 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
                 if block.get("tool_use_id") is not None
             }
 
-            missing_ids = [tool_id for tool_id in required_ids if tool_id not in present_ids]
+            missing_ids = [
+                tool_id for tool_id in required_ids if tool_id not in present_ids
+            ]
             if not missing_ids:
                 i += 2
                 continue
@@ -307,7 +315,9 @@ def run_agent_loop(
             # No tools called - we have a final text response
             text = extract_text(response)
             # Append assistant response to messages for session tracking
-            messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+            messages.append(
+                {"role": "assistant", "content": _serialize_content(response.content)}
+            )
             return AgentResult(
                 text=text,
                 turns_used=turns_used,
@@ -318,7 +328,9 @@ def run_agent_loop(
             )
 
         # Append the assistant message (with tool_use blocks) to history
-        messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+        messages.append(
+            {"role": "assistant", "content": _serialize_content(response.content)}
+        )
 
         # Execute each tool call and collect results
         tool_results = []
@@ -364,7 +376,9 @@ def run_agent_loop(
 
                 decision = guardian.validate_action(tool_name, tool_input)
                 if decision.verdict == ActionVerdict.DENY:
-                    logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
+                    logger.warning(
+                        "Guardian denied tool %s: %s", tool_name, decision.reason
+                    )
                     guardian.log_action_outcome(tool_name, "deny", "denied_by_policy")
                     result = f"Action denied by security policy: {decision.reason}"
                     is_error = True
@@ -388,14 +402,18 @@ def run_agent_loop(
                     continue
 
                 if decision.verdict == ActionVerdict.REVIEW:
-                    logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
+                    logger.warning(
+                        "Guardian review for tool %s: %s", tool_name, decision.reason
+                    )
 
                     # If a synchronous confirm callback is provided (TUI/CLI),
                     # use it directly instead of the async approval queue.
                     if confirm_action is not None:
                         if not confirm_action(tool_name, tool_input, decision.reason):
                             logger.info("User denied tool %s during review", tool_name)
-                            guardian.log_action_outcome(tool_name, "review", "denied_by_user")
+                            guardian.log_action_outcome(
+                                tool_name, "review", "denied_by_user"
+                            )
                             result = f"Action denied by user: {decision.reason}"
                             is_error = True
                             tool_history.append(
@@ -416,7 +434,9 @@ def run_agent_loop(
                             )
                             continue
                         # User approved — fall through to execute
-                        guardian.log_action_outcome(tool_name, "review", "approved_by_user")
+                        guardian.log_action_outcome(
+                            tool_name, "review", "approved_by_user"
+                        )
                     else:
                         # No callback — inject synthetic tool_results for ALL
                         # tool_use blocks so the session history stays valid,
@@ -424,11 +444,11 @@ def run_agent_loop(
                         synthetic_results = []
                         for b in tool_use_blocks:
                             if b.id == block.id:
-                                approval_msg = f"Action requires approval: {decision.reason}"
-                            else:
                                 approval_msg = (
-                                    "Action skipped — another tool in this batch requires approval."
+                                    f"Action requires approval: {decision.reason}"
                                 )
+                            else:
+                                approval_msg = "Action skipped — another tool in this batch requires approval."
                             synthetic_results.append(
                                 {
                                     "type": "tool_result",
@@ -466,13 +486,16 @@ def run_agent_loop(
                             user_request = " ".join(
                                 str(block_item.get("text", ""))
                                 for block_item in content
-                                if isinstance(block_item, dict) and block_item.get("type") == "text"
+                                if isinstance(block_item, dict)
+                                and block_item.get("type") == "text"
                             )
                         break
 
                 if user_request:
                     prior_tools = _extract_prior_tools(messages)
-                    available_tool_names = list(tools_config.keys()) if tools_config else None
+                    available_tool_names = (
+                        list(tools_config.keys()) if tools_config else None
+                    )
                     coherence = guardian.check_coherence(
                         user_request,
                         tool_name,
@@ -516,9 +539,11 @@ def run_agent_loop(
                         logger.warning(
                             "Guardian blocked memory write for %s (confidence=%.3f)",
                             tool_name,
-                            screen_result.classifier_result.confidence
-                            if screen_result.classifier_result
-                            else 0.0,
+                            (
+                                screen_result.classifier_result.confidence
+                                if screen_result.classifier_result
+                                else 0.0
+                            ),
                         )
                         result = (
                             "[Guardian] Memory write blocked — content may contain "
@@ -600,9 +625,11 @@ def run_agent_loop(
                     logger.warning(
                         "Guardian blocked output from %s (confidence=%.3f)",
                         tool_name,
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
+                        (
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0
+                        ),
                     )
                     result = (
                         f"[Guardian] Output from '{tool_name}' was blocked by the "
@@ -616,9 +643,11 @@ def run_agent_loop(
                 if screen_result.blocked:
                     logger.warning(
                         "Guardian blocked search_memory output (confidence=%.3f)",
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
+                        (
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0
+                        ),
                     )
                     result = (
                         "[Guardian] Memory search results were blocked by the "
@@ -674,7 +703,9 @@ def run_agent_loop(
     # Max turns reached - do a final call without tools to force a summary.
     # Don't stream the forced summary — it's an internal wrap-up, not a direct
     # response, and streaming it would concatenate with the prior streamed output.
-    logger.warning("Max turns (%d) reached, forcing final response", agent_config.max_turns)
+    logger.warning(
+        "Max turns (%d) reached, forcing final response", agent_config.max_turns
+    )
     _ensure_tool_call_integrity(messages)
     try:
         response = call_llm(
@@ -684,7 +715,9 @@ def run_agent_loop(
             system=system_prompt,
         )
         text = extract_text(response)
-        messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+        messages.append(
+            {"role": "assistant", "content": _serialize_content(response.content)}
+        )
         if hasattr(response, "usage") and response.usage:
             last_input_tokens = getattr(response.usage, "input_tokens", 0)
     except Exception as e:

@@ -13,20 +13,9 @@ Simulates the full path:
 from __future__ import annotations
 
 import io
-import sqlite3
-import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from tests.helpers.imessage_db import (
-    create_chat_db as _create_chat_db,
-    insert_attachment as _insert_attachment,
-    insert_handle as _insert_handle,
-    insert_message as _insert_message,
-    link_attachment as _link_attachment,
-)
 from taskrunner.channels.imessage import IMessageChannel
 from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
 from taskrunner.chat import ChatServer
@@ -39,7 +28,21 @@ from taskrunner.models import (
     SessionConfig,
     WorkspaceConfig,
 )
-
+from tests.helpers.imessage_db import (
+    create_chat_db as _create_chat_db,
+)
+from tests.helpers.imessage_db import (
+    insert_attachment as _insert_attachment,
+)
+from tests.helpers.imessage_db import (
+    insert_handle as _insert_handle,
+)
+from tests.helpers.imessage_db import (
+    insert_message as _insert_message,
+)
+from tests.helpers.imessage_db import (
+    link_attachment as _link_attachment,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -206,7 +209,8 @@ class TestMissingAttachmentFile:
         _insert_message(db_path, 1, "old photo", handle_id=1)
         # Point to a non-existent file (macOS cleaned it up)
         _insert_attachment(
-            db_path, 1,
+            db_path,
+            1,
             "/nonexistent/Library/Messages/Attachments/xx/yy/uuid/photo.heic",
             "image/heic",
             "photo.heic",
@@ -233,7 +237,8 @@ class TestMissingAttachmentFile:
         _insert_handle(db_path, 1, "friend@icloud.com")
         _insert_message(db_path, 1, "look at this", handle_id=1)
         _insert_attachment(
-            db_path, 1,
+            db_path,
+            1,
             "/nonexistent/path/photo.jpg",
             "image/jpeg",
             "photo.jpg",
@@ -285,7 +290,9 @@ class TestMissingAttachmentFile:
 
         mock_result = _make_agent_result("Just text response")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch(
+            "taskrunner.chat.run_agent_loop", return_value=mock_result
+        ) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "what was that photo?",
@@ -420,8 +427,12 @@ class TestE2EIMessageImage:
         mock_result = _make_agent_result("I see a green pixel!")
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch.object(
+                server._vision, "prepare_image", return_value=mock_vision_block
+            ),
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.IMAGE,
@@ -474,8 +485,12 @@ class TestE2EIMessageImage:
         mock_result = _make_agent_result("Nice selfie!")
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch.object(
+                server._vision, "prepare_image", return_value=mock_vision_block
+            ),
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.IMAGE,
@@ -530,7 +545,9 @@ class TestE2EIMessageImage:
         )
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
+            patch.object(
+                server._vision, "prepare_image", return_value=mock_vision_block
+            ),
             patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
         ):
             response = server.handle_message(
@@ -584,8 +601,12 @@ class TestE2EIMessageImage:
         sent_responses: list[tuple[str, str]] = []
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch.object(
+                server._vision, "prepare_image", return_value=mock_vision_block
+            ),
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
 
             def callback(*args):
@@ -620,7 +641,10 @@ class TestE2EIMessageImage:
 
         # Verify response was sent back
         assert len(sent_responses) == 1
-        assert sent_responses[0] == ("friend@icloud.com", "I see a green pixel in your photo!")
+        assert sent_responses[0] == (
+            "friend@icloud.com",
+            "I see a green pixel in your photo!",
+        )
 
         # Verify LLM received image content blocks
         call_kwargs = mock_loop.call_args
@@ -654,7 +678,11 @@ class TestE2EIMessageImage:
 
         mock_vision_block_jpg = {
             "type": "image",
-            "source": {"type": "base64", "media_type": "image/jpeg", "data": "jpg_data"},
+            "source": {
+                "type": "base64",
+                "media_type": "image/jpeg",
+                "data": "jpg_data",
+            },
         }
         mock_vision_block_png = {
             "type": "image",
@@ -668,7 +696,9 @@ class TestE2EIMessageImage:
                 "prepare_image",
                 side_effect=[mock_vision_block_jpg, mock_vision_block_png],
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachments = [
                 Attachment(
@@ -734,7 +764,9 @@ class TestE2EIMessageImage:
 
         mock_result = _make_agent_result("Text only response")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch(
+            "taskrunner.chat.run_agent_loop", return_value=mock_result
+        ) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "What is this?",

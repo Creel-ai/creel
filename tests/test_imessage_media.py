@@ -6,18 +6,23 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from tests.helpers.imessage_db import (
-    create_chat_db as _create_chat_db,
-    insert_attachment as _insert_attachment,
-    insert_handle as _insert_handle,
-    insert_message as _insert_message,
-    link_attachment as _link_attachment,
-)
 from taskrunner.channels.imessage import IMessageChannel
 from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
-
+from tests.helpers.imessage_db import (
+    create_chat_db as _create_chat_db,
+)
+from tests.helpers.imessage_db import (
+    insert_attachment as _insert_attachment,
+)
+from tests.helpers.imessage_db import (
+    insert_handle as _insert_handle,
+)
+from tests.helpers.imessage_db import (
+    insert_message as _insert_message,
+)
+from tests.helpers.imessage_db import (
+    link_attachment as _link_attachment,
+)
 
 # ---------------------------------------------------------------------------
 # Tests for _query_attachments
@@ -108,7 +113,11 @@ class TestQueryAttachments:
         _insert_handle(db_path, 1, "friend@example.com")
         _insert_message(db_path, 1, None, handle_id=1)
         _insert_attachment(
-            db_path, rowid=1, filename=str(mp3_file), mime_type="audio/mpeg", transfer_name="song.mp3"
+            db_path,
+            rowid=1,
+            filename=str(mp3_file),
+            mime_type="audio/mpeg",
+            transfer_name="song.mp3",
         )
         _link_attachment(db_path, message_id=1, attachment_id=1)
 
@@ -129,7 +138,11 @@ class TestQueryAttachments:
         _insert_handle(db_path, 1, "friend@example.com")
         _insert_message(db_path, 1, None, handle_id=1)
         _insert_attachment(
-            db_path, rowid=1, filename=str(vid_file), mime_type="video/mp4", transfer_name="clip.mp4"
+            db_path,
+            rowid=1,
+            filename=str(vid_file),
+            mime_type="video/mp4",
+            transfer_name="clip.mp4",
         )
         _link_attachment(db_path, message_id=1, attachment_id=1)
 
@@ -218,7 +231,9 @@ class TestQueryAttachments:
         assert len(attachments) == 2
         assert all(a.type == AttachmentType.IMAGE for a in attachments)
 
-    def test_skip_attachment_with_no_file_and_no_transfer_name(self, tmp_path: Path) -> None:
+    def test_skip_attachment_with_no_file_and_no_transfer_name(
+        self, tmp_path: Path
+    ) -> None:
         """Attachments with neither a file nor a transfer_name should be skipped."""
         db_path = tmp_path / "chat.db"
         _create_chat_db(db_path)
@@ -378,7 +393,9 @@ class TestListenWithAttachments:
     """Test that listen() passes IncomingMessage to callback for media messages."""
 
     def _make_channel(self, db_path: Path) -> IMessageChannel:
-        channel = IMessageChannel(allowed_senders=["friend@example.com"], poll_interval=1)
+        channel = IMessageChannel(
+            allowed_senders=["friend@example.com"], poll_interval=1
+        )
         channel.MESSAGES_DB = db_path
         return channel
 
@@ -393,16 +410,20 @@ class TestListenWithAttachments:
 
         callback = MagicMock(return_value="hi back")
         # Patch send to avoid AppleScript, and stop after one poll
-        with patch.object(channel, "send"), \
-             patch.object(channel, "_get_latest_rowid", return_value=0), \
-             patch("sys.platform", "darwin"):
+        with (
+            patch.object(channel, "send"),
+            patch.object(channel, "_get_latest_rowid", return_value=0),
+            patch("sys.platform", "darwin"),
+        ):
             # Run one iteration then stop
             def poll_once_then_stop(original_poll):
                 """Run the real poll once, then request stop."""
+
                 def wrapper(after_rowid):
                     result = original_poll(after_rowid)
                     channel._stop_requested = True
                     return result
+
                 return wrapper
 
             original_poll = channel._poll
@@ -412,7 +433,9 @@ class TestListenWithAttachments:
         # callback was called with (sender_id, text)
         callback.assert_called_once_with("friend@example.com", "hello")
 
-    def test_attachment_message_calls_callback_with_incoming_message(self, tmp_path: Path) -> None:
+    def test_attachment_message_calls_callback_with_incoming_message(
+        self, tmp_path: Path
+    ) -> None:
         """Messages with attachments should invoke callback(IncomingMessage)."""
         db_path = tmp_path / "chat.db"
         _create_chat_db(db_path)
@@ -428,9 +451,11 @@ class TestListenWithAttachments:
         channel = self._make_channel(db_path)
 
         callback = MagicMock(return_value="nice pic!")
-        with patch.object(channel, "send"), \
-             patch.object(channel, "_get_latest_rowid", return_value=0), \
-             patch("sys.platform", "darwin"):
+        with (
+            patch.object(channel, "send"),
+            patch.object(channel, "_get_latest_rowid", return_value=0),
+            patch("sys.platform", "darwin"),
+        ):
             original_poll = channel._poll
 
             def poll_once_then_stop(after_rowid):
@@ -469,9 +494,11 @@ class TestListenWithAttachments:
         channel = self._make_channel(db_path)
 
         callback = MagicMock(return_value="got your pic")
-        with patch.object(channel, "send"), \
-             patch.object(channel, "_get_latest_rowid", return_value=0), \
-             patch("sys.platform", "darwin"):
+        with (
+            patch.object(channel, "send"),
+            patch.object(channel, "_get_latest_rowid", return_value=0),
+            patch("sys.platform", "darwin"),
+        ):
             original_poll = channel._poll
 
             def poll_once_then_stop(after_rowid):
@@ -494,14 +521,17 @@ class TestListenWithAttachments:
         _create_chat_db(db_path)
         _insert_handle(db_path, 1, "friend@example.com")
         from taskrunner.outputs import MESSAGE_PREFIX
+
         _insert_message(db_path, 1, f"{MESSAGE_PREFIX} my reply", handle_id=1)
 
         channel = self._make_channel(db_path)
 
         callback = MagicMock(return_value="response")
-        with patch.object(channel, "send"), \
-             patch.object(channel, "_get_latest_rowid", return_value=0), \
-             patch("sys.platform", "darwin"):
+        with (
+            patch.object(channel, "send"),
+            patch.object(channel, "_get_latest_rowid", return_value=0),
+            patch("sys.platform", "darwin"),
+        ):
             original_poll = channel._poll
 
             def poll_once_then_stop(after_rowid):
@@ -524,9 +554,11 @@ class TestListenWithAttachments:
         channel = self._make_channel(db_path)
 
         callback = MagicMock(return_value="no")
-        with patch.object(channel, "send"), \
-             patch.object(channel, "_get_latest_rowid", return_value=0), \
-             patch("sys.platform", "darwin"):
+        with (
+            patch.object(channel, "send"),
+            patch.object(channel, "_get_latest_rowid", return_value=0),
+            patch("sys.platform", "darwin"),
+        ):
             original_poll = channel._poll
 
             def poll_once_then_stop(after_rowid):

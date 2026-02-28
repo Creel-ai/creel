@@ -15,7 +15,9 @@ from tests.injection_fixtures import ALL_BENIGN, ALL_INJECTIONS
 
 # Ensure we have enough fixtures
 def test_minimum_injection_count() -> None:
-    assert len(ALL_INJECTIONS) >= 50, f"Expected 50+ injections, got {len(ALL_INJECTIONS)}"
+    assert (
+        len(ALL_INJECTIONS) >= 50
+    ), f"Expected 50+ injections, got {len(ALL_INJECTIONS)}"
 
 
 def test_minimum_benign_count() -> None:
@@ -24,7 +26,14 @@ def test_minimum_benign_count() -> None:
 
 def test_injection_categories_present() -> None:
     categories = {cat for _, cat in ALL_INJECTIONS}
-    expected = {"direct", "indirect", "jailbreak", "roleplay", "encoding", "multilingual"}
+    expected = {
+        "direct",
+        "indirect",
+        "jailbreak",
+        "roleplay",
+        "encoding",
+        "multilingual",
+    }
     assert expected.issubset(categories), f"Missing categories: {expected - categories}"
 
 

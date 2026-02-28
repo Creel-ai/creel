@@ -5,9 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
+from taskrunner.channels.message import Attachment, AttachmentType
 from taskrunner.chat import ChatServer
 from taskrunner.models import (
     AgentConfig,
@@ -308,7 +306,9 @@ class TestHandleMessageWithAttachments:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             result = server.handle_message(
                 "user1", "What is this?", attachments=[attachment]
@@ -349,11 +349,11 @@ class TestHandleMessageWithAttachments:
             patch.object(
                 server._transcription, "transcribe", return_value="Turn off the lights"
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
-            result = server.handle_message(
-                "user1", "", attachments=[attachment]
-            )
+            result = server.handle_message("user1", "", attachments=[attachment])
 
         assert result == "Got it!"
         call_kwargs = mock_loop.call_args
@@ -371,7 +371,9 @@ class TestHandleMessageWithAttachments:
         server = self._server(tmp_path)
         mock_result = _make_agent_result("Hello!")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch(
+            "taskrunner.chat.run_agent_loop", return_value=mock_result
+        ) as mock_loop:
             result = server.handle_message("user1", "Hi there")
 
         assert result == "Hello!"
@@ -414,7 +416,9 @@ class TestHandleMessageWithAttachments:
                 server._transcription, "transcribe", return_value="What is this?"
             ),
             patch.object(server._vision, "prepare_image", return_value=mock_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             result = server.handle_message(
                 "user1", "", attachments=[voice_att, image_att]

@@ -52,7 +52,11 @@ _CREDENTIAL_PATTERNS: list[tuple[str, re.Pattern, int]] = [
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE), 20),
     ("basic_auth", re.compile(r"Basic\s+[A-Za-z0-9+/]+=+", re.IGNORECASE), 15),
     # Private keys
-    ("private_key", re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"), 20),
+    (
+        "private_key",
+        re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"),
+        20,
+    ),
     # Generic key=value patterns (most likely to false-positive, check last)
     (
         "generic_api_key",

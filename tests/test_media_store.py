@@ -43,7 +43,9 @@ class TestSaveFromBytes:
     def test_directory_structure(self, tmp_path: Path):
         """Files are organized as base_dir/channel/YYYY-MM-DD/uuid.ext."""
         store = MediaStore(base_dir=tmp_path / "media")
-        att = Attachment(type=AttachmentType.IMAGE, data=b"fake-jpg", mime_type="image/jpeg")
+        att = Attachment(
+            type=AttachmentType.IMAGE, data=b"fake-jpg", mime_type="image/jpeg"
+        )
         path = store.save_media(att, channel="imessage")
         parts = path.relative_to(tmp_path / "media").parts
         assert len(parts) == 3  # channel / date / file
@@ -195,8 +197,12 @@ class TestDeduplication:
 
     def test_different_content_saves_separately(self, tmp_path: Path):
         store = MediaStore(base_dir=tmp_path / "media")
-        att1 = Attachment(type=AttachmentType.IMAGE, data=b"content-a", mime_type="image/jpeg")
-        att2 = Attachment(type=AttachmentType.IMAGE, data=b"content-b", mime_type="image/jpeg")
+        att1 = Attachment(
+            type=AttachmentType.IMAGE, data=b"content-a", mime_type="image/jpeg"
+        )
+        att2 = Attachment(
+            type=AttachmentType.IMAGE, data=b"content-b", mime_type="image/jpeg"
+        )
 
         path1 = store.save_media(att1, channel="telegram")
         path2 = store.save_media(att2, channel="telegram")
@@ -322,6 +328,8 @@ class TestBaseDirCreatedOnFirstUse:
         media_dir = tmp_path / "new" / "media"
         assert not media_dir.exists()
         store = MediaStore(base_dir=media_dir)
-        att = Attachment(type=AttachmentType.IMAGE, data=b"data", mime_type="image/jpeg")
+        att = Attachment(
+            type=AttachmentType.IMAGE, data=b"data", mime_type="image/jpeg"
+        )
         store.save_media(att, channel="c")
         assert media_dir.exists()

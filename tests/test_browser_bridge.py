@@ -59,7 +59,9 @@ class TestBrowserAuth:
         """Test that non-browser tokens are rejected."""
         headers = {"Authorization": f"Bearer {scoped_tokens['NOTES']}"}
         with patch.object(app.state, "browser_relay", AsyncMock(), create=True):
-            response = client.post("/browser/connect", json={"mode": "managed"}, headers=headers)
+            response = client.post(
+                "/browser/connect", json={"mode": "managed"}, headers=headers
+            )
         assert response.status_code == 401
 
 
@@ -98,7 +100,9 @@ class TestBrowserConnect:
         assert result["session_id"] == "session-456"
         mock_relay.connect_relay.assert_called_once_with("http://localhost:9222")
 
-    def test_connect_relay_missing_cdp_url(self, client, browser_auth_headers, mock_relay):
+    def test_connect_relay_missing_cdp_url(
+        self, client, browser_auth_headers, mock_relay
+    ):
         with patch.object(app.state, "browser_relay", mock_relay, create=True):
             response = client.post(
                 "/browser/connect",
@@ -143,7 +147,9 @@ class TestBrowserNavigate:
         assert len(result["content"]) == 1
 
     def test_navigate_invalid_url(self, client, browser_auth_headers, mock_relay):
-        mock_relay.navigate.side_effect = ValueError("URL scheme 'javascript' is not allowed")
+        mock_relay.navigate.side_effect = ValueError(
+            "URL scheme 'javascript' is not allowed"
+        )
 
         with patch.object(app.state, "browser_relay", mock_relay, create=True):
             response = client.post(
@@ -363,7 +369,9 @@ class TestBrowserConnectNative:
         assert result["session_id"] == "session-native-1"
         mock_relay.create_native.assert_called_once_with(headless=True)
 
-    def test_connect_invalid_mode_rejected(self, client, browser_auth_headers, mock_relay):
+    def test_connect_invalid_mode_rejected(
+        self, client, browser_auth_headers, mock_relay
+    ):
         with patch.object(app.state, "browser_relay", mock_relay, create=True):
             response = client.post(
                 "/browser/connect",
@@ -377,7 +385,9 @@ class TestBrowserConnectNative:
 class TestBrowserSessionDead:
     """Test SessionDead error handling in endpoints."""
 
-    def test_navigate_session_dead_error(self, client, browser_auth_headers, mock_relay):
+    def test_navigate_session_dead_error(
+        self, client, browser_auth_headers, mock_relay
+    ):
         from bridge.browser import SessionDead
 
         mock_relay.navigate.side_effect = SessionDead("Session dead")

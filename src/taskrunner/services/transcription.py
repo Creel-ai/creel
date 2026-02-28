@@ -13,10 +13,20 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Formats accepted by the OpenAI Whisper API
-WHISPER_SUPPORTED_FORMATS = frozenset({
-    ".flac", ".m4a", ".mp3", ".mp4", ".mpeg",
-    ".mpga", ".oga", ".ogg", ".wav", ".webm",
-})
+WHISPER_SUPPORTED_FORMATS = frozenset(
+    {
+        ".flac",
+        ".m4a",
+        ".mp3",
+        ".mp4",
+        ".mpeg",
+        ".mpga",
+        ".oga",
+        ".ogg",
+        ".wav",
+        ".webm",
+    }
+)
 
 # Formats that need conversion before sending to the API
 NEEDS_CONVERSION = frozenset({".caf", ".opus", ".amr", ".aac"})
@@ -102,8 +112,14 @@ class TranscriptionService:
         try:
             subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", str(file_path),
-                    "-ar", "16000", "-ac", "1",
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(file_path),
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
                     str(wav_path),
                 ],
                 capture_output=True,
@@ -142,7 +158,9 @@ class TranscriptionService:
                 response = httpx.post(
                     _API_URL,
                     headers={"Authorization": f"Bearer {api_key}"},
-                    files={"file": (converted_path.name, f, "application/octet-stream")},
+                    files={
+                        "file": (converted_path.name, f, "application/octet-stream")
+                    },
                     data={"model": self._model},
                     timeout=_API_TIMEOUT,
                 )
@@ -170,9 +188,12 @@ class TranscriptionService:
                 [
                     "whisper",
                     str(converted_path),
-                    "--model", self._model,
-                    "--output_format", "txt",
-                    "--output_dir", str(converted_path.parent),
+                    "--model",
+                    self._model,
+                    "--output_format",
+                    "txt",
+                    "--output_dir",
+                    str(converted_path.parent),
                 ],
                 capture_output=True,
                 text=True,
@@ -187,7 +208,9 @@ class TranscriptionService:
             if txt_path.exists():
                 text = txt_path.read_text().strip()
                 txt_path.unlink(missing_ok=True)
-                logger.info("Transcribed (local) %s (%d chars)", converted_path.name, len(text))
+                logger.info(
+                    "Transcribed (local) %s (%d chars)", converted_path.name, len(text)
+                )
                 return text
 
             logger.warning("Whisper produced no output for %s", converted_path)

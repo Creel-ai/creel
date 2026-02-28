@@ -95,7 +95,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
             logger.debug("Skipping empty message to %s", recipient)
             return
         if recipient not in self._allowed_recipients:
-            logger.warning("Blocked outbound message to %s — not in allowed recipients", recipient)
+            logger.warning(
+                "Blocked outbound message to %s — not in allowed recipients", recipient
+            )
             return
         self._bridge.send_message(recipient, text)
         logger.info("Sent Telegram message to %s (%d chars)", recipient, len(text))
@@ -112,7 +114,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
         while not self._stop_requested:
             try:
-                messages = self._bridge.get_updates(offset=offset, timeout=self._poll_timeout)
+                messages = self._bridge.get_updates(
+                    offset=offset, timeout=self._poll_timeout
+                )
                 consecutive_errors = 0
 
                 for msg in messages:
@@ -129,7 +133,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
                     if text is None and not msg.media:
                         continue
 
-                    logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
+                    logger.info(
+                        "Telegram from %s (@%s)", msg.sender_id, msg.sender_username
+                    )
                     if text:
                         logger.debug("Telegram message text: %s", text[:80])
 
@@ -214,7 +220,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
                 data = self._bridge.download_file(media.file_id)
             except Exception:
                 logger.warning(
-                    "Failed to download Telegram file %s", media.file_id, exc_info=True,
+                    "Failed to download Telegram file %s",
+                    media.file_id,
+                    exc_info=True,
                 )
                 continue
 

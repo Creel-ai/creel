@@ -57,7 +57,9 @@ def test_parse_env_json_escaped_double_quotes() -> None:
     """Double-quoted values with JSON escapes (as produced by setup-google-oauth.py)."""
     import json
 
-    inner = json.dumps({"refresh_token": "tok", "client_id": "cid", "client_secret": "cs"})
+    inner = json.dumps(
+        {"refresh_token": "tok", "client_id": "cid", "client_secret": "cs"}
+    )
     content = f"GOOGLE_CREDENTIALS_JSON={json.dumps(inner)}"
     result = _parse_env(content)
     assert json.loads(result["GOOGLE_CREDENTIALS_JSON"]) == {
@@ -94,7 +96,9 @@ def test_encrypt_custom_output_path(tmp_path: Path, age_keypair) -> None:
     env_file.write_text("KEY=val\n")
 
     custom_out = tmp_path / "custom.enc"
-    enc_path = encrypt_env_file(env_file, recipient_path=str(pub_file), output_path=custom_out)
+    enc_path = encrypt_env_file(
+        env_file, recipient_path=str(pub_file), output_path=custom_out
+    )
     assert enc_path == custom_out
     assert enc_path.exists()
 
@@ -141,7 +145,9 @@ def test_encrypt_missing_recipient(tmp_path: Path) -> None:
         encrypt_env_file(env_file, recipient_path=str(tmp_path / "nopub.txt"))
 
 
-def test_decrypt_env_var_override_identity(tmp_path: Path, age_keypair, monkeypatch) -> None:
+def test_decrypt_env_var_override_identity(
+    tmp_path: Path, age_keypair, monkeypatch
+) -> None:
     key_file, pub_file = age_keypair
     monkeypatch.setenv("AGE_IDENTITY_FILE", str(key_file))
 
@@ -154,7 +160,9 @@ def test_decrypt_env_var_override_identity(tmp_path: Path, age_keypair, monkeypa
     assert result == {"X": "42"}
 
 
-def test_encrypt_env_var_override_recipient(tmp_path: Path, age_keypair, monkeypatch) -> None:
+def test_encrypt_env_var_override_recipient(
+    tmp_path: Path, age_keypair, monkeypatch
+) -> None:
     key_file, pub_file = age_keypair
     monkeypatch.setenv("AGE_RECIPIENT_FILE", str(pub_file))
 

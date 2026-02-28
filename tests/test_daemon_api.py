@@ -14,7 +14,9 @@ from taskrunner.session import SessionManager
 
 class _StubChatServer:
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._session_mgr = SessionManager(
+            sessions_dir=str(sessions_dir), max_history=50
+        )
         self._guardian = None
 
     def handle_message(
@@ -86,7 +88,9 @@ def test_session_endpoints(client: TestClient) -> None:
     assert active.status_code == 200
     assert active.json()["session_id"] == session_id
 
-    resumed = client.post(f"/v1/sessions/{session_id}/resume", json={"sender_id": "cli"})
+    resumed = client.post(
+        f"/v1/sessions/{session_id}/resume", json={"sender_id": "cli"}
+    )
     assert resumed.status_code == 200
     assert resumed.json()["session_id"] == session_id
 

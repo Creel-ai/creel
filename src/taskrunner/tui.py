@@ -236,7 +236,10 @@ class ChatInput(TextArea):
             self._navigate_history(1)
             event.prevent_default()
             event.stop()
-        elif event.key == "down" and self.cursor_location[0] == self.document.line_count - 1:
+        elif (
+            event.key == "down"
+            and self.cursor_location[0] == self.document.line_count - 1
+        ):
             self._navigate_history(-1)
             event.prevent_default()
             event.stop()
@@ -462,7 +465,9 @@ class ChatApp(App):
                 self.call_from_thread(self._hide_status)
                 self.call_from_thread(self._start_streaming)
             self._streaming_chunks.append(chunk)
-            self.call_from_thread(self._update_streaming, "".join(self._streaming_chunks))
+            self.call_from_thread(
+                self._update_streaming, "".join(self._streaming_chunks)
+            )
 
         return self._server.handle_message(
             self._sender_id,
@@ -533,7 +538,9 @@ class ChatApp(App):
                 if isinstance(content, str):
                     text = content
                 elif isinstance(content, list):
-                    text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
+                    text = " ".join(
+                        b.get("text", "") for b in content if b.get("type") == "text"
+                    )
                 else:
                     continue
                 if text:

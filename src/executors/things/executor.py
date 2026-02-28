@@ -15,7 +15,9 @@ from typing import Any
 import requests
 
 
-def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
+def call_bridge(
+    endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30
+) -> dict:
     """Make an HTTP call to the bridge server.
 
     Args:
@@ -149,7 +151,9 @@ def main() -> None:
         elif action == "search":
             query = os.environ.get("QUERY")
             if not query:
-                raise ValueError("QUERY environment variable required for search action")
+                raise ValueError(
+                    "QUERY environment variable required for search action"
+                )
             result = search(query)
 
         elif action == "projects":

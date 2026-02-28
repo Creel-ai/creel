@@ -66,7 +66,9 @@ CRON_TOOL_DEFINITION = {
             },
             "message": {
                 "type": "string",
-                "description": ("The message or prompt for the job payload (required for add)."),
+                "description": (
+                    "The message or prompt for the job payload (required for add)."
+                ),
             },
             "target": {
                 "type": "string",
@@ -171,7 +173,9 @@ def _action_add(tool_input: dict[str, Any], manager: CronManager) -> str:
     schedule_kind = tool_input.get("schedule_kind")
     schedule_expr = tool_input.get("schedule_expr")
     if not schedule_kind or not schedule_expr:
-        return json.dumps({"error": "schedule_kind and schedule_expr are required for add"})
+        return json.dumps(
+            {"error": "schedule_kind and schedule_expr are required for add"}
+        )
 
     message = tool_input.get("message")
     if not message:
@@ -244,7 +248,9 @@ def _action_update(tool_input: dict[str, Any], manager: CronManager) -> str:
     schedule_expr = tool_input.get("schedule_expr")
     if schedule_kind and schedule_expr:
         tz = tool_input.get("tz", job.schedule.tz)
-        fields["schedule"] = Schedule(kind=schedule_kind, expr=schedule_expr, tz=tz).model_dump()
+        fields["schedule"] = Schedule(
+            kind=schedule_kind, expr=schedule_expr, tz=tz
+        ).model_dump()
 
     if not fields:
         return json.dumps({"status": "no_changes", "job": _job_summary(job)})

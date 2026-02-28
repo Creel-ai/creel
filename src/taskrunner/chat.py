@@ -96,7 +96,9 @@ class ChatServer:
             self._memory.compact_daily_files(
                 days_to_keep=agent_def.workspace.compact_after_days,
             )
-            logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
+            logger.info(
+                "Memory system enabled (workspace: %s)", agent_def.workspace.path
+            )
 
         # Per-sender session state (e.g. workspace path for file_ops)
         self._session_states: dict[str, dict] = {}
@@ -112,10 +114,14 @@ class ChatServer:
         # Initialize approval queue
         # Keep approval state scoped with session storage by default so tests
         # and multi-instance deployments don't share a global pending queue.
-        default_approvals_dir = str(Path(agent_def.session.sessions_dir).parent / "approvals")
+        default_approvals_dir = str(
+            Path(agent_def.session.sessions_dir).parent / "approvals"
+        )
         approvals_dir = default_approvals_dir
         if agent_def.guardian and agent_def.guardian.review:
-            configured = getattr(agent_def.guardian.review, "approvals_dir", "approvals")
+            configured = getattr(
+                agent_def.guardian.review, "approvals_dir", "approvals"
+            )
             # Preserve explicit custom dirs; map the legacy default ("approvals")
             # to a session-scoped location for isolation.
             if configured and configured != "approvals":
@@ -230,7 +236,10 @@ class ChatServer:
 
         # Process media attachments (voice transcription + image vision)
         text, image_content_blocks = self._process_attachments(
-            text, attachments, sender_id, channel=channel,
+            text,
+            attachments,
+            sender_id,
+            channel=channel,
         )
 
         # Add user message: use content blocks when images are present
@@ -238,7 +247,8 @@ class ChatServer:
             content_blocks: list[dict] = [{"type": "text", "text": text}]
             content_blocks.extend(image_content_blocks)
             session = self._session_mgr.add_user_message_blocks(
-                sender_id, content_blocks,
+                sender_id,
+                content_blocks,
             )
         else:
             session = self._session_mgr.add_user_message(sender_id, text)
@@ -266,7 +276,9 @@ class ChatServer:
             def _auto_confirm(tool_name: str, tool_input: dict, reason: str) -> bool:
                 logger.info("Auto-approving %s (reason: %s)", tool_name, reason)
                 if self._guardian is not None:
-                    self._guardian.log_action_outcome(tool_name, "review", "auto_approved_by_cli")
+                    self._guardian.log_action_outcome(
+                        tool_name, "review", "auto_approved_by_cli"
+                    )
                 return True
 
             confirm_action = _auto_confirm
@@ -369,9 +381,13 @@ class ChatServer:
 
         for attachment in attachments:
             if attachment.type in (AttachmentType.VOICE, AttachmentType.AUDIO):
-                self._process_voice_attachment(attachment, sender_id, voice_parts, channel)
+                self._process_voice_attachment(
+                    attachment, sender_id, voice_parts, channel
+                )
             elif attachment.type == AttachmentType.IMAGE:
-                self._process_image_attachment(attachment, sender_id, image_blocks, channel)
+                self._process_image_attachment(
+                    attachment, sender_id, image_blocks, channel
+                )
 
         # Prepend transcribed voice text to the user message
         if voice_parts:
@@ -500,7 +516,9 @@ class ChatServer:
         # Check quiet hours for proactive messages only
         if proactive and should_suppress(self._agent_def.quiet_hours, urgent=urgent):
             logger.info(
-                "Message suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent
+                "Message suppressed due to quiet hours (proactive=%s, urgent=%s)",
+                proactive,
+                urgent,
             )
             return
 
@@ -640,9 +658,11 @@ class ChatServer:
                 if screen_result.blocked:
                     logger.warning(
                         "Guardian blocked memory context from system prompt (confidence=%.3f)",
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
+                        (
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0
+                        ),
                     )
                     memory_context = None
 

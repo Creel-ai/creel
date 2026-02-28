@@ -83,7 +83,11 @@ class DaemonService:
     # --- Message and session API ---
 
     def send_message(
-        self, sender_id_or_msg: str | IncomingMessage, text: str = "", *, auto_approve: bool = False
+        self,
+        sender_id_or_msg: str | IncomingMessage,
+        text: str = "",
+        *,
+        auto_approve: bool = False,
     ) -> str:
         """Route a message through the agent loop and return the response text.
 
@@ -254,7 +258,10 @@ class DaemonService:
                 if session is None:
                     # Session may have just been created but not yet saved to disk
                     session = mgr.get_or_create(sender_id)
-                    if session.session_id != session_id or session.sender_id != sender_id:
+                    if (
+                        session.session_id != session_id
+                        or session.sender_id != sender_id
+                    ):
                         raise ValueError(f"Session {session_id} not found")
                 elif session.sender_id != sender_id:
                     raise ValueError(f"Session {session_id} not found")
@@ -488,7 +495,9 @@ class DaemonService:
             mgr = self._server._session_mgr
             stats = mgr.session_stats()
 
-            scheduler_running = bool(self._scheduler_thread and self._scheduler_thread.is_alive())
+            scheduler_running = bool(
+                self._scheduler_thread and self._scheduler_thread.is_alive()
+            )
 
             channels: list[dict[str, Any]] = []
             for name in sorted(self._channel_state):

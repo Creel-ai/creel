@@ -83,7 +83,9 @@ def connect(
 
 def navigate(session_id: str, url: str) -> dict[str, Any]:
     """Navigate to a URL via bridge."""
-    return call_bridge("/browser/navigate", {"session_id": session_id, "url": url}, timeout=60)
+    return call_bridge(
+        "/browser/navigate", {"session_id": session_id, "url": url}, timeout=60
+    )
 
 
 def get_content(session_id: str, selector: str | None = None) -> dict[str, Any]:
@@ -96,7 +98,9 @@ def get_content(session_id: str, selector: str | None = None) -> dict[str, Any]:
 
 def click(session_id: str, selector: str) -> dict[str, Any]:
     """Click an element via bridge."""
-    return call_bridge("/browser/click", {"session_id": session_id, "selector": selector})
+    return call_bridge(
+        "/browser/click", {"session_id": session_id, "selector": selector}
+    )
 
 
 def type_text(session_id: str, selector: str, text: str) -> dict[str, Any]:
@@ -108,7 +112,9 @@ def type_text(session_id: str, selector: str, text: str) -> dict[str, Any]:
 
 def screenshot(session_id: str, full_page: bool = False) -> dict[str, Any]:
     """Take a screenshot via bridge."""
-    return call_bridge("/browser/screenshot", {"session_id": session_id, "full_page": full_page})
+    return call_bridge(
+        "/browser/screenshot", {"session_id": session_id, "full_page": full_page}
+    )
 
 
 def get_links(session_id: str) -> dict[str, Any]:
@@ -134,7 +140,11 @@ def main() -> None:
         if action == "connect":
             mode = os.environ.get("MODE", "managed")
             cdp_url = os.environ.get("CDP_URL")
-            headless = os.environ.get("HEADLESS", "true").lower() in ("true", "1", "yes")
+            headless = os.environ.get("HEADLESS", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
             result = connect(mode, cdp_url, headless)
 
         elif action == "navigate":
@@ -178,7 +188,11 @@ def main() -> None:
             session_id = os.environ.get("SESSION_ID")
             if not session_id:
                 raise ValueError("SESSION_ID environment variable required")
-            full_page = os.environ.get("FULL_PAGE", "false").lower() in ("true", "1", "yes")
+            full_page = os.environ.get("FULL_PAGE", "false").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
             result = screenshot(session_id, full_page)
 
         elif action == "links":

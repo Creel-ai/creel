@@ -21,7 +21,9 @@ from bridge.browser import (
 @pytest.fixture
 def relay():
     """Create a BrowserRelay instance without starting Playwright."""
-    r = BrowserRelay(max_sessions=3, session_timeout_minutes=10, blocked_domains=["evil.com"])
+    r = BrowserRelay(
+        max_sessions=3, session_timeout_minutes=10, blocked_domains=["evil.com"]
+    )
     return r
 
 
@@ -468,7 +470,9 @@ class TestClick:
 
         assert result["ok"] is True
         assert result["url"] == "https://example.com/after-click"
-        page.click.assert_called_once_with("button#submit", timeout=relay._navigate_timeout_ms)
+        page.click.assert_called_once_with(
+            "button#submit", timeout=relay._navigate_timeout_ms
+        )
 
 
 class TestTypeText:
@@ -561,7 +565,9 @@ class TestContainerManagement:
 
     @patch("bridge.browser.subprocess.run")
     def test_start_chromium_container_failure(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="image not found")
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="image not found"
+        )
 
         with pytest.raises(RuntimeError, match="Failed to start"):
             _start_chromium_container()
@@ -650,7 +656,13 @@ class TestReapOrphanedContainers:
         assert count == 2
         # First call: docker ps
         ps_cmd = mock_run.call_args_list[0][0][0]
-        assert ps_cmd == ["docker", "ps", "-q", "--filter", f"label={CREEL_CONTAINER_LABEL}"]
+        assert ps_cmd == [
+            "docker",
+            "ps",
+            "-q",
+            "--filter",
+            f"label={CREEL_CONTAINER_LABEL}",
+        ]
         # Second call: docker stop aaa111
         assert mock_run.call_args_list[1][0][0] == ["docker", "stop", "aaa111"]
         # Third call: docker stop bbb222
@@ -796,7 +808,9 @@ class TestGetSessionDeadBrowser:
             for task in pending:
                 task.cancel()
             if pending:
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
             loop.close()
 
     def test_allows_connected_browser(self, relay):
@@ -840,7 +854,9 @@ class TestStartReapsOrphans:
         pw_context_manager.start.return_value = pw_instance
 
         with (
-            patch("bridge.browser._reap_orphaned_containers", return_value=2) as mock_reap,
+            patch(
+                "bridge.browser._reap_orphaned_containers", return_value=2
+            ) as mock_reap,
             patch.dict(
                 "sys.modules",
                 {

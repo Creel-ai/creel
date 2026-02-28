@@ -37,7 +37,9 @@ class Guardian:
         self._config = config
         self._classifier = FastClassifier(config.fast_classifier)
         self._judge = LLMJudge(config.llm_judge)
-        self._policy = PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
+        self._policy = (
+            PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
+        )
         self._coherence = CoherenceChecker(config.coherence)
         self._audit = (
             AuditLogger(
@@ -97,7 +99,9 @@ class Guardian:
             )
 
         # Stage 2: LLM judge — conditional on classifier uncertainty
-        classifier_confidence = classifier_result.confidence if classifier_result else None
+        classifier_confidence = (
+            classifier_result.confidence if classifier_result else None
+        )
         judge_result = None
         if not blocked and self._judge.should_run(classifier_confidence):
             judge_result = self._judge.judge(text)
@@ -141,7 +145,9 @@ class Guardian:
 
         rejection_message = ""
         if blocked:
-            rejection_message = "I can't process that request. Please rephrase your message."
+            rejection_message = (
+                "I can't process that request. Please rephrase your message."
+            )
 
         return ScreenResult(
             blocked=blocked,
@@ -164,7 +170,9 @@ class Guardian:
         import re
 
         # Remove script/style blocks entirely
-        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(
+            r"<(script|style)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE
+        )
         # Remove HTML tags
         text = re.sub(r"<[^>]+>", " ", text)
         # Decode HTML entities
@@ -263,7 +271,9 @@ class Guardian:
         decision = self._policy.evaluate(tool_name, tool_args)
 
         if decision.verdict == ActionVerdict.REVIEW:
-            logger.warning("Action flagged for review: %s — %s", tool_name, decision.reason)
+            logger.warning(
+                "Action flagged for review: %s — %s", tool_name, decision.reason
+            )
         elif decision.verdict == ActionVerdict.DENY:
             logger.warning("Action denied: %s — %s", tool_name, decision.reason)
 
@@ -300,7 +310,9 @@ class Guardian:
         )
 
         if not result.coherent:
-            logger.warning("Action coherence failed: %s — %s", tool_name, result.reasoning)
+            logger.warning(
+                "Action coherence failed: %s — %s", tool_name, result.reasoning
+            )
 
         if self._audit:
             self._audit.log_coherence_check(
@@ -338,7 +350,9 @@ class Guardian:
 
         return alerts
 
-    def scan_tool_output_credentials(self, tool_name: str, output: str) -> list[CredentialMatch]:
+    def scan_tool_output_credentials(
+        self, tool_name: str, output: str
+    ) -> list[CredentialMatch]:
         """Scan tool output for leaked credentials (API keys, tokens, etc.).
 
         Returns a list of CredentialMatch objects for any detected patterns.
@@ -350,7 +364,8 @@ class Guardian:
             self._audit.log_credential_leak(
                 tool_name=tool_name,
                 patterns_found=[
-                    {"pattern": m.pattern_name, "redacted": m.matched_text} for m in matches
+                    {"pattern": m.pattern_name, "redacted": m.matched_text}
+                    for m in matches
                 ],
                 count=len(matches),
             )

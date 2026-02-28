@@ -171,7 +171,9 @@ class TestContainerExecution:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("subprocess.run")
     @patch("tempfile.NamedTemporaryFile")
-    def test_container_with_mounts(self, mock_tempfile, mock_subprocess, mock_ensure_image) -> None:
+    def test_container_with_mounts(
+        self, mock_tempfile, mock_subprocess, mock_ensure_image
+    ) -> None:
         """Test container execution with mount configuration."""
         # Mock tempfile
         mock_env_file = MagicMock()
@@ -188,7 +190,9 @@ class TestContainerExecution:
         # Create test configs
         executor_config = ExecutorConfig(name="exec")
         mount = MountConfig(path="~/workspace", mode="rw")
-        tool_config = ToolConfig(executor="exec", description="Test", mounts=[mount], network=False)
+        tool_config = ToolConfig(
+            executor="exec", description="Test", mounts=[mount], network=False
+        )
 
         with patch("os.path.expanduser", return_value="/home/user/workspace"):
             _run_executor_container(executor_config, tool_config)

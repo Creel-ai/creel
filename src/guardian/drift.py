@@ -47,10 +47,14 @@ class DriftBaseline:
     """Behavioral baseline computed from audit history."""
 
     known_tools: set[str] = field(default_factory=set)
-    output_lengths: deque[int] = field(default_factory=lambda: deque(maxlen=_MAX_OUTPUT_SAMPLES))
+    output_lengths: deque[int] = field(
+        default_factory=lambda: deque(maxlen=_MAX_OUTPUT_SAMPLES)
+    )
     output_length_mean: float = 0.0
     output_length_std: float = 0.0
-    recent_results: list[bool] = field(default_factory=list)  # True=success, False=error
+    recent_results: list[bool] = field(
+        default_factory=list
+    )  # True=success, False=error
 
 
 class DriftDetector:
@@ -139,7 +143,9 @@ class DriftDetector:
         # Compute output length statistics (sample variance)
         if len(output_lengths) >= 2:
             mean = sum(output_lengths) / len(output_lengths)
-            variance = sum((x - mean) ** 2 for x in output_lengths) / (len(output_lengths) - 1)
+            variance = sum((x - mean) ** 2 for x in output_lengths) / (
+                len(output_lengths) - 1
+            )
             self._baseline.output_length_mean = mean
             self._baseline.output_length_std = math.sqrt(variance)
         elif output_lengths:
@@ -184,7 +190,9 @@ class DriftDetector:
 
         return None
 
-    def check_output_length(self, tool_name: str, output_length: int) -> DriftAlert | None:
+    def check_output_length(
+        self, tool_name: str, output_length: int
+    ) -> DriftAlert | None:
         """Check if a tool output length is anomalous.
 
         Returns a DriftAlert if the length deviates by more than
@@ -239,7 +247,9 @@ class DriftDetector:
 
         # Keep only the window
         if len(self._baseline.recent_results) > self.error_window_size:
-            self._baseline.recent_results = self._baseline.recent_results[-self.error_window_size :]
+            self._baseline.recent_results = self._baseline.recent_results[
+                -self.error_window_size :
+            ]
 
         # Need minimum sample to avoid false positives
         if len(self._baseline.recent_results) < 10:

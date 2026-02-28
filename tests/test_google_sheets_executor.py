@@ -19,7 +19,9 @@ from executors.google_sheets.executor import (
 class TestReadSheet:
     @patch("executors.google_sheets.executor.get_credentials")
     @patch("executors.google_sheets.executor.build")
-    def test_read_returns_values(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+    def test_read_returns_values(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -36,7 +38,9 @@ class TestReadSheet:
 
     @patch("executors.google_sheets.executor.get_credentials")
     @patch("executors.google_sheets.executor.build")
-    def test_read_empty_range(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+    def test_read_empty_range(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -53,7 +57,9 @@ class TestReadSheet:
 class TestCreateSheet:
     @patch("executors.google_sheets.executor.get_credentials")
     @patch("executors.google_sheets.executor.build")
-    def test_create_with_title(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+    def test_create_with_title(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -71,7 +77,9 @@ class TestCreateSheet:
 
     @patch("executors.google_sheets.executor.get_credentials")
     @patch("executors.google_sheets.executor.build")
-    def test_create_with_initial_data(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+    def test_create_with_initial_data(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -223,7 +231,9 @@ class TestAppendToSheet:
 
 class TestMainEntrypoint:
     @patch("executors.google_sheets.executor.read_sheet")
-    def test_main_dispatches_read_action(self, mock_read: MagicMock, monkeypatch) -> None:
+    def test_main_dispatches_read_action(
+        self, mock_read: MagicMock, monkeypatch
+    ) -> None:
         monkeypatch.setenv("ACTION", "read")
         monkeypatch.setenv("SPREADSHEET_ID", "abc")
         monkeypatch.setenv("RANGE", "Sheet1!A1")
@@ -235,7 +245,9 @@ class TestMainEntrypoint:
         mock_print.assert_called_once()
 
     @patch("executors.google_sheets.executor.create_spreadsheet")
-    def test_main_dispatches_create_action(self, mock_create: MagicMock, monkeypatch) -> None:
+    def test_main_dispatches_create_action(
+        self, mock_create: MagicMock, monkeypatch
+    ) -> None:
         monkeypatch.setenv("ACTION", "create")
         monkeypatch.setenv("TITLE", "New Sheet")
         mock_create.return_value = {"spreadsheetId": "new", "url": "http://x"}

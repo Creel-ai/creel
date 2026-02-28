@@ -395,7 +395,9 @@ class TaskDefinition(BaseModel):
     def validate_cron(cls, v: str) -> str:
         parts = v.split()
         if len(parts) != 5:
-            raise ValueError(f"schedule must be a 5-part cron expression, got {len(parts)} parts")
+            raise ValueError(
+                f"schedule must be a 5-part cron expression, got {len(parts)} parts"
+            )
         return v
 
     @field_validator("mode")

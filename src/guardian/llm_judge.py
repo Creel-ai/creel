@@ -70,7 +70,11 @@ class LLMJudge:
         if not self._config.uncertain_only or classifier_confidence is None:
             return True
 
-        return self._config.uncertain_low <= classifier_confidence <= self._config.uncertain_high
+        return (
+            self._config.uncertain_low
+            <= classifier_confidence
+            <= self._config.uncertain_high
+        )
 
     def judge(self, text: str) -> ClassifierResult | None:
         """Evaluate text for prompt injection using the LLM judge.
@@ -114,8 +118,16 @@ class LLMJudge:
                 result.get("is_injection", False),
                 result.get("confidence", 0.0),
                 elapsed_ms,
-                getattr(response.usage, "input_tokens", 0) if hasattr(response, "usage") else 0,
-                getattr(response.usage, "output_tokens", 0) if hasattr(response, "usage") else 0,
+                (
+                    getattr(response.usage, "input_tokens", 0)
+                    if hasattr(response, "usage")
+                    else 0
+                ),
+                (
+                    getattr(response.usage, "output_tokens", 0)
+                    if hasattr(response, "usage")
+                    else 0
+                ),
             )
 
             return ClassifierResult(

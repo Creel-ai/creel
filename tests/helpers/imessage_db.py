@@ -9,8 +9,7 @@ from pathlib import Path
 def create_chat_db(db_path: Path) -> None:
     """Create a minimal chat.db schema at *db_path*."""
     conn = sqlite3.connect(str(db_path))
-    conn.executescript(
-        """
+    conn.executescript("""
         CREATE TABLE handle (
             ROWID INTEGER PRIMARY KEY,
             id TEXT
@@ -33,8 +32,7 @@ def create_chat_db(db_path: Path) -> None:
             message_id INTEGER,
             attachment_id INTEGER
         );
-        """
-    )
+        """)
     conn.close()
 
 

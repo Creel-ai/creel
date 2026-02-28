@@ -51,7 +51,9 @@ class TestSessionEncryption:
         """A test passphrase for encryption."""
         return "test-encryption-passphrase-12345"
 
-    def test_encrypted_session_roundtrip(self, tmp_path: Path, encryption_key: str) -> None:
+    def test_encrypted_session_roundtrip(
+        self, tmp_path: Path, encryption_key: str
+    ) -> None:
         """Sessions should be encrypted on save and decrypted on load."""
         pytest.importorskip("cryptography")
 
@@ -116,7 +118,9 @@ class TestSessionEncryption:
         data = json.loads(raw)
         assert data["messages"][0]["content"] == "Visible message"
 
-    def test_list_sessions_with_encryption(self, tmp_path: Path, encryption_key: str) -> None:
+    def test_list_sessions_with_encryption(
+        self, tmp_path: Path, encryption_key: str
+    ) -> None:
         """list_sessions should work with encrypted files."""
         pytest.importorskip("cryptography")
 

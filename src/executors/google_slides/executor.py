@@ -231,7 +231,9 @@ def main() -> None:
 
     if not action:
         print(
-            json.dumps({"error": "ACTION is required (read, create, add_slide, replace_text)"}),
+            json.dumps(
+                {"error": "ACTION is required (read, create, add_slide, replace_text)"}
+            ),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -260,8 +262,14 @@ def main() -> None:
             find = os.environ.get("FIND", "")
             replace_with = os.environ.get("REPLACE_WITH", "")
             if not presentation_id or not find:
-                raise ValueError("PRESENTATION_ID and FIND are required for replace_text")
-            match_case = os.environ.get("MATCH_CASE", "true").lower() in ("true", "1", "yes")
+                raise ValueError(
+                    "PRESENTATION_ID and FIND are required for replace_text"
+                )
+            match_case = os.environ.get("MATCH_CASE", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
             result = replace_text(presentation_id, find, replace_with, match_case)
         else:
             print(

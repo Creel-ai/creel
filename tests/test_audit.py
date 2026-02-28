@@ -99,9 +99,13 @@ class TestAuditLogger:
         """Write to an invalid path should warn, not crash."""
         bad_logger = AuditLogger(tmp_path / "nonexistent_dir" / "audit.jsonl")
         # Should not raise
-        bad_logger.log_screen(input_hash="x", input_length=1, blocked=False, source="test")
+        bad_logger.log_screen(
+            input_hash="x", input_length=1, blocked=False, source="test"
+        )
 
-    def test_log_screen_debug_writes_jsonl(self, logger: AuditLogger, log_file: Path) -> None:
+    def test_log_screen_debug_writes_jsonl(
+        self, logger: AuditLogger, log_file: Path
+    ) -> None:
         chunks = [
             {
                 "index": 0,
@@ -130,10 +134,24 @@ class TestAuditLogger:
         assert record["chunks"][0]["is_injection"] is True
         assert "ts" in record
 
-    def test_log_screen_debug_multiple_chunks(self, logger: AuditLogger, log_file: Path) -> None:
+    def test_log_screen_debug_multiple_chunks(
+        self, logger: AuditLogger, log_file: Path
+    ) -> None:
         chunks = [
-            {"index": 0, "length": 2048, "label": "SAFE", "score": 0.99, "is_injection": False},
-            {"index": 1, "length": 500, "label": "INJECTION", "score": 0.95, "is_injection": True},
+            {
+                "index": 0,
+                "length": 2048,
+                "label": "SAFE",
+                "score": 0.99,
+                "is_injection": False,
+            },
+            {
+                "index": 1,
+                "length": 500,
+                "label": "INJECTION",
+                "score": 0.95,
+                "is_injection": True,
+            },
         ]
         logger.log_screen_debug(
             text="x" * 2548,
@@ -146,7 +164,9 @@ class TestAuditLogger:
         assert record["chunks"][0]["is_injection"] is False
         assert record["chunks"][1]["is_injection"] is True
 
-    def test_log_action_outcome_writes_jsonl(self, logger: AuditLogger, log_file: Path) -> None:
+    def test_log_action_outcome_writes_jsonl(
+        self, logger: AuditLogger, log_file: Path
+    ) -> None:
         logger.log_action_outcome(
             tool_name="trash_email",
             verdict="review",
@@ -161,7 +181,9 @@ class TestAuditLogger:
         assert record["outcome"] == "approved"
         assert "ts" in record
 
-    def test_log_action_outcome_denied(self, logger: AuditLogger, log_file: Path) -> None:
+    def test_log_action_outcome_denied(
+        self, logger: AuditLogger, log_file: Path
+    ) -> None:
         logger.log_action_outcome(
             tool_name="trash_email",
             verdict="deny",

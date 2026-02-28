@@ -72,15 +72,20 @@ class TestExportOnnxScript:
                 },
             ),
             patch(
-                "sys.argv", ["export-onnx.py", "test-model", "--output-dir", str(tmp_path / "out")]
+                "sys.argv",
+                ["export-onnx.py", "test-model", "--output-dir", str(tmp_path / "out")],
             ),
         ):
             # Import and patch at module level
             mock_ort = MagicMock()
-            mock_ort.ORTModelForSequenceClassification.from_pretrained.return_value = mock_model
+            mock_ort.ORTModelForSequenceClassification.from_pretrained.return_value = (
+                mock_model
+            )
 
             mock_transformers = MagicMock()
-            mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
+            mock_transformers.AutoTokenizer.from_pretrained.return_value = (
+                mock_tokenizer
+            )
 
             with (
                 patch.dict(

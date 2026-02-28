@@ -27,7 +27,9 @@ def test_cmd_send_stream_prints_tokens(tmp_path: Path, monkeypatch, capsys) -> N
         def __init__(self, socket_path, timeout):
             del socket_path, timeout
 
-        def stream_message(self, sender_id: str, text: str, session_id=None, auto_approve=False):
+        def stream_message(
+            self, sender_id: str, text: str, session_id=None, auto_approve=False
+        ):
             del sender_id, text, session_id, auto_approve
             yield {"type": "start", "payload": {}}
             yield {"type": "token", "payload": {"text": "echo:"}}
@@ -49,7 +51,9 @@ def test_cmd_send_stream_error_event(tmp_path: Path, monkeypatch, capsys) -> Non
         def __init__(self, socket_path, timeout):
             del socket_path, timeout
 
-        def stream_message(self, sender_id: str, text: str, session_id=None, auto_approve=False):
+        def stream_message(
+            self, sender_id: str, text: str, session_id=None, auto_approve=False
+        ):
             del sender_id, text, session_id, auto_approve
             yield {"type": "error", "payload": {"error": "boom"}}
 
@@ -63,7 +67,9 @@ def test_cmd_send_stream_error_event(tmp_path: Path, monkeypatch, capsys) -> Non
     assert "boom" in out.err
 
 
-def test_cmd_send_stream_auto_approve_forwarded(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_cmd_send_stream_auto_approve_forwarded(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
     """--auto-approve flag is forwarded to stream_message."""
     received_auto_approve = []
 
@@ -71,7 +77,9 @@ def test_cmd_send_stream_auto_approve_forwarded(tmp_path: Path, monkeypatch, cap
         def __init__(self, socket_path, timeout):
             del socket_path, timeout
 
-        def stream_message(self, sender_id: str, text: str, session_id=None, auto_approve=False):
+        def stream_message(
+            self, sender_id: str, text: str, session_id=None, auto_approve=False
+        ):
             received_auto_approve.append(auto_approve)
             yield {"type": "final", "payload": {"text": "done"}}
 
@@ -84,7 +92,9 @@ def test_cmd_send_stream_auto_approve_forwarded(tmp_path: Path, monkeypatch, cap
     assert received_auto_approve == [True]
 
 
-def test_cmd_send_non_stream_auto_approve_in_payload(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_cmd_send_non_stream_auto_approve_in_payload(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
     """--auto-approve flag is included in non-streaming HTTP payload."""
 
     captured_payloads = []

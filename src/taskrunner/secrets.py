@@ -9,7 +9,9 @@ from pathlib import Path
 import pyrage
 
 
-def decrypt_env_file(enc_path: str | Path, identity_path: str | None = None) -> dict[str, str]:
+def decrypt_env_file(
+    enc_path: str | Path, identity_path: str | None = None
+) -> dict[str, str]:
     """Decrypt an age-encrypted .env file and return key-value pairs.
 
     Args:

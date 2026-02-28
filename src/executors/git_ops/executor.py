@@ -15,7 +15,9 @@ from typing import Any
 import requests
 
 
-def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
+def call_bridge(
+    endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30
+) -> dict:
     """Make an HTTP call to the bridge server.
 
     Args:
@@ -92,7 +94,9 @@ def commit(message: str, all: bool = False) -> dict[str, Any]:
     return call_bridge("/git/commit", data)
 
 
-def branch(name: str | None = None, delete: bool = False, list_all: bool = False) -> dict[str, Any]:
+def branch(
+    name: str | None = None, delete: bool = False, list_all: bool = False
+) -> dict[str, Any]:
     """List or manage git branches via bridge."""
     data: dict[str, Any] = {}
     if name:
@@ -138,7 +142,9 @@ def main() -> None:
         elif action == "commit":
             message = os.environ.get("MESSAGE")
             if not message:
-                raise ValueError("MESSAGE environment variable required for commit action")
+                raise ValueError(
+                    "MESSAGE environment variable required for commit action"
+                )
             commit_all = os.environ.get("ALL", "").lower() in ("true", "1", "yes")
             result = commit(message, commit_all)
 
@@ -151,7 +157,11 @@ def main() -> None:
         elif action == "push":
             remote = os.environ.get("REMOTE", "origin")
             branch_name = os.environ.get("BRANCH_NAME")
-            set_upstream = os.environ.get("SET_UPSTREAM", "").lower() in ("true", "1", "yes")
+            set_upstream = os.environ.get("SET_UPSTREAM", "").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
             result = push(remote, branch_name, set_upstream)
 
         else:

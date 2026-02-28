@@ -102,7 +102,9 @@ class IMessageChannel(Channel):
                             logger.exception("Error handling message from %s", sender)
             except Exception:
                 consecutive_errors += 1
-                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
+                backoff = min(
+                    self._poll_interval * (2**consecutive_errors), max_backoff
+                )
                 logger.exception(
                     "Error polling messages (consecutive=%d, backoff=%.1fs)",
                     consecutive_errors,
@@ -125,13 +127,13 @@ class IMessageChannel(Channel):
         # Escape for AppleScript
         escaped = prefixed.replace("\\", "\\\\").replace('"', '\\"')
 
-        applescript = f'''
+        applescript = f"""
         tell application "Messages"
             set targetService to 1st account whose service type = iMessage
             set targetBuddy to participant "{recipient}" of targetService
             send "{escaped}" to targetBuddy
         end tell
-        '''
+        """
 
         try:
             subprocess.run(
@@ -153,7 +155,9 @@ class IMessageChannel(Channel):
         """
         start_rowid = self._get_latest_rowid()
         deadline = time.time() + timeout_seconds
-        logger.info("Waiting for reply from %s (timeout=%ds)", sender_id, timeout_seconds)
+        logger.info(
+            "Waiting for reply from %s (timeout=%ds)", sender_id, timeout_seconds
+        )
 
         while time.time() < deadline:
             time.sleep(self._poll_interval)
@@ -245,7 +249,9 @@ class IMessageChannel(Channel):
             conn.close()
 
     @staticmethod
-    def _query_attachments(conn: sqlite3.Connection, message_rowid: int) -> list[Attachment]:
+    def _query_attachments(
+        conn: sqlite3.Connection, message_rowid: int
+    ) -> list[Attachment]:
         """Query attachments for a specific message from chat.db."""
         cursor = conn.execute(
             """
@@ -316,7 +322,9 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
         id="imessage",
         label="iMessage",
         capabilities=(
-            ChannelCapability.POLLING | ChannelCapability.SEND | ChannelCapability.WAIT_FOR_REPLY
+            ChannelCapability.POLLING
+            | ChannelCapability.SEND
+            | ChannelCapability.WAIT_FOR_REPLY
         ),
         config_schema=IMessageChannelConfig,
         platform="darwin",

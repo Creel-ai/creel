@@ -288,7 +288,9 @@ def get_required_scope(request_path: str) -> str:
 def create_scoped_authenticator(required_scope: str):
     """Create a scoped authenticator for a specific tool group."""
 
-    def authenticate_scope(credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
+    def authenticate_scope(
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+    ) -> bool:
         """Validate the scoped bearer token."""
         if not SCOPED_TOKENS:
             raise HTTPException(
@@ -306,7 +308,8 @@ def create_scoped_authenticator(required_scope: str):
         if not hmac.compare_digest(credentials.credentials, expected_token):
             logger.warning("Invalid auth token attempted for scope %s", required_scope)
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
             )
 
         logger.debug("Authenticated request for scope %s", required_scope)
@@ -324,7 +327,9 @@ authenticate_browser = create_scoped_authenticator("BROWSER")
 authenticate_git = create_scoped_authenticator("GIT")
 
 
-def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> BridgeResponse:
+def run_command(
+    cmd: list[str], timeout: int = 30, cwd: str | None = None
+) -> BridgeResponse:
     """Execute a CLI command safely using subprocess.
 
     Args:
@@ -368,9 +373,13 @@ def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> Br
             )
 
     except subprocess.TimeoutExpired:
-        logger.error("Command timed out after %ds (execution_id=%s)", timeout, execution_id)
+        logger.error(
+            "Command timed out after %ds (execution_id=%s)", timeout, execution_id
+        )
         return BridgeResponse(
-            ok=False, error=f"Command timed out after {timeout} seconds", execution_id=execution_id
+            ok=False,
+            error=f"Command timed out after {timeout} seconds",
+            execution_id=execution_id,
         )
     except FileNotFoundError:
         logger.error("Command not found: %s (execution_id=%s)", cmd[0], execution_id)
@@ -378,7 +387,9 @@ def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> Br
             ok=False, error=f"Command not found: {cmd[0]}", execution_id=execution_id
         )
     except Exception as e:
-        logger.error("Unexpected error running command (execution_id=%s): %s", execution_id, e)
+        logger.error(
+            "Unexpected error running command (execution_id=%s): %s", execution_id, e
+        )
         return BridgeResponse(
             ok=False, error=f"Unexpected error: {str(e)}", execution_id=execution_id
         )
@@ -399,7 +410,8 @@ async def lifespan(app: FastAPI):
             token = secrets.token_urlsafe(32)
             logger.info("Generated %s bridge token: %s", scope.lower(), token)
             logger.warning(
-                "Consider setting %s environment variable to persist this token", env_var
+                "Consider setting %s environment variable to persist this token",
+                env_var,
             )
         else:
             logger.info("Using configured %s bridge token", scope.lower())
@@ -422,14 +434,22 @@ async def lifespan(app: FastAPI):
         blocked_domains = [d.strip() for d in blocked_str.split(",") if d.strip()]
         browser_relay = BrowserRelay(
             max_sessions=int(os.environ.get("BROWSER_MAX_SESSIONS", "3")),
-            session_timeout_minutes=int(os.environ.get("BROWSER_SESSION_TIMEOUT", "10")),
+            session_timeout_minutes=int(
+                os.environ.get("BROWSER_SESSION_TIMEOUT", "10")
+            ),
             blocked_domains=blocked_domains,
             container_memory=os.environ.get("BROWSER_CONTAINER_MEMORY", "1024m"),
             container_shm_size=os.environ.get("BROWSER_CONTAINER_SHM_SIZE", "256m"),
             container_tmpfs_size=os.environ.get("BROWSER_CONTAINER_TMPFS_SIZE", "128M"),
-            navigate_timeout_ms=int(os.environ.get("BROWSER_NAVIGATE_TIMEOUT_MS", "30000")),
-            snapshot_timeout_ms=int(os.environ.get("BROWSER_SNAPSHOT_TIMEOUT_MS", "15000")),
-            block_heavy_resources=os.environ.get("BROWSER_BLOCK_HEAVY_RESOURCES", "true").lower()
+            navigate_timeout_ms=int(
+                os.environ.get("BROWSER_NAVIGATE_TIMEOUT_MS", "30000")
+            ),
+            snapshot_timeout_ms=int(
+                os.environ.get("BROWSER_SNAPSHOT_TIMEOUT_MS", "15000")
+            ),
+            block_heavy_resources=os.environ.get(
+                "BROWSER_BLOCK_HEAVY_RESOURCES", "true"
+            ).lower()
             in ("true", "1", "yes"),
         )
         await browser_relay.start()
@@ -467,7 +487,8 @@ async def health_check():
 # Notes endpoints (via memo CLI)
 @app.post("/notes/list", response_model=BridgeResponse)
 async def notes_list(
-    request: NotesListRequest = NotesListRequest(), _: bool = Depends(authenticate_notes)
+    request: NotesListRequest = NotesListRequest(),
+    _: bool = Depends(authenticate_notes),
 ) -> BridgeResponse:
     """List notes via memo CLI."""
     cmd = ["memo", "notes"]
@@ -554,7 +575,8 @@ async def reminders_complete(
 # Things 3 endpoints (via things CLI)
 @app.post("/things/inbox", response_model=BridgeResponse)
 async def things_inbox(
-    request: ThingsInboxRequest = ThingsInboxRequest(), _: bool = Depends(authenticate_things)
+    request: ThingsInboxRequest = ThingsInboxRequest(),
+    _: bool = Depends(authenticate_things),
 ) -> BridgeResponse:
     """Get Things 3 inbox via things CLI."""
     cmd = ["things", "inbox", "--limit", str(request.limit)]
@@ -646,7 +668,9 @@ async def imessage_recent(
 ) -> BridgeResponse:
     """Get recent iMessages via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
+        return BridgeResponse(
+            ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg"
+        )
 
     cmd = ["/opt/homebrew/bin/imsg", "recent", "--limit", str(request.limit)]
     return run_command(cmd)
@@ -658,7 +682,9 @@ async def imessage_send(
 ) -> BridgeResponse:
     """Send iMessage via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
+        return BridgeResponse(
+            ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg"
+        )
 
     cmd = ["/opt/homebrew/bin/imsg", "send", "--to", request.to, "--text", request.text]
     return run_command(cmd)
@@ -668,7 +694,9 @@ async def imessage_send(
 async def imessage_chats(_: bool = Depends(authenticate_imessage)) -> BridgeResponse:
     """Get iMessage chats via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
+        return BridgeResponse(
+            ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg"
+        )
 
     cmd = ["/opt/homebrew/bin/imsg", "chats"]
     return run_command(cmd)
@@ -950,7 +978,8 @@ def main():
 
     # Set up logging
     logging.basicConfig(
-        level=args.log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=args.log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     # Store host/port in env for lifespan

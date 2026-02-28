@@ -105,7 +105,9 @@ def get_recent_messages(
         # Validate chat access
         if allowed_chats and chat_id not in allowed_chats:
             raise RuntimeError(f"Chat '{chat_id}' not in allowed chats")
-        data = _api("GET", f"/chat/{chat_id}/message", server_url, password, params=params)
+        data = _api(
+            "GET", f"/chat/{chat_id}/message", server_url, password, params=params
+        )
     else:
         data = _api("GET", "/message", server_url, password, params=params)
 
@@ -154,7 +156,9 @@ def send_message(
     _check_rate_limit()
 
     if len(text) > MAX_MESSAGE_LENGTH:
-        raise RuntimeError(f"Message too long ({len(text)} chars, max {MAX_MESSAGE_LENGTH})")
+        raise RuntimeError(
+            f"Message too long ({len(text)} chars, max {MAX_MESSAGE_LENGTH})"
+        )
 
     _api(
         "POST",
@@ -208,7 +212,11 @@ def get_chats(
     limit = max(1, min(limit, MAX_CHATS_PER_REQUEST))
 
     data = _api(
-        "GET", "/chat", server_url, password, params={"limit": limit, "sort": "lastmessage"}
+        "GET",
+        "/chat",
+        server_url,
+        password,
+        params={"limit": limit, "sort": "lastmessage"},
     )
 
     chats = []
@@ -220,9 +228,11 @@ def get_chats(
             {
                 "chat_id": chat_id,
                 "display_name": chat.get("displayName", "") or chat_id,
-                "last_message_date": chat.get("lastMessage", {}).get("dateCreated", "")
-                if chat.get("lastMessage")
-                else "",
+                "last_message_date": (
+                    chat.get("lastMessage", {}).get("dateCreated", "")
+                    if chat.get("lastMessage")
+                    else ""
+                ),
             }
         )
 
@@ -262,7 +272,9 @@ def main() -> None:
             text = _env("TEXT")
             if not chat_id or not text:
                 raise RuntimeError("CHAT_ID and TEXT required for send_message")
-            result = send_message(server_url, password, allowed_recipients, chat_id, text)
+            result = send_message(
+                server_url, password, allowed_recipients, chat_id, text
+            )
         elif action == "send_reaction":
             chat_id = _env("CHAT_ID")
             message_guid = _env("MESSAGE_GUID")
@@ -270,7 +282,12 @@ def main() -> None:
             if not all([chat_id, message_guid, reaction]):
                 raise RuntimeError("CHAT_ID, MESSAGE_GUID, and REACTION required")
             result = send_reaction(
-                server_url, password, allowed_recipients, chat_id, message_guid, reaction
+                server_url,
+                password,
+                allowed_recipients,
+                chat_id,
+                message_guid,
+                reaction,
             )
         elif action == "get_chats":
             limit = int(_env("LIMIT") or "20")

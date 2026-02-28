@@ -27,7 +27,8 @@ class TestBridgeClient:
 
         # Mock environment variables
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             result = call_bridge("/reminders/list")
 
@@ -48,13 +49,19 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
+            with pytest.raises(
+                RuntimeError, match="BRIDGE_URL environment variable not set"
+            ):
                 call_bridge("/reminders/list")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
-            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
+        ):
+            with pytest.raises(
+                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
+            ):
                 call_bridge("/reminders/list")
 
     @patch("executors.apple_reminders.executor.requests.post")
@@ -66,7 +73,8 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/reminders/list")
@@ -114,7 +122,9 @@ class TestRemindersOperations:
         result = list_reminders("overdue")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/reminders/list", {"filter": "overdue"})
+        mock_call_bridge.assert_called_once_with(
+            "/reminders/list", {"filter": "overdue"}
+        )
 
     @patch("executors.apple_reminders.executor.call_bridge")
     def test_add_reminder_basic(self, mock_call_bridge):
@@ -124,7 +134,9 @@ class TestRemindersOperations:
         result = add_reminder("Test Reminder")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with("/reminders/add", {"title": "Test Reminder"})
+        mock_call_bridge.assert_called_once_with(
+            "/reminders/add", {"title": "Test Reminder"}
+        )
 
     @patch("executors.apple_reminders.executor.call_bridge")
     def test_add_reminder_with_list_and_due(self, mock_call_bridge):
@@ -135,7 +147,8 @@ class TestRemindersOperations:
 
         assert result["ok"] is True
         mock_call_bridge.assert_called_once_with(
-            "/reminders/add", {"title": "Test Reminder", "list": "Work", "due": "tomorrow"}
+            "/reminders/add",
+            {"title": "Test Reminder", "list": "Work", "due": "tomorrow"},
         )
 
     @patch("executors.apple_reminders.executor.call_bridge")
@@ -156,7 +169,10 @@ class TestMainFunction:
     @patch("builtins.print")
     def test_main_list_action(self, mock_print, mock_list_reminders):
         """Test main function with list action."""
-        mock_list_reminders.return_value = {"ok": True, "output": "reminder1\nreminder2"}
+        mock_list_reminders.return_value = {
+            "ok": True,
+            "output": "reminder1\nreminder2",
+        }
 
         with patch.dict(os.environ, {"ACTION": "list"}):
             from executors.apple_reminders.executor import main
@@ -188,7 +204,12 @@ class TestMainFunction:
 
         with patch.dict(
             os.environ,
-            {"ACTION": "add", "TITLE": "Test Reminder", "LIST": "Work", "DUE": "tomorrow"},
+            {
+                "ACTION": "add",
+                "TITLE": "Test Reminder",
+                "LIST": "Work",
+                "DUE": "tomorrow",
+            },
         ):
             from executors.apple_reminders.executor import main
 
@@ -212,7 +233,10 @@ class TestMainFunction:
     @patch("builtins.print")
     def test_main_complete_action(self, mock_print, mock_complete_reminder):
         """Test main function with complete action."""
-        mock_complete_reminder.return_value = {"ok": True, "output": "reminder completed"}
+        mock_complete_reminder.return_value = {
+            "ok": True,
+            "output": "reminder completed",
+        }
 
         with patch.dict(os.environ, {"ACTION": "complete", "ID": "123"}):
             from executors.apple_reminders.executor import main

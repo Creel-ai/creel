@@ -72,7 +72,9 @@ class ChannelRegistry:
                 meta, factory = register_fn()
                 self.register(meta, factory)
             except Exception:
-                logger.exception("Failed to load channel plugin '%s' from entry point", ep.name)
+                logger.exception(
+                    "Failed to load channel plugin '%s' from entry point", ep.name
+                )
 
         # Always attempt builtin imports for any channels not yet registered
         # (covers stale egg-info, partial entry-point discovery, PYTHONPATH setups)

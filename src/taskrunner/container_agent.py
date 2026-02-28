@@ -290,7 +290,9 @@ def _handle_tool_request(
         if guardian is not None:
             decision = guardian.validate_action(tool_name, tool_input)
             if decision.verdict == ActionVerdict.DENY:
-                logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
+                logger.warning(
+                    "Guardian denied tool %s: %s", tool_name, decision.reason
+                )
                 guardian.log_action_outcome(tool_name, "deny", "denied_by_policy")
                 results.append(
                     {
@@ -302,10 +304,14 @@ def _handle_tool_request(
                 continue
 
             if decision.verdict == ActionVerdict.REVIEW:
-                logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
+                logger.warning(
+                    "Guardian review for tool %s: %s", tool_name, decision.reason
+                )
                 if confirm_action is not None:
                     if not confirm_action(tool_name, tool_input, decision.reason):
-                        guardian.log_action_outcome(tool_name, "review", "denied_by_user")
+                        guardian.log_action_outcome(
+                            tool_name, "review", "denied_by_user"
+                        )
                         results.append(
                             {
                                 "tool_use_id": tool_id,
@@ -330,11 +336,11 @@ def _handle_tool_request(
                             }
                         )
                         if c["id"] == tool_id:
-                            approval_msg = f"Action requires approval: {decision.reason}"
-                        else:
                             approval_msg = (
-                                "Action skipped — another tool in this batch requires approval."
+                                f"Action requires approval: {decision.reason}"
                             )
+                        else:
+                            approval_msg = "Action skipped — another tool in this batch requires approval."
                         synthetic_results.append(
                             {
                                 "type": "tool_result",
@@ -346,7 +352,9 @@ def _handle_tool_request(
 
                     # Persist the blocked tool call + synthetic results into
                     # host-side session history before returning.
-                    messages.append({"role": "assistant", "content": assistant_tool_use})
+                    messages.append(
+                        {"role": "assistant", "content": assistant_tool_use}
+                    )
                     messages.append(
                         {
                             "role": "user",
@@ -373,7 +381,11 @@ def _handle_tool_request(
             if user_request:
                 prior_tools = _extract_prior_tools(messages)
                 if prior_tools:
-                    logger.info("Coherence context: prior_tools=%s for %s", prior_tools, tool_name)
+                    logger.info(
+                        "Coherence context: prior_tools=%s for %s",
+                        prior_tools,
+                        tool_name,
+                    )
                 coherence = guardian.check_coherence(
                     user_request, tool_name, tool_input, prior_tools=prior_tools
                 )
@@ -402,9 +414,11 @@ def _handle_tool_request(
                     logger.warning(
                         "Guardian blocked memory write for %s (confidence=%.3f)",
                         tool_name,
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
+                        (
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0
+                        ),
                     )
                     results.append(
                         {
@@ -461,9 +475,11 @@ def _handle_tool_request(
                 logger.warning(
                     "Guardian blocked output from %s (confidence=%.3f)",
                     tool_name,
-                    screen_result.classifier_result.confidence
-                    if screen_result.classifier_result
-                    else 0.0,
+                    (
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0
+                    ),
                 )
                 result = (
                     f"[Guardian] Output from '{tool_name}' was blocked by the "
@@ -477,9 +493,11 @@ def _handle_tool_request(
             if screen_result.blocked:
                 logger.warning(
                     "Guardian blocked search_memory output (confidence=%.3f)",
-                    screen_result.classifier_result.confidence
-                    if screen_result.classifier_result
-                    else 0.0,
+                    (
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0
+                    ),
                 )
                 result = (
                     "[Guardian] Memory search results were blocked by the "

@@ -161,7 +161,9 @@ class MediaStore:
 
     def _download(self, url: str) -> bytes:
         """Download a file from *url* with size limit enforcement."""
-        with httpx.stream("GET", url, timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True) as resp:
+        with httpx.stream(
+            "GET", url, timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True
+        ) as resp:
             resp.raise_for_status()
 
             # Check Content-Length header first if available

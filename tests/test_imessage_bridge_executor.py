@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from executors.imessage_bridge.executor import call_bridge, get_chats, get_recent, send_message
+from executors.imessage_bridge.executor import (
+    call_bridge,
+    get_chats,
+    get_recent,
+    send_message,
+)
 
 
 class TestBridgeClient:
@@ -22,7 +27,8 @@ class TestBridgeClient:
 
         # Mock environment variables
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             result = call_bridge("/imessage/recent")
 
@@ -43,13 +49,19 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
+            with pytest.raises(
+                RuntimeError, match="BRIDGE_URL environment variable not set"
+            ):
                 call_bridge("/imessage/recent")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
-            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
+        ):
+            with pytest.raises(
+                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
+            ):
                 call_bridge("/imessage/recent")
 
     @patch("executors.imessage_bridge.executor.requests.post")
@@ -61,7 +73,8 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/imessage/recent")
@@ -151,7 +164,8 @@ class TestMainFunction:
         mock_send_message.return_value = {"ok": True, "output": "message sent"}
 
         with patch.dict(
-            os.environ, {"ACTION": "send", "TO": "friend@example.com", "TEXT": "Hello world"}
+            os.environ,
+            {"ACTION": "send", "TO": "friend@example.com", "TEXT": "Hello world"},
         ):
             from executors.imessage_bridge.executor import main
 
@@ -174,7 +188,9 @@ class TestMainFunction:
     @patch("builtins.print")
     def test_main_send_missing_text(self, mock_print):
         """Test main function with send action but missing TEXT."""
-        with patch.dict(os.environ, {"ACTION": "send", "TO": "friend@example.com"}, clear=True):
+        with patch.dict(
+            os.environ, {"ACTION": "send", "TO": "friend@example.com"}, clear=True
+        ):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.imessage_bridge.executor import main
 

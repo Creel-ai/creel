@@ -139,7 +139,9 @@ class TestDriftDetectorCheckAll:
 
     def test_check_all_returns_multiple_alerts(self) -> None:
         """check_all should return alerts from all three checks."""
-        detector = DriftDetector(z_threshold=3.0, error_threshold=0.01, error_window_size=20)
+        detector = DriftDetector(
+            z_threshold=3.0, error_threshold=0.01, error_window_size=20
+        )
         # Build a baseline that will trigger both new tool and error rate
         for _ in range(50):
             detector._baseline.output_lengths.append(100)

@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from executors.apple_notes.executor import call_bridge, create_note, list_notes, search_notes
+from executors.apple_notes.executor import (
+    call_bridge,
+    create_note,
+    list_notes,
+    search_notes,
+)
 
 
 class TestBridgeClient:
@@ -22,7 +27,8 @@ class TestBridgeClient:
 
         # Mock environment variables
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             result = call_bridge("/notes/list")
 
@@ -49,7 +55,8 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             result = call_bridge("/notes/search", {"query": "test"})
 
@@ -69,13 +76,19 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
+            with pytest.raises(
+                RuntimeError, match="BRIDGE_URL environment variable not set"
+            ):
                 call_bridge("/notes/list")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
-            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
+        with patch.dict(
+            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
+        ):
+            with pytest.raises(
+                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
+            ):
                 call_bridge("/notes/list")
 
     @patch("executors.apple_notes.executor.requests.post")
@@ -86,7 +99,8 @@ class TestBridgeClient:
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection failed")
 
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             with pytest.raises(RuntimeError, match="Bridge request failed"):
                 call_bridge("/notes/list")
@@ -100,7 +114,8 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
+            os.environ,
+            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
         ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/notes/list")
@@ -139,7 +154,9 @@ class TestNotesOperations:
 
         assert result["ok"] is True
         assert result["output"] == "search results"
-        mock_call_bridge.assert_called_once_with("/notes/search", {"query": "test query"})
+        mock_call_bridge.assert_called_once_with(
+            "/notes/search", {"query": "test query"}
+        )
 
     @patch("executors.apple_notes.executor.call_bridge")
     def test_create_note_basic(self, mock_call_bridge):
@@ -162,7 +179,8 @@ class TestNotesOperations:
 
         assert result["ok"] is True
         mock_call_bridge.assert_called_once_with(
-            "/notes/create", {"title": "Test Title", "body": "Test Body", "folder": "work"}
+            "/notes/create",
+            {"title": "Test Title", "body": "Test Body", "folder": "work"},
         )
 
 
@@ -230,7 +248,12 @@ class TestMainFunction:
 
         with patch.dict(
             os.environ,
-            {"ACTION": "create", "TITLE": "Test Note", "BODY": "Note content", "FOLDER": "work"},
+            {
+                "ACTION": "create",
+                "TITLE": "Test Note",
+                "BODY": "Note content",
+                "FOLDER": "work",
+            },
         ):
             from executors.apple_notes.executor import main
 

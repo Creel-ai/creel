@@ -14,7 +14,12 @@ def _tool_call_conversation() -> list[dict]:
         {
             "role": "assistant",
             "content": [
-                {"type": "tool_use", "id": "t1", "name": "weather", "input": {"city": "Denver"}},
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "weather",
+                    "input": {"city": "Denver"},
+                },
             ],
         },
         {
@@ -41,10 +46,17 @@ def _tool_call_conversation() -> list[dict]:
         {
             "role": "user",
             "content": [
-                {"type": "tool_result", "tool_use_id": "t2", "content": "Partly cloudy, 65°F"},
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "t2",
+                    "content": "Partly cloudy, 65°F",
+                },
             ],
         },
-        {"role": "assistant", "content": [{"type": "text", "text": "Partly cloudy tomorrow!"}]},
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Partly cloudy tomorrow!"}],
+        },
     ]
 
 

@@ -86,7 +86,9 @@ class CoherenceChecker:
 
         if tool_name in _SKIP_COHERENCE:
             return CoherenceResult(
-                coherent=True, confidence=1.0, reasoning=f"Skipped: {tool_name} is a cleanup tool"
+                coherent=True,
+                confidence=1.0,
+                reasoning=f"Skipped: {tool_name} is a cleanup tool",
             )
 
         t0 = time.perf_counter()
@@ -157,7 +159,9 @@ class CoherenceChecker:
             )
 
         except Exception:
-            logger.warning("Coherence check failed — defaulting to coherent", exc_info=True)
+            logger.warning(
+                "Coherence check failed — defaulting to coherent", exc_info=True
+            )
             return CoherenceResult(
                 coherent=True,
                 confidence=0.0,

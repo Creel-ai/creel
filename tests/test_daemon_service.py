@@ -18,7 +18,9 @@ class _StubChatServer:
     """Minimal chat-server shape used by DaemonService tests."""
 
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._session_mgr = SessionManager(
+            sessions_dir=str(sessions_dir), max_history=50
+        )
         self._guardian = None
         self.calls: list[tuple[str, str]] = []
 
@@ -127,7 +129,9 @@ def test_scheduler_lifecycle(daemon_service: DaemonService) -> None:
         started.set()
         shutdown_event.wait(timeout=2)
 
-    with patch("taskrunner.daemon.service.start_scheduler", side_effect=_fake_scheduler):
+    with patch(
+        "taskrunner.daemon.service.start_scheduler", side_effect=_fake_scheduler
+    ):
         assert daemon_service.start_scheduler("tasks") is True
         assert started.wait(timeout=1)
         assert daemon_service.status()["scheduler"]["running"] is True
@@ -143,11 +147,15 @@ def test_channel_lifecycle(daemon_service: DaemonService) -> None:
     assert daemon_service.start_channel("imessage") is True
     assert channel.started.wait(timeout=1)
 
-    running_state = next(c for c in daemon_service.status()["channels"] if c["name"] == "imessage")
+    running_state = next(
+        c for c in daemon_service.status()["channels"] if c["name"] == "imessage"
+    )
     assert running_state["running"] is True
 
     assert daemon_service.stop_channel("imessage", timeout=1) is True
     assert channel.stopped.wait(timeout=1)
 
-    stopped_state = next(c for c in daemon_service.status()["channels"] if c["name"] == "imessage")
+    stopped_state = next(
+        c for c in daemon_service.status()["channels"] if c["name"] == "imessage"
+    )
     assert stopped_state["running"] is False

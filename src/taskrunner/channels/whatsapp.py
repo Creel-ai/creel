@@ -94,7 +94,10 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
                 consecutive_errors = 0
 
                 for msg in messages:
-                    if self._allowed_senders and msg.sender not in self._allowed_senders:
+                    if (
+                        self._allowed_senders
+                        and msg.sender not in self._allowed_senders
+                    ):
                         continue
                     logger.info("WhatsApp from %s: %s", msg.sender, msg.text[:80])
                     response = callback(msg.sender, msg.text)
@@ -104,7 +107,9 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
 
             except Exception:
                 consecutive_errors += 1
-                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
+                backoff = min(
+                    self._poll_interval * (2**consecutive_errors), max_backoff
+                )
                 logger.exception(
                     "Error polling WhatsApp (consecutive=%d, backoff=%.1fs)",
                     consecutive_errors,
@@ -180,7 +185,9 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
                 messages = value.get("messages", [])
                 for msg in messages:
                     if msg.get("type") != "text":
-                        logger.debug("Skipping non-text message type=%s", msg.get("type"))
+                        logger.debug(
+                            "Skipping non-text message type=%s", msg.get("type")
+                        )
                         continue
                     sender = msg.get("from", "")
                     text = msg.get("text", {}).get("body", "")
@@ -218,7 +225,9 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
         id="whatsapp",
         label="WhatsApp",
         capabilities=(
-            ChannelCapability.POLLING | ChannelCapability.WEBHOOK | ChannelCapability.SEND
+            ChannelCapability.POLLING
+            | ChannelCapability.WEBHOOK
+            | ChannelCapability.SEND
         ),
         config_schema=WhatsAppChannelConfig,
         extras=["whatsapp"],

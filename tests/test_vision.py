@@ -5,9 +5,7 @@ from __future__ import annotations
 import base64
 import io
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from taskrunner.services.vision import (
     NEEDS_CONVERSION,
@@ -18,7 +16,9 @@ from taskrunner.services.vision import (
 )
 
 
-def _make_png(tmp_path: Path, name: str = "photo.png", size: tuple[int, int] = (100, 100)) -> Path:
+def _make_png(
+    tmp_path: Path, name: str = "photo.png", size: tuple[int, int] = (100, 100)
+) -> Path:
     """Create a minimal valid PNG file using Pillow."""
     from PIL import Image
 
@@ -28,7 +28,9 @@ def _make_png(tmp_path: Path, name: str = "photo.png", size: tuple[int, int] = (
     return path
 
 
-def _make_jpeg(tmp_path: Path, name: str = "photo.jpg", size: tuple[int, int] = (100, 100)) -> Path:
+def _make_jpeg(
+    tmp_path: Path, name: str = "photo.jpg", size: tuple[int, int] = (100, 100)
+) -> Path:
     """Create a minimal valid JPEG file using Pillow."""
     from PIL import Image
 
@@ -38,7 +40,9 @@ def _make_jpeg(tmp_path: Path, name: str = "photo.jpg", size: tuple[int, int] = 
     return path
 
 
-def _make_bmp(tmp_path: Path, name: str = "photo.bmp", size: tuple[int, int] = (100, 100)) -> Path:
+def _make_bmp(
+    tmp_path: Path, name: str = "photo.bmp", size: tuple[int, int] = (100, 100)
+) -> Path:
     """Create a minimal valid BMP file using Pillow."""
     from PIL import Image
 

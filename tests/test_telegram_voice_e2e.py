@@ -28,7 +28,6 @@ from taskrunner.channels.telegram_bridge import (
     _extract_media,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -152,7 +151,9 @@ class TestVoiceDownload:
         bridge = MockTelegramBridge(file_data={"voice_id": ogg_bytes})
         channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
 
-        media = [TelegramMedia(file_id="voice_id", file_type="voice", mime_type="audio/ogg")]
+        media = [
+            TelegramMedia(file_id="voice_id", file_type="voice", mime_type="audio/ogg")
+        ]
         attachments = channel._download_media(media)
 
         assert len(attachments) == 1
@@ -164,7 +165,11 @@ class TestVoiceDownload:
         bridge = MockTelegramBridge(file_data={})
         channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
 
-        media = [TelegramMedia(file_id="missing_voice", file_type="voice", mime_type="audio/ogg")]
+        media = [
+            TelegramMedia(
+                file_id="missing_voice", file_type="voice", mime_type="audio/ogg"
+            )
+        ]
         attachments = channel._download_media(media)
 
         assert attachments == []
@@ -187,7 +192,11 @@ class TestPollingWithVoice:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[TelegramMedia(file_id="voice_poll", file_type="voice", mime_type="audio/ogg")],
+            media=[
+                TelegramMedia(
+                    file_id="voice_poll", file_type="voice", mime_type="audio/ogg"
+                )
+            ],
         )
         bridge = MockTelegramBridge(
             messages=[voice_msg],
@@ -236,7 +245,9 @@ class TestPollingWithVoice:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[TelegramMedia(file_id="v1", file_type="voice", mime_type="audio/ogg")],
+            media=[
+                TelegramMedia(file_id="v1", file_type="voice", mime_type="audio/ogg")
+            ],
         )
         bridge = MockTelegramBridge(
             messages=[voice_msg],
@@ -441,9 +452,13 @@ class TestE2ETelegramVoice:
 
         with (
             patch.object(
-                server._transcription, "transcribe", return_value="Hello, this is a test"
+                server._transcription,
+                "transcribe",
+                return_value="Hello, this is a test",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -500,7 +515,9 @@ class TestE2ETelegramVoice:
             patch.object(
                 server._transcription, "transcribe", return_value="Just a voice note"
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -543,10 +560,10 @@ class TestE2ETelegramVoice:
         mock_result.last_input_tokens = 60
 
         with (
-            patch.object(
-                server._transcription, "transcribe", return_value=""
-            ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch.object(server._transcription, "transcribe", return_value=""),
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -600,7 +617,11 @@ class TestE2ETelegramVoice:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[TelegramMedia(file_id="tg_voice_1", file_type="voice", mime_type="audio/ogg")],
+            media=[
+                TelegramMedia(
+                    file_id="tg_voice_1", file_type="voice", mime_type="audio/ogg"
+                )
+            ],
         )
         bridge = MockTelegramBridge(
             messages=[voice_msg],
@@ -618,9 +639,13 @@ class TestE2ETelegramVoice:
 
         with (
             patch.object(
-                server._transcription, "transcribe", return_value="Hello, this is a test"
+                server._transcription,
+                "transcribe",
+                return_value="Hello, this is a test",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
 
             def callback(*args):
@@ -692,9 +717,13 @@ class TestE2ETelegramVoice:
 
         with (
             patch.object(
-                server._transcription, "transcribe", return_value="testing one two three"
+                server._transcription,
+                "transcribe",
+                return_value="testing one two three",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
 
             def callback(*args):

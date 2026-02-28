@@ -43,7 +43,9 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_failure_stderr_in_exception(self, mock_decrypt, mock_run, mock_ensure, config):
+    def test_failure_stderr_in_exception(
+        self, mock_decrypt, mock_run, mock_ensure, config
+    ):
         """Non-zero exit should raise RuntimeError with stderr content."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -75,7 +77,9 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_timeout_raises_runtime_error(self, mock_decrypt, mock_run, mock_ensure, config):
+    def test_timeout_raises_runtime_error(
+        self, mock_decrypt, mock_run, mock_ensure, config
+    ):
         """Timeout should raise RuntimeError with executor name and timeout."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -127,7 +131,9 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_stderr_truncated_in_error(self, mock_decrypt, mock_run, mock_ensure, config):
+    def test_stderr_truncated_in_error(
+        self, mock_decrypt, mock_run, mock_ensure, config
+    ):
         """Very long stderr should be truncated in the error message."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -154,7 +160,8 @@ class TestRunExecutorContainer:
         },
     )
     @patch(
-        "taskrunner.oauth.get_google_access_token_from_json", return_value="ya29.container-token"
+        "taskrunner.oauth.get_google_access_token_from_json",
+        return_value="ya29.container-token",
     )
     @patch("taskrunner.orchestrator.tempfile.NamedTemporaryFile")
     def test_google_credentials_json_replaced_with_access_token(
@@ -219,7 +226,9 @@ class TestEnsureImage:
         mock_run.side_effect = [
             MagicMock(returncode=1),  # inspect
             MagicMock(
-                returncode=1, stderr="Step 3/5 : RUN pip install\nERROR: Could not find", stdout=""
+                returncode=1,
+                stderr="Step 3/5 : RUN pip install\nERROR: Could not find",
+                stdout="",
             ),  # build
         ]
 

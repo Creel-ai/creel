@@ -71,7 +71,9 @@ class AuditLogger:
             with open(path, "a") as f:
                 f.write(json.dumps(record, default=str) + "\n")
         except Exception:
-            logger.warning("Failed to write audit log to %s", self._base_path, exc_info=True)
+            logger.warning(
+                "Failed to write audit log to %s", self._base_path, exc_info=True
+            )
 
     def log_screen(
         self,

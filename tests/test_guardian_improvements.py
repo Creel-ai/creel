@@ -182,7 +182,9 @@ class TestAuditLogRotation:
         audit = AuditLogger(log_file, max_size_mb=0.001)  # ~1KB
         # Write enough to trigger rotation
         for i in range(50):
-            audit.log_screen(input_hash=f"hash{i}", input_length=i, blocked=False, source="test")
+            audit.log_screen(
+                input_hash=f"hash{i}", input_length=i, blocked=False, source="test"
+            )
         # Should have rotated
         assert log_file.exists()
         rotated = log_file.with_suffix(".jsonl.1")

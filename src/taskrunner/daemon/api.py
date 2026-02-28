@@ -58,7 +58,9 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
                 request.text,
                 auto_approve=request.auto_approve,
             )
-            session_id = await asyncio.to_thread(service.get_active_session_id, request.sender_id)
+            session_id = await asyncio.to_thread(
+                service.get_active_session_id, request.sender_id
+            )
             return SendMessageResponse(
                 sender_id=request.sender_id,
                 text=text,
@@ -82,7 +84,9 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
                         session_id=request.session_id,
                         auto_approve=request.auto_approve,
                     ):
-                        asyncio.run_coroutine_threadsafe(q.put(raw_event), loop).result()
+                        asyncio.run_coroutine_threadsafe(
+                            q.put(raw_event), loop
+                        ).result()
                 finally:
                     asyncio.run_coroutine_threadsafe(q.put(sentinel), loop).result()
 
@@ -109,12 +113,16 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         )
 
     @app.get("/v1/sessions", response_model=list[SessionSummary])
-    async def list_sessions(sender_id: str = Query(..., min_length=1)) -> list[SessionSummary]:
+    async def list_sessions(
+        sender_id: str = Query(..., min_length=1)
+    ) -> list[SessionSummary]:
         rows = await asyncio.to_thread(service.list_sessions, sender_id)
         return [SessionSummary(sender_id=sender_id, **row) for row in rows]
 
     @app.get("/v1/sessions/active", response_model=SessionSummary)
-    async def active_session(sender_id: str = Query(..., min_length=1)) -> SessionSummary:
+    async def active_session(
+        sender_id: str = Query(..., min_length=1)
+    ) -> SessionSummary:
         row = await asyncio.to_thread(service.get_active_session, sender_id)
         return SessionSummary(**row)
 
@@ -124,9 +132,13 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
         return SessionSummary(**row)
 
     @app.post("/v1/sessions/{session_id}/resume", response_model=SessionSummary)
-    async def resume_session(session_id: str, request: SessionRequest) -> SessionSummary:
+    async def resume_session(
+        session_id: str, request: SessionRequest
+    ) -> SessionSummary:
         try:
-            row = await asyncio.to_thread(service.resume_session, request.sender_id, session_id)
+            row = await asyncio.to_thread(
+                service.resume_session, request.sender_id, session_id
+            )
             return SessionSummary(**row)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

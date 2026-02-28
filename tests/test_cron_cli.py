@@ -814,7 +814,9 @@ class TestCronMainDispatch:
         assert rc == 0
         assert "No runs recorded" in capsys.readouterr().out
 
-    def test_cron_no_subcommand_shows_help(self, monkeypatch, tmp_path: Path, capsys) -> None:
+    def test_cron_no_subcommand_shows_help(
+        self, monkeypatch, tmp_path: Path, capsys
+    ) -> None:
         monkeypatch.setattr("sys.argv", ["creel", "cron"])
         rc = cli.main()
         assert rc == 1

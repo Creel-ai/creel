@@ -26,7 +26,9 @@ def uncertain_config() -> LLMJudgeConfig:
     )
 
 
-def _mock_response(text: str, input_tokens: int = 100, output_tokens: int = 50) -> MagicMock:
+def _mock_response(
+    text: str, input_tokens: int = 100, output_tokens: int = 50
+) -> MagicMock:
     block = MagicMock()
     block.type = "text"
     block.text = text
@@ -68,7 +70,9 @@ class TestShouldRun:
         assert judge.should_run(0.9) is False
         assert judge.should_run(1.0) is False
 
-    def test_uncertain_only_none_confidence_runs(self, uncertain_config: LLMJudgeConfig) -> None:
+    def test_uncertain_only_none_confidence_runs(
+        self, uncertain_config: LLMJudgeConfig
+    ) -> None:
         judge = LLMJudge(uncertain_config)
         assert judge.should_run(None) is True
 
@@ -108,7 +112,9 @@ class TestJudgeParsing:
         self, mock_get_client: MagicMock, config: LLMJudgeConfig
     ) -> None:
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response('{"is_injection": false}')
+        mock_client.messages.create.return_value = _mock_response(
+            '{"is_injection": false}'
+        )
         mock_get_client.return_value = mock_client
         judge = LLMJudge(config)
         result = judge.judge("test")

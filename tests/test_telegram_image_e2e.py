@@ -20,22 +20,26 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
-from taskrunner.channels.telegram import TelegramChannel, _telegram_file_type_to_attachment
+from taskrunner.channels.telegram import (
+    TelegramChannel,
+    _telegram_file_type_to_attachment,
+)
 from taskrunner.channels.telegram_bridge import (
     TelegramMedia,
     TelegramMessage,
     _extract_media,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_png_bytes() -> bytes:
     """Create minimal 1x1 PNG image bytes."""
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     img = Image.new("RGB", (1, 1), color="red")
     buf = io.BytesIO()
@@ -45,8 +49,9 @@ def _make_png_bytes() -> bytes:
 
 def _make_jpeg_bytes() -> bytes:
     """Create minimal 1x1 JPEG image bytes."""
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     img = Image.new("RGB", (1, 1), color="blue")
     buf = io.BytesIO()
@@ -205,8 +210,18 @@ class TestExtractMedia:
                 "chat": {"id": 42, "type": "private"},
                 "caption": "check this",
                 "photo": [
-                    {"file_id": "photo_small", "file_size": 100, "width": 90, "height": 90},
-                    {"file_id": "photo_large", "file_size": 50000, "width": 800, "height": 800},
+                    {
+                        "file_id": "photo_small",
+                        "file_size": 100,
+                        "width": 90,
+                        "height": 90,
+                    },
+                    {
+                        "file_id": "photo_large",
+                        "file_size": 50000,
+                        "width": 800,
+                        "height": 800,
+                    },
                 ],
             },
         }
@@ -254,7 +269,9 @@ class TestDownloadMedia:
         bridge = MockTelegramBridge(file_data={"photo123": jpeg_bytes})
         channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
 
-        media = [TelegramMedia(file_id="photo123", file_type="photo", mime_type="image/jpeg")]
+        media = [
+            TelegramMedia(file_id="photo123", file_type="photo", mime_type="image/jpeg")
+        ]
         attachments = channel._download_media(media)
 
         assert len(attachments) == 1
@@ -273,9 +290,7 @@ class TestDownloadMedia:
 
     def test_multiple_media_items(self):
         jpeg_bytes = _make_jpeg_bytes()
-        bridge = MockTelegramBridge(
-            file_data={"p1": jpeg_bytes, "p2": jpeg_bytes}
-        )
+        bridge = MockTelegramBridge(file_data={"p1": jpeg_bytes, "p2": jpeg_bytes})
         channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
 
         media = [
@@ -303,7 +318,11 @@ class TestPollingWithPhoto:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[TelegramMedia(file_id="photo_abc", file_type="photo", mime_type="image/jpeg")],
+            media=[
+                TelegramMedia(
+                    file_id="photo_abc", file_type="photo", mime_type="image/jpeg"
+                )
+            ],
         )
         bridge = MockTelegramBridge(
             messages=[photo_msg],
@@ -355,7 +374,9 @@ class TestPollingWithPhoto:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[TelegramMedia(file_id="p1", file_type="photo", mime_type="image/jpeg")],
+            media=[
+                TelegramMedia(file_id="p1", file_type="photo", mime_type="image/jpeg")
+            ],
         )
         bridge = MockTelegramBridge(
             messages=[photo_msg],
@@ -458,7 +479,12 @@ class TestWebhookWithPhoto:
                 "chat": {"id": 42, "type": "private"},
                 "caption": "look at this",
                 "photo": [
-                    {"file_id": "photo_webhook", "file_size": 50000, "width": 800, "height": 800},
+                    {
+                        "file_id": "photo_webhook",
+                        "file_size": 50000,
+                        "width": 800,
+                        "height": 800,
+                    },
                 ],
             },
         }
@@ -592,8 +618,12 @@ class TestE2ETelegramImage:
         }
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch.object(
+                server._vision, "prepare_image", return_value=mock_vision_block
+            ),
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             # Create an Attachment as if downloaded from Telegram
             attachment = Attachment(
@@ -667,7 +697,9 @@ class TestE2ETelegramImage:
         )
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
+            patch.object(
+                server._vision, "prepare_image", return_value=mock_vision_block
+            ),
             patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
         ):
             response = server.handle_message(
@@ -729,9 +761,13 @@ class TestE2ETelegramImage:
             mime_type="image/jpeg",
         )
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch(
+            "taskrunner.chat.run_agent_loop", return_value=mock_result
+        ) as mock_loop:
             response = server.handle_message(
-                "42", "What is this?", attachments=[attachment],
+                "42",
+                "What is this?",
+                attachments=[attachment],
             )
 
         assert response == "Just text response"
@@ -773,7 +809,11 @@ class TestE2ETelegramImage:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[TelegramMedia(file_id="tg_photo_1", file_type="photo", mime_type="image/jpeg")],
+            media=[
+                TelegramMedia(
+                    file_id="tg_photo_1", file_type="photo", mime_type="image/jpeg"
+                )
+            ],
         )
         bridge = MockTelegramBridge(
             messages=[photo_msg],
@@ -792,9 +832,12 @@ class TestE2ETelegramImage:
         server = ChatServer(agent_def)
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
+            patch.object(
+                server._vision, "prepare_image", return_value=mock_vision_block
+            ),
             patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
         ):
+
             def callback(*args):
                 if len(args) == 1 and isinstance(args[0], IncomingMessage):
                     msg = args[0]
@@ -814,6 +857,7 @@ class TestE2ETelegramImage:
 
             # Wait briefly then stop
             import time
+
             time.sleep(1)
             channel.stop()
             t.join(timeout=5)

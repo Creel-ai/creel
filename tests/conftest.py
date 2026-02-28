@@ -88,7 +88,9 @@ def age_keypair(tmp_path: Path) -> tuple[Path, Path]:
     recipient = identity.to_public()
 
     key_file = tmp_path / "key.txt"
-    key_file.write_text(f"# created: test\n# public key: {str(recipient)}\n{str(identity)}\n")
+    key_file.write_text(
+        f"# created: test\n# public key: {str(recipient)}\n{str(identity)}\n"
+    )
 
     pub_file = tmp_path / "key.pub"
     pub_file.write_text(str(recipient) + "\n")

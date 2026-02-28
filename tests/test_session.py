@@ -359,7 +359,9 @@ def _build_long_conversation(count: int = 20) -> list[dict]:
     messages = []
     for i in range(count):
         messages.append({"role": "user", "content": f"User message {i}"})
-        messages.append({"role": "assistant", "content": [{"type": "text", "text": f"Reply {i}"}]})
+        messages.append(
+            {"role": "assistant", "content": [{"type": "text", "text": f"Reply {i}"}]}
+        )
     return messages
 
 
@@ -462,7 +464,9 @@ def test_compaction_fallback_on_error(tmp_path: Path) -> None:
 
     session = mgr.get_or_create("cli")
     # Should have fallen back to trim, no summary message
-    assert not any("[CONVERSATION SUMMARY]" in str(m.get("content", "")) for m in session.messages)
+    assert not any(
+        "[CONVERSATION SUMMARY]" in str(m.get("content", "")) for m in session.messages
+    )
     assert len(session.messages) <= 10
 
 
@@ -513,7 +517,10 @@ def test_incremental_compaction(tmp_path: Path) -> None:
     for i in range(10):
         session.messages.append({"role": "user", "content": f"New message {i}"})
         session.messages.append(
-            {"role": "assistant", "content": [{"type": "text", "text": f"New reply {i}"}]}
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": f"New reply {i}"}],
+            }
         )
     mgr._save(session)
 
@@ -523,7 +530,9 @@ def test_incremental_compaction(tmp_path: Path) -> None:
     assert len(call_inputs) == 2
     # Second call's input should include the prior summary message
     second_input = call_inputs[1]
-    has_summary = any("[CONVERSATION SUMMARY]" in str(m.get("content", "")) for m in second_input)
+    has_summary = any(
+        "[CONVERSATION SUMMARY]" in str(m.get("content", "")) for m in second_input
+    )
     assert has_summary
 
 

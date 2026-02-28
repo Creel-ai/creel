@@ -14,9 +14,15 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Formats natively supported by major vision APIs
-SUPPORTED_IMAGE_FORMATS = frozenset({
-    ".jpg", ".jpeg", ".png", ".gif", ".webp",
-})
+SUPPORTED_IMAGE_FORMATS = frozenset(
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+    }
+)
 
 # Formats that need conversion to JPEG before sending
 NEEDS_CONVERSION = frozenset({".heic", ".heif", ".tiff", ".tif", ".bmp"})
@@ -158,8 +164,9 @@ class VisionProcessor:
 
     def _maybe_resize(self, file_path: Path) -> tuple[bytes, str]:
         """Resize the image if it exceeds max_pixels, preserving format."""
-        from PIL import Image
         import io
+
+        from PIL import Image
 
         img = Image.open(file_path)
         media_type = _detect_mime_type(file_path) or "image/jpeg"
@@ -170,7 +177,9 @@ class VisionProcessor:
             new_w = int(w * ratio)
             new_h = int(h * ratio)
             img = img.resize((new_w, new_h), Image.LANCZOS)
-            logger.debug("Resized %s from %dx%d to %dx%d", file_path.name, w, h, new_w, new_h)
+            logger.debug(
+                "Resized %s from %dx%d to %dx%d", file_path.name, w, h, new_w, new_h
+            )
 
         buf = io.BytesIO()
         # Determine PIL save format from extension
@@ -186,8 +195,9 @@ class VisionProcessor:
 
     def _convert_with_pillow(self, file_path: Path) -> tuple[bytes, str]:
         """Convert unsupported formats (HEIC, BMP, TIFF) to JPEG."""
-        from PIL import Image
         import io
+
+        from PIL import Image
 
         img = Image.open(file_path)
 
@@ -199,7 +209,11 @@ class VisionProcessor:
             img = img.resize((new_w, new_h), Image.LANCZOS)
             logger.debug(
                 "Resized %s from %dx%d to %dx%d",
-                file_path.name, w, h, new_w, new_h,
+                file_path.name,
+                w,
+                h,
+                new_w,
+                new_h,
             )
 
         if img.mode in ("RGBA", "P"):

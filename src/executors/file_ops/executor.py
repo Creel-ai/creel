@@ -158,7 +158,9 @@ def action_list() -> dict:
                             {
                                 "name": rel,
                                 "type": "directory" if os.path.isdir(full) else "file",
-                                "size": os.path.getsize(full) if os.path.isfile(full) else 0,
+                                "size": (
+                                    os.path.getsize(full) if os.path.isfile(full) else 0
+                                ),
                             }
                         )
         else:
@@ -171,7 +173,9 @@ def action_list() -> dict:
                         {
                             "name": name,
                             "type": "directory" if os.path.isdir(full) else "file",
-                            "size": os.path.getsize(full) if os.path.isfile(full) else 0,
+                            "size": (
+                                os.path.getsize(full) if os.path.isfile(full) else 0
+                            ),
                         }
                     )
 

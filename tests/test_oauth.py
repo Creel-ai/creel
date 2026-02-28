@@ -42,7 +42,9 @@ class TestGetGoogleCredentials:
             patch.dict(
                 "sys.modules",
                 {
-                    "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
+                    "google.auth.transport.requests": MagicMock(
+                        Request=mock_request_cls
+                    ),
                     "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
                 },
             ),
@@ -60,7 +62,9 @@ class TestGetGoogleCredentials:
             patch.dict(
                 "sys.modules",
                 {
-                    "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
+                    "google.auth.transport.requests": MagicMock(
+                        Request=mock_request_cls
+                    ),
                     "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
                 },
             ),
@@ -79,7 +83,9 @@ class TestGetGoogleCredentials:
             patch.dict(
                 "sys.modules",
                 {
-                    "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
+                    "google.auth.transport.requests": MagicMock(
+                        Request=mock_request_cls
+                    ),
                     "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
                 },
             ),

@@ -141,7 +141,9 @@ async def test_history_replay_on_mount(tmp_path):
     # Pre-populate a session with some history
     mgr = server._session_mgr
     mgr.add_user_message(SENDER_ID, "Hello there")
-    mgr.add_assistant_response(SENDER_ID, [{"type": "text", "text": "Hi! How can I help?"}])
+    mgr.add_assistant_response(
+        SENDER_ID, [{"type": "text", "text": "Hi! How can I help?"}]
+    )
     mgr.add_user_message(SENDER_ID, "What time is it?")
 
     app = ChatApp(server)
@@ -283,7 +285,9 @@ async def test_tui_prefers_backend_stream_events(tmp_path):
 
     class _StreamingBackend:
         def handle_message(self, sender_id, text, on_text_delta=None):
-            raise AssertionError("TUI should use stream_message instead of handle_message")
+            raise AssertionError(
+                "TUI should use stream_message instead of handle_message"
+            )
 
         def stream_message(self, sender_id, text):
             del sender_id, text

@@ -13,19 +13,9 @@ Simulates the full path:
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from tests.helpers.imessage_db import (
-    create_chat_db as _create_chat_db,
-    insert_attachment as _insert_attachment,
-    insert_handle as _insert_handle,
-    insert_message as _insert_message,
-    link_attachment as _link_attachment,
-)
 from taskrunner.channels.imessage import IMessageChannel
 from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
 from taskrunner.chat import ChatServer
@@ -38,7 +28,21 @@ from taskrunner.models import (
     SessionConfig,
     WorkspaceConfig,
 )
-
+from tests.helpers.imessage_db import (
+    create_chat_db as _create_chat_db,
+)
+from tests.helpers.imessage_db import (
+    insert_attachment as _insert_attachment,
+)
+from tests.helpers.imessage_db import (
+    insert_handle as _insert_handle,
+)
+from tests.helpers.imessage_db import (
+    insert_message as _insert_message,
+)
+from tests.helpers.imessage_db import (
+    link_attachment as _link_attachment,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -210,7 +214,8 @@ class TestMissingVoiceFile:
         _insert_handle(db_path, 1, "friend@icloud.com")
         _insert_message(db_path, 1, None, handle_id=1)
         _insert_attachment(
-            db_path, 1,
+            db_path,
+            1,
             "/nonexistent/Library/Messages/Attachments/xx/yy/uuid/voice.caf",
             "audio/x-caf",
             "voice.caf",
@@ -243,7 +248,9 @@ class TestMissingVoiceFile:
 
         mock_result = _make_agent_result("I couldn't process the audio.")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch(
+            "taskrunner.chat.run_agent_loop", return_value=mock_result
+        ) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "did you hear that?",
@@ -260,7 +267,10 @@ class TestMissingVoiceFile:
         last_user = user_msgs[-1]
         assert isinstance(last_user["content"], str)
         # Should contain a fallback message about the voice
-        assert "Voice message" in last_user["content"] or "did you hear that?" in last_user["content"]
+        assert (
+            "Voice message" in last_user["content"]
+            or "did you hear that?" in last_user["content"]
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +361,9 @@ class TestListenVoiceCallback:
             channel._poll = poll_once_then_stop
             channel.listen(callback)
 
-        mock_send.assert_called_once_with("friend@icloud.com", "I transcribed your voice!")
+        mock_send.assert_called_once_with(
+            "friend@icloud.com", "I transcribed your voice!"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -365,11 +377,13 @@ class TestCafConversion:
     def test_caf_is_in_needs_conversion_set(self) -> None:
         """Verify .caf is registered as needing conversion in TranscriptionService."""
         from taskrunner.services.transcription import NEEDS_CONVERSION
+
         assert ".caf" in NEEDS_CONVERSION
 
     def test_caf_not_in_whisper_supported(self) -> None:
         """Verify .caf is NOT in Whisper's natively supported formats."""
         from taskrunner.services.transcription import WHISPER_SUPPORTED_FORMATS
+
         assert ".caf" not in WHISPER_SUPPORTED_FORMATS
 
     def test_maybe_convert_calls_ffmpeg_for_caf(self, tmp_path: Path) -> None:
@@ -396,7 +410,9 @@ class TestCafConversion:
         assert str(caf_file) in call_args
         assert str(wav_file) in call_args
 
-    def test_maybe_convert_returns_original_without_ffmpeg(self, tmp_path: Path) -> None:
+    def test_maybe_convert_returns_original_without_ffmpeg(
+        self, tmp_path: Path
+    ) -> None:
         """Without ffmpeg, _maybe_convert should return the original .caf path."""
         from taskrunner.services.transcription import TranscriptionService
 
@@ -431,10 +447,13 @@ class TestE2EIMessageVoice:
 
         with (
             patch.object(
-                server._transcription, "transcribe",
+                server._transcription,
+                "transcribe",
                 return_value="I want pizza for dinner",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -483,10 +502,13 @@ class TestE2EIMessageVoice:
 
         with (
             patch.object(
-                server._transcription, "transcribe",
+                server._transcription,
+                "transcribe",
                 return_value="Here is my voice note",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -525,10 +547,10 @@ class TestE2EIMessageVoice:
         mock_result = _make_agent_result("I couldn't understand the audio.")
 
         with (
-            patch.object(
-                server._transcription, "transcribe", return_value=""
-            ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch.object(server._transcription, "transcribe", return_value=""),
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -587,10 +609,13 @@ class TestE2EIMessageVoice:
 
         with (
             patch.object(
-                server._transcription, "transcribe",
+                server._transcription,
+                "transcribe",
                 return_value="This is from iMessage",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
             response = server.handle_message(
                 incoming.sender_id,
@@ -650,10 +675,13 @@ class TestE2EIMessageVoice:
 
         with (
             patch.object(
-                server._transcription, "transcribe",
+                server._transcription,
+                "transcribe",
                 return_value="Hello from iMessage voice",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch(
+                "taskrunner.chat.run_agent_loop", return_value=mock_result
+            ) as mock_loop,
         ):
 
             def callback(*args):
@@ -738,7 +766,9 @@ class TestE2EIMessageVoice:
 
         mock_result = _make_agent_result("Text only response")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch(
+            "taskrunner.chat.run_agent_loop", return_value=mock_result
+        ) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "did you hear that?",

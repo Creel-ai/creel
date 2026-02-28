@@ -24,7 +24,9 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         entry: dict = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -37,7 +39,9 @@ class JSONFormatter(logging.Formatter):
 
         # Include any extra fields passed via `extra`
         for key in record.__dict__:
-            if key not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__ and key not in (
+            if key not in logging.LogRecord(
+                "", 0, "", 0, "", (), None
+            ).__dict__ and key not in (
                 "message",
                 "args",
             ):
@@ -53,7 +57,9 @@ _STANDARD_KEYS: set[str] | None = None
 def _standard_keys() -> set[str]:
     global _STANDARD_KEYS
     if _STANDARD_KEYS is None:
-        _STANDARD_KEYS = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()) | {
+        _STANDARD_KEYS = set(
+            logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
+        ) | {
             "message",
             "args",
         }
@@ -65,7 +71,9 @@ class _JSONFormatterOpt(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         entry: dict = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

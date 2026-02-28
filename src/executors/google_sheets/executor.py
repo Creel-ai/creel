@@ -33,7 +33,10 @@ def read_sheet(spreadsheet_id: str, range: str) -> dict:
     service = build("sheets", "v4", credentials=creds, cache_discovery=False)
 
     result = (
-        service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range).execute()
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=spreadsheet_id, range=range)
+        .execute()
     )
 
     return {
@@ -63,7 +66,9 @@ def create_spreadsheet(title: str, sheet_name: str = "", data: str = "") -> dict
     result = service.spreadsheets().create(body=body).execute()
 
     spreadsheet_id = result["spreadsheetId"]
-    url = result.get("spreadsheetUrl", f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}")
+    url = result.get(
+        "spreadsheetUrl", f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
+    )
 
     # Write initial data if provided
     if data:
@@ -194,7 +199,9 @@ def main() -> None:
             range_ = os.environ.get("RANGE", "")
             data = os.environ.get("DATA", "")
             if not spreadsheet_id or not range_ or not data:
-                raise ValueError("SPREADSHEET_ID, RANGE, and DATA are required for write")
+                raise ValueError(
+                    "SPREADSHEET_ID, RANGE, and DATA are required for write"
+                )
             value_input_option = os.environ.get("VALUE_INPUT_OPTION", "USER_ENTERED")
             result = write_to_sheet(spreadsheet_id, range_, data, value_input_option)
         elif action == "append":
@@ -202,7 +209,9 @@ def main() -> None:
             range_ = os.environ.get("RANGE", "")
             data = os.environ.get("DATA", "")
             if not spreadsheet_id or not range_ or not data:
-                raise ValueError("SPREADSHEET_ID, RANGE, and DATA are required for append")
+                raise ValueError(
+                    "SPREADSHEET_ID, RANGE, and DATA are required for append"
+                )
             value_input_option = os.environ.get("VALUE_INPUT_OPTION", "USER_ENTERED")
             result = append_to_sheet(spreadsheet_id, range_, data, value_input_option)
         else:

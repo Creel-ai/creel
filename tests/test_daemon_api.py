@@ -323,7 +323,9 @@ def test_deferred_init_factory_failure(minimal_agent_def) -> None:
                 break
             time.sleep(0.05)
 
-        assert resp.json()["status"] == "error"
+        body = resp.json()
+        assert body["status"] == "error"
+        assert "init boom" in body["error"]
 
         # Non-health endpoints should still 503
         resp = c.get("/v1/status")

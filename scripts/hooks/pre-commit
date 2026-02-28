@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Run ruff on staged Python files before committing
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+RUFF="${REPO_ROOT}/.venv/bin/ruff"
+
+if [ ! -x "$RUFF" ]; then
+    echo "ruff not found at $RUFF — skipping pre-commit checks"
+    exit 0
+fi
+
+STAGED_PY_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+
+if [ -z "$STAGED_PY_FILES" ]; then
+    exit 0
+fi
+
+echo "Running ruff check..."
+$RUFF check $STAGED_PY_FILES || exit 1
+
+echo "Running ruff format check..."
+$RUFF format --check $STAGED_PY_FILES || { echo "Run 'ruff format' to fix formatting."; exit 1; }

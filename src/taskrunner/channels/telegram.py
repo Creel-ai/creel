@@ -7,13 +7,15 @@ import hmac
 import json
 import logging
 import os
-import time
+import re
 from typing import TYPE_CHECKING, Any, Callable
 
-from taskrunner.channels.base import Channel
+from taskrunner.channels.base import Channel, IncomingMessage, LegacyCallback
+from taskrunner.channels.mixins import BridgeClientMixin, PollingChannelMixin
 from taskrunner.channels.telegram_bridge import (
     HttpTelegramBridge,
     TelegramBridge,
+    TelegramMessage,
 )
 from taskrunner.channels.webhook import WebhookChannelMixin
 
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class TelegramChannel(WebhookChannelMixin, Channel):
+class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixin, Channel):
     """Telegram messaging channel.
 
     Supports two operating modes:
@@ -58,8 +60,9 @@ class TelegramChannel(WebhookChannelMixin, Channel):
                 "Telegram webhook mode with no secret — "
                 "any sender can push updates to the webhook endpoint"
             )
-        self._callback: Callable[[str, str], str] | None = None
+        self._callback: LegacyCallback | None = None
         self._bot_username: str = ""
+        self._offset: int | None = None
 
         # Build allowed outbound recipients from numeric sender IDs + chat IDs
         self._allowed_recipients: set[str] = set(allowed_chats or [])
@@ -69,7 +72,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
     # --- Channel interface ---
 
-    def listen(self, callback: Callable[[str, str], str]) -> None:
+    def listen(self, callback: LegacyCallback) -> None:
         self._callback = callback
 
         # Cache bot username for @mention detection in groups
@@ -84,7 +87,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
             # Clear any existing webhook before polling
             self._bridge.delete_webhook()
             logger.info("Telegram channel listening in polling mode")
-            self._poll_loop(callback)
+            self._run_poll_loop(callback)
 
         logger.info("Telegram channel stopped")
 
@@ -101,53 +104,53 @@ class TelegramChannel(WebhookChannelMixin, Channel):
     def stop(self) -> None:
         self._stop_requested = True
 
-    # --- Polling mode ---
+    # --- PollingChannelMixin implementation ---
 
-    def _poll_loop(self, callback: Callable[[str, str], str]) -> None:
-        offset: int | None = None
-        consecutive_errors = 0
-        max_backoff = 60
+    def _poll_once(self) -> list[IncomingMessage]:
+        raw_messages = self._bridge.get_updates(offset=self._offset, timeout=self._poll_timeout)
+        result: list[IncomingMessage] = []
 
-        while not self._stop_requested:
-            try:
-                messages = self._bridge.get_updates(offset=offset, timeout=self._poll_timeout)
-                consecutive_errors = 0
+        for msg in raw_messages:
+            # Advance offset past this update
+            self._offset = msg.update_id + 1
 
-                for msg in messages:
-                    # Advance offset past this update
-                    offset = msg.update_id + 1
+            if not self._is_allowed(msg):
+                continue
 
-                    if not self._is_allowed(msg):
-                        continue
+            self._allowed_recipients.add(msg.chat_id)
 
-                    self._allowed_recipients.add(msg.chat_id)
+            text = self._extract_text(msg)
+            if text is None:
+                continue
 
-                    text = self._extract_text(msg)
-                    if text is None:
-                        continue
+            logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
+            logger.debug("Telegram message text: %s", text[:80])
 
-                    logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
-                    logger.debug("Telegram message text: %s", text[:80])
-
-                    if self._send_typing:
-                        self._bridge.send_typing(msg.chat_id)
-
-                    response = callback(msg.chat_id, text)
-                    self.send(msg.chat_id, response)
-
-            except Exception:
-                consecutive_errors += 1
-                backoff = min(2**consecutive_errors, max_backoff)
-                logger.exception(
-                    "Error polling Telegram (consecutive=%d, backoff=%.1fs)",
-                    consecutive_errors,
-                    backoff,
+            result.append(
+                IncomingMessage(
+                    sender_id=msg.chat_id,
+                    text=text,
+                    channel="telegram",
+                    group_id=msg.chat_id if msg.is_group else None,
+                    metadata={
+                        "sender_user_id": msg.sender_id,
+                        "sender_username": msg.sender_username,
+                        "message_id": msg.message_id,
+                        "update_id": msg.update_id,
+                    },
                 )
-                time.sleep(backoff)
+            )
+
+        return result
+
+    def _before_dispatch(self, msg: IncomingMessage) -> None:
+        """Send a typing indicator just before the LLM callback runs."""
+        if self._send_typing:
+            self._bridge.send_typing(msg.sender_id)
 
     # --- Access control ---
 
-    def _is_allowed(self, msg) -> bool:
+    def _is_allowed(self, msg: TelegramMessage) -> bool:
         """Check if a message passes sender/chat access control."""
         if not self._allowed_senders:
             return False
@@ -168,7 +171,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
     # --- Group mention handling ---
 
-    def _extract_text(self, msg) -> str | None:
+    def _extract_text(self, msg: TelegramMessage) -> str | None:
         """Extract processable text from a message.
 
         In group chats, only processes messages mentioning @botusername.
@@ -183,8 +186,6 @@ class TelegramChannel(WebhookChannelMixin, Channel):
             if mention.lower() not in text.lower():
                 return None
             # Strip the mention (case-insensitive)
-            import re
-
             text = re.sub(re.escape(mention), "", text, flags=re.IGNORECASE).strip()
 
         return text if text else None
@@ -231,8 +232,6 @@ class TelegramChannel(WebhookChannelMixin, Channel):
         if not text:
             return {"status": "ok"}
 
-        from taskrunner.channels.telegram_bridge import TelegramMessage
-
         msg = TelegramMessage(
             sender_id=str(sender.get("id", "")),
             sender_username=sender.get("username", ""),
@@ -264,12 +263,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
     # --- Health ---
 
     def health_check(self) -> dict[str, Any]:
-        bridge_health = self._bridge.health()
-        return {
-            "healthy": not self._stop_requested and bridge_health.get("healthy", False),
-            "mode": self._mode,
-            "bridge": bridge_health,
-        }
+        return self._bridge_health_check()
 
 
 def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:

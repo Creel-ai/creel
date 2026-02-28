@@ -163,6 +163,7 @@ class ChatServer:
         on_text_delta: Callable[[str], None] | None = None,
         *,
         attachments: list[Any] | None = None,
+        channel: str = "unknown",
         auto_approve: bool = False,
     ) -> str:
         """Process an incoming message and return a response."""
@@ -229,7 +230,7 @@ class ChatServer:
 
         # Process media attachments (voice transcription + image vision)
         text, image_content_blocks = self._process_attachments(
-            text, attachments, sender_id,
+            text, attachments, sender_id, channel=channel,
         )
 
         # Add user message: use content blocks when images are present
@@ -345,6 +346,7 @@ class ChatServer:
         text: str,
         attachments: list[Any] | None,
         sender_id: str,
+        channel: str = "unknown",
     ) -> tuple[str, list[dict]]:
         """Process media attachments, returning updated text and image content blocks.
 
@@ -370,9 +372,9 @@ class ChatServer:
                 continue
 
             if attachment.type in (AttachmentType.VOICE, AttachmentType.AUDIO):
-                self._process_voice_attachment(attachment, sender_id, voice_parts)
+                self._process_voice_attachment(attachment, sender_id, voice_parts, channel)
             elif attachment.type == AttachmentType.IMAGE:
-                self._process_image_attachment(attachment, sender_id, image_blocks)
+                self._process_image_attachment(attachment, sender_id, image_blocks, channel)
 
         # Prepend transcribed voice text to the user message
         if voice_parts:
@@ -386,10 +388,11 @@ class ChatServer:
         attachment: Attachment,
         sender_id: str,
         voice_parts: list[str],
+        channel: str = "unknown",
     ) -> None:
         """Save, transcribe a voice attachment and append to voice_parts."""
         try:
-            saved_path = self._media_store.save_media(attachment, sender_id)
+            saved_path = self._media_store.save_media(attachment, sender_id, channel=channel)
         except Exception:
             logger.warning("Failed to save voice attachment", exc_info=True)
             voice_parts.append("[Voice message: could not save audio file]")
@@ -408,10 +411,11 @@ class ChatServer:
         attachment: Attachment,
         sender_id: str,
         image_blocks: list[dict],
+        channel: str = "unknown",
     ) -> None:
         """Save an image attachment and prepare it as an LLM content block."""
         try:
-            saved_path = self._media_store.save_media(attachment, sender_id)
+            saved_path = self._media_store.save_media(attachment, sender_id, channel=channel)
         except Exception:
             logger.warning("Failed to save image attachment", exc_info=True)
             return

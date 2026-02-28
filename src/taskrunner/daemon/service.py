@@ -99,6 +99,7 @@ class DaemonService:
                     msg.text or "",
                     auto_approve=auto_approve,
                     attachments=msg.attachments or None,
+                    channel=msg.channel or "unknown",
                 )
         with self._lock:
             return self._server.handle_message(

@@ -14,6 +14,7 @@ Executors are isolated, stateless data fetchers that run with minimal credential
 | [apple_notes / apple_reminders / things](apple-apps.md) | Bridge HTTP token (scoped) | LLM, other credentials |
 | [brave_search / fetch_url](web.md) | Brave API key / None | LLM, other credentials |
 | [notion](notion.md) | Notion integration token | LLM, other credentials |
+| [github](github.md) | GitHub PAT (`GH_TOKEN`) | LLM, other credentials |
 | [exec](exec.md) | Host filesystem (mounted paths only) | LLM, other credentials |
 
 ## How Executors Run

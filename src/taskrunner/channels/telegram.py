@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import re
-import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from taskrunner.channels.base import Channel, IncomingMessage, LegacyCallback
@@ -127,9 +126,6 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
             logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
             logger.debug("Telegram message text: %s", text[:80])
 
-            if self._send_typing:
-                self._bridge.send_typing(msg.chat_id)
-
             result.append(
                 IncomingMessage(
                     sender_id=msg.chat_id,
@@ -146,6 +142,11 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
             )
 
         return result
+
+    def _before_dispatch(self, msg: IncomingMessage) -> None:
+        """Send a typing indicator just before the LLM callback runs."""
+        if self._send_typing:
+            self._bridge.send_typing(msg.sender_id)
 
     # --- Access control ---
 

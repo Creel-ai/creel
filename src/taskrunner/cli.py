@@ -25,8 +25,10 @@ except ImportError:
     pass
 
 import argparse
+import asyncio
 import logging
 import os
+import socket as _socket
 import sys
 import threading
 from pathlib import Path
@@ -173,6 +175,8 @@ def _build_daemon_run_command(
     )
     if args.no_scheduler:
         cmd.append("--no-scheduler")
+    if getattr(args, "http_port", None) is not None:
+        cmd.extend(["--http-port", str(args.http_port)])
     return cmd
 
 
@@ -211,8 +215,11 @@ def _print_log_errors(log_path: Path, offset: int = 0) -> None:
 def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
     """Wait until the daemon health endpoint responds.
 
-    Accepts both ``"starting"`` and ``"ok"`` statuses — any 200 response
-    means the socket is bound and the process is alive.
+    Accepts ``"starting"``, ``"ok"``, and ``"error"`` statuses — any 200
+    response means the socket is bound and the process is alive.  An
+    ``"error"`` status means initialization failed but the process is
+    reachable, so we still return ``True`` (the caller can inspect the
+    health body for details).
     """
     import time
 
@@ -223,7 +230,7 @@ def _wait_for_daemon_health(socket_path: Path, wait_seconds: float) -> bool:
                 resp = _daemon_request(socket_path, "GET", "/health", timeout=0.5)
                 if resp.status_code == 200:
                     body = resp.json()
-                    if body.get("status") in ("ok", "starting"):
+                    if body.get("status") in ("ok", "starting", "error"):
                         return True
             except Exception:
                 pass
@@ -517,7 +524,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         try:
             channel, reply_channel = _build_daemon_channel(agent_def, channel_type)
         except ValueError as e:
-            raise RuntimeError(f"Channel setup failed: {e}") from e
+            raise RuntimeError(f"Channel configuration error: {e}") from e
 
         server = ChatServer(
             agent_def,
@@ -541,7 +548,9 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
         guardian_status = "active" if server._guardian else "inactive"
         tool_count = len(agent_def.tools)
-        print(f"🧺 Creel agent ready. Tools loaded: {tool_count}. Guardian: {guardian_status}.")
+        logger.info(
+            "Creel agent ready. Tools loaded: %d. Guardian: %s.", tool_count, guardian_status
+        )
 
         # Pre-build Docker images in background so they're ready before first use
         if args.containers:
@@ -557,17 +566,45 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
     app = create_daemon_app(init_factory=_deferred_init)
 
+    http_port = getattr(args, "http_port", None) or None
+
+    # Build sockets: always a unix socket for CLI clients, optionally a TCP
+    # socket for browser access.  Passing both to a single uvicorn Server
+    # means one lifespan, one event loop, and WebSocket support on both.
+    _sockets: list[_socket.socket] = []
+
+    _unix_sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    _unix_sock.bind(str(socket_path))
+    _unix_sock.listen(128)
+    _sockets.append(_unix_sock)
+
+    if http_port:
+        _tcp_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        _tcp_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        _tcp_sock.bind(("127.0.0.1", http_port))
+        _tcp_sock.listen(128)
+        _sockets.append(_tcp_sock)
+        print(f"Dashboard available at http://localhost:{http_port}")
+
+    _config = uvicorn.Config(
+        app,
+        access_log=False,
+        log_level="debug" if args.verbose else "info",
+    )
+    _server = uvicorn.Server(_config)
+
     try:
-        uvicorn.run(
-            app,
-            uds=str(socket_path),
-            access_log=False,
-            log_level="debug" if args.verbose else "info",
-        )
+        asyncio.run(_server.serve(sockets=_sockets))
     except KeyboardInterrupt:
         pass
     finally:
-        # Lifespan handles service.shutdown(); we just clean up files.
+        for _sock in _sockets:
+            try:
+                _sock.close()
+            except Exception:
+                pass
+        # Lifespan teardown calls service.shutdown() if a service was created.
+        # We only need to clean up PID/socket files here.
         print("Daemon stopped.")
         pid_path.unlink(missing_ok=True)
         socket_path.unlink(missing_ok=True)
@@ -1560,6 +1597,12 @@ def main() -> int:
         default=20.0,
         help="Seconds to wait for daemon health check (default: 20)",
     )
+    _daemon_runtime_parent.add_argument(
+        "--http-port",
+        type=int,
+        default=8100,
+        help="Also listen on this TCP port for dashboard access (default: 8100). Use 0 to disable.",
+    )
 
     # daemon command
     daemon_parser = subparsers.add_parser("daemon", help="Manage background daemon")
@@ -1628,6 +1671,7 @@ def main() -> int:
         default="imessage",
     )
     daemon_run.add_argument("--no-scheduler", action="store_true")
+    daemon_run.add_argument("--http-port", type=int, default=8100)
     daemon_subparsers._choices_actions = [  # type: ignore[attr-defined]
         action
         for action in daemon_subparsers._choices_actions  # type: ignore[attr-defined]

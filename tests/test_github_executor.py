@@ -9,6 +9,7 @@ import pytest
 
 from executors.github.executor import (
     ALLOWED_SUBCOMMANDS,
+    DEFAULT_MAX_CHARS,
     REVIEW_SUBCOMMANDS,
     build_gh_command,
     run_gh_command,
@@ -354,6 +355,36 @@ class TestSecurityRules:
             mock_run.assert_not_called()
 
     @patch("shutil.which", return_value="/usr/local/bin/gh")
+    def test_api_patch_blocked(self, mock_which) -> None:
+        """Test that API PATCH requests are blocked (always a mutation)."""
+        with patch("subprocess.run") as mock_run:
+            result = run_gh_command("api /repos/owner/repo/issues/1 -X PATCH -f state=closed")
+            assert result["success"] is False
+            assert "destructive" in result["error"].lower()
+            mock_run.assert_not_called()
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    def test_api_patch_method_flag_blocked(self, mock_which) -> None:
+        """Test that API PATCH via --method flag is blocked."""
+        with patch("subprocess.run") as mock_run:
+            result = run_gh_command("api /repos/owner/repo/pulls/1 --method PATCH -f title=new")
+            assert result["success"] is False
+            mock_run.assert_not_called()
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    def test_api_post_passes_executor(self, mock_run, mock_which) -> None:
+        """Test that API POST passes executor validation (policy gates it separately)."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"id": 1}',
+            stderr="",
+        )
+        result = run_gh_command("api /repos/owner/repo/issues -X POST -f title=test")
+        assert result["success"] is True
+        mock_run.assert_called_once()
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
     @patch("subprocess.run")
     def test_pr_merge_without_admin_allowed(self, mock_run, mock_which) -> None:
         """Test that regular pr merge is allowed (Guardian gates it)."""
@@ -365,6 +396,61 @@ class TestSecurityRules:
 
         result = run_gh_command("pr merge 42")
         assert result["success"] is True
+
+
+class TestOutputTruncation:
+    """Tests for stdout size limiting."""
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    def test_output_truncated_when_exceeds_max_chars(self, mock_run, mock_which) -> None:
+        """Test that large stdout is truncated and flagged."""
+        big_output = "x" * (DEFAULT_MAX_CHARS + 1000)
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=big_output,
+            stderr="",
+        )
+
+        result = run_gh_command("issue list")
+
+        assert result["success"] is True
+        assert len(result["stdout"]) == DEFAULT_MAX_CHARS
+        assert result["truncated"] is True
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    def test_output_not_truncated_when_within_limit(self, mock_run, mock_which) -> None:
+        """Test that output within the limit is not truncated."""
+        small_output = "x" * 100
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=small_output,
+            stderr="",
+        )
+
+        result = run_gh_command("issue list")
+
+        assert result["success"] is True
+        assert result["stdout"] == small_output
+        assert "truncated" not in result
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("subprocess.run")
+    @patch.dict("os.environ", {"MAX_CHARS": "50"})
+    def test_max_chars_env_override(self, mock_run, mock_which) -> None:
+        """Test that MAX_CHARS env var overrides the default limit."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="x" * 100,
+            stderr="",
+        )
+
+        result = run_gh_command("issue list")
+
+        assert result["success"] is True
+        assert len(result["stdout"]) == 50
+        assert result["truncated"] is True
 
 
 class TestMainFunction:
@@ -385,8 +471,9 @@ class TestMainFunction:
         import os
         import sys
 
-        with patch.dict(os.environ, {"COMMAND": "issue list"}), patch.object(
-            sys, "argv", ["executor.py"]
+        with (
+            patch.dict(os.environ, {"COMMAND": "issue list"}),
+            patch.object(sys, "argv", ["executor.py"]),
         ):
             from executors.github.executor import main
 
@@ -409,8 +496,9 @@ class TestMainFunction:
         import os
         import sys
 
-        with patch.dict(os.environ, {"COMMAND": "issue list", "REPO": "owner/repo"}), patch.object(
-            sys, "argv", ["executor.py"]
+        with (
+            patch.dict(os.environ, {"COMMAND": "issue list", "REPO": "owner/repo"}),
+            patch.object(sys, "argv", ["executor.py"]),
         ):
             from executors.github.executor import main
 
@@ -447,8 +535,9 @@ class TestMainFunction:
         import os
         import sys
 
-        with patch.dict(os.environ, {"COMMAND": "issue list"}), patch.object(
-            sys, "argv", ["executor.py"]
+        with (
+            patch.dict(os.environ, {"COMMAND": "issue list"}),
+            patch.object(sys, "argv", ["executor.py"]),
         ):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.github.executor import main

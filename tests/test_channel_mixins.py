@@ -5,8 +5,6 @@ from __future__ import annotations
 import threading
 import time
 
-import pytest
-
 from taskrunner.channels.base import (
     Attachment,
     Channel,
@@ -14,7 +12,6 @@ from taskrunner.channels.base import (
     OutgoingMessage,
 )
 from taskrunner.channels.mixins import BridgeClientMixin, PollingChannelMixin
-
 
 # ---------------------------------------------------------------------------
 # PollingChannelMixin

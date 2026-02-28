@@ -5,8 +5,9 @@ from __future__ import annotations
 import importlib.metadata
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from taskrunner.channels.base import Channel
 from taskrunner.channels.plugin import ChannelPluginMeta

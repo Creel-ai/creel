@@ -27,7 +27,7 @@ _lock = threading.Lock()
 DEFAULT_MAX_TOKEN_AGE = 3600
 
 
-def _build_refreshable_credentials(credentials_json: str, source: str) -> "Credentials":
+def _build_refreshable_credentials(credentials_json: str, source: str) -> Credentials:
     """Validate OAuth JSON and build a refreshable credential object."""
     from google.oauth2.credentials import Credentials
 
@@ -106,7 +106,7 @@ def get_google_credentials(
     env_var: str = "GOOGLE_CREDENTIALS_JSON",
     max_token_age_seconds: int = DEFAULT_MAX_TOKEN_AGE,
     force_refresh: bool = True,
-) -> "Credentials":
+) -> Credentials:
     """Build Google OAuth credentials from a host-minted access token.
 
     Args:

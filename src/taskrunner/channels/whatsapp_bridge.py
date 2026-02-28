@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class HttpWhatsAppBridge(WhatsAppBridge):
         msgs = data.get("messages", [])
         if msgs:
             return datetime.fromisoformat(msgs[0]["timestamp"])
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     def health(self) -> dict:
         try:
@@ -168,4 +168,4 @@ class NeonizeWhatsAppBridge(WhatsAppBridge):
         raise NotImplementedError("Neonize get_messages_since not yet implemented")
 
     def get_latest_timestamp(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)

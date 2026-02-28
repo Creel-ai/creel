@@ -10,7 +10,7 @@ import logging
 import subprocess
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -237,7 +237,7 @@ def run_task(
     logger.info("Running task: %s (mode=%s)", task.name, task.mode)
 
     # Build context with date info
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     context: dict[str, str] = {
         "date": now.strftime("%A, %B %d, %Y"),
     }
@@ -415,6 +415,10 @@ def _run_executor_inline_locked(
             return _exec_exec_inline(config)
         elif name == "file_ops":
             return _exec_file_ops_inline(config)
+        elif name == "github":
+            return _exec_github_inline(config)
+        elif name == "coding":
+            return _exec_coding_inline(config)
         else:
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
@@ -1011,6 +1015,43 @@ def _exec_file_ops_inline(config: ExecutorConfig) -> str:
                 os.environ[env_key] = old_value
 
 
+def _exec_github_inline(config: ExecutorConfig) -> str:
+    """Run github executor inline."""
+    from executors.github.executor import run_gh_command
+
+    command = config.args.get("command", "")
+    repo = config.args.get("repo") or None
+
+    if not command:
+        raise ValueError("github executor requires a 'command' argument")
+
+    result = run_gh_command(command, repo)
+    return json.dumps(result, indent=2)
+
+
+def _exec_coding_inline(config: ExecutorConfig) -> str:
+    """Run coding executor inline."""
+    from executors.coding.executor import run_command
+
+    command = config.args.get("command", "")
+    workdir = config.args.get("workdir") or None
+    mount = config.args.get("mount") or None
+    timeout_str = config.args.get("timeout") or None
+
+    if not command:
+        raise ValueError("coding executor requires a 'command' argument")
+
+    timeout = None
+    if timeout_str:
+        try:
+            timeout = int(timeout_str)
+        except ValueError:
+            pass
+
+    result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
+    return json.dumps(result, indent=2)
+
+
 def _ensure_image(image: str) -> str:
     """Build the Docker image if needed, with build deduplication.
 
@@ -1111,7 +1152,7 @@ def _build_image(
         raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
 
 
-def collect_required_images(agent_def: "AgentDefinition") -> list[str]:
+def collect_required_images(agent_def: AgentDefinition) -> list[str]:
     """Derive the set of Docker images needed by an agent's tools.
 
     Uses the same naming convention as :pyattr:`ExecutorConfig.image`:
@@ -1133,7 +1174,7 @@ def collect_required_images(agent_def: "AgentDefinition") -> list[str]:
     return sorted(images)
 
 
-def prebuild_images(agent_def: "AgentDefinition") -> list[threading.Thread]:
+def prebuild_images(agent_def: AgentDefinition) -> list[threading.Thread]:
     """Kick off background image builds for all tools in the agent definition.
 
     Returns the list of spawned threads (callers are not expected to join).
@@ -1145,7 +1186,7 @@ def prebuild_images(agent_def: "AgentDefinition") -> list[threading.Thread]:
 
 def _run_executor_container(
     config: ExecutorConfig,
-    tool_config: "ToolConfig | None" = None,
+    tool_config: ToolConfig | None = None,
     bridge_config: BridgeConfig | None = None,
 ) -> str:
     """Run an executor in an isolated Docker container.

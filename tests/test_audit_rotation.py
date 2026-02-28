@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +16,7 @@ class TestDailyRotation:
             input_hash="abc", input_length=10, blocked=False, source="test"
         )
 
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         expected = tmp_path / f"audit-{today}.jsonl"
         assert expected.exists()
         # The base file should NOT exist
@@ -27,14 +27,14 @@ class TestDailyRotation:
 
         # Write with mocked date
         with patch("guardian.audit.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 1, 15, tzinfo=timezone.utc)
+            mock_dt.now.return_value = datetime(2025, 1, 15, tzinfo=UTC)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             logger.log_screen(
                 input_hash="a", input_length=1, blocked=False, source="test"
             )
 
         with patch("guardian.audit.datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 1, 16, tzinfo=timezone.utc)
+            mock_dt.now.return_value = datetime(2025, 1, 16, tzinfo=UTC)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             logger.log_screen(
                 input_hash="b", input_length=2, blocked=True, source="test"
@@ -110,7 +110,7 @@ class TestCombinedRotation:
                 input_hash=f"hash{i}", input_length=i, blocked=False, source="test"
             )
 
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         daily_file = tmp_path / f"audit-{today}.jsonl"
         assert daily_file.exists()
 

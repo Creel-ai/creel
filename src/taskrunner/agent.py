@@ -243,6 +243,7 @@ def run_agent_loop(
     bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
     cron_manager: object | None = None,
+    subagent_manager: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -258,6 +259,7 @@ def run_agent_loop(
         allowed_tools: Optional per-task tool whitelist. If set, only these
             tools may be called regardless of global policy.
         cron_manager: Optional CronManager for cron scheduling tool.
+        subagent_manager: Optional SubAgentManager for sub-agent tool.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -272,6 +274,7 @@ def run_agent_loop(
             include_memory_tools=include_memory,
             include_workspace_tools=include_workspace,
             include_cron_tools=cron_manager is not None,
+            include_subagent_tool=subagent_manager is not None,
         )
         if tools_config
         else []
@@ -281,7 +284,7 @@ def run_agent_loop(
     tool_history: list[dict] = []
     last_input_tokens = 0
 
-    for turn in range(agent_config.max_turns):
+    for _turn in range(agent_config.max_turns):
         turns_used += 1
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
         _ensure_tool_call_integrity(messages)
@@ -579,6 +582,7 @@ def run_agent_loop(
                     bridge_config=bridge_config,
                     session_state=session_state,
                     cron_manager=cron_manager,
+                    subagent_manager=subagent_manager,
                 )
                 is_error = False
                 elapsed_ms = (time.perf_counter() - t0) * 1000

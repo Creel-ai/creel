@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -56,13 +56,13 @@ def _make_job(name: str = "test job", **kwargs) -> CronJob:
 
 def _future_iso(seconds: int = 2) -> str:
     """Return an ISO 8601 timestamp `seconds` in the future."""
-    dt = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    dt = datetime.now(UTC) + timedelta(seconds=seconds)
     return dt.isoformat()
 
 
 def _past_iso(seconds: int = 60) -> str:
     """Return an ISO 8601 timestamp `seconds` in the past."""
-    dt = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+    dt = datetime.now(UTC) - timedelta(seconds=seconds)
     return dt.isoformat()
 
 
@@ -972,8 +972,8 @@ class TestEdgeCasesAcceptance:
         # Should still be functional for adding runs
         record = RunRecord(
             job_id="test",
-            started_at=datetime.now(timezone.utc).isoformat(),
-            ended_at=datetime.now(timezone.utc).isoformat(),
+            started_at=datetime.now(UTC).isoformat(),
+            ended_at=datetime.now(UTC).isoformat(),
             status=RunStatus.SUCCESS,
         )
         store.add_run(record)

@@ -156,6 +156,52 @@ BUILTIN_MEMORY_TOOLS = [
 ]
 
 
+BUILTIN_SUBAGENT_TOOL = {
+    "name": "subagent",
+    "description": (
+        "Spawn a background sub-agent for parallel or long-running tasks. "
+        "Sub-agents run independently with their own conversation and can use "
+        "the same tools as you. Use action='spawn' to start one, 'list' to "
+        "check status, 'steer' to send follow-up instructions, or 'kill' to stop."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["spawn", "list", "steer", "kill"],
+                "description": "Action to perform.",
+            },
+            "task": {
+                "type": "string",
+                "description": "Task description for the sub-agent (required for spawn).",
+            },
+            "label": {
+                "type": "string",
+                "description": "Human-readable label for this sub-agent.",
+            },
+            "model": {
+                "type": "string",
+                "description": "Override model for this sub-agent (default: same as parent).",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Timeout in seconds (default: 300).",
+            },
+            "agent_id": {
+                "type": "string",
+                "description": "Sub-agent ID (required for steer/kill).",
+            },
+            "message": {
+                "type": "string",
+                "description": "Follow-up message to inject (required for steer).",
+            },
+        },
+        "required": ["action"],
+    },
+}
+
+
 BUILTIN_WORKSPACE_TOOLS = [
     {
         "name": "set_workspace",
@@ -184,6 +230,7 @@ def build_tool_definitions(
     include_memory_tools: bool = False,
     include_workspace_tools: bool = False,
     include_cron_tools: bool = False,
+    include_subagent_tool: bool = False,
 ) -> list[dict]:
     """Convert YAML tool configs to Anthropic API tool definitions.
 
@@ -193,6 +240,7 @@ def build_tool_definitions(
         include_workspace_tools: If True, include built-in workspace tools
             (set_workspace).
         include_cron_tools: If True, include built-in cron scheduling tool.
+        include_subagent_tool: If True, include built-in sub-agent tool.
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
@@ -207,6 +255,8 @@ def build_tool_definitions(
         from taskrunner.cron.tool import CRON_TOOL_DEFINITION
 
         tool_defs.append(CRON_TOOL_DEFINITION)
+    if include_subagent_tool:
+        tool_defs.append(BUILTIN_SUBAGENT_TOOL)
     for name, cfg in tools_config.items():
         properties: dict[str, dict] = {}
         required: list[str] = []
@@ -285,6 +335,7 @@ def execute_tool_call(
     bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
     cron_manager: Any | None = None,
+    subagent_manager: Any | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -302,6 +353,7 @@ def execute_tool_call(
         session_state: Optional per-session state dict. Used to store/read
             workspace path for file_ops tools.
         cron_manager: Optional CronManager for cron tool.
+        subagent_manager: Optional SubAgentManager for sub-agent tool.
 
     Returns:
         The executor output as a string.
@@ -359,6 +411,12 @@ def execute_tool_call(
         from taskrunner.cron.tool import handle_cron_tool
 
         return handle_cron_tool(tool_input, cron_manager)
+
+    if tool_name == "subagent" and subagent_manager is not None:
+        from taskrunner.subagents.executor import handle_subagent_tool
+
+        sender_id = (session_state or {}).get("sender_id", "")
+        return handle_subagent_tool(tool_input, manager=subagent_manager, sender_id=sender_id)
 
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")

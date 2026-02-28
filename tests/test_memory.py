@@ -1,7 +1,7 @@
 """Tests for the memory system."""
 
 import tempfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from taskrunner.memory import MemoryManager
@@ -131,7 +131,7 @@ class TestMemoryManager:
             entry_line = next(
                 i for i, line in enumerate(lines, 1) if "Delete me" in line
             )
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.delete_memory(today_str, entry_line)
             assert "Deleted" in result
             assert "Delete me" not in path.read_text()
@@ -146,7 +146,7 @@ class TestMemoryManager:
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
             mm.remember("Only entry")
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.delete_memory(today_str, 999)
             assert "out of range" in result
 
@@ -174,7 +174,7 @@ class TestMemoryManager:
             entry_line = next(
                 i for i, line in enumerate(lines, 1) if "Old text" in line
             )
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.edit_memory(
                 today_str, entry_line, "- [10:00] **general**: New text"
             )
@@ -188,7 +188,7 @@ class TestMemoryManager:
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
             mm.remember("Entry")
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.edit_memory(today_str, 999, "replacement")
             assert "out of range" in result
 
@@ -233,7 +233,7 @@ class TestMemoryManager:
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
             # Create an old daily file
-            old_date = datetime.now(timezone.utc).date() - timedelta(days=10)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
             old_path.write_text(
                 f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Old note\n"
@@ -253,7 +253,7 @@ class TestMemoryManager:
     def test_compact_appends_summary_to_long_term(self):
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
-            old_date = datetime.now(timezone.utc).date() - timedelta(days=10)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
             old_path.write_text(
                 f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Note 1\n- [11:00] **general**: Note 2\n"
@@ -265,7 +265,7 @@ class TestMemoryManager:
     def test_compact_deletes_empty_files(self):
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
-            old_date = datetime.now(timezone.utc).date() - timedelta(days=10)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
             old_path.write_text(f"# Memory — {old_date.isoformat()}\n\n")
             mm.compact_daily_files(days_to_keep=7)

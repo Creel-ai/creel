@@ -11,7 +11,7 @@ that the LLM can call to persist information.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -37,7 +37,7 @@ class MemoryManager:
         try:
             self._tz = ZoneInfo(timezone_name)
         except (KeyError, ValueError):
-            self._tz = timezone.utc
+            self._tz = UTC
 
     @property
     def long_term_path(self) -> Path:

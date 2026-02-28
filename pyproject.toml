@@ -22,7 +22,7 @@ dependencies = [
     "pyrage>=1.2.0",
     "textual>=1.0.0",
     "fastapi>=0.115.0",
-    "uvicorn>=0.34.0",
+    "uvicorn[standard]>=0.34.0",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +34,7 @@ dev = [
     "ruff>=0.6.0",
     "mypy>=1.11.0",
     "types-PyYAML>=6.0.12.20240311",
+    "types-requests>=2.31.0",
 ]
 guardian = [
     "transformers>=4.36.0",
@@ -69,31 +70,51 @@ telegram = "taskrunner.channels.telegram:register_plugin"
 [tool.hatch.build.targets.wheel]
 packages = ["src/taskrunner", "src/guardian", "src/bridge"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/taskrunner/dashboard_static" = "taskrunner/dashboard_static"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov-report=term-missing -m 'not smoke'"
+addopts = "--cov=taskrunner --cov=guardian --cov=bridge --cov=executors --cov-report=term-missing -m 'not smoke'"
 markers = [
     "smoke: end-to-end tests requiring Docker and network access",
 ]
 
 [tool.coverage.run]
-source = ["taskrunner", "guardian", "bridge"]
+source = ["taskrunner", "guardian", "bridge", "executors"]
+branch = true
 
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+fail_under = 72
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
-ignore = ["E501"]
+select = ["E", "F", "I", "B", "S", "UP"]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "S101",   # assert — used extensively in tests
+    "S603",   # subprocess-without-shell-check — executors need subprocess
+    "S607",   # start-process-with-partial-path — executors call known CLIs
+    "S108",   # hardcoded-temp-file — false positives on /tmp in test fixtures
+    "S105",   # hardcoded-password-string — false positives on test data
+    "S106",   # hardcoded-password-func-arg — false positives on test data
+    "S110",   # try-except-pass — intentional in resilient daemon code
+    "S112",   # try-except-continue — intentional in resilient daemon code
+    "B008",   # function-call-in-default-argument — FastAPI Depends/Query pattern
+    "B017",   # assert-raises-exception — acceptable in tests for Pydantic errors
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # assert False — used in test error-path checks
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/taskrunner", "src/guardian", "src/bridge"]
+files = ["src/taskrunner", "src/guardian", "src/bridge", "src/executors"]
 mypy_path = "src"
 ignore_missing_imports = true
 follow_imports = "silent"

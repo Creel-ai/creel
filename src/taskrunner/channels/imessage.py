@@ -7,8 +7,9 @@ import sqlite3
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from taskrunner.channels import Channel
 from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage

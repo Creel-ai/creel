@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from taskrunner.log import request_id_var
@@ -44,7 +44,7 @@ class AuditLogger:
     def _get_path(self) -> Path:
         """Return the current log file path, accounting for rotation."""
         if self._rotate_daily:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
             stem = self._base_path.stem
             suffix = self._base_path.suffix or ".jsonl"
             return self._base_path.parent / f"{stem}-{today}{suffix}"
@@ -88,7 +88,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "screen_input",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "input_hash": input_hash,
                 "input_length": input_length,
                 "blocked": blocked,
@@ -110,7 +110,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "screen_tool_result",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "tool_name": tool_name,
                 "text": text,
                 "blocked": blocked,
@@ -131,7 +131,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "screen_input_debug",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "text": text,
                 "chunks": chunks,
                 "blocked": blocked,
@@ -151,7 +151,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "validate_action",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "tool_name": tool_name,
                 "arg_keys": arg_keys,
                 "verdict": verdict,
@@ -170,7 +170,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "action_outcome",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "tool_name": tool_name,
                 "verdict": verdict,
                 "outcome": outcome,
@@ -188,7 +188,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "coherence_check",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "tool_name": tool_name,
                 "coherent": coherent,
                 "confidence": confidence,
@@ -207,7 +207,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "drift_alert",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "alert_type": alert_type,
                 "tool_name": tool_name,
                 "detail": detail,
@@ -226,7 +226,7 @@ class AuditLogger:
         self._write(
             {
                 "event": "credential_leak",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "tool_name": tool_name,
                 "patterns_found": patterns_found,
                 "count": count,
@@ -245,7 +245,7 @@ class AuditLogger:
         """Log a tool execution result (no output content — just metadata)."""
         record = {
             "event": "tool_result",
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "tool_name": tool_name,
             "success": success,
             "duration_ms": round(duration_ms, 1),

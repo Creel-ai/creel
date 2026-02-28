@@ -665,6 +665,21 @@ tools:
         type: string
         description: "Max characters to return (default: 10000)"
 
+  # GitHub (gh CLI)
+  github:
+    executor: github
+    network: true
+    secrets: secrets/github.env.enc
+    description: "Manage GitHub repositories — issues, PRs, CI runs, code search"
+    parameters:
+      command:
+        type: string
+        description: "The gh CLI subcommand to run (e.g., 'issue list', 'pr view 42', 'run list')"
+        required: true
+      repo:
+        type: string
+        description: "Repository in owner/repo format. Uses current repo context if not specified."
+
   # Shell exec
   exec:
     executor: exec
@@ -681,6 +696,23 @@ tools:
       - path: ~/.creel/workspace
         mode: rw
     network: false
+
+  # Coding / dev environment
+  coding:
+    executor: coding
+    description: "Development environment for building software — run commands, install packages, edit files"
+    parameters:
+      command:
+        type: string
+        description: "Shell command to execute in the dev container (e.g., 'python -m pytest', 'npm install', 'git status')"
+        required: true
+      workdir:
+        type: string
+        description: "Working directory inside the container. Maps to a mounted host path."
+      mount:
+        type: string
+        description: "Host path to mount into the container at /workspace. Allows working on real projects."
+    timeout: 300
 
   # File operations
   read_file:

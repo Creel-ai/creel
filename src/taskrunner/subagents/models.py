@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
@@ -34,7 +34,7 @@ class SubAgentInfo(BaseModel):
     label: str
     status: SubAgentStatus
     sender_id: str = ""  # parent sender who spawned this agent
-    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     result_summary: str = ""
     error: str = ""

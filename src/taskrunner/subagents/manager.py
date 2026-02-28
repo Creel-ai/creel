@@ -6,7 +6,7 @@ import logging
 import secrets
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from taskrunner.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
@@ -146,7 +146,7 @@ class SubAgentManager:
             info = self._agents.get(agent_id)
             if info and info.status == SubAgentStatus.RUNNING:
                 info.status = SubAgentStatus.KILLED
-                info.completed_at = datetime.now(timezone.utc)
+                info.completed_at = datetime.now(UTC)
                 info.error = "Killed by parent"
 
         logger.info("Kill signal sent to sub-agent %s", agent_id)
@@ -240,7 +240,7 @@ class SubAgentManager:
                 info = self._agents.get(agent_id)
                 if info and info.status == SubAgentStatus.RUNNING:
                     info.status = SubAgentStatus.COMPLETED
-                    info.completed_at = datetime.now(timezone.utc)
+                    info.completed_at = datetime.now(UTC)
                     info.result_summary = summary
 
             logger.info("Sub-agent %s completed", agent_id)
@@ -252,7 +252,7 @@ class SubAgentManager:
                 info = self._agents.get(agent_id)
                 if info and info.status == SubAgentStatus.RUNNING:
                     info.status = SubAgentStatus.FAILED
-                    info.completed_at = datetime.now(timezone.utc)
+                    info.completed_at = datetime.now(UTC)
                     info.error = str(exc)
             self._fire_callback(agent_id, f"Error: {exc}")
 
@@ -264,7 +264,7 @@ class SubAgentManager:
                 return  # already finished
             cancel = self._cancel_events.get(agent_id)
             info.status = SubAgentStatus.TIMEOUT
-            info.completed_at = datetime.now(timezone.utc)
+            info.completed_at = datetime.now(UTC)
             info.error = "Timed out"
 
         if cancel:

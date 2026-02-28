@@ -8,27 +8,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def send_message(
-    client: httpx.Client,
-    text: str,
-    sender_id: str = "test-sender-A",
-    session_id: str | None = None,
-) -> httpx.Response:
-    """POST /v1/messages and return the raw response."""
-    body: dict = {"sender_id": sender_id, "text": text}
-    if session_id is not None:
-        body["session_id"] = session_id
-    return client.post("/v1/messages", json=body)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+from conftest import send_message
 
 
 class TestSimpleChat:

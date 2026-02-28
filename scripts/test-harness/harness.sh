@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Test harness orchestration script for Creel.
+# Full Creel test suite orchestrator (unit + integration + e2e).
 #
-# Runs unit tests, integration scenario tests (via harness.py with mock LLM),
-# and Playwright e2e tests (when dashboard is configured), then tears down.
+# Runs three phases sequentially:
+#   1. Unit tests        — existing pytest suite (tests/)
+#   2. Integration tests — mock-LLM scenario tests via harness.py
+#   3. E2E tests         — Playwright browser tests against a real daemon
 #
-# Requires: ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN set in environment.
+# Phases 1 & 2 use a mock LLM server (no API key needed for those).
+# Phase 3 (e2e) starts a real daemon and requires ANTHROPIC_API_KEY or
+# ANTHROPIC_AUTH_TOKEN in the environment.
+#
+# For ONLY mock-LLM integration tests, use scripts/test-harness.sh instead.
 #
 # Usage:
 #   ./scripts/test-harness/harness.sh [OPTIONS]

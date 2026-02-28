@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TASKS_DIR = Path("tasks")
 DEFAULT_AGENT_CONFIG = Path("agent.yaml")
-_CREEL_STATE_DIR = Path.home() / ".creel"
+_CREEL_STATE_DIR = Path(os.environ.get("CREEL_STATE_DIR", Path.home() / ".creel"))
 DEFAULT_DAEMON_SOCKET = _CREEL_STATE_DIR / "daemon.sock"
 DEFAULT_DAEMON_PID_FILE = _CREEL_STATE_DIR / "daemon.pid"
 DEFAULT_DAEMON_LOG_FILE = _CREEL_STATE_DIR / "daemon.log"

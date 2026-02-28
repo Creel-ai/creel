@@ -1,8 +1,12 @@
 #!/bin/bash
-# Creel Integration Test Harness — entry point.
+# Creel Integration Test Harness — MOCK LLM entry point.
 #
-# Starts a mock LLM server and a Creel daemon with test config,
-# runs pytest scenarios, produces a test report, and cleans up.
+# Starts a mock Anthropic LLM server and a Creel daemon with test config,
+# runs pytest integration scenarios, produces a test report, and cleans up.
+# No real API key is needed — all LLM calls go to the mock server.
+#
+# For the full test suite (unit + integration + Playwright e2e) with a
+# real LLM, use scripts/test-harness/harness.sh instead.
 #
 # Usage:
 #   ./scripts/test-harness.sh              # Run all scenarios

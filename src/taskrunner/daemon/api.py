@@ -91,8 +91,8 @@ def create_daemon_app(service: DaemonService) -> FastAPI:
                 finally:
                     asyncio.run_coroutine_threadsafe(q.put(sentinel), loop).result()
 
-            loop = asyncio.get_event_loop()
-            asyncio.get_event_loop().run_in_executor(None, _produce)
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _produce)
 
             while True:
                 item = await q.get()

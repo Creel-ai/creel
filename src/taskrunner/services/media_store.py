@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import shutil
 import time
 import uuid
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -87,8 +87,6 @@ class MediaStore:
                 return existing
 
         ext = self._resolve_extension(attachment)
-        from datetime import date
-
         day_str = date.today().isoformat()
         dest_dir = self._base_dir / channel / day_str
         dest_dir.mkdir(parents=True, exist_ok=True)

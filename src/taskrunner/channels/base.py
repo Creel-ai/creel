@@ -43,9 +43,6 @@ class OutgoingMessage:
 # Type alias for the legacy callback signature: (sender_id, text) -> response_text
 LegacyCallback = Callable[[str, str], str]
 
-# Type alias for the new callback signature: (IncomingMessage) -> str | OutgoingMessage
-MessageCallback = Callable[[IncomingMessage], "str | OutgoingMessage"]
-
 
 class Channel(ABC):
     """Base class for communication channels."""

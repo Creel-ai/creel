@@ -162,7 +162,7 @@ class ChatServer:
         text: str,
         on_text_delta: Callable[[str], None] | None = None,
         *,
-        attachments: list[Any] | None = None,
+        attachments: list[Attachment] | None = None,
         channel: str = "unknown",
         auto_approve: bool = False,
     ) -> str:
@@ -344,7 +344,7 @@ class ChatServer:
     def _process_attachments(
         self,
         text: str,
-        attachments: list[Any] | None,
+        attachments: list[Attachment] | None,
         sender_id: str,
         channel: str = "unknown",
     ) -> tuple[str, list[dict]]:
@@ -368,9 +368,6 @@ class ChatServer:
         image_blocks: list[dict] = []
 
         for attachment in attachments:
-            if not isinstance(attachment, Attachment):
-                continue
-
             if attachment.type in (AttachmentType.VOICE, AttachmentType.AUDIO):
                 self._process_voice_attachment(attachment, sender_id, voice_parts, channel)
             elif attachment.type == AttachmentType.IMAGE:

@@ -98,6 +98,36 @@ def test_session_endpoints(client: TestClient) -> None:
     assert len(history.json()["messages"]) >= 2
 
 
+def test_deferred_init_failure_health(tmp_path: Path) -> None:
+    """When init_factory raises, /health reports failed status."""
+
+    def _boom() -> DaemonService:
+        raise RuntimeError("config file missing")
+
+    app = create_daemon_app(init_factory=_boom)
+    with TestClient(app) as c:
+        resp = c.get("/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "failed"
+        assert "config file missing" in body["error"]
+
+
+def test_deferred_init_failure_returns_500(tmp_path: Path) -> None:
+    """When init_factory raises, non-health endpoints return 500."""
+
+    def _boom() -> DaemonService:
+        raise RuntimeError("bad config")
+
+    app = create_daemon_app(init_factory=_boom)
+    with TestClient(app) as c:
+        # Wait for init to settle by hitting /health first
+        c.get("/health")
+        resp = c.get("/v1/status")
+        assert resp.status_code == 500
+        assert "Initialization failed" in resp.json()["detail"]
+
+
 def test_stream_message_endpoint(client: TestClient) -> None:
     with client.stream(
         "POST",

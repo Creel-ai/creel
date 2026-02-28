@@ -90,6 +90,7 @@ class ChatServer:
                 max_daily_entries=agent_def.workspace.max_daily_entries,
                 max_long_term_lines=agent_def.workspace.max_long_term_lines,
             )
+
             def _compact() -> None:
                 try:
                     self._memory.compact_daily_files(

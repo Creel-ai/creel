@@ -86,18 +86,10 @@ def validate_mount_path(path: str) -> str | None:
     # Expand ~ and resolve to absolute path
     resolved = os.path.realpath(os.path.expanduser(path))
 
-    # Check against blocked paths
+    # Check against blocked paths (exact match only — realpath already resolved symlinks)
     for blocked in BLOCKED_MOUNT_PATHS:
-        if resolved == blocked or resolved.startswith(blocked + "/") and blocked == "/":
-            # Only block exact match of "/" — subdirectories of /etc etc. are fine
-            # Actually, block exact matches of any blocked path
-            pass
         if resolved == blocked:
             return f"Blocked: cannot mount system path '{resolved}'"
-
-    # Additional check: don't allow mounting the root filesystem
-    if resolved == "/":
-        return "Blocked: cannot mount root filesystem"
 
     # Verify the path exists
     if not os.path.exists(resolved):

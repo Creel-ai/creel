@@ -79,9 +79,7 @@ def _parse_subcommand(command: str) -> str:
     parts = command.strip().split()
     if len(parts) >= 2:
         return f"{parts[0]} {parts[1]}"
-    if len(parts) == 1:
-        return parts[0]
-    return ""
+    return parts[0]
 
 
 def validate_command(command: str) -> str | None:

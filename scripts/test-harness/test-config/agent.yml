@@ -1,0 +1,22 @@
+# Minimal agent config for the Creel E2E test harness.
+# Uses real LLM calls — ANTHROPIC_API_KEY must be set in env.
+# max_tokens kept low (200) to minimize API costs.
+
+system_prompt: "You are a test assistant. Keep responses brief."
+
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 200
+
+agent:
+  max_turns: 5
+
+session:
+  sessions_dir: sessions
+  max_history: 10
+  summarize_on_trim: false
+  ttl_hours: 0
+
+workspace:
+  path: workspace
+  timezone: UTC

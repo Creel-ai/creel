@@ -27,6 +27,9 @@ env/
 *.swp
 *.swo
 
+# Node
+node_modules/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -48,12 +51,6 @@ approvals/
 
 # Workspace memory (runtime data, but workspace/ root stays for SOUL.md etc.)
 workspace/memory/
-
-# Dashboard build artifacts
-dashboard/node_modules/
-dashboard/dist/
-src/taskrunner/dashboard_static/*
-!src/taskrunner/dashboard_static/.gitkeep
 
 # Coverage
 .coverage

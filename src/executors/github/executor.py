@@ -20,6 +20,8 @@ import shutil
 import subprocess
 import sys
 
+DEFAULT_MAX_CHARS = 50_000
+
 # Subcommands that are always allowed (read-only operations)
 ALLOWED_SUBCOMMANDS = frozenset(
     {
@@ -27,6 +29,8 @@ ALLOWED_SUBCOMMANDS = frozenset(
         "issue view",
         "pr list",
         "pr view",
+        "pr diff",
+        "pr checks",
         "run list",
         "run view",
         "run watch",
@@ -55,6 +59,9 @@ REVIEW_SUBCOMMANDS = frozenset(
 BLOCKED_PATTERNS = [
     re.compile(r"^repo\s+delete\b"),
     re.compile(r"^issue\s+delete\b"),
+    # Executor narrows to `pr merge --admin` specifically.  The policy
+    # deny_when rule uses the broader glob "*--admin*" as a safety net to
+    # catch --admin on any subcommand (e.g. via `gh api`).
     re.compile(r"^pr\s+merge\s+.*--admin\b"),
     # Block api calls with destructive HTTP methods
     re.compile(r"^api\s+.*(-X|--method)\s+(DELETE|PUT|PATCH)\b", re.IGNORECASE),
@@ -88,9 +95,7 @@ def _parse_subcommand(command: str) -> str:
     parts = command.strip().split()
     if len(parts) >= 2:
         return f"{parts[0]} {parts[1]}"
-    if len(parts) == 1:
-        return parts[0]
-    return ""
+    return parts[0]
 
 
 def validate_command(command: str) -> str | None:
@@ -110,10 +115,7 @@ def validate_command(command: str) -> str | None:
     # Validate top-level subcommand
     top_level = command.split()[0]
     if top_level not in VALID_PREFIXES:
-        return (
-            f"Unknown gh subcommand: '{top_level}'. "
-            f"Allowed: {', '.join(sorted(VALID_PREFIXES))}"
-        )
+        return f"Unknown gh subcommand: '{top_level}'. Allowed: {', '.join(sorted(VALID_PREFIXES))}"
 
     # 'api' subcommand: allow by default (GET); DELETE/PUT already blocked above
     if top_level == "api":
@@ -175,6 +177,8 @@ def run_gh_command(command: str, repo: str | None = None) -> dict:
     except ValueError as e:
         return _error_result(str(e), command=command)
 
+    max_chars = int(os.environ.get("MAX_CHARS", str(DEFAULT_MAX_CHARS)))
+
     try:
         result = subprocess.run(
             cmd,
@@ -183,13 +187,21 @@ def run_gh_command(command: str, repo: str | None = None) -> dict:
             timeout=120,  # 2 minute timeout
         )
 
-        return {
+        stdout = result.stdout
+        truncated = len(stdout) > max_chars
+        if truncated:
+            stdout = stdout[:max_chars]
+
+        out = {
             "command": " ".join(cmd),
             "exit_code": result.returncode,
-            "stdout": result.stdout,
+            "stdout": stdout,
             "stderr": result.stderr,
             "success": result.returncode == 0,
         }
+        if truncated:
+            out["truncated"] = True
+        return out
 
     except subprocess.TimeoutExpired as e:
         return _error_result(

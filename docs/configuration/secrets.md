@@ -34,6 +34,7 @@ The `.env` format supports `KEY=value`, quoted values, and comments:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_CREDENTIALS_JSON='{"refresh_token": "...", "client_id": "...", "client_secret": "..."}'
+GH_TOKEN=github_pat_xxx
 NOTION_API_KEY=secret_xxx
 ```
 

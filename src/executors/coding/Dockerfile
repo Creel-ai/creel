@@ -9,6 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
         make \
+        cmake \
+        pkg-config \
+        libssl-dev \
+        libffi-dev \
+        openssh-client \
+        sqlite3 \
+        unzip \
+        zip \
+        tree \
+        ripgrep \
         ca-certificates \
         gnupg \
     && mkdir -p /etc/apt/keyrings \

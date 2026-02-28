@@ -5,7 +5,6 @@ from taskrunner.channels.base import (
     Channel,
     IncomingMessage,
     LegacyCallback,
-    MessageCallback,
     OutgoingMessage,
 )
 from taskrunner.channels.plugin import ChannelCapability, ChannelPluginMeta
@@ -19,6 +18,5 @@ __all__ = [
     "ChannelRegistry",
     "IncomingMessage",
     "LegacyCallback",
-    "MessageCallback",
     "OutgoingMessage",
 ]

@@ -61,8 +61,8 @@ BLOCKED_PATTERNS = [
     re.compile(r"\bnc\s+-e\b"),
     re.compile(r"\bncat\s+-e\b"),
     # Pipe to shell (download-and-execute)
-    re.compile(r"\bcurl\b.*\|\s*\b(ba)?sh\b"),
-    re.compile(r"\bwget\b.*\|\s*\b(ba)?sh\b"),
+    re.compile(r"\bcurl\b.*\|\s*\b(ba|z)?sh\b"),
+    re.compile(r"\bwget\b.*\|\s*\b(ba|z)?sh\b"),
     # Command substitution from network
     re.compile(r"\$\(curl\b"),
     re.compile(r"\$\(wget\b"),

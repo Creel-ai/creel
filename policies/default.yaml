@@ -110,13 +110,13 @@ deny_when:
     pattern: "*| bash*"
   - tool: exec
     arg: command
-    pattern: "*| sh *"
+    pattern: "*| sh*"
   - tool: exec
     arg: command
     pattern: "*|bash*"
   - tool: exec
     arg: command
-    pattern: "*|sh *"
+    pattern: "*|sh*"
   - tool: exec
     arg: command
     pattern: "*curl*|*sh*"
@@ -180,13 +180,13 @@ deny_when:
     pattern: "*| bash*"
   - tool: coding
     arg: command
-    pattern: "*| sh *"
+    pattern: "*| sh*"
   - tool: coding
     arg: command
     pattern: "*|bash*"
   - tool: coding
     arg: command
-    pattern: "*|sh *"
+    pattern: "*|sh*"
   - tool: coding
     arg: command
     pattern: "*curl*|*sh*"

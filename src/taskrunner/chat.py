@@ -90,9 +90,12 @@ class ChatServer:
                 max_daily_entries=agent_def.workspace.max_daily_entries,
                 max_long_term_lines=agent_def.workspace.max_long_term_lines,
             )
+
+            memory = self._memory
+
             def _compact() -> None:
                 try:
-                    self._memory.compact_daily_files(  # type: ignore[union-attr]
+                    memory.compact_daily_files(
                         days_to_keep=agent_def.workspace.compact_after_days,
                     )
                 except Exception:

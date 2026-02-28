@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ class ChatServer:
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._cron_manager = cron_manager
-        self._start_time = datetime.now(timezone.utc)
+        self._start_time = datetime.now(UTC)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
         # Build summarize_fn if summarization is enabled
@@ -445,7 +445,7 @@ class ChatServer:
         lines = ["Sessions:", ""]
         for s in sessions:
             marker = " *" if s["session_id"] == active_id else ""
-            dt = datetime.fromtimestamp(s["last_active"], tz=timezone.utc)
+            dt = datetime.fromtimestamp(s["last_active"], tz=UTC)
             date_str = dt.strftime("%Y-%m-%d %H:%M")
             title = s["title"] or "(untitled)"
             lines.append(
@@ -471,7 +471,7 @@ class ChatServer:
     def _format_status(self, sender_id: str) -> str:
         """Format server status information."""
         session = self._session_mgr.get_or_create(sender_id)
-        uptime = datetime.now(timezone.utc) - self._start_time
+        uptime = datetime.now(UTC) - self._start_time
         hours, remainder = divmod(int(uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
 

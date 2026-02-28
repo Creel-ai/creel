@@ -319,7 +319,7 @@ class BrowserRelay:
                     _do_navigate(),
                     timeout=(self._navigate_timeout_ms / 1000) + 15,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Navigation itself timed out — return what we can
                 title = ""
                 try:

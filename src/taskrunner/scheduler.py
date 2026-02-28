@@ -10,7 +10,7 @@ import time
 import traceback
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -45,9 +45,9 @@ def _append_cron_history(record: dict) -> None:
 def start_scheduler(
     tasks_dir: str | Path = "tasks",
     use_containers: bool = False,
-    shutdown_event: "threading.Event | None" = None,
+    shutdown_event: threading.Event | None = None,
     on_failure: Callable[[str, Exception], None] | None = None,
-    heartbeat_event: "threading.Event | None" = None,
+    heartbeat_event: threading.Event | None = None,
     heartbeat_interval: int = 30,
 ) -> BlockingScheduler:
     """Load all tasks and start the blocking scheduler.
@@ -127,7 +127,7 @@ def _run_task_safe(
     """Run a task with error handling so the scheduler doesn't crash."""
     run_id = str(uuid.uuid4())
     job_name = Path(task_path).stem
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     start_time = time.monotonic()
 
     status = "success"
@@ -149,7 +149,7 @@ def _run_task_safe(
                 logger.exception("on_failure callback raised for task %s", task_path)
 
     duration_ms = int((time.monotonic() - start_time) * 1000)
-    finished_at = datetime.now(timezone.utc).isoformat()
+    finished_at = datetime.now(UTC).isoformat()
 
     record = {
         "run_id": run_id,

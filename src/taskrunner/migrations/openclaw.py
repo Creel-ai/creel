@@ -15,7 +15,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -184,7 +184,7 @@ class OpenClawMigrator:
         self.tasks_dir = self.target_root / "tasks"
         self.agent_config_path = self.target_root / "agent.yaml"
         self.artifacts_dir = self.target_root / "migrations" / "openclaw"
-        timestamp_tag = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        timestamp_tag = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         self.backup_root = self.target_root / ".migration_backups" / timestamp_tag
 
         self._agent_overlay: dict[str, Any] = {}
@@ -193,7 +193,7 @@ class OpenClawMigrator:
             target_root=str(self.target_root),
             phases=list(options.phases),
             apply=options.apply,
-            started_at=datetime.now(timezone.utc).isoformat(),
+            started_at=datetime.now(UTC).isoformat(),
         )
 
     def _detect_workspace_source(self) -> Path:
@@ -213,7 +213,7 @@ class OpenClawMigrator:
         """Run configured migration phases."""
         if not self.source_root.is_dir():
             self._error(f"Source directory not found: {self.source_root}")
-            self._report.finished_at = datetime.now(timezone.utc).isoformat()
+            self._report.finished_at = datetime.now(UTC).isoformat()
             return self._report
 
         for phase in self.options.phases:
@@ -228,7 +228,7 @@ class OpenClawMigrator:
 
         # Always emit overlay artifacts when we have any mapped agent config.
         self._write_agent_artifacts(phase="meta")
-        self._report.finished_at = datetime.now(timezone.utc).isoformat()
+        self._report.finished_at = datetime.now(UTC).isoformat()
         return self._report
 
     # ---------------------------------------------------------------------

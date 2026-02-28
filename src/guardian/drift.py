@@ -13,7 +13,7 @@ import logging
 import math
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -160,7 +160,7 @@ class DriftDetector:
         Returns a DriftAlert if the tool is new, None otherwise.
         Also updates internal tracking for future checks.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         count = self._tool_call_counts.get(tool_name, 0)
         self._tool_call_counts[tool_name] = count + 1
@@ -190,7 +190,7 @@ class DriftDetector:
         Returns a DriftAlert if the length deviates by more than
         z_threshold standard deviations from the baseline mean.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Need enough data to compute meaningful statistics
         if len(self._baseline.output_lengths) < 10:
@@ -233,7 +233,7 @@ class DriftDetector:
 
         Returns a DriftAlert if the error rate exceeds error_threshold.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         self._baseline.recent_results.append(success)
 

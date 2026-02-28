@@ -86,9 +86,7 @@ def _build_tree(path: Path, depth: int = 0) -> dict[str, Any] | None:
     except OSError:
         return None
 
-    modified_at = datetime.datetime.fromtimestamp(
-        stat.st_mtime, tz=datetime.timezone.utc
-    ).isoformat()
+    modified_at = datetime.datetime.fromtimestamp(stat.st_mtime, tz=datetime.UTC).isoformat()
 
     if path.is_file():
         return {
@@ -211,9 +209,7 @@ async def get_file(file_path: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
     stat = target.stat()
-    modified_at = datetime.datetime.fromtimestamp(
-        stat.st_mtime, tz=datetime.timezone.utc
-    ).isoformat()
+    modified_at = datetime.datetime.fromtimestamp(stat.st_mtime, tz=datetime.UTC).isoformat()
 
     if stat.st_size > _MAX_FILE_SIZE:
         raise HTTPException(
@@ -269,9 +265,7 @@ async def update_file(file_path: str, req: FileWriteRequest) -> dict[str, Any]:
     target.write_text(req.content, encoding="utf-8")
 
     stat = target.stat()
-    modified_at = datetime.datetime.fromtimestamp(
-        stat.st_mtime, tz=datetime.timezone.utc
-    ).isoformat()
+    modified_at = datetime.datetime.fromtimestamp(stat.st_mtime, tz=datetime.UTC).isoformat()
 
     return {
         "path": file_path,
@@ -297,9 +291,7 @@ async def create_file(file_path: str, req: FileWriteRequest) -> dict[str, Any]:
     target.write_text(req.content, encoding="utf-8")
 
     stat = target.stat()
-    modified_at = datetime.datetime.fromtimestamp(
-        stat.st_mtime, tz=datetime.timezone.utc
-    ).isoformat()
+    modified_at = datetime.datetime.fromtimestamp(stat.st_mtime, tz=datetime.UTC).isoformat()
 
     return {
         "path": file_path,
@@ -336,7 +328,7 @@ async def delete_file(file_path: str) -> dict[str, Any]:
 
     # Add timestamp suffix if a file with the same name already exists in trash
     if trash_dest.exists():
-        ts = datetime.datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+        ts = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
         trash_dest = trash_dest.with_stem(f"{trash_dest.stem}.{ts}")
 
     trash_dest.parent.mkdir(parents=True, exist_ok=True)

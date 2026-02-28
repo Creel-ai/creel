@@ -7,7 +7,8 @@ import hashlib
 import hmac
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from taskrunner.channels.base import Channel
 from taskrunner.channels.webhook import WebhookChannelMixin

@@ -53,6 +53,7 @@ class ManagedContainer:
 
     def send(self, msg: dict) -> None:
         """Write a JSON line to the container's stdin."""
+        assert self.proc.stdin is not None, "Container process has no stdin"
         with self._lock:
             self.proc.stdin.write(json.dumps(msg) + "\n")
             self.proc.stdin.flush()
@@ -73,6 +74,7 @@ class ManagedContainer:
             if not ready:
                 raise TimeoutError(f"Container {self.id} did not respond within {timeout}s")
 
+        assert self.proc.stdout is not None, "Container process has no stdout"
         line = self.proc.stdout.readline()
         if not line:
             retcode = self.proc.poll()

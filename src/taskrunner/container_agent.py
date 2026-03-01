@@ -159,7 +159,7 @@ def _run_with_pool(
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
-    bridge_config: object | None,
+    bridge_config: BridgeConfig | None,
     session_state: dict | None,
     env_vars: dict[str, str],
 ) -> AgentResult:
@@ -210,7 +210,7 @@ def _run_cold_start(
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
-    bridge_config: object | None,
+    bridge_config: BridgeConfig | None,
     session_state: dict | None,
     env_vars: dict[str, str],
 ) -> AgentResult:
@@ -387,7 +387,7 @@ def _run_protocol_pooled(
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
-    bridge_config: object | None = None,
+    bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol using a pooled ManagedContainer.
@@ -446,6 +446,7 @@ def _run_protocol_pooled(
 
             if results is None:
                 # approval_required — container will be discarded by caller
+                assert pending_result is not None
                 return pending_result
 
             container.send({"type": "tool_results", "results": results})

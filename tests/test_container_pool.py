@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -15,7 +13,6 @@ from taskrunner.container_pool import (
     ContainerPoolConfig,
     ManagedContainer,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,17 +76,13 @@ class TestManagedContainer:
     def test_alive_when_running(self):
         proc = MagicMock()
         proc.poll.return_value = None
-        c = ManagedContainer(
-            id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x"
-        )
+        c = ManagedContainer(id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x")
         assert c.alive is True
 
     def test_not_alive_when_exited(self):
         proc = MagicMock()
         proc.poll.return_value = 0
-        c = ManagedContainer(
-            id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x"
-        )
+        c = ManagedContainer(id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x")
         assert c.alive is False
 
     def test_send_writes_json_line(self):
@@ -98,9 +91,7 @@ class TestManagedContainer:
         proc.stdin = StringIO()
         proc.stdin.flush = lambda: None
 
-        c = ManagedContainer(
-            id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x"
-        )
+        c = ManagedContainer(id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x")
         c.send({"type": "ping"})
 
         proc.stdin.seek(0)
@@ -113,9 +104,7 @@ class TestManagedContainer:
         proc.poll.return_value = None
         proc.stdout = StringIO(json.dumps({"type": "pong"}) + "\n")
 
-        c = ManagedContainer(
-            id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x"
-        )
+        c = ManagedContainer(id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x")
         msg = c.recv()
         assert msg["type"] == "pong"
 
@@ -125,9 +114,7 @@ class TestManagedContainer:
         proc.stdout = StringIO("")
         proc.stderr = StringIO("out of memory")
 
-        c = ManagedContainer(
-            id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x"
-        )
+        c = ManagedContainer(id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x")
         with pytest.raises(RuntimeError, match="exited unexpectedly"):
             c.recv()
 
@@ -138,9 +125,7 @@ class TestManagedContainer:
         proc.stdin.flush = lambda: None
         proc.wait.return_value = 0
 
-        c = ManagedContainer(
-            id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x"
-        )
+        c = ManagedContainer(id="x", image="img", entrypoint="e", proc=proc, env_file_path="/tmp/x")
         c.shutdown()
 
         proc.stdin.seek(0)
@@ -356,9 +341,11 @@ class TestAgentRunnerKeepAlive:
         stdin_data = json.dumps({"type": "ping"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
         stdout = StringIO()
 
-        with patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)), \
-             patch("llm.agent_runner.sys.stdout", stdout), \
-             patch("llm.agent_runner._get_client"):
+        with (
+            patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)),
+            patch("llm.agent_runner.sys.stdout", stdout),
+            patch("llm.agent_runner._get_client"),
+        ):
             main()
 
         stdout.seek(0)
@@ -374,9 +361,11 @@ class TestAgentRunnerKeepAlive:
         stdin_data = json.dumps({"type": "reset"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
         stdout = StringIO()
 
-        with patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)), \
-             patch("llm.agent_runner.sys.stdout", stdout), \
-             patch("llm.agent_runner._get_client"):
+        with (
+            patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)),
+            patch("llm.agent_runner.sys.stdout", stdout),
+            patch("llm.agent_runner._get_client"),
+        ):
             main()
 
         stdout.seek(0)
@@ -392,9 +381,11 @@ class TestAgentRunnerKeepAlive:
         stdin_data = json.dumps({"type": "shutdown"}) + "\n"
         stdout = StringIO()
 
-        with patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)), \
-             patch("llm.agent_runner.sys.stdout", stdout), \
-             patch("llm.agent_runner._get_client"):
+        with (
+            patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)),
+            patch("llm.agent_runner.sys.stdout", stdout),
+            patch("llm.agent_runner._get_client"),
+        ):
             main()
 
         # No output expected — shutdown just exits
@@ -419,10 +410,12 @@ class TestRunnerKeepAlive:
         stdin_data = json.dumps({"type": "ping"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
         stdout = StringIO()
 
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}), \
-             patch("llm.runner.anthropic.Anthropic"), \
-             patch("llm.runner.sys.stdin", StringIO(stdin_data)), \
-             patch("llm.runner.sys.stdout", stdout):
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("llm.runner.anthropic.Anthropic"),
+            patch("llm.runner.sys.stdin", StringIO(stdin_data)),
+            patch("llm.runner.sys.stdout", stdout),
+        ):
             main()
 
         stdout.seek(0)
@@ -438,10 +431,12 @@ class TestRunnerKeepAlive:
         stdin_data = json.dumps({"type": "reset"}) + "\n" + json.dumps({"type": "shutdown"}) + "\n"
         stdout = StringIO()
 
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}), \
-             patch("llm.runner.anthropic.Anthropic"), \
-             patch("llm.runner.sys.stdin", StringIO(stdin_data)), \
-             patch("llm.runner.sys.stdout", stdout):
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("llm.runner.anthropic.Anthropic"),
+            patch("llm.runner.sys.stdin", StringIO(stdin_data)),
+            patch("llm.runner.sys.stdout", stdout),
+        ):
             main()
 
         stdout.seek(0)

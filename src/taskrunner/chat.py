@@ -62,11 +62,13 @@ class ChatServer:
             from taskrunner.container_pool import ContainerPool, ContainerPoolConfig
 
             pool_config = agent_def.llm.container_pool
-            self._container_pool = ContainerPool(ContainerPoolConfig(
-                enabled=pool_config.enabled,
-                idle_timeout_seconds=pool_config.idle_timeout_seconds,
-                max_containers=pool_config.max_containers,
-            ))
+            self._container_pool = ContainerPool(
+                ContainerPoolConfig(
+                    enabled=pool_config.enabled,
+                    idle_timeout_seconds=pool_config.idle_timeout_seconds,
+                    max_containers=pool_config.max_containers,
+                )
+            )
             if pool_config.enabled:
                 logger.info(
                     "Container pool enabled (idle_timeout=%ds, max=%d)",

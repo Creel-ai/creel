@@ -68,19 +68,17 @@ class ManagedContainer:
         """
         if timeout is not None:
             import select
+
             ready, _, _ = select.select([self.proc.stdout], [], [], timeout)
             if not ready:
-                raise TimeoutError(
-                    f"Container {self.id} did not respond within {timeout}s"
-                )
+                raise TimeoutError(f"Container {self.id} did not respond within {timeout}s")
 
         line = self.proc.stdout.readline()
         if not line:
             retcode = self.proc.poll()
             stderr = self.proc.stderr.read() if self.proc.stderr else ""
             raise RuntimeError(
-                f"Container {self.id} exited unexpectedly (code={retcode}). "
-                f"stderr: {stderr[:500]}"
+                f"Container {self.id} exited unexpectedly (code={retcode}). stderr: {stderr[:500]}"
             )
         return json.loads(line)
 
@@ -181,19 +179,19 @@ class ContainerPool:
             if container.alive and container.ping():
                 container.last_used = time.monotonic()
                 # Return remaining candidates to idle under lock
-                remaining = candidates[i + 1:]
+                remaining = candidates[i + 1 :]
                 if remaining:
                     with self._lock:
                         self._idle.setdefault(key, []).extend(remaining)
                 logger.info(
                     "Reusing warm container %s (%s/%s)",
-                    container.id, image, entrypoint,
+                    container.id,
+                    image,
+                    entrypoint,
                 )
                 return container
             else:
-                logger.debug(
-                    "Discarding dead idle container %s", container.id
-                )
+                logger.debug("Discarding dead idle container %s", container.id)
                 with self._lock:
                     self._remove_container(container)
 
@@ -217,9 +215,7 @@ class ContainerPool:
 
         # Reset container state for next session
         if not container.reset():
-            logger.info(
-                "Container %s failed reset, discarding", container.id
-            )
+            logger.info("Container %s failed reset, discarding", container.id)
             self._cleanup_container(container)
             return
 
@@ -238,7 +234,9 @@ class ContainerPool:
             idle_list.append(container)
             logger.info(
                 "Released container %s back to pool (%d idle for %s/%s)",
-                container.id, len(idle_list), *key,
+                container.id,
+                len(idle_list),
+                *key,
             )
 
     def shutdown(self) -> None:
@@ -283,7 +281,10 @@ class ContainerPool:
 
         # Write env file
         env_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".env", delete=False, prefix="creel-pool-",
+            mode="w",
+            suffix=".env",
+            delete=False,
+            prefix="creel-pool-",
         )
         for key, value in env_vars.items():
             sanitized = value.replace("\n", "").replace("\r", "")
@@ -293,9 +294,13 @@ class ContainerPool:
         env_file.close()
 
         docker_cmd = [
-            "docker", "run", "-i",
-            "--name", container_name,
-            "--env-file", env_file_path,
+            "docker",
+            "run",
+            "-i",
+            "--name",
+            container_name,
+            "--env-file",
+            env_file_path,
             *docker_flags,
             image,
             entrypoint,
@@ -303,7 +308,9 @@ class ContainerPool:
 
         logger.info(
             "Starting warm container %s (%s/%s)",
-            container_id, image, entrypoint,
+            container_id,
+            image,
+            entrypoint,
         )
 
         proc = subprocess.Popen(
@@ -349,14 +356,14 @@ class ContainerPool:
             )
         except Exception:
             logger.warning(
-                "Failed to remove Docker container creel-llm-%s; "
-                "it may be orphaned",
+                "Failed to remove Docker container creel-llm-%s; it may be orphaned",
                 container.id,
             )
 
         # Clean up env file
         try:
             import os
+
             os.unlink(container.env_file_path)
         except Exception:
             pass
@@ -377,10 +384,7 @@ class ContainerPool:
 
             with self._lock:
                 for key, idle_list in list(self._idle.items()):
-                    expired = [
-                        c for c in idle_list
-                        if (now - c.last_used) > timeout or not c.alive
-                    ]
+                    expired = [c for c in idle_list if (now - c.last_used) > timeout or not c.alive]
                     for c in expired:
                         idle_list.remove(c)
                         to_remove.append(c)
@@ -390,7 +394,8 @@ class ContainerPool:
             for c in to_remove:
                 logger.info(
                     "Evicting idle container %s (idle %.0fs)",
-                    c.id, now - c.last_used,
+                    c.id,
+                    now - c.last_used,
                 )
                 c.shutdown()
                 with self._lock:

@@ -37,7 +37,8 @@ _CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for 
 # since this path doesn't run multi-turn tool loops.
 _LLM_DOCKER_FLAGS = [
     "--read-only",
-    "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+    "--tmpfs",
+    "/tmp:rw,noexec,nosuid,size=16M",
     "--cap-drop=ALL",
     "--security-opt=no-new-privileges",
     "--memory=256m",
@@ -282,6 +283,7 @@ def _run_llm_container(prompt: str, config: LLMConfig) -> str:
     _ensure_image("llm-runner:latest")
 
     from taskrunner.container_agent import _get_llm_env_vars
+
     env_vars = _get_llm_env_vars()
     env_vars["MODEL"] = config.model
     env_vars["MAX_TOKENS"] = str(config.max_tokens)
@@ -326,9 +328,11 @@ def _run_llm_container(prompt: str, config: LLMConfig) -> str:
 def _run_llm_pooled(prompt: str, config: LLMConfig, pool: ContainerPool) -> str:
     """Run LLM call using a warm container from the pool."""
     from taskrunner.orchestrator import _ensure_image
+
     _ensure_image("llm-runner:latest")
 
     from taskrunner.container_agent import _get_llm_env_vars
+
     env_vars = _get_llm_env_vars()
     env_vars["MODEL"] = config.model
     env_vars["MAX_TOKENS"] = str(config.max_tokens)
@@ -341,12 +345,14 @@ def _run_llm_pooled(prompt: str, config: LLMConfig, pool: ContainerPool) -> str:
     )
 
     try:
-        container.send({
-            "type": "request",
-            "prompt": prompt,
-            "model": config.model,
-            "max_tokens": config.max_tokens,
-        })
+        container.send(
+            {
+                "type": "request",
+                "prompt": prompt,
+                "model": config.model,
+                "max_tokens": config.max_tokens,
+            }
+        )
         msg = container.recv(timeout=120)
 
         if msg.get("type") == "response":

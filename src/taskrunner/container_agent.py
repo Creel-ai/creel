@@ -44,7 +44,8 @@ _IMAGE = "llm-runner:latest"
 # Docker security flags shared between cold-start and pooled containers
 _AGENT_DOCKER_FLAGS = [
     "--read-only",
-    "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+    "--tmpfs",
+    "/tmp:rw,noexec,nosuid,size=16M",
     "--cap-drop=ALL",
     "--security-opt=no-new-privileges",
     "--memory=512m",
@@ -121,16 +122,31 @@ def run_agent_loop_container(
     # Use warm container pool if available and enabled
     if container_pool is not None and container_pool.enabled:
         return _run_with_pool(
-            container_pool, start_msg, messages, tools_config,
-            use_containers, guardian, confirm_action, memory_manager,
-            bridge_config, session_state, env_vars,
+            container_pool,
+            start_msg,
+            messages,
+            tools_config,
+            use_containers,
+            guardian,
+            confirm_action,
+            memory_manager,
+            bridge_config,
+            session_state,
+            env_vars,
         )
 
     # Cold-start path (original behavior)
     return _run_cold_start(
-        start_msg, messages, tools_config, use_containers,
-        guardian, confirm_action, memory_manager, bridge_config,
-        session_state, env_vars,
+        start_msg,
+        messages,
+        tools_config,
+        use_containers,
+        guardian,
+        confirm_action,
+        memory_manager,
+        bridge_config,
+        session_state,
+        env_vars,
     )
 
 
@@ -157,8 +173,15 @@ def _run_with_pool(
 
     try:
         result = _run_protocol_pooled(
-            container, start_msg, messages, tools_config, use_containers,
-            guardian, confirm_action, memory_manager, bridge_config,
+            container,
+            start_msg,
+            messages,
+            tools_config,
+            use_containers,
+            guardian,
+            confirm_action,
+            memory_manager,
+            bridge_config,
             session_state,
         )
         # Return container to pool for reuse
@@ -384,10 +407,12 @@ def _run_protocol_pooled(
                 messages.clear()
                 messages.extend(msg["messages"])
             elif msg.get("text"):
-                messages.append({
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": msg["text"]}],
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": msg["text"]}],
+                    }
+                )
             # Do NOT close stdin or wait — container stays alive
             return AgentResult(
                 text=msg["text"],
@@ -408,8 +433,13 @@ def _run_protocol_pooled(
 
         elif msg_type == "tool_request":
             results, pending_result = _handle_tool_request(
-                msg["calls"], tools_config, use_containers,
-                guardian, confirm_action, memory_manager, messages,
+                msg["calls"],
+                tools_config,
+                use_containers,
+                guardian,
+                confirm_action,
+                memory_manager,
+                messages,
                 bridge_config=bridge_config,
                 session_state=session_state,
             )

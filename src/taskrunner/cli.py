@@ -788,7 +788,10 @@ def cmd_daemon_install(args: argparse.Namespace) -> int:
     )
     if kickstart.returncode != 0:
         out = (kickstart.stdout or "") + "\n" + (kickstart.stderr or "")
-        print(f"Error: failed to start launchd service {label}: {out.strip()}", file=sys.stderr)
+        print(
+            f"Error: failed to start launchd service {label}: {out.strip()}",
+            file=sys.stderr,
+        )
         return 1
 
     if not _wait_for_daemon_health(socket_path, wait_seconds):
@@ -1050,7 +1053,10 @@ def cmd_send(args: argparse.Namespace) -> int:
             print()
             return 0
         except Exception as e:
-            print(f"Error: Could not stream from daemon at {socket_path}: {e}", file=sys.stderr)
+            print(
+                f"Error: Could not stream from daemon at {socket_path}: {e}",
+                file=sys.stderr,
+            )
             return 1
 
     payload = {
@@ -1080,7 +1086,10 @@ def cmd_send(args: argparse.Namespace) -> int:
             detail = resp.json().get("detail", "")
         except Exception:
             detail = resp.text
-        print(f"Error: daemon request failed ({resp.status_code}) {detail}", file=sys.stderr)
+        print(
+            f"Error: daemon request failed ({resp.status_code}) {detail}",
+            file=sys.stderr,
+        )
         return 1
 
     data = resp.json()
@@ -1438,7 +1447,9 @@ def main() -> int:
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument(
-        "--containers", action="store_true", help="Run executors/LLM in Docker containers"
+        "--containers",
+        action="store_true",
+        help="Run executors/LLM in Docker containers",
     )
     parser.add_argument("--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory")
     parser.add_argument(

@@ -261,6 +261,37 @@ class TelegramChannelConfig(BaseModel):
         return [os.path.expandvars(s) for s in v]
 
 
+class TranscriptionConfig(BaseModel):
+    """Transcription backend settings (media.transcription)."""
+
+    backend: str = "openai"  # "openai" or "local"
+    model: str = "whisper-1"
+    api_key: str | None = None  # Falls back to llm.api_key / OPENAI_API_KEY
+
+
+class VisionConfig(BaseModel):
+    """Vision processing settings (media.vision)."""
+
+    max_pixels: int = 2048
+    quality: int = 85
+
+
+class MediaConfig(BaseModel):
+    """Media attachment handling settings.
+
+    Controls image and voice message processing.  When *enabled* is
+    ``False`` (or the section is absent), attachments are silently
+    ignored and only the text portion of messages is processed.
+    """
+
+    enabled: bool = True
+    storage_dir: str = "~/.creel/media"
+    max_file_size_mb: int = 20
+    retention_days: int = 30
+    transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
+    vision: VisionConfig = Field(default_factory=VisionConfig)
+
+
 class BridgeConfig(BaseModel):
     """Bridge server configuration for host-side macOS tools."""
 
@@ -338,6 +369,7 @@ class AgentDefinition(BaseModel):
     quiet_hours: QuietHoursConfig = Field(default_factory=QuietHoursConfig)
     bridge: BridgeConfig = Field(default_factory=BridgeConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
+    media: MediaConfig | None = None
     guardian: GuardianConfig | None = None
 
 

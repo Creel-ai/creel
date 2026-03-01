@@ -210,7 +210,13 @@ class TestDebugMode:
 
         # Mock classify_detailed to return injection with chunk details
         chunk_details = [
-            {"index": 0, "length": 25, "label": "INJECTION", "score": 0.9953, "is_injection": True},
+            {
+                "index": 0,
+                "length": 25,
+                "label": "INJECTION",
+                "score": 0.9953,
+                "is_injection": True,
+            },
         ]
         mock_result = ClassifierResult(
             is_injection=True,
@@ -259,7 +265,13 @@ class TestDebugMode:
         g = Guardian(config)
 
         chunk_details = [
-            {"index": 0, "length": 18, "label": "SAFE", "score": 0.99, "is_injection": False},
+            {
+                "index": 0,
+                "length": 18,
+                "label": "SAFE",
+                "score": 0.99,
+                "is_injection": False,
+            },
         ]
         mock_result = ClassifierResult(
             is_injection=False,

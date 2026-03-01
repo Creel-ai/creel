@@ -12,11 +12,15 @@ from typing import Any
 
 from taskrunner.agent import run_agent_loop
 from taskrunner.approvals import ApprovalQueue
+from taskrunner.channels.message import Attachment, AttachmentType
 from taskrunner.log import generate_request_id, request_id_var
 from taskrunner.memory import MemoryManager
 from taskrunner.models import AgentDefinition
 from taskrunner.prompt_builder import build_system_prompt
 from taskrunner.quiet_hours import should_suppress
+from taskrunner.services.media_store import MediaStore
+from taskrunner.services.transcription import TranscriptionService
+from taskrunner.services.vision import VisionProcessor
 from taskrunner.session import SessionManager
 from taskrunner.subagents import SubAgentManager
 from taskrunner.tools import execute_tool_call
@@ -142,6 +146,31 @@ class ChatServer:
             self._guardian.warm_up()
             logger.info("Guardian enabled")
 
+        # Initialize media services for attachment processing
+        media_cfg = agent_def.media
+        if media_cfg is not None and media_cfg.enabled:
+            storage_dir = Path(media_cfg.storage_dir).expanduser()
+            self._media_store: MediaStore | None = MediaStore(
+                base_dir=storage_dir,
+                max_file_size=media_cfg.max_file_size_mb * 1024 * 1024,
+                retention_days=media_cfg.retention_days,
+            )
+            self._transcription: TranscriptionService | None = TranscriptionService(
+                backend=media_cfg.transcription.backend,
+                model=media_cfg.transcription.model,
+                api_key=media_cfg.transcription.api_key,
+            )
+            self._vision: VisionProcessor | None = VisionProcessor(
+                provider="anthropic",
+                max_pixels=media_cfg.vision.max_pixels,
+                quality=media_cfg.vision.quality,
+            )
+            logger.info("Media services enabled (storage: %s)", storage_dir)
+        else:
+            self._media_store = None
+            self._transcription = None
+            self._vision = None
+
         # Initialize sub-agent manager
         self._subagent_manager = SubAgentManager(
             llm_config=agent_def.llm,
@@ -160,6 +189,8 @@ class ChatServer:
         text: str,
         on_text_delta: Callable[[str], None] | None = None,
         *,
+        attachments: list[Attachment] | None = None,
+        channel: str = "unknown",
         auto_approve: bool = False,
     ) -> str:
         """Process an incoming message and return a response."""
@@ -224,8 +255,24 @@ class ChatServer:
                 "Reply Y to approve or N to deny."
             )
 
-        # Add user message and get session with history
-        session = self._session_mgr.add_user_message(sender_id, text)
+        # Process media attachments (voice transcription + image vision)
+        text, image_content_blocks = self._process_attachments(
+            text,
+            attachments,
+            sender_id,
+            channel=channel,
+        )
+
+        # Add user message: use content blocks when images are present
+        if image_content_blocks:
+            content_blocks: list[dict] = [{"type": "text", "text": text}]
+            content_blocks.extend(image_content_blocks)
+            session = self._session_mgr.add_user_message_blocks(
+                sender_id,
+                content_blocks,
+            )
+        else:
+            session = self._session_mgr.add_user_message(sender_id, text)
 
         # Build system prompt using the prompt builder
         system_prompt = self._build_system_prompt()
@@ -327,6 +374,90 @@ class ChatServer:
 
         return result.text
 
+    def _process_attachments(
+        self,
+        text: str,
+        attachments: list[Attachment] | None,
+        sender_id: str,
+        channel: str = "unknown",
+    ) -> tuple[str, list[dict]]:
+        """Process media attachments, returning updated text and image content blocks.
+
+        Voice/audio attachments are transcribed and their text is prepended to the
+        user message. Image attachments are converted to LLM content blocks.
+
+        Returns:
+            (updated_text, image_content_blocks) — text with transcriptions prepended
+            and a list of image content block dicts for the LLM.
+        """
+        if not attachments:
+            return text, []
+
+        if self._media_store is None:
+            logger.info("Media disabled — ignoring %d attachment(s)", len(attachments))
+            return text, []
+
+        voice_parts: list[str] = []
+        image_blocks: list[dict] = []
+
+        for attachment in attachments:
+            if attachment.type in (AttachmentType.VOICE, AttachmentType.AUDIO):
+                self._process_voice_attachment(attachment, sender_id, voice_parts, channel)
+            elif attachment.type == AttachmentType.IMAGE:
+                self._process_image_attachment(attachment, sender_id, image_blocks, channel)
+
+        # Prepend transcribed voice text to the user message
+        if voice_parts:
+            voice_text = "\n".join(voice_parts)
+            text = f"{voice_text}\n{text}" if text else voice_text
+
+        return text, image_blocks
+
+    def _process_voice_attachment(
+        self,
+        attachment: Attachment,
+        sender_id: str,
+        voice_parts: list[str],
+        channel: str = "unknown",
+    ) -> None:
+        """Save, transcribe a voice attachment and append to voice_parts."""
+        assert self._media_store is not None  # guarded by _process_attachments
+        assert self._transcription is not None
+        try:
+            saved_path = self._media_store.save_media(attachment, channel=channel)
+        except Exception:
+            logger.warning("Failed to save voice attachment", exc_info=True)
+            voice_parts.append("[Voice message: could not save audio file]")
+            return
+
+        transcribed = self._transcription.transcribe(saved_path)
+        if transcribed:
+            voice_parts.append(f"[Voice message]: {transcribed}")
+        else:
+            voice_parts.append(f"[Voice message: transcription failed] (file: {saved_path.name})")
+
+    def _process_image_attachment(
+        self,
+        attachment: Attachment,
+        sender_id: str,
+        image_blocks: list[dict],
+        channel: str = "unknown",
+    ) -> None:
+        """Save an image attachment and prepare it as an LLM content block."""
+        assert self._media_store is not None  # guarded by _process_attachments
+        assert self._vision is not None
+        try:
+            saved_path = self._media_store.save_media(attachment, channel=channel)
+        except Exception:
+            logger.warning("Failed to save image attachment", exc_info=True)
+            return
+
+        content_block = self._vision.prepare_image(saved_path)
+        if content_block is not None:
+            image_blocks.append(content_block)
+        else:
+            logger.warning("Image could not be processed: %s", saved_path)
+
     def _on_subagent_result(self, agent_id: str, result_text: str) -> None:
         """Callback fired when a sub-agent completes, fails, or times out.
 
@@ -423,7 +554,9 @@ class ChatServer:
         # Check quiet hours for proactive messages only
         if proactive and should_suppress(self._agent_def.quiet_hours, urgent=urgent):
             logger.info(
-                "Message suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent
+                "Message suppressed due to quiet hours (proactive=%s, urgent=%s)",
+                proactive,
+                urgent,
             )
             return
 
@@ -563,9 +696,11 @@ class ChatServer:
                 if screen_result.blocked:
                     logger.warning(
                         "Guardian blocked memory context from system prompt (confidence=%.3f)",
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
+                        (
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0
+                        ),
                     )
                     memory_context = None
 

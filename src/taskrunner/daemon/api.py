@@ -220,12 +220,16 @@ def create_daemon_app(
         )
 
     @app.get("/v1/sessions", response_model=list[SessionSummary])
-    async def list_sessions(sender_id: str = Query(..., min_length=1)) -> list[SessionSummary]:
+    async def list_sessions(
+        sender_id: str = Query(..., min_length=1),
+    ) -> list[SessionSummary]:
         rows = await asyncio.to_thread(app.state.service.list_sessions, sender_id)
         return [SessionSummary(sender_id=sender_id, **row) for row in rows]
 
     @app.get("/v1/sessions/active", response_model=SessionSummary)
-    async def active_session(sender_id: str = Query(..., min_length=1)) -> SessionSummary:
+    async def active_session(
+        sender_id: str = Query(..., min_length=1),
+    ) -> SessionSummary:
         row = await asyncio.to_thread(app.state.service.get_active_session, sender_id)
         return SessionSummary(**row)
 

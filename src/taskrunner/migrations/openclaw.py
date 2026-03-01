@@ -463,7 +463,14 @@ class OpenClawMigrator:
 
     def _coerce_payload_to_conversations(self, payload: Any) -> list[Any]:
         if isinstance(payload, dict):
-            for key in ("conversations", "sessions", "threads", "chats", "history", "data"):
+            for key in (
+                "conversations",
+                "sessions",
+                "threads",
+                "chats",
+                "history",
+                "data",
+            ):
                 node = payload.get(key)
                 if isinstance(node, list):
                     return node
@@ -584,7 +591,14 @@ class OpenClawMigrator:
     def _extract_sender_id(self, candidate: Any) -> str | None:
         if not isinstance(candidate, dict):
             return None
-        for key in ("sender_id", "user_id", "contact", "phone", "channel_id", "participant"):
+        for key in (
+            "sender_id",
+            "user_id",
+            "contact",
+            "phone",
+            "channel_id",
+            "participant",
+        ):
             value = candidate.get(key)
             if value:
                 return str(value)
@@ -688,7 +702,7 @@ class OpenClawMigrator:
                                     "type": "tool_use",
                                     "id": str(tool_id),
                                     "name": str(tool_name),
-                                    "input": tool_input if isinstance(tool_input, dict) else {},
+                                    "input": (tool_input if isinstance(tool_input, dict) else {}),
                                 }
                             )
                         continue
@@ -698,7 +712,10 @@ class OpenClawMigrator:
                         thinking = self._to_text(block.get("thinking"))
                         if thinking:
                             normalized_blocks.append(
-                                {"type": "text", "text": f"[Imported thinking]\n{thinking}"}
+                                {
+                                    "type": "text",
+                                    "text": f"[Imported thinking]\n{thinking}",
+                                }
                             )
                         continue
                     # Best-effort fallback for unknown assistant block types.
@@ -773,7 +790,9 @@ class OpenClawMigrator:
         return "\n\n".join(texts).strip()
 
     @staticmethod
-    def _trim_to_user_text_start(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _trim_to_user_text_start(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         trimmed = list(messages)
         while trimmed:
             first = trimmed[0]
@@ -1006,7 +1025,12 @@ class OpenClawMigrator:
 
             joined = " ".join(
                 str(part).lower()
-                for part in (name, cfg.get("type"), cfg.get("provider"), cfg.get("name"))
+                for part in (
+                    name,
+                    cfg.get("type"),
+                    cfg.get("provider"),
+                    cfg.get("name"),
+                )
                 if part
             )
             slug = self._safe_slug(name) or "integration"

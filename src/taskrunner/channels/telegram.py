@@ -11,11 +11,26 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from taskrunner.channels.base import Channel, IncomingMessage, LegacyCallback
+from taskrunner.channels.base import (
+    Attachment as BaseAttachment,
+)
+from taskrunner.channels.base import (
+    Channel,
+    IncomingMessage,
+    LegacyCallback,
+)
+from taskrunner.channels.message import (
+    Attachment,
+    AttachmentType,
+)
+from taskrunner.channels.message import (
+    IncomingMessage as MediaMessage,
+)
 from taskrunner.channels.mixins import BridgeClientMixin, PollingChannelMixin
 from taskrunner.channels.telegram_bridge import (
     HttpTelegramBridge,
     TelegramBridge,
+    TelegramMedia,
     TelegramMessage,
 )
 from taskrunner.channels.webhook import WebhookChannelMixin
@@ -121,24 +136,46 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
             self._allowed_recipients.add(msg.chat_id)
 
             text = self._extract_text(msg)
-            if text is None:
+            # Allow media-only messages (no text) through when attachments present
+            if text is None and not msg.media:
                 continue
 
             logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
-            logger.debug("Telegram message text: %s", text[:80])
+            if text:
+                logger.debug("Telegram message text: %s", text[:80])
+
+            # Download media attachments if present
+            media: list[BaseAttachment] | None = None
+            attachments: list[Attachment] | None = None
+            if msg.media:
+                attachments = self._download_media(msg.media)
+                media = [
+                    BaseAttachment(
+                        data=att.data or b"",
+                        filename=att.file_name or "unknown",
+                        mime_type=att.mime_type,
+                        size=att.file_size,
+                    )
+                    for att in attachments
+                ]
+
+            metadata: dict[str, Any] = {
+                "sender_user_id": msg.sender_id,
+                "sender_username": msg.sender_username,
+                "message_id": msg.message_id,
+                "update_id": msg.update_id,
+            }
+            if attachments:
+                metadata["_attachments"] = attachments
 
             result.append(
                 IncomingMessage(
                     sender_id=msg.chat_id,
-                    text=text,
+                    text=text or "",
                     channel="telegram",
                     group_id=msg.chat_id if msg.is_group else None,
-                    metadata={
-                        "sender_user_id": msg.sender_id,
-                        "sender_username": msg.sender_username,
-                        "message_id": msg.message_id,
-                        "update_id": msg.update_id,
-                    },
+                    media=media,
+                    metadata=metadata,
                 )
             )
 
@@ -148,6 +185,19 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
         """Send a typing indicator just before the LLM callback runs."""
         if self._send_typing:
             self._bridge.send_typing(msg.sender_id)
+
+    def _dispatch_message(self, msg: IncomingMessage, callback: LegacyCallback) -> str:
+        """Override dispatch to pass media attachments through."""
+        attachments = msg.metadata.get("_attachments")
+        if attachments:
+            media_msg = MediaMessage(
+                sender_id=msg.sender_id,
+                text=msg.text or None,
+                attachments=attachments,
+                channel="telegram",
+            )
+            return callback(media_msg)  # type: ignore[call-arg,arg-type]
+        return callback(msg.sender_id, msg.text)
 
     # --- Access control ---
 
@@ -191,6 +241,35 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
 
         return text if text else None
 
+    # --- Media handling ---
+
+    def _download_media(self, media_list: list[TelegramMedia]) -> list[Attachment]:
+        """Download Telegram media files and convert to Attachment objects."""
+        attachments: list[Attachment] = []
+        for media in media_list:
+            try:
+                data = self._bridge.download_file(media.file_id)
+            except Exception:
+                logger.warning(
+                    "Failed to download Telegram file %s",
+                    media.file_id,
+                    exc_info=True,
+                )
+                continue
+
+            # Map Telegram file_type to AttachmentType
+            att_type = _telegram_file_type_to_attachment(media.file_type)
+            attachments.append(
+                Attachment(
+                    type=att_type,
+                    data=data,
+                    mime_type=media.mime_type,
+                    file_name=media.file_name,
+                    file_size=media.file_size or len(data),
+                )
+            )
+        return attachments
+
     # --- Webhook mode ---
 
     def get_webhook_routes(self) -> list[dict[str, Any]] | None:
@@ -230,7 +309,13 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
         text = msg_data.get("text", "") or msg_data.get("caption", "")
         chat_id = str(chat.get("id", ""))
 
-        if not text:
+        # Extract media from webhook payload
+        from taskrunner.channels.telegram_bridge import TelegramMessage, _extract_media
+
+        media = _extract_media(msg_data)
+
+        # Allow media-only messages (no text) through when media is present
+        if not text and not media:
             return {"status": "ok"}
 
         msg = TelegramMessage(
@@ -241,6 +326,7 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
             update_id=body.get("update_id", 0),
             is_group=chat_type in ("group", "supergroup"),
             message_id=msg_data.get("message_id", 0),
+            media=media or None,
         )
 
         if not self._is_allowed(msg):
@@ -249,14 +335,26 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
         self._allowed_recipients.add(msg.chat_id)
 
         processed_text = self._extract_text(msg)
-        if processed_text is None:
+        # Allow media-only messages with no text through
+        if processed_text is None and not msg.media:
             return {"status": "ok"}
 
         callback = self._webhook_callback or self._callback
         if callback:
             if self._send_typing:
                 self._bridge.send_typing(chat_id)
-            response = await asyncio.to_thread(callback, chat_id, processed_text)
+
+            if msg.media:
+                attachments = await asyncio.to_thread(self._download_media, msg.media)
+                incoming = MediaMessage(
+                    sender_id=chat_id,
+                    text=processed_text,
+                    attachments=attachments,
+                    channel="telegram",
+                )
+                response = await asyncio.to_thread(callback, incoming)  # type: ignore[call-arg,arg-type]
+            else:
+                response = await asyncio.to_thread(callback, chat_id, processed_text or "")
             await asyncio.to_thread(self.send, chat_id, response)
 
         return {"status": "ok"}
@@ -265,6 +363,20 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
 
     def health_check(self) -> dict[str, Any]:
         return self._bridge_health_check()
+
+
+_TELEGRAM_TYPE_MAP: dict[str, AttachmentType] = {
+    "photo": AttachmentType.IMAGE,
+    "voice": AttachmentType.VOICE,
+    "audio": AttachmentType.AUDIO,
+    "video": AttachmentType.VIDEO,
+    "document": AttachmentType.FILE,
+}
+
+
+def _telegram_file_type_to_attachment(file_type: str) -> AttachmentType:
+    """Map a TelegramMedia file_type to an AttachmentType."""
+    return _TELEGRAM_TYPE_MAP.get(file_type, AttachmentType.FILE)
 
 
 def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:

@@ -259,17 +259,23 @@ def cmd_init(args: argparse.Namespace) -> int:
             return 1
         lines = migrate(repo_root, force=args.force)
     else:
-        lines = init(force=args.force)
+        lines = init(
+            force=args.force,
+            interactive=not getattr(args, "non_interactive", False),
+            provider=getattr(args, "provider", None),
+            api_key=getattr(args, "api_key", None),
+            model=getattr(args, "model", None),
+            channel=getattr(args, "channel", None),
+            bot_token=getattr(args, "bot_token", None),
+            allowed_senders=getattr(args, "allowed_senders", None),
+            enable_media=getattr(args, "enable_media", False),
+            enable_guardian=not getattr(args, "no_guardian", False),
+        )
 
     print(f"Creel home: {paths.creel_home()}")
     for line in lines:
         print(line)
 
-    print()
-    print("Next steps:")
-    print(f"  1. Edit {paths.agent_config()} to configure your LLM and tools")
-    print(f"  2. Add encrypted secrets to {paths.secrets_dir()}/")
-    print("  3. Start the daemon: creel daemon start")
     return 0
 
 
@@ -1523,6 +1529,35 @@ def main() -> int:
         type=str,
         default=None,
         help="Repo root to migrate from (default: current directory)",
+    )
+    init_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Skip interactive wizard, use CLI args",
+    )
+    init_parser.add_argument(
+        "--provider",
+        choices=["anthropic", "openai", "ollama"],
+        help="LLM provider",
+    )
+    init_parser.add_argument("--api-key", type=str, help="LLM API key")
+    init_parser.add_argument("--model", type=str, help="LLM model name")
+    init_parser.add_argument(
+        "--channel",
+        choices=["telegram", "imessage", "none"],
+        help="Communication channel",
+    )
+    init_parser.add_argument("--bot-token", type=str, help="Telegram bot token")
+    init_parser.add_argument(
+        "--allowed-senders",
+        type=str,
+        help="Comma-separated list of allowed sender usernames",
+    )
+    init_parser.add_argument(
+        "--enable-media", action="store_true", help="Enable media processing"
+    )
+    init_parser.add_argument(
+        "--no-guardian", action="store_true", help="Disable guardian security pipeline"
     )
 
     # run command

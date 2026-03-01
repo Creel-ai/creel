@@ -85,15 +85,8 @@ def _extract_text(message: anthropic.types.Message) -> str:
     return "\n".join(b.text for b in message.content if b.type == "text")
 
 
-def main() -> None:
-    client = _get_client()
-
-    # Read start message
-    start = _recv()
-    if start.get("type") != "start":
-        _send({"type": "error", "message": f"Expected 'start' message, got '{start.get('type')}'"})
-        sys.exit(1)
-
+def _run_session(client: anthropic.Anthropic, start: dict) -> None:
+    """Run a single agent session from a 'start' message to 'final'."""
     messages: list[dict] = start["messages"]
     tools: list[dict] = start.get("tools", [])
     system_prompt: str | None = start.get("system")
@@ -236,6 +229,40 @@ def main() -> None:
             "messages": messages,
         }
     )
+
+
+def main() -> None:
+    client = _get_client()
+
+    # Outer loop: handle multiple sessions (warm container keepalive)
+    while True:
+        try:
+            msg = _recv()
+        except EOFError:
+            # stdin closed — host is done with us
+            break
+
+        msg_type = msg.get("type")
+
+        if msg_type == "ping":
+            _send({"type": "pong"})
+            continue
+
+        if msg_type == "shutdown":
+            break
+
+        if msg_type == "reset":
+            # Clear any per-session state (none currently held at module level)
+            _send({"type": "ready"})
+            continue
+
+        if msg_type == "start":
+            _run_session(client, msg)
+            continue
+
+        # Unknown message type — send an error but keep looping so a single
+        # bad message doesn't tear down a warm container.
+        _send({"type": "error", "message": f"Expected 'start', got '{msg_type}'"})
 
 
 if __name__ == "__main__":

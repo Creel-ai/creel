@@ -46,12 +46,21 @@ class OutputConfig(BaseModel):
         return os.path.expandvars(v)
 
 
+class ContainerPoolConfig(BaseModel):
+    """Configuration for the warm LLM container pool."""
+
+    enabled: bool = True
+    idle_timeout_seconds: int = 300
+    max_containers: int = 2
+
+
 class LLMConfig(BaseModel):
     """Configuration for the LLM processing step."""
 
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 300
     secrets: str | None = None
+    container_pool: ContainerPoolConfig = Field(default_factory=ContainerPoolConfig)
 
 
 # --- Agent / tool models ---

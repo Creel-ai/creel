@@ -1094,6 +1094,10 @@ llm:
   model: claude-sonnet-4-20250514
   max_tokens: 4096
   secrets: secrets/anthropic.env.enc
+  container_pool:
+    enabled: false
+    idle_timeout_seconds: 300
+    max_containers: 2
 
 agent:
   max_turns: 15

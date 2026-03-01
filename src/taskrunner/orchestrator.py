@@ -1173,7 +1173,6 @@ def _run_executor_container(
     for key, value in config.args.items():
         env_vars[key.upper()] = value
 
-    # Never pass refresh-token JSON into executor containers.
     _replace_google_credentials_with_access_token(env_vars)
 
     # Pass request ID for correlation

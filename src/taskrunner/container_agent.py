@@ -3,12 +3,16 @@
 Manages the LLM container via subprocess, mediating tool execution and
 Guardian checks over JSON-over-stdio. The container only has the Anthropic
 API key; all secrets, Guardian, and executor management stay on the host.
+
+Supports warm container pooling: when a ContainerPool is provided,
+containers are reused across requests to eliminate cold-start latency.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import tempfile
 import time
@@ -29,11 +33,36 @@ from taskrunner.tools import build_tool_definitions, execute_tool_call
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from taskrunner.container_pool import ContainerPool, ManagedContainer
+
 logger = logging.getLogger(__name__)
 
 # Container timeout: generous to allow multi-turn agent loops
 _CONTAINER_TIMEOUT = 600  # 10 minutes
 _IMAGE = "llm-runner:latest"
+
+# Docker security flags shared between cold-start and pooled containers
+_AGENT_DOCKER_FLAGS = [
+    "--read-only",
+    "--tmpfs",
+    "/tmp:rw,noexec,nosuid,size=16M",
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges",
+    "--memory=512m",
+    "--cpus=1.0",
+]
+
+
+def _get_llm_env_vars() -> dict[str, str]:
+    """Collect LLM credential env vars from the current environment."""
+    env_vars: dict[str, str] = {}
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+    if auth_token:
+        env_vars["ANTHROPIC_AUTH_TOKEN"] = auth_token
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        env_vars["ANTHROPIC_API_KEY"] = api_key
+    return env_vars
 
 
 def run_agent_loop_container(
@@ -48,12 +77,17 @@ def run_agent_loop_container(
     memory_manager: Any | None = None,
     bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> AgentResult:
     """Run the agent loop inside an isolated Docker container.
 
     Same signature as run_agent_loop() for drop-in replacement.
     The container communicates via JSON-over-stdio. Tool execution,
     Guardian validation, and secret management all happen on the host.
+
+    When *container_pool* is provided and enabled, a warm container is
+    acquired from the pool (or started fresh), used for this session,
+    then returned to the pool for reuse.
     """
     _ensure_tool_call_integrity(messages)
     _ensure_image(_IMAGE)
@@ -83,17 +117,104 @@ def run_agent_loop_container(
         "max_turns": agent_config.max_turns,
     }
 
-    # Prepare env vars — only LLM credentials
-    import os
+    env_vars = _get_llm_env_vars()
 
-    env_vars: dict[str, str] = {}
-    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-    if auth_token:
-        env_vars["ANTHROPIC_AUTH_TOKEN"] = auth_token
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key:
-        env_vars["ANTHROPIC_API_KEY"] = api_key
+    # Use warm container pool if available and enabled
+    if container_pool is not None and container_pool.enabled:
+        return _run_with_pool(
+            container_pool,
+            start_msg,
+            messages,
+            tools_config,
+            use_containers,
+            guardian,
+            confirm_action,
+            memory_manager,
+            bridge_config,
+            session_state,
+            env_vars,
+        )
 
+    # Cold-start path (original behavior)
+    return _run_cold_start(
+        start_msg,
+        messages,
+        tools_config,
+        use_containers,
+        guardian,
+        confirm_action,
+        memory_manager,
+        bridge_config,
+        session_state,
+        env_vars,
+    )
+
+
+def _run_with_pool(
+    pool: ContainerPool,
+    start_msg: dict,
+    messages: list[dict],
+    tools_config: dict[str, ToolConfig],
+    use_containers: bool,
+    guardian: object | None,
+    confirm_action: Callable[[str, dict, str], bool] | None,
+    memory_manager: object | None,
+    bridge_config: BridgeConfig | None,
+    session_state: dict | None,
+    env_vars: dict[str, str],
+) -> AgentResult:
+    """Run the agent loop using a warm container from the pool."""
+    container = pool.acquire(
+        image=_IMAGE,
+        entrypoint="agent_runner.py",
+        docker_flags=_AGENT_DOCKER_FLAGS,
+        env_vars=env_vars,
+    )
+
+    try:
+        result = _run_protocol_pooled(
+            container,
+            start_msg,
+            messages,
+            tools_config,
+            use_containers,
+            guardian,
+            confirm_action,
+            memory_manager,
+            bridge_config,
+            session_state,
+        )
+        # Return container to pool for reuse
+        pool.release(container)
+        return result
+    except Exception as e:
+        logger.exception("Pooled container agent protocol error")
+        # Don't return broken containers to the pool — kill and remove
+        # from pool tracking so it doesn't leak.
+        container.force_kill()
+        with pool._lock:
+            pool._remove_container(container)
+        return AgentResult(
+            text=f"Container agent error: {e}",
+            turns_used=0,
+            tool_calls_made=0,
+            stop_reason="error",
+        )
+
+
+def _run_cold_start(
+    start_msg: dict,
+    messages: list[dict],
+    tools_config: dict[str, ToolConfig],
+    use_containers: bool,
+    guardian: object | None,
+    confirm_action: Callable[[str, dict, str], bool] | None,
+    memory_manager: object | None,
+    bridge_config: BridgeConfig | None,
+    session_state: dict | None,
+    env_vars: dict[str, str],
+) -> AgentResult:
+    """Run the agent loop with a fresh ephemeral container (original path)."""
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".env", delete=True, prefix="creel-agent-"
     ) as env_file:
@@ -107,13 +228,7 @@ def run_agent_loop_container(
                 "run",
                 "--rm",
                 "-i",
-                "--read-only",
-                "--tmpfs",
-                "/tmp:rw,noexec,nosuid,size=16M",
-                "--cap-drop=ALL",
-                "--security-opt=no-new-privileges",
-                "--memory=512m",
-                "--cpus=1.0",
+                *_AGENT_DOCKER_FLAGS,
                 "--env-file",
                 env_file.name,
                 _IMAGE,
@@ -255,6 +370,89 @@ def _run_protocol(
             logger.warning("Unknown message type from container: %s", msg_type)
             proc.kill()
             proc.wait(timeout=5)
+            return AgentResult(
+                text=f"Unknown container message type: {msg_type}",
+                turns_used=0,
+                tool_calls_made=0,
+                stop_reason="error",
+            )
+
+
+def _run_protocol_pooled(
+    container: ManagedContainer,
+    start_msg: dict,
+    messages: list[dict],
+    tools_config: dict[str, ToolConfig],
+    use_containers: bool,
+    guardian: object | None,
+    confirm_action: Callable[[str, dict, str], bool] | None,
+    memory_manager: object | None,
+    bridge_config: BridgeConfig | None = None,
+    session_state: dict | None = None,
+) -> AgentResult:
+    """Run the JSON-over-stdio protocol using a pooled ManagedContainer.
+
+    Same logic as _run_protocol but uses ManagedContainer.send/recv
+    and does NOT close stdin or wait for process exit (the container
+    stays alive for reuse).
+    """
+    container.send(start_msg)
+
+    while True:
+        msg = container.recv()
+        msg_type = msg.get("type")
+
+        if msg_type == "final":
+            if msg.get("messages"):
+                messages.clear()
+                messages.extend(msg["messages"])
+            elif msg.get("text"):
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": msg["text"]}],
+                    }
+                )
+            # Do NOT close stdin or wait — container stays alive
+            return AgentResult(
+                text=msg["text"],
+                turns_used=msg["turns_used"],
+                tool_calls_made=msg["tool_calls_made"],
+                stop_reason=msg["stop_reason"],
+                tool_history=msg.get("tool_history", []),
+                last_input_tokens=msg.get("last_input_tokens", 0),
+            )
+
+        elif msg_type == "error":
+            return AgentResult(
+                text=msg["message"],
+                turns_used=0,
+                tool_calls_made=0,
+                stop_reason="error",
+            )
+
+        elif msg_type == "tool_request":
+            results, pending_result = _handle_tool_request(
+                msg["calls"],
+                tools_config,
+                use_containers,
+                guardian,
+                confirm_action,
+                memory_manager,
+                messages,
+                bridge_config=bridge_config,
+                session_state=session_state,
+            )
+
+            if results is None:
+                # approval_required — container will be discarded by caller
+                assert pending_result is not None
+                return pending_result
+
+            container.send({"type": "tool_results", "results": results})
+
+        else:
+            logger.warning("Unknown message type from container: %s", msg_type)
             return AgentResult(
                 text=f"Unknown container message type: {msg_type}",
                 turns_used=0,

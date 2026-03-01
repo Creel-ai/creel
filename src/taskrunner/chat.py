@@ -55,6 +55,26 @@ class ChatServer:
         self._start_time = datetime.now(UTC)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
+
+        # Initialize warm container pool if using containers
+        self._container_pool = None
+        if use_containers:
+            from taskrunner.container_pool import ContainerPool, ContainerPoolConfig
+
+            pool_config = agent_def.llm.container_pool
+            self._container_pool = ContainerPool(
+                ContainerPoolConfig(
+                    enabled=pool_config.enabled,
+                    idle_timeout_seconds=pool_config.idle_timeout_seconds,
+                    max_containers=pool_config.max_containers,
+                )
+            )
+            if pool_config.enabled:
+                logger.info(
+                    "Container pool enabled (idle_timeout=%ds, max=%d)",
+                    pool_config.idle_timeout_seconds,
+                    pool_config.max_containers,
+                )
         # Build summarize_fn if summarization is enabled
         summarize_fn = None
         if agent_def.session.summarize_on_trim:
@@ -308,6 +328,7 @@ class ChatServer:
                 memory_manager=self._memory,
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
+                container_pool=self._container_pool,
             )
         else:
             result = run_agent_loop(
@@ -653,6 +674,13 @@ class ChatServer:
             f"  Max turns: {agent.max_turns}",
         ]
         return "\n".join(lines)
+
+    def shutdown(self) -> None:
+        """Shut down the chat server and release resources."""
+        if self._container_pool is not None:
+            logger.info("Shutting down container pool")
+            self._container_pool.shutdown()
+            self._container_pool = None
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt from workspace files, memory, and config.

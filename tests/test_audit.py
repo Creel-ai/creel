@@ -132,20 +132,8 @@ class TestAuditLogger:
 
     def test_log_screen_debug_multiple_chunks(self, logger: AuditLogger, log_file: Path) -> None:
         chunks = [
-            {
-                "index": 0,
-                "length": 2048,
-                "label": "SAFE",
-                "score": 0.99,
-                "is_injection": False,
-            },
-            {
-                "index": 1,
-                "length": 500,
-                "label": "INJECTION",
-                "score": 0.95,
-                "is_injection": True,
-            },
+            {"index": 0, "length": 2048, "label": "SAFE", "score": 0.99, "is_injection": False},
+            {"index": 1, "length": 500, "label": "INJECTION", "score": 0.95, "is_injection": True},
         ]
         logger.log_screen_debug(
             text="x" * 2548,

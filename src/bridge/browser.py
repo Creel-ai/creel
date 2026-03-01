@@ -502,9 +502,7 @@ class BrowserRelay:
                     session.process.wait(timeout=5)
                 except Exception as e:
                     logger.warning(
-                        "Error terminating native Chrome for session %s: %s",
-                        session_id,
-                        e,
+                        "Error terminating native Chrome for session %s: %s", session_id, e
                     )
             if session.temp_profile_dir:
                 shutil.rmtree(session.temp_profile_dir, ignore_errors=True)
@@ -913,12 +911,7 @@ def _find_chrome_binary() -> str:
             if os.path.isfile(path):
                 return path
     elif system == "Linux":
-        for name in (
-            "google-chrome",
-            "google-chrome-stable",
-            "chromium-browser",
-            "chromium",
-        ):
+        for name in ("google-chrome", "google-chrome-stable", "chromium-browser", "chromium"):
             found_path = shutil.which(name)
             if found_path:
                 return found_path

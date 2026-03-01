@@ -261,11 +261,7 @@ def main() -> None:
             replace_with = os.environ.get("REPLACE_WITH", "")
             if not presentation_id or not find:
                 raise ValueError("PRESENTATION_ID and FIND are required for replace_text")
-            match_case = os.environ.get("MATCH_CASE", "true").lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+            match_case = os.environ.get("MATCH_CASE", "true").lower() in ("true", "1", "yes")
             result = replace_text(presentation_id, find, replace_with, match_case)
         else:
             print(

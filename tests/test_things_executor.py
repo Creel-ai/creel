@@ -31,8 +31,7 @@ class TestBridgeClient:
 
         # Mock environment variables
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             result = call_bridge("/things/inbox")
 
@@ -71,8 +70,7 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/things/inbox")

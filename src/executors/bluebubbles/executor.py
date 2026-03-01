@@ -208,11 +208,7 @@ def get_chats(
     limit = max(1, min(limit, MAX_CHATS_PER_REQUEST))
 
     data = _api(
-        "GET",
-        "/chat",
-        server_url,
-        password,
-        params={"limit": limit, "sort": "lastmessage"},
+        "GET", "/chat", server_url, password, params={"limit": limit, "sort": "lastmessage"}
     )
 
     chats = []
@@ -224,11 +220,9 @@ def get_chats(
             {
                 "chat_id": chat_id,
                 "display_name": chat.get("displayName", "") or chat_id,
-                "last_message_date": (
-                    chat.get("lastMessage", {}).get("dateCreated", "")
-                    if chat.get("lastMessage")
-                    else ""
-                ),
+                "last_message_date": chat.get("lastMessage", {}).get("dateCreated", "")
+                if chat.get("lastMessage")
+                else "",
             }
         )
 
@@ -276,12 +270,7 @@ def main() -> None:
             if not all([chat_id, message_guid, reaction]):
                 raise RuntimeError("CHAT_ID, MESSAGE_GUID, and REACTION required")
             result = send_reaction(
-                server_url,
-                password,
-                allowed_recipients,
-                chat_id,
-                message_guid,
-                reaction,
+                server_url, password, allowed_recipients, chat_id, message_guid, reaction
             )
         elif action == "get_chats":
             limit = int(_env("LIMIT") or "20")

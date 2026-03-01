@@ -378,11 +378,7 @@ def _handle_tool_request(
             if user_request:
                 prior_tools = _extract_prior_tools(messages)
                 if prior_tools:
-                    logger.info(
-                        "Coherence context: prior_tools=%s for %s",
-                        prior_tools,
-                        tool_name,
-                    )
+                    logger.info("Coherence context: prior_tools=%s for %s", prior_tools, tool_name)
                 coherence = guardian.check_coherence(
                     user_request, tool_name, tool_input, prior_tools=prior_tools
                 )
@@ -411,11 +407,9 @@ def _handle_tool_request(
                     logger.warning(
                         "Guardian blocked memory write for %s (confidence=%.3f)",
                         tool_name,
-                        (
-                            screen_result.classifier_result.confidence
-                            if screen_result.classifier_result
-                            else 0.0
-                        ),
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
                     )
                     results.append(
                         {
@@ -472,11 +466,9 @@ def _handle_tool_request(
                 logger.warning(
                     "Guardian blocked output from %s (confidence=%.3f)",
                     tool_name,
-                    (
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0
-                    ),
+                    screen_result.classifier_result.confidence
+                    if screen_result.classifier_result
+                    else 0.0,
                 )
                 result = (
                     f"[Guardian] Output from '{tool_name}' was blocked by the "
@@ -490,11 +482,9 @@ def _handle_tool_request(
             if screen_result.blocked:
                 logger.warning(
                     "Guardian blocked search_memory output (confidence=%.3f)",
-                    (
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0
-                    ),
+                    screen_result.classifier_result.confidence
+                    if screen_result.classifier_result
+                    else 0.0,
                 )
                 result = (
                     "[Guardian] Memory search results were blocked by the "

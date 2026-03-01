@@ -48,13 +48,13 @@ def _send_imessage(text: str, to: str) -> None:
     # Escape the text for AppleScript
     escaped_text = text.replace("\\", "\\\\").replace('"', '\\"')
 
-    applescript = f"""
+    applescript = f'''
     tell application "Messages"
         set targetService to 1st account whose service type = iMessage
         set targetBuddy to participant "{to}" of targetService
         send "{escaped_text}" to targetBuddy
     end tell
-    """
+    '''
 
     subprocess.run(
         ["osascript", "-e", applescript],

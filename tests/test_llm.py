@@ -246,9 +246,7 @@ class TestCallLlmStreaming:
 
         collected = []
         result = _call_llm_streaming(
-            mock_client,
-            {"model": "test", "max_tokens": 100, "messages": []},
-            collected.append,
+            mock_client, {"model": "test", "max_tokens": 100, "messages": []}, collected.append
         )
 
         assert collected == ["Hello ", "world!"]
@@ -373,11 +371,7 @@ class TestSummarizeMessages:
             {
                 "role": "assistant",
                 "content": [
-                    {
-                        "type": "tool_use",
-                        "name": "weather",
-                        "input": {"location": "Denver"},
-                    },
+                    {"type": "tool_use", "name": "weather", "input": {"location": "Denver"}},
                 ],
             },
             {

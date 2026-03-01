@@ -45,12 +45,7 @@ def _get_client() -> anthropic.Anthropic:
     elif api_key:
         return anthropic.Anthropic(api_key=api_key)
     else:
-        _send(
-            {
-                "type": "error",
-                "message": "No ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY set",
-            }
-        )
+        _send({"type": "error", "message": "No ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY set"})
         sys.exit(1)
 
 
@@ -96,12 +91,7 @@ def main() -> None:
     # Read start message
     start = _recv()
     if start.get("type") != "start":
-        _send(
-            {
-                "type": "error",
-                "message": f"Expected 'start' message, got '{start.get('type')}'",
-            }
-        )
+        _send({"type": "error", "message": f"Expected 'start' message, got '{start.get('type')}'"})
         sys.exit(1)
 
     messages: list[dict] = start["messages"]
@@ -179,12 +169,7 @@ def main() -> None:
         try:
             results_msg = _recv()
         except EOFError:
-            _send(
-                {
-                    "type": "error",
-                    "message": "Host closed stdin while waiting for tool results",
-                }
-            )
+            _send({"type": "error", "message": "Host closed stdin while waiting for tool results"})
             return
 
         if results_msg.get("type") != "tool_results":
@@ -210,8 +195,7 @@ def main() -> None:
             tool_history.append(
                 {
                     "tool": next(
-                        (c["name"] for c in calls if c["id"] == r["tool_use_id"]),
-                        "unknown",
+                        (c["name"] for c in calls if c["id"] == r["tool_use_id"]), "unknown"
                     ),
                     "input": next((c["input"] for c in calls if c["id"] == r["tool_use_id"]), {}),
                     "output": r["content"],

@@ -519,11 +519,9 @@ def run_agent_loop(
                         logger.warning(
                             "Guardian blocked memory write for %s (confidence=%.3f)",
                             tool_name,
-                            (
-                                screen_result.classifier_result.confidence
-                                if screen_result.classifier_result
-                                else 0.0
-                            ),
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0,
                         )
                         result = (
                             "[Guardian] Memory write blocked — content may contain "
@@ -606,11 +604,9 @@ def run_agent_loop(
                     logger.warning(
                         "Guardian blocked output from %s (confidence=%.3f)",
                         tool_name,
-                        (
-                            screen_result.classifier_result.confidence
-                            if screen_result.classifier_result
-                            else 0.0
-                        ),
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
                     )
                     result = (
                         f"[Guardian] Output from '{tool_name}' was blocked by the "
@@ -624,11 +620,9 @@ def run_agent_loop(
                 if screen_result.blocked:
                     logger.warning(
                         "Guardian blocked search_memory output (confidence=%.3f)",
-                        (
-                            screen_result.classifier_result.confidence
-                            if screen_result.classifier_result
-                            else 0.0
-                        ),
+                        screen_result.classifier_result.confidence
+                        if screen_result.classifier_result
+                        else 0.0,
                     )
                     result = (
                         "[Guardian] Memory search results were blocked by the "

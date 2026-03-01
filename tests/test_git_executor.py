@@ -5,15 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from executors.git_ops.executor import (
-    branch,
-    call_bridge,
-    commit,
-    diff,
-    log,
-    push,
-    status,
-)
+from executors.git_ops.executor import branch, call_bridge, commit, diff, log, push, status
 
 
 class TestBridgeClient:
@@ -28,8 +20,7 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             result = call_bridge("/git/status")
 
@@ -55,8 +46,7 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             result = call_bridge("/git/diff", {"cached": True})
 
@@ -92,8 +82,7 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/git/status")
@@ -106,8 +95,7 @@ class TestBridgeClient:
         mock_post.side_effect = req.exceptions.ConnectionError("Connection refused")
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             with pytest.raises(RuntimeError, match="Bridge request failed"):
                 call_bridge("/git/status")
@@ -463,12 +451,7 @@ class TestMainFunction:
 
         with patch.dict(
             os.environ,
-            {
-                "ACTION": "push",
-                "REMOTE": "upstream",
-                "BRANCH_NAME": "main",
-                "SET_UPSTREAM": "true",
-            },
+            {"ACTION": "push", "REMOTE": "upstream", "BRANCH_NAME": "main", "SET_UPSTREAM": "true"},
         ):
             from executors.git_ops.executor import main
 
@@ -676,9 +659,7 @@ class TestBridgeEndpoints:
                 },
             )
             response = client.post(
-                "/git/commit",
-                json={"message": "Update", "all": True},
-                headers=auth_headers,
+                "/git/commit", json={"message": "Update", "all": True}, headers=auth_headers
             )
 
         assert response.status_code == 200
@@ -745,9 +726,7 @@ class TestBridgeEndpoints:
                 },
             )
             response = client.post(
-                "/git/branch",
-                json={"name": "old", "delete": True},
-                headers=auth_headers,
+                "/git/branch", json={"name": "old", "delete": True}, headers=auth_headers
             )
 
         assert response.status_code == 200
@@ -791,9 +770,7 @@ class TestBridgeEndpoints:
                 },
             )
             response = client.post(
-                "/git/push",
-                json={"branch": "main", "set_upstream": True},
-                headers=auth_headers,
+                "/git/push", json={"branch": "main", "set_upstream": True}, headers=auth_headers
             )
 
         assert response.status_code == 200

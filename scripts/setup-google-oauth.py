@@ -139,17 +139,13 @@ def encrypt_file(env_path: Path) -> bool:
         os.environ.get("AGE_RECIPIENT_FILE", Path.home() / ".age" / "key.pub")
     )
     if not recipient_file.exists():
-        print(
-            f"  Warning: recipient file not found ({recipient_file}), skipping encryption."
-        )
+        print(f"  Warning: recipient file not found ({recipient_file}), skipping encryption.")
         return False
 
     recipient_text = recipient_file.read_text()
     match = re.search(r"age1[a-z0-9]+", recipient_text)
     if not match:
-        print(
-            f"  Warning: no age recipient found in {recipient_file}, skipping encryption."
-        )
+        print(f"  Warning: no age recipient found in {recipient_file}, skipping encryption.")
         return False
 
     recipient = match.group(0)
@@ -179,7 +175,9 @@ def setup_service(service_name: str, client_secret: str, encrypt: bool) -> None:
     print(f"Scope: {service['scope']}")
     print("")
 
-    flow = InstalledAppFlow.from_client_secrets_file(client_secret, [service["scope"]])
+    flow = InstalledAppFlow.from_client_secrets_file(
+        client_secret, [service["scope"]]
+    )
     creds = flow.run_local_server(port=0)
 
     # Read client_id and client_secret from the original file
@@ -198,7 +196,7 @@ def setup_service(service_name: str, client_secret: str, encrypt: bool) -> None:
     # Write as .env file with JSON value
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, "w") as f:
-        f.write(f"GOOGLE_CREDENTIALS_JSON={json.dumps(json.dumps(creds_data))}\n")
+        f.write(f'GOOGLE_CREDENTIALS_JSON={json.dumps(json.dumps(creds_data))}\n')
 
     print(f"Credentials saved to {output_file}")
 
@@ -301,7 +299,7 @@ def main() -> None:
     if total > 1:
         print(f"\nDone — {total} services configured.")
     if not args.encrypt:
-        print("\nTip: use --encrypt to automatically encrypt with age.")
+        print(f"\nTip: use --encrypt to automatically encrypt with age.")
 
 
 if __name__ == "__main__":

@@ -899,8 +899,7 @@ class TestEdgeCasesAcceptance:
         mgr.start()
 
         _poll_until(
-            lambda: len(store.get_runs(j1.id)) >= 1 and len(store.get_runs(j2.id)) >= 1,
-            timeout=5,
+            lambda: len(store.get_runs(j1.id)) >= 1 and len(store.get_runs(j2.id)) >= 1, timeout=5
         )
         mgr.shutdown()
 

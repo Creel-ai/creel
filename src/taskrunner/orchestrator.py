@@ -16,13 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from taskrunner.llm import run_llm
-from taskrunner.models import (
-    BridgeConfig,
-    ExecutorConfig,
-    TaskDefinition,
-    ToolConfig,
-    load_task,
-)
+from taskrunner.models import BridgeConfig, ExecutorConfig, TaskDefinition, ToolConfig, load_task
 from taskrunner.outputs import send_output
 from taskrunner.secrets import decrypt_env_file
 
@@ -564,11 +558,7 @@ def _exec_google_docs_inline(config: ExecutorConfig) -> str:
         document_id = config.args.get("document_id", "")
         find = config.args.get("find", "")
         replace_with = config.args.get("replace_with", "")
-        match_case = str(config.args.get("match_case", "true")).lower() in (
-            "true",
-            "1",
-            "yes",
-        )
+        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
         result = replace_text(document_id, find, replace_with, match_case)
     elif action == "insert":
         from executors.google_docs.executor import insert_text
@@ -652,11 +642,7 @@ def _exec_google_slides_inline(config: ExecutorConfig) -> str:
         presentation_id = config.args.get("presentation_id", "")
         find = config.args.get("find", "")
         replace_with = config.args.get("replace_with", "")
-        match_case = str(config.args.get("match_case", "true")).lower() in (
-            "true",
-            "1",
-            "yes",
-        )
+        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
         result = replace_text(presentation_id, find, replace_with, match_case)
     else:
         raise ValueError(
@@ -893,11 +879,7 @@ def _exec_browser_inline(config: ExecutorConfig) -> str:
     if action == "connect":
         mode = config.args.get("mode", "managed")
         cdp_url = config.args.get("cdp_url") or None
-        headless = str(config.args.get("headless", "true")).lower() in (
-            "true",
-            "1",
-            "yes",
-        )
+        headless = str(config.args.get("headless", "true")).lower() in ("true", "1", "yes")
         result = connect(mode=mode, cdp_url=cdp_url, headless=headless)
     elif action == "navigate":
         session_id = config.args.get("session_id", "")
@@ -918,11 +900,7 @@ def _exec_browser_inline(config: ExecutorConfig) -> str:
         result = type_text(session_id, selector, text)
     elif action == "screenshot":
         session_id = config.args.get("session_id", "")
-        full_page = str(config.args.get("full_page", "false")).lower() in (
-            "true",
-            "1",
-            "yes",
-        )
+        full_page = str(config.args.get("full_page", "false")).lower() in ("true", "1", "yes")
         result = screenshot(session_id, full_page=full_page)
     elif action == "links":
         session_id = config.args.get("session_id", "")
@@ -1305,10 +1283,7 @@ def _run_executor_container(
             logger.debug("Executor %s stderr (success):\n%s", config.name, stderr)
         else:
             logger.error(
-                "Executor %s stderr (exit %d):\n%s",
-                config.name,
-                result.returncode,
-                stderr,
+                "Executor %s stderr (exit %d):\n%s", config.name, result.returncode, stderr
             )
 
     if result.returncode != 0:

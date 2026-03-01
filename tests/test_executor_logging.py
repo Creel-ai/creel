@@ -154,8 +154,7 @@ class TestRunExecutorContainer:
         },
     )
     @patch(
-        "taskrunner.oauth.get_google_access_token_from_json",
-        return_value="ya29.container-token",
+        "taskrunner.oauth.get_google_access_token_from_json", return_value="ya29.container-token"
     )
     @patch("taskrunner.orchestrator.tempfile.NamedTemporaryFile")
     def test_google_credentials_json_replaced_with_access_token(
@@ -220,9 +219,7 @@ class TestEnsureImage:
         mock_run.side_effect = [
             MagicMock(returncode=1),  # inspect
             MagicMock(
-                returncode=1,
-                stderr="Step 3/5 : RUN pip install\nERROR: Could not find",
-                stdout="",
+                returncode=1, stderr="Step 3/5 : RUN pip install\nERROR: Could not find", stdout=""
             ),  # build
         ]
 

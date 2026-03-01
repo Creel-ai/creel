@@ -317,9 +317,7 @@ def _expected_exit_codes(case: dict[str, Any]) -> set[int]:
     return {int(expected)}
 
 
-def _check_output_expectations(
-    case: dict[str, Any], output: str
-) -> tuple[bool, list[str]]:
+def _check_output_expectations(case: dict[str, Any], output: str) -> tuple[bool, list[str]]:
     failures: list[str] = []
 
     contains = case.get("expect_output_contains", [])
@@ -381,9 +379,7 @@ def handle_command(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
 
     detail_parts: list[str] = []
     if not code_ok:
-        detail_parts.append(
-            f"unexpected exit={result.returncode} expected={sorted(expected_codes)}"
-        )
+        detail_parts.append(f"unexpected exit={result.returncode} expected={sorted(expected_codes)}")
     detail_parts.extend(output_failures)
 
     return _result(
@@ -437,9 +433,7 @@ def handle_manual(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
         case["id"],
         f"Manual instructions:\n{instructions}\n\nOperator answer: {answer}\n",
     )
-    return _result(
-        case, status, time.perf_counter() - started, detail, log_file=log_path
-    )
+    return _result(case, status, time.perf_counter() - started, detail, log_file=log_path)
 
 
 def handle_graceful_shutdown(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
@@ -593,18 +587,10 @@ def handle_session_ttl(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
             f"second_session={second_id}\n"
         ),
     )
-    return _result(
-        case,
-        "pass" if ok else "fail",
-        time.perf_counter() - started,
-        detail,
-        log_file=log_path,
-    )
+    return _result(case, "pass" if ok else "fail", time.perf_counter() - started, detail, log_file=log_path)
 
 
-def handle_broken_secret_validation(
-    case: dict[str, Any], ctx: SmokeContext
-) -> CaseResult:
+def handle_broken_secret_validation(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     missing_secret = ctx.run_dir / "runtime" / "missing-secrets.env.enc"
     fake_age_key = ctx.run_dir / "runtime" / "age-key.txt"
@@ -715,13 +701,7 @@ def handle_no_judge_flag(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
         case["id"],
         f"before_enabled={before_enabled}\nafter_enabled={after_enabled}\nconfig={temp_config}\n",
     )
-    return _result(
-        case,
-        "pass" if ok else "fail",
-        time.perf_counter() - started,
-        detail,
-        log_file=log_path,
-    )
+    return _result(case, "pass" if ok else "fail", time.perf_counter() - started, detail, log_file=log_path)
 
 
 def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
@@ -732,22 +712,9 @@ def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     audit_file.parent.mkdir(parents=True, exist_ok=True)
 
     logger = AuditLogger(audit_file)
-    logger.log_screen(
-        input_hash="abc",
-        input_length=12,
-        blocked=True,
-        source="fast_classifier",
-        confidence=0.98,
-    )
-    logger.log_action(
-        tool_name="send_email", arg_keys=["to"], verdict="review", matched_rule="send_*"
-    )
-    logger.log_action(
-        tool_name="delete_file",
-        arg_keys=["path"],
-        verdict="deny",
-        matched_rule="delete_*",
-    )
+    logger.log_screen(input_hash="abc", input_length=12, blocked=True, source="fast_classifier", confidence=0.98)
+    logger.log_action(tool_name="send_email", arg_keys=["to"], verdict="review", matched_rule="send_*")
+    logger.log_action(tool_name="delete_file", arg_keys=["path"], verdict="deny", matched_rule="delete_*")
 
     config_path = _build_minimal_agent_config(
         ctx,
@@ -787,12 +754,8 @@ def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
         "--blocked",
     ]
 
-    tail_result = _run_command(
-        cmd_tail, cwd=ctx.repo_root, timeout=30, env=os.environ.copy()
-    )
-    blocked_result = _run_command(
-        cmd_blocked, cwd=ctx.repo_root, timeout=30, env=os.environ.copy()
-    )
+    tail_result = _run_command(cmd_tail, cwd=ctx.repo_root, timeout=30, env=os.environ.copy())
+    blocked_result = _run_command(cmd_blocked, cwd=ctx.repo_root, timeout=30, env=os.environ.copy())
 
     ok = (
         tail_result.returncode == 0
@@ -808,28 +771,15 @@ def handle_audit_cli_runtime(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
         f"{_command_log_blob(blocked_result)}\n"
     )
     log_path = _write_case_log(ctx, case["id"], blob)
-    detail = (
-        "audit CLI tail + blocked filters returned expected output"
-        if ok
-        else "audit CLI output mismatch"
-    )
+    detail = "audit CLI tail + blocked filters returned expected output" if ok else "audit CLI output mismatch"
     exit_code = 0 if ok else max(tail_result.returncode, blocked_result.returncode)
-    return _result(
-        case,
-        "pass" if ok else "fail",
-        time.perf_counter() - started,
-        detail,
-        log_file=log_path,
-        exit_code=exit_code,
-    )
+    return _result(case, "pass" if ok else "fail", time.perf_counter() - started, detail, log_file=log_path, exit_code=exit_code)
 
 
 def handle_onnx_export(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     help_cmd = [ctx.python_bin, "scripts/export-onnx.py", "--help"]
-    help_result = _run_command(
-        help_cmd, cwd=ctx.repo_root, timeout=30, env=os.environ.copy()
-    )
+    help_result = _run_command(help_cmd, cwd=ctx.repo_root, timeout=30, env=os.environ.copy())
 
     if help_result.returncode != 0:
         log_path = _write_case_log(ctx, case["id"], _command_log_blob(help_result))
@@ -848,7 +798,8 @@ def handle_onnx_export(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
             case["id"],
             (
                 "Live export skipped (requires --live-llm).\n\n"
-                "Help command succeeded.\n\n" + _command_log_blob(help_result)
+                "Help command succeeded.\n\n"
+                + _command_log_blob(help_result)
             ),
         )
         return _result(
@@ -1029,9 +980,7 @@ def handle_container_simple_task(case: dict[str, Any], ctx: SmokeContext) -> Cas
     )
 
 
-def handle_container_agent_tool_call(
-    case: dict[str, Any], ctx: SmokeContext
-) -> CaseResult:
+def handle_container_agent_tool_call(case: dict[str, Any], ctx: SmokeContext) -> CaseResult:
     started = time.perf_counter()
     token = str(case.get("verify_token", "AGENT_TOOL_CONTAINER_OK"))
     attempts = int(case.get("attempts", 2))
@@ -1140,6 +1089,7 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     via the inline executor — all without an LLM.
     """
     import json as _json
+    import tempfile
 
     started = time.perf_counter()
     checks: list[str] = []
@@ -1147,7 +1097,7 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
 
     try:
         from taskrunner.models import ToolConfig, ToolParameter
-        from taskrunner.tools import build_tool_definitions, execute_tool_call
+        from taskrunner.tools import execute_tool_call, build_tool_definitions
 
         # Create workspace under run_dir (macOS /var is blocked by security)
         ws = ctx.run_dir / "runtime" / "set_workspace_e2e" / "workspace"
@@ -1162,9 +1112,7 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
                 executor="file_ops",
                 description="Read a file",
                 parameters={
-                    "file_path": ToolParameter(
-                        type="string", description="Path", required=True
-                    ),
+                    "file_path": ToolParameter(type="string", description="Path", required=True),
                 },
                 fixed_args={"action": "read"},
             ),
@@ -1172,12 +1120,8 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
                 executor="file_ops",
                 description="Write a file",
                 parameters={
-                    "file_path": ToolParameter(
-                        type="string", description="Path", required=True
-                    ),
-                    "content": ToolParameter(
-                        type="string", description="Content", required=True
-                    ),
+                    "file_path": ToolParameter(type="string", description="Path", required=True),
+                    "content": ToolParameter(type="string", description="Content", required=True),
                 },
                 fixed_args={"action": "write"},
             ),
@@ -1201,42 +1145,27 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
             failures.append("set_workspace missing from tool definitions")
 
         # Check 2: set_workspace validates and stores path
-        result = _json.loads(
-            execute_tool_call(
-                "set_workspace",
-                {"path": ws_dir},
-                tools_config,
-                session_state=session_state,
-            )
-        )
+        result = _json.loads(execute_tool_call(
+            "set_workspace", {"path": ws_dir}, tools_config, session_state=session_state,
+        ))
         if result.get("status") == "ok" and session_state.get("workspace"):
             checks.append(f"set_workspace stored: {session_state['workspace']}")
         else:
             failures.append(f"set_workspace failed: {result}")
 
         # Check 3: read_file uses workspace from session_state
-        result = _json.loads(
-            execute_tool_call(
-                "read_file",
-                {"file_path": "greeting.txt"},
-                tools_config,
-                session_state=session_state,
-            )
-        )
+        result = _json.loads(execute_tool_call(
+            "read_file", {"file_path": "greeting.txt"}, tools_config, session_state=session_state,
+        ))
         if result.get("content") == "hello smoke test":
             checks.append("read_file returned correct content")
         else:
             failures.append(f"read_file wrong content: {result}")
 
         # Check 4: list_files works
-        result = _json.loads(
-            execute_tool_call(
-                "list_files",
-                {"directory": "."},
-                tools_config,
-                session_state=session_state,
-            )
-        )
+        result = _json.loads(execute_tool_call(
+            "list_files", {"directory": "."}, tools_config, session_state=session_state,
+        ))
         names = [e["name"] for e in result.get("entries", [])]
         if "greeting.txt" in names and "sub" in names:
             checks.append(f"list_files found expected entries: {names}")
@@ -1244,18 +1173,10 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
             failures.append(f"list_files missing entries: {names}")
 
         # Check 5: write_file creates a new file
-        result = _json.loads(
-            execute_tool_call(
-                "write_file",
-                {"file_path": "new.txt", "content": "smoke written"},
-                tools_config,
-                session_state=session_state,
-            )
-        )
-        if (
-            result.get("bytes_written")
-            and (ws / "new.txt").read_text() == "smoke written"
-        ):
+        result = _json.loads(execute_tool_call(
+            "write_file", {"file_path": "new.txt", "content": "smoke written"}, tools_config, session_state=session_state,
+        ))
+        if result.get("bytes_written") and (ws / "new.txt").read_text() == "smoke written":
             checks.append("write_file created file successfully")
         else:
             failures.append(f"write_file failed: {result}")
@@ -1265,47 +1186,29 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
         ws2.mkdir()
         (ws2 / "other.txt").write_text("second workspace")
         execute_tool_call(
-            "set_workspace",
-            {"path": str(ws2)},
-            tools_config,
-            session_state=session_state,
+            "set_workspace", {"path": str(ws2)}, tools_config, session_state=session_state,
         )
-        result = _json.loads(
-            execute_tool_call(
-                "read_file",
-                {"file_path": "other.txt"},
-                tools_config,
-                session_state=session_state,
-            )
-        )
+        result = _json.loads(execute_tool_call(
+            "read_file", {"file_path": "other.txt"}, tools_config, session_state=session_state,
+        ))
         if result.get("content") == "second workspace":
             checks.append("workspace change mid-session works")
         else:
             failures.append(f"workspace change failed: {result}")
 
         # Check 7: set_workspace rejects blocked roots
-        result = _json.loads(
-            execute_tool_call(
-                "set_workspace",
-                {"path": "/"},
-                tools_config,
-                session_state=session_state,
-            )
-        )
+        result = _json.loads(execute_tool_call(
+            "set_workspace", {"path": "/"}, tools_config, session_state=session_state,
+        ))
         if "error" in result:
             checks.append("dangerous root rejected")
         else:
             failures.append(f"dangerous root not rejected: {result}")
 
         # Check 8: set_workspace rejects relative paths
-        result = _json.loads(
-            execute_tool_call(
-                "set_workspace",
-                {"path": "relative/path"},
-                tools_config,
-                session_state=session_state,
-            )
-        )
+        result = _json.loads(execute_tool_call(
+            "set_workspace", {"path": "relative/path"}, tools_config, session_state=session_state,
+        ))
         if "error" in result:
             checks.append("relative path rejected")
         else:
@@ -1314,17 +1217,13 @@ def handle_set_workspace_e2e(case: dict[str, Any], ctx: SmokeContext) -> CaseRes
     except Exception as exc:
         failures.append(f"exception: {exc}")
 
-    log_content = "Checks passed:\n" + "\n".join(f"  ✓ {c}" for c in checks)
+    log_content = f"Checks passed:\n" + "\n".join(f"  ✓ {c}" for c in checks)
     if failures:
-        log_content += "\n\nFailures:\n" + "\n".join(f"  ✗ {f}" for f in failures)
+        log_content += f"\n\nFailures:\n" + "\n".join(f"  ✗ {f}" for f in failures)
     log_path = _write_case_log(ctx, case["id"], log_content)
 
     ok = len(failures) == 0
-    detail = (
-        f"{len(checks)} checks passed"
-        if ok
-        else f"{len(failures)} failure(s): {'; '.join(failures)}"
-    )
+    detail = f"{len(checks)} checks passed" if ok else f"{len(failures)} failure(s): {'; '.join(failures)}"
     return _result(
         case,
         "pass" if ok else "fail",
@@ -1401,7 +1300,7 @@ def _load_cases(path: Path) -> list[dict[str, Any]]:
     if yaml is None:
         raise RuntimeError(
             "Missing dependency: pyyaml. Install project deps first "
-            '(example: uv pip install -e ".[dev]").'
+            "(example: uv pip install -e \".[dev]\")."
         )
     with open(path) as f:
         raw = yaml.safe_load(f) or {}
@@ -1530,35 +1429,18 @@ def run_cases(cases: list[dict[str, Any]], ctx: SmokeContext) -> list[CaseResult
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Creel smoke checks.")
-    parser.add_argument(
-        "--cases-file",
-        type=Path,
-        default=DEFAULT_CASES_FILE,
-        help="Path to smoke_cases.yaml",
-    )
+    parser.add_argument("--cases-file", type=Path, default=DEFAULT_CASES_FILE, help="Path to smoke_cases.yaml")
     parser.add_argument(
         "--phase",
         choices=["foundation", "security", "extras", "all"],
         default="all",
         help="Phase selection (default: all)",
     )
-    parser.add_argument(
-        "--quick", action="store_true", help="Run only quick critical-path checks"
-    )
-    parser.add_argument(
-        "--containers", action="store_true", help="Include container-mode smoke checks"
-    )
-    parser.add_argument(
-        "--live-llm",
-        action="store_true",
-        help="Enable checks that call live LLM/model APIs",
-    )
-    parser.add_argument(
-        "--live-docker", action="store_true", help="Enable Docker build/run checks"
-    )
-    parser.add_argument(
-        "--manual-ok", action="store_true", help="Auto-pass manual checkpoints"
-    )
+    parser.add_argument("--quick", action="store_true", help="Run only quick critical-path checks")
+    parser.add_argument("--containers", action="store_true", help="Include container-mode smoke checks")
+    parser.add_argument("--live-llm", action="store_true", help="Enable checks that call live LLM/model APIs")
+    parser.add_argument("--live-docker", action="store_true", help="Enable Docker build/run checks")
+    parser.add_argument("--manual-ok", action="store_true", help="Auto-pass manual checkpoints")
     parser.add_argument(
         "--agent-config",
         type=Path,
@@ -1571,24 +1453,10 @@ def _parse_args() -> argparse.Namespace:
         default=DEFAULT_ONNX_MODEL,
         help=f"Model for live ONNX export (default: {DEFAULT_ONNX_MODEL})",
     )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=900,
-        help="Default timeout for command checks (seconds)",
-    )
-    parser.add_argument(
-        "--runs-dir",
-        type=Path,
-        default=DEFAULT_RUNS_DIR,
-        help="Directory for smoke run artifacts",
-    )
-    parser.add_argument(
-        "--no-extras", action="store_true", help="Exclude extra coverage checks"
-    )
-    parser.add_argument(
-        "--list-cases", action="store_true", help="List available cases and exit"
-    )
+    parser.add_argument("--timeout", type=int, default=900, help="Default timeout for command checks (seconds)")
+    parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR, help="Directory for smoke run artifacts")
+    parser.add_argument("--no-extras", action="store_true", help="Exclude extra coverage checks")
+    parser.add_argument("--list-cases", action="store_true", help="List available cases and exit")
     parser.add_argument(
         "--case",
         dest="case_ids",
@@ -1603,7 +1471,7 @@ def main() -> int:
     if yaml is None:
         print(
             "Error: missing dependency 'pyyaml'. Install project dependencies first "
-            '(example: uv pip install -e ".[dev]").',
+            "(example: uv pip install -e \".[dev]\").",
             file=sys.stderr,
         )
         return 2
@@ -1622,11 +1490,7 @@ def main() -> int:
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    docker_available, docker_reason = (
-        _detect_docker()
-        if (args.live_docker or args.containers)
-        else (False, "not checked")
-    )
+    docker_available, docker_reason = _detect_docker() if (args.live_docker or args.containers) else (False, "not checked")
     ctx = SmokeContext(
         args=args,
         repo_root=ROOT,
@@ -1655,11 +1519,7 @@ def main() -> int:
         "finished_at": finished_at,
         "run_dir": str(run_dir),
         "args": {
-            **{
-                k: v
-                for k, v in vars(args).items()
-                if k not in {"runs_dir", "cases_file", "agent_config"}
-            },
+            **{k: v for k, v in vars(args).items() if k not in {"runs_dir", "cases_file", "agent_config"}},
             "runs_dir": str(args.runs_dir),
             "cases_file": str(args.cases_file),
             "agent_config": str(args.agent_config),

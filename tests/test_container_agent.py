@@ -110,11 +110,7 @@ class TestProtocolSerialization:
         msg = {
             "type": "tool_request",
             "calls": [
-                {
-                    "id": "toolu_123",
-                    "name": "check_weather",
-                    "input": {"location": "Denver"},
-                }
+                {"id": "toolu_123", "name": "check_weather", "input": {"location": "Denver"}}
             ],
         }
         parsed = json.loads(json.dumps(msg))
@@ -136,12 +132,7 @@ class TestProtocolSerialization:
             "tool_calls_made": 1,
             "stop_reason": "end_turn",
             "tool_history": [
-                {
-                    "tool": "check_weather",
-                    "input": {},
-                    "output": "sunny",
-                    "is_error": False,
-                }
+                {"tool": "check_weather", "input": {}, "output": "sunny", "is_error": False}
             ],
         }
         parsed = json.loads(json.dumps(msg))
@@ -378,13 +369,7 @@ class TestRunAgentLoopContainer:
 
         tool_request_msg = {
             "type": "tool_request",
-            "calls": [
-                {
-                    "id": "toolu_1",
-                    "name": "check_weather",
-                    "input": {"location": "Denver"},
-                }
-            ],
+            "calls": [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}],
         }
         final_msg = {
             "type": "final",

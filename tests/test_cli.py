@@ -608,10 +608,7 @@ class TestCmdAudit:
     def test_no_entries(self, cli_args, tmp_path, capsys) -> None:
         config = {
             "system_prompt": "test",
-            "guardian": {
-                "enabled": False,
-                "audit": {"log_file": str(tmp_path / "audit.jsonl")},
-            },
+            "guardian": {"enabled": False, "audit": {"log_file": str(tmp_path / "audit.jsonl")}},
         }
         config_path = tmp_path / "agent.yaml"
         config_path.write_text(yaml.dump(config))
@@ -817,10 +814,7 @@ class TestCmdEncrypt:
         custom_out = tmp_path / "custom.enc"
 
         args = cli_args(
-            env_file=str(env_file),
-            recipient=str(pub_file),
-            output=str(custom_out),
-            delete=False,
+            env_file=str(env_file), recipient=str(pub_file), output=str(custom_out), delete=False
         )
         rc = cli.cmd_encrypt(args)
         assert rc == 0
@@ -828,10 +822,7 @@ class TestCmdEncrypt:
 
     def test_encrypt_missing_file(self, cli_args, tmp_path, capsys) -> None:
         args = cli_args(
-            env_file=str(tmp_path / "missing.env"),
-            recipient=None,
-            output=None,
-            delete=False,
+            env_file=str(tmp_path / "missing.env"), recipient=None, output=None, delete=False
         )
         rc = cli.cmd_encrypt(args)
         assert rc == 1

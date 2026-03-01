@@ -72,8 +72,7 @@ class TestExportOnnxScript:
                 },
             ),
             patch(
-                "sys.argv",
-                ["export-onnx.py", "test-model", "--output-dir", str(tmp_path / "out")],
+                "sys.argv", ["export-onnx.py", "test-model", "--output-dir", str(tmp_path / "out")]
             ),
         ):
             # Import and patch at module level

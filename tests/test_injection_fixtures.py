@@ -24,14 +24,7 @@ def test_minimum_benign_count() -> None:
 
 def test_injection_categories_present() -> None:
     categories = {cat for _, cat in ALL_INJECTIONS}
-    expected = {
-        "direct",
-        "indirect",
-        "jailbreak",
-        "roleplay",
-        "encoding",
-        "multilingual",
-    }
+    expected = {"direct", "indirect", "jailbreak", "roleplay", "encoding", "multilingual"}
     assert expected.issubset(categories), f"Missing categories: {expected - categories}"
 
 

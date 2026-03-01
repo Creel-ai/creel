@@ -129,10 +129,7 @@ def test_phase3_builds_skill_hybrid_outputs(tmp_path: Path) -> None:
     source.mkdir(parents=True)
     target.mkdir(parents=True)
 
-    _write(
-        source / "skills" / "persona" / "SKILL.md",
-        "# Persona Skill\nKeep concise answers.\n",
-    )
+    _write(source / "skills" / "persona" / "SKILL.md", "# Persona Skill\nKeep concise answers.\n")
     _write(
         source / "skills" / "websearch" / "SKILL.md",
         "# Web Search\nUse Brave web search for research.\n",

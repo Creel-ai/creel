@@ -5,12 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from executors.apple_notes.executor import (
-    call_bridge,
-    create_note,
-    list_notes,
-    search_notes,
-)
+from executors.apple_notes.executor import call_bridge, create_note, list_notes, search_notes
 
 
 class TestBridgeClient:
@@ -27,8 +22,7 @@ class TestBridgeClient:
 
         # Mock environment variables
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             result = call_bridge("/notes/list")
 
@@ -55,8 +49,7 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             result = call_bridge("/notes/search", {"query": "test"})
 
@@ -93,8 +86,7 @@ class TestBridgeClient:
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection failed")
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             with pytest.raises(RuntimeError, match="Bridge request failed"):
                 call_bridge("/notes/list")
@@ -108,8 +100,7 @@ class TestBridgeClient:
         mock_post.return_value = mock_response
 
         with patch.dict(
-            os.environ,
-            {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"},
+            os.environ, {"BRIDGE_URL": "http://localhost:8099", "BRIDGE_TOKEN": "test-token"}
         ):
             with pytest.raises(RuntimeError, match="Bridge error: Command failed"):
                 call_bridge("/notes/list")
@@ -171,8 +162,7 @@ class TestNotesOperations:
 
         assert result["ok"] is True
         mock_call_bridge.assert_called_once_with(
-            "/notes/create",
-            {"title": "Test Title", "body": "Test Body", "folder": "work"},
+            "/notes/create", {"title": "Test Title", "body": "Test Body", "folder": "work"}
         )
 
 
@@ -240,12 +230,7 @@ class TestMainFunction:
 
         with patch.dict(
             os.environ,
-            {
-                "ACTION": "create",
-                "TITLE": "Test Note",
-                "BODY": "Note content",
-                "FOLDER": "work",
-            },
+            {"ACTION": "create", "TITLE": "Test Note", "BODY": "Note content", "FOLDER": "work"},
         ):
             from executors.apple_notes.executor import main
 

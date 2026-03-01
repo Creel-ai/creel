@@ -236,11 +236,7 @@ def main() -> None:
             replace_with = os.environ.get("REPLACE_WITH", "")
             if not document_id or not find:
                 raise ValueError("DOCUMENT_ID and FIND are required for replace")
-            match_case = os.environ.get("MATCH_CASE", "true").lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+            match_case = os.environ.get("MATCH_CASE", "true").lower() in ("true", "1", "yes")
             result = replace_text(document_id, find, replace_with, match_case)
         elif action == "insert":
             document_id = os.environ.get("DOCUMENT_ID", "")

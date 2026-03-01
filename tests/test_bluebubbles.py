@@ -58,12 +58,7 @@ def test_send_reaction_blocked_recipient():
     """Reacting to a chat not in the allowlist raises an error."""
     with pytest.raises(RuntimeError, match="not in allowlist"):
         send_reaction(
-            SERVER,
-            PASSWORD,
-            ALLOWED_RECIPIENTS,
-            "iMessage;-;+19999999999",
-            "guid",
-            "love",
+            SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+19999999999", "guid", "love"
         )
 
 
@@ -115,12 +110,7 @@ def test_invalid_reaction_rejected():
     """Invalid reaction types are rejected."""
     with pytest.raises(RuntimeError, match="Invalid reaction"):
         send_reaction(
-            SERVER,
-            PASSWORD,
-            ALLOWED_RECIPIENTS,
-            "iMessage;-;+11234567890",
-            "guid",
-            "thumbsup",
+            SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", "guid", "thumbsup"
         )
 
 

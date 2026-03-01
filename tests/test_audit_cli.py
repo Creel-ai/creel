@@ -17,33 +17,18 @@ def audit_file(tmp_path: Path) -> Path:
 
     # Screen events
     logger.log_screen(
-        input_hash="h1",
-        input_length=10,
-        blocked=False,
-        source="fast_classifier",
-        confidence=0.1,
+        input_hash="h1", input_length=10, blocked=False, source="fast_classifier", confidence=0.1
     )
     logger.log_screen(
-        input_hash="h2",
-        input_length=20,
-        blocked=True,
-        source="fast_classifier",
-        confidence=0.95,
+        input_hash="h2", input_length=20, blocked=True, source="fast_classifier", confidence=0.95
     )
     logger.log_screen(
-        input_hash="h3",
-        input_length=15,
-        blocked=False,
-        source="fast_classifier",
-        confidence=0.3,
+        input_hash="h3", input_length=15, blocked=False, source="fast_classifier", confidence=0.3
     )
 
     # Action events
     logger.log_action(
-        tool_name="send_email",
-        arg_keys=["to", "body"],
-        verdict="review",
-        matched_rule="send_*",
+        tool_name="send_email", arg_keys=["to", "body"], verdict="review", matched_rule="send_*"
     )
     logger.log_action(
         tool_name="check_weather",
@@ -52,10 +37,7 @@ def audit_file(tmp_path: Path) -> Path:
         matched_rule="check_weather",
     )
     logger.log_action(
-        tool_name="delete_file",
-        arg_keys=["path"],
-        verdict="deny",
-        matched_rule="delete_*",
+        tool_name="delete_file", arg_keys=["path"], verdict="deny", matched_rule="delete_*"
     )
 
     # Tool result

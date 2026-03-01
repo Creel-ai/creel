@@ -151,11 +151,7 @@ def main() -> None:
         elif action == "push":
             remote = os.environ.get("REMOTE", "origin")
             branch_name = os.environ.get("BRANCH_NAME")
-            set_upstream = os.environ.get("SET_UPSTREAM", "").lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+            set_upstream = os.environ.get("SET_UPSTREAM", "").lower() in ("true", "1", "yes")
             result = push(remote, branch_name, set_upstream)
 
         else:

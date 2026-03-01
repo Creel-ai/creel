@@ -114,8 +114,8 @@ class LLMJudge:
                 result.get("is_injection", False),
                 result.get("confidence", 0.0),
                 elapsed_ms,
-                (getattr(response.usage, "input_tokens", 0) if hasattr(response, "usage") else 0),
-                (getattr(response.usage, "output_tokens", 0) if hasattr(response, "usage") else 0),
+                getattr(response.usage, "input_tokens", 0) if hasattr(response, "usage") else 0,
+                getattr(response.usage, "output_tokens", 0) if hasattr(response, "usage") else 0,
             )
 
             return ClassifierResult(

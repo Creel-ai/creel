@@ -134,11 +134,7 @@ def main() -> None:
         if action == "connect":
             mode = os.environ.get("MODE", "managed")
             cdp_url = os.environ.get("CDP_URL")
-            headless = os.environ.get("HEADLESS", "true").lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+            headless = os.environ.get("HEADLESS", "true").lower() in ("true", "1", "yes")
             result = connect(mode, cdp_url, headless)
 
         elif action == "navigate":
@@ -182,11 +178,7 @@ def main() -> None:
             session_id = os.environ.get("SESSION_ID")
             if not session_id:
                 raise ValueError("SESSION_ID environment variable required")
-            full_page = os.environ.get("FULL_PAGE", "false").lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+            full_page = os.environ.get("FULL_PAGE", "false").lower() in ("true", "1", "yes")
             result = screenshot(session_id, full_page)
 
         elif action == "links":

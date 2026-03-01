@@ -513,10 +513,7 @@ def test_incremental_compaction(tmp_path: Path) -> None:
     for i in range(10):
         session.messages.append({"role": "user", "content": f"New message {i}"})
         session.messages.append(
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": f"New reply {i}"}],
-            }
+            {"role": "assistant", "content": [{"type": "text", "text": f"New reply {i}"}]}
         )
     mgr._save(session)
 

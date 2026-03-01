@@ -88,11 +88,7 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
         "schedule": "0 8 * * *",
         "executors": {
             "gmail_readonly": {
-                "args": {
-                    "query": "is:unread",
-                    "max_results": "5",
-                    "full_body": "false",
-                },
+                "args": {"query": "is:unread", "max_results": "5", "full_body": "false"},
             }
         },
         "prompt": "Date: {date}\nEmails: {gmail_readonly}",
@@ -109,11 +105,7 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
     ):
         mock_gmail.return_value = json.dumps(
             [
-                {
-                    "subject": "Important",
-                    "from": "boss@example.com",
-                    "snippet": "Need reply",
-                },
+                {"subject": "Important", "from": "boss@example.com", "snippet": "Need reply"},
             ]
         )
         mock_llm.return_value = "You have 1 email from your boss."
@@ -770,11 +762,7 @@ class TestGoogleExecutorsE2E:
             patch("taskrunner.orchestrator.send_output"),
         ):
             mock_docs.return_value = json.dumps(
-                {
-                    "documentId": "doc-xyz",
-                    "title": "Report",
-                    "content": "Q1 revenue was $1M.",
-                }
+                {"documentId": "doc-xyz", "title": "Report", "content": "Q1 revenue was $1M."}
             )
             mock_llm.return_value = "The document reports Q1 revenue of $1M."
             result = run_task(path)
@@ -807,12 +795,7 @@ class TestGoogleExecutorsE2E:
             patch("taskrunner.orchestrator.send_output"),
         ):
             mock_slides.return_value = json.dumps(
-                {
-                    "presentationId": "pres-abc",
-                    "title": "Q1 Review",
-                    "slideCount": 3,
-                    "slides": [],
-                }
+                {"presentationId": "pres-abc", "title": "Q1 Review", "slideCount": 3, "slides": []}
             )
             mock_llm.return_value = "The presentation has 3 slides about Q1."
             result = run_task(path)

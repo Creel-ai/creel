@@ -100,8 +100,7 @@ def test_keyboard_interrupt_stops_scheduler(mock_run_task, tmp_path):
 
     with (
         patch(
-            "apscheduler.schedulers.blocking.BlockingScheduler.start",
-            side_effect=KeyboardInterrupt,
+            "apscheduler.schedulers.blocking.BlockingScheduler.start", side_effect=KeyboardInterrupt
         ),
         patch("apscheduler.schedulers.blocking.BlockingScheduler.shutdown") as mock_shutdown,
     ):

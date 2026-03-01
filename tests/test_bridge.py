@@ -102,12 +102,7 @@ class TestBridgeCommands:
 
         # Verify subprocess was called correctly
         mock_run.assert_called_once_with(
-            ["echo", "test"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=None,
-            check=False,
+            ["echo", "test"], capture_output=True, text=True, timeout=30, cwd=None, check=False
         )
 
     @patch("bridge.server.subprocess.run")
@@ -721,9 +716,7 @@ class TestArgumentInjectionPrevention:
         # Try a malicious query that would be dangerous with shell=True
         malicious_query = "test && rm important_file"
         response = client.post(
-            "/things/search",
-            json={"query": malicious_query},
-            headers=things_auth_headers,
+            "/things/search", json={"query": malicious_query}, headers=things_auth_headers
         )
 
         assert response.status_code == 200
@@ -776,12 +769,5 @@ class TestArgumentInjectionPrevention:
 
         # Verify the command was called with values as separate arguments
         mock_run_command.assert_called_once_with(
-            [
-                "/opt/homebrew/bin/imsg",
-                "send",
-                "--to",
-                malicious_to,
-                "--text",
-                malicious_text,
-            ]
+            ["/opt/homebrew/bin/imsg", "send", "--to", malicious_to, "--text", malicious_text]
         )

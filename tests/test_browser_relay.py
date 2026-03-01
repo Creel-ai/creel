@@ -650,13 +650,7 @@ class TestReapOrphanedContainers:
         assert count == 2
         # First call: docker ps
         ps_cmd = mock_run.call_args_list[0][0][0]
-        assert ps_cmd == [
-            "docker",
-            "ps",
-            "-q",
-            "--filter",
-            f"label={CREEL_CONTAINER_LABEL}",
-        ]
+        assert ps_cmd == ["docker", "ps", "-q", "--filter", f"label={CREEL_CONTAINER_LABEL}"]
         # Second call: docker stop aaa111
         assert mock_run.call_args_list[1][0][0] == ["docker", "stop", "aaa111"]
         # Third call: docker stop bbb222

@@ -288,9 +288,7 @@ def get_required_scope(request_path: str) -> str:
 def create_scoped_authenticator(required_scope: str):
     """Create a scoped authenticator for a specific tool group."""
 
-    def authenticate_scope(
-        credentials: HTTPAuthorizationCredentials = Depends(security),
-    ) -> bool:
+    def authenticate_scope(credentials: HTTPAuthorizationCredentials = Depends(security)) -> bool:
         """Validate the scoped bearer token."""
         if not SCOPED_TOKENS:
             raise HTTPException(
@@ -308,8 +306,7 @@ def create_scoped_authenticator(required_scope: str):
         if not hmac.compare_digest(credentials.credentials, expected_token):
             logger.warning("Invalid auth token attempted for scope %s", required_scope)
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token",
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token"
             )
 
         logger.debug("Authenticated request for scope %s", required_scope)
@@ -373,9 +370,7 @@ def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> Br
     except subprocess.TimeoutExpired:
         logger.error("Command timed out after %ds (execution_id=%s)", timeout, execution_id)
         return BridgeResponse(
-            ok=False,
-            error=f"Command timed out after {timeout} seconds",
-            execution_id=execution_id,
+            ok=False, error=f"Command timed out after {timeout} seconds", execution_id=execution_id
         )
     except FileNotFoundError:
         logger.error("Command not found: %s (execution_id=%s)", cmd[0], execution_id)
@@ -404,8 +399,7 @@ async def lifespan(app: FastAPI):
             token = secrets.token_urlsafe(32)
             logger.info("Generated %s bridge token: %s", scope.lower(), token)
             logger.warning(
-                "Consider setting %s environment variable to persist this token",
-                env_var,
+                "Consider setting %s environment variable to persist this token", env_var
             )
         else:
             logger.info("Using configured %s bridge token", scope.lower())
@@ -473,8 +467,7 @@ async def health_check():
 # Notes endpoints (via memo CLI)
 @app.post("/notes/list", response_model=BridgeResponse)
 async def notes_list(
-    request: NotesListRequest = NotesListRequest(),
-    _: bool = Depends(authenticate_notes),
+    request: NotesListRequest = NotesListRequest(), _: bool = Depends(authenticate_notes)
 ) -> BridgeResponse:
     """List notes via memo CLI."""
     cmd = ["memo", "notes"]
@@ -561,8 +554,7 @@ async def reminders_complete(
 # Things 3 endpoints (via things CLI)
 @app.post("/things/inbox", response_model=BridgeResponse)
 async def things_inbox(
-    request: ThingsInboxRequest = ThingsInboxRequest(),
-    _: bool = Depends(authenticate_things),
+    request: ThingsInboxRequest = ThingsInboxRequest(), _: bool = Depends(authenticate_things)
 ) -> BridgeResponse:
     """Get Things 3 inbox via things CLI."""
     cmd = ["things", "inbox", "--limit", str(request.limit)]
@@ -958,8 +950,7 @@ def main():
 
     # Set up logging
     logging.basicConfig(
-        level=args.log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=args.log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     # Store host/port in env for lifespan

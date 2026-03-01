@@ -137,8 +137,7 @@ class TestJobStoreUpdate:
             runs_path=tmp_path / "runs.json",
         )
         job = _make_job(
-            created_at="2026-01-01T00:00:00+00:00",
-            updated_at="2026-01-01T00:00:00+00:00",
+            created_at="2026-01-01T00:00:00+00:00", updated_at="2026-01-01T00:00:00+00:00"
         )
         store.add(job)
         updated = store.update(job.id, name="changed")

@@ -95,12 +95,7 @@ class FakeGuardian:
         pass
 
     def check_coherence(
-        self,
-        user_request,
-        tool_name,
-        tool_input,
-        prior_tools=None,
-        available_tools=None,
+        self, user_request, tool_name, tool_input, prior_tools=None, available_tools=None
     ):
         return _FakeCoherence()
 
@@ -432,12 +427,7 @@ def test_partial_tool_results_repaired():
             "role": "assistant",
             "content": [
                 {"type": "tool_use", "id": "tool_a", "name": "send_email", "input": {}},
-                {
-                    "type": "tool_use",
-                    "id": "tool_b",
-                    "name": "check_weather",
-                    "input": {},
-                },
+                {"type": "tool_use", "id": "tool_b", "name": "check_weather", "input": {}},
             ],
         },
         {

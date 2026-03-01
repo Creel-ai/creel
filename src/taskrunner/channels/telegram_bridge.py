@@ -45,15 +45,11 @@ class TelegramBridge(ABC):
         """Return bot info (id, username, etc.)."""
 
     @abstractmethod
-    def get_updates(
-        self, offset: int | None = None, timeout: int = 30
-    ) -> list[TelegramMessage]:
+    def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[TelegramMessage]:
         """Long-poll for new messages via getUpdates."""
 
     @abstractmethod
-    def send_message(
-        self, chat_id: str, text: str, reply_to_message_id: int | None = None
-    ) -> None:
+    def send_message(self, chat_id: str, text: str, reply_to_message_id: int | None = None) -> None:
         """Send a text message, chunking if necessary."""
 
     @abstractmethod
@@ -101,9 +97,7 @@ class HttpTelegramBridge(TelegramBridge):
         )
         data = resp.json()
         if not data.get("ok"):
-            raise RuntimeError(
-                f"Telegram API error on {method}: {data.get('description', data)}"
-            )
+            raise RuntimeError(f"Telegram API error on {method}: {data.get('description', data)}")
         return data.get("result", {})
 
     def get_me(self) -> dict:
@@ -116,9 +110,7 @@ class HttpTelegramBridge(TelegramBridge):
             )
         return self._bot_info
 
-    def get_updates(
-        self, offset: int | None = None, timeout: int = 30
-    ) -> list[TelegramMessage]:
+    def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[TelegramMessage]:
         params: dict = {"timeout": timeout}
         if offset is not None:
             params["offset"] = offset
@@ -132,9 +124,7 @@ class HttpTelegramBridge(TelegramBridge):
                 messages.append(msg)
         return messages
 
-    def send_message(
-        self, chat_id: str, text: str, reply_to_message_id: int | None = None
-    ) -> None:
+    def send_message(self, chat_id: str, text: str, reply_to_message_id: int | None = None) -> None:
         for chunk in _chunk_text(text, MAX_MESSAGE_LENGTH):
             params: dict = {"chat_id": chat_id, "text": chunk}
             if reply_to_message_id is not None:

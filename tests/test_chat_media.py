@@ -97,12 +97,8 @@ class TestProcessAttachments:
             mime_type="audio/ogg",
         )
 
-        with patch.object(
-            server._transcription, "transcribe", return_value="Hello world"
-        ):
-            text, blocks = server._process_attachments(
-                "some text", [attachment], "user1"
-            )
+        with patch.object(server._transcription, "transcribe", return_value="Hello world"):
+            text, blocks = server._process_attachments("some text", [attachment], "user1")
 
         assert "[Voice message]: Hello world" in text
         assert "some text" in text
@@ -137,9 +133,7 @@ class TestProcessAttachments:
 
         mock_block = {"type": "image", "source": {"type": "base64", "data": "abc"}}
         with patch.object(server._vision, "prepare_image", return_value=mock_block):
-            text, blocks = server._process_attachments(
-                "what is this?", [attachment], "user1"
-            )
+            text, blocks = server._process_attachments("what is this?", [attachment], "user1")
 
         assert text == "what is this?"
         assert len(blocks) == 1
@@ -157,9 +151,7 @@ class TestProcessAttachments:
         )
 
         with patch.object(server._vision, "prepare_image", return_value=None):
-            text, blocks = server._process_attachments(
-                "look at this", [attachment], "user1"
-            )
+            text, blocks = server._process_attachments("look at this", [attachment], "user1")
 
         assert text == "look at this"
         assert blocks == []
@@ -185,14 +177,10 @@ class TestProcessAttachments:
 
         mock_block = {"type": "image", "source": {"type": "base64", "data": "abc"}}
         with (
-            patch.object(
-                server._transcription, "transcribe", return_value="describe this"
-            ),
+            patch.object(server._transcription, "transcribe", return_value="describe this"),
             patch.object(server._vision, "prepare_image", return_value=mock_block),
         ):
-            text, blocks = server._process_attachments(
-                "", [voice_att, image_att], "user1"
-            )
+            text, blocks = server._process_attachments("", [voice_att, image_att], "user1")
 
         assert "[Voice message]: describe this" in text
         assert len(blocks) == 1
@@ -215,9 +203,7 @@ class TestProcessAttachments:
 
         mock_block = {"type": "image", "source": {"type": "base64", "data": "abc"}}
         with patch.object(server._vision, "prepare_image", return_value=mock_block):
-            text, blocks = server._process_attachments(
-                "compare these", attachments, "user1"
-            )
+            text, blocks = server._process_attachments("compare these", attachments, "user1")
 
         assert text == "compare these"
         assert len(blocks) == 3
@@ -234,9 +220,7 @@ class TestProcessAttachments:
             mime_type="audio/ogg",
         )
 
-        with patch.object(
-            server._transcription, "transcribe", return_value="Hello world"
-        ):
+        with patch.object(server._transcription, "transcribe", return_value="Hello world"):
             text, blocks = server._process_attachments("", [attachment], "user1")
 
         assert text == "[Voice message]: Hello world"
@@ -254,9 +238,7 @@ class TestProcessAttachments:
             mime_type="audio/mpeg",
         )
 
-        with patch.object(
-            server._transcription, "transcribe", return_value="Audio content"
-        ):
+        with patch.object(server._transcription, "transcribe", return_value="Audio content"):
             text, blocks = server._process_attachments("", [attachment], "user1")
 
         assert "[Voice message]: Audio content" in text
@@ -306,13 +288,9 @@ class TestHandleMessageWithAttachments:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_block),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
-            result = server.handle_message(
-                "user1", "What is this?", attachments=[attachment]
-            )
+            result = server.handle_message("user1", "What is this?", attachments=[attachment])
 
         assert result == "I see a red pixel!"
         # Verify the messages passed to run_agent_loop contain content blocks
@@ -346,12 +324,8 @@ class TestHandleMessageWithAttachments:
         mock_result = _make_agent_result("Got it!")
 
         with (
-            patch.object(
-                server._transcription, "transcribe", return_value="Turn off the lights"
-            ),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch.object(server._transcription, "transcribe", return_value="Turn off the lights"),
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "", attachments=[attachment])
 
@@ -371,9 +345,7 @@ class TestHandleMessageWithAttachments:
         server = self._server(tmp_path)
         mock_result = _make_agent_result("Hello!")
 
-        with patch(
-            "taskrunner.chat.run_agent_loop", return_value=mock_result
-        ) as mock_loop:
+        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             result = server.handle_message("user1", "Hi there")
 
         assert result == "Hello!"
@@ -412,17 +384,11 @@ class TestHandleMessageWithAttachments:
         mock_result = _make_agent_result("Got voice and image!")
 
         with (
-            patch.object(
-                server._transcription, "transcribe", return_value="What is this?"
-            ),
+            patch.object(server._transcription, "transcribe", return_value="What is this?"),
             patch.object(server._vision, "prepare_image", return_value=mock_block),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
-            result = server.handle_message(
-                "user1", "", attachments=[voice_att, image_att]
-            )
+            result = server.handle_message("user1", "", attachments=[voice_att, image_att])
 
         assert result == "Got voice and image!"
         call_kwargs = mock_loop.call_args

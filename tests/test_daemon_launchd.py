@@ -44,9 +44,7 @@ def test_daemon_install_non_macos(tmp_path: Path, monkeypatch) -> None:
     assert not args.plist_path.exists()
 
 
-def test_daemon_install_writes_plist_and_calls_launchctl(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_daemon_install_writes_plist_and_calls_launchctl(tmp_path: Path, monkeypatch) -> None:
     args = _make_args(tmp_path)
     monkeypatch.setattr(cli.sys, "platform", "darwin")
     monkeypatch.setattr(cli, "_wait_for_daemon_health", lambda _p, _w: True)
@@ -81,9 +79,7 @@ def test_daemon_install_writes_plist_and_calls_launchctl(
     assert any(c[1] == "kickstart" for c in launchctl_cmds)
 
 
-def test_daemon_uninstall_removes_plist_and_unloads_service(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_daemon_uninstall_removes_plist_and_unloads_service(tmp_path: Path, monkeypatch) -> None:
     args = _make_args(tmp_path)
     monkeypatch.setattr(cli.sys, "platform", "darwin")
     args.plist_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,9 +100,7 @@ def test_daemon_uninstall_removes_plist_and_unloads_service(
     assert any(c[:2] == ["launchctl", "bootout"] for c in calls)
 
 
-def test_daemon_start_uses_launchd_when_plist_exists(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_daemon_start_uses_launchd_when_plist_exists(tmp_path: Path, monkeypatch) -> None:
     args = _make_args(tmp_path)
     monkeypatch.setattr(cli.sys, "platform", "darwin")
     monkeypatch.setattr(cli, "_wait_for_daemon_health", lambda _p, _w: True)

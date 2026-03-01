@@ -184,9 +184,7 @@ def test_no_tools_configured(mock_call_llm):
 
     # Verify tools=None was passed to call_llm
     call_kwargs = mock_call_llm.call_args
-    assert (
-        call_kwargs.kwargs.get("tools") is None or call_kwargs[1].get("tools") is None
-    )
+    assert call_kwargs.kwargs.get("tools") is None or call_kwargs[1].get("tools") is None
 
 
 @patch("taskrunner.agent.call_llm")
@@ -249,9 +247,7 @@ def test_classify_output_screens_executor_result(mock_call_llm, mock_execute):
             executor="gmail_readonly",
             description="Read email",
             parameters={
-                "message_id": ToolParameter(
-                    type="string", description="ID", required=True
-                )
+                "message_id": ToolParameter(type="string", description="ID", required=True)
             },
             classify_output=True,
         ),
@@ -296,9 +292,7 @@ def test_classify_output_passes_clean_result(mock_call_llm, mock_execute):
             executor="gmail_readonly",
             description="Read email",
             parameters={
-                "message_id": ToolParameter(
-                    type="string", description="ID", required=True
-                )
+                "message_id": ToolParameter(type="string", description="ID", required=True)
             },
             classify_output=True,
         ),

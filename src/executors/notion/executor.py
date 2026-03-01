@@ -75,9 +75,7 @@ def _notion_request(
         except ValueError:
             message = resp.text.strip()
         detail = message or str(e)
-        raise RuntimeError(
-            f"Notion API request failed ({resp.status_code}): {detail}"
-        ) from e
+        raise RuntimeError(f"Notion API request failed ({resp.status_code}): {detail}") from e
 
     try:
         data = resp.json()
@@ -115,9 +113,7 @@ def _parse_json_arg(raw: str, arg_name: str, expected_type: type) -> Any | None:
 
 
 def _plain_text(rich_text: list[dict]) -> str:
-    return "".join(
-        item.get("plain_text", "") for item in rich_text if isinstance(item, dict)
-    )
+    return "".join(item.get("plain_text", "") for item in rich_text if isinstance(item, dict))
 
 
 def _extract_title(obj: dict[str, Any]) -> str:
@@ -221,9 +217,7 @@ def search(
     results = data.get("results", [])
 
     return {
-        "results": [
-            _summarize_result(item) for item in results if isinstance(item, dict)
-        ],
+        "results": [_summarize_result(item) for item in results if isinstance(item, dict)],
         "next_cursor": data.get("next_cursor"),
         "has_more": bool(data.get("has_more", False)),
     }
@@ -264,9 +258,7 @@ def query_database(
     results = data.get("results", [])
 
     return {
-        "results": [
-            _summarize_result(item) for item in results if isinstance(item, dict)
-        ],
+        "results": [_summarize_result(item) for item in results if isinstance(item, dict)],
         "next_cursor": data.get("next_cursor"),
         "has_more": bool(data.get("has_more", False)),
     }
@@ -291,9 +283,7 @@ def run_action(
     parsed_page_size = _parse_page_size(page_size)
 
     if action == "search":
-        return search(
-            query=query, page_size=parsed_page_size, start_cursor=start_cursor
-        )
+        return search(query=query, page_size=parsed_page_size, start_cursor=start_cursor)
 
     if action == "retrieve_page":
         return retrieve_page(page_id=page_id)

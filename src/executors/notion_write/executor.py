@@ -35,9 +35,9 @@ def _summarize_write_result(action: str, data: dict[str, Any]) -> dict[str, Any]
         results = data.get("results", [])
         summary["blocks_added"] = len(results)
         if results:
-            summary["parent_id"] = results[0].get("parent", {}).get(
-                "page_id", ""
-            ) or results[0].get("parent", {}).get("block_id", "")
+            summary["parent_id"] = results[0].get("parent", {}).get("page_id", "") or results[
+                0
+            ].get("parent", {}).get("block_id", "")
         return summary
 
     # create_page, update_page, delete_page all return a page object

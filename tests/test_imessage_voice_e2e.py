@@ -248,9 +248,7 @@ class TestMissingVoiceFile:
 
         mock_result = _make_agent_result("I couldn't process the audio.")
 
-        with patch(
-            "taskrunner.chat.run_agent_loop", return_value=mock_result
-        ) as mock_loop:
+        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "did you hear that?",
@@ -268,8 +266,7 @@ class TestMissingVoiceFile:
         assert isinstance(last_user["content"], str)
         # Should contain a fallback message about the voice
         assert (
-            "Voice message" in last_user["content"]
-            or "did you hear that?" in last_user["content"]
+            "Voice message" in last_user["content"] or "did you hear that?" in last_user["content"]
         )
 
 
@@ -361,9 +358,7 @@ class TestListenVoiceCallback:
             channel._poll = poll_once_then_stop
             channel.listen(callback)
 
-        mock_send.assert_called_once_with(
-            "friend@icloud.com", "I transcribed your voice!"
-        )
+        mock_send.assert_called_once_with("friend@icloud.com", "I transcribed your voice!")
 
 
 # ---------------------------------------------------------------------------
@@ -410,9 +405,7 @@ class TestCafConversion:
         assert str(caf_file) in call_args
         assert str(wav_file) in call_args
 
-    def test_maybe_convert_returns_original_without_ffmpeg(
-        self, tmp_path: Path
-    ) -> None:
+    def test_maybe_convert_returns_original_without_ffmpeg(self, tmp_path: Path) -> None:
         """Without ffmpeg, _maybe_convert should return the original .caf path."""
         from taskrunner.services.transcription import TranscriptionService
 
@@ -451,9 +444,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="I want pizza for dinner",
             ),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -506,9 +497,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="Here is my voice note",
             ),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -548,9 +537,7 @@ class TestE2EIMessageVoice:
 
         with (
             patch.object(server._transcription, "transcribe", return_value=""),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -613,9 +600,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="This is from iMessage",
             ),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             response = server.handle_message(
                 incoming.sender_id,
@@ -679,9 +664,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="Hello from iMessage voice",
             ),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
 
             def callback(*args):
@@ -766,9 +749,7 @@ class TestE2EIMessageVoice:
 
         mock_result = _make_agent_result("Text only response")
 
-        with patch(
-            "taskrunner.chat.run_agent_loop", return_value=mock_result
-        ) as mock_loop:
+        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "did you hear that?",

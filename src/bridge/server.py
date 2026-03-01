@@ -327,9 +327,7 @@ authenticate_browser = create_scoped_authenticator("BROWSER")
 authenticate_git = create_scoped_authenticator("GIT")
 
 
-def run_command(
-    cmd: list[str], timeout: int = 30, cwd: str | None = None
-) -> BridgeResponse:
+def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> BridgeResponse:
     """Execute a CLI command safely using subprocess.
 
     Args:
@@ -373,9 +371,7 @@ def run_command(
             )
 
     except subprocess.TimeoutExpired:
-        logger.error(
-            "Command timed out after %ds (execution_id=%s)", timeout, execution_id
-        )
+        logger.error("Command timed out after %ds (execution_id=%s)", timeout, execution_id)
         return BridgeResponse(
             ok=False,
             error=f"Command timed out after {timeout} seconds",
@@ -387,9 +383,7 @@ def run_command(
             ok=False, error=f"Command not found: {cmd[0]}", execution_id=execution_id
         )
     except Exception as e:
-        logger.error(
-            "Unexpected error running command (execution_id=%s): %s", execution_id, e
-        )
+        logger.error("Unexpected error running command (execution_id=%s): %s", execution_id, e)
         return BridgeResponse(
             ok=False, error=f"Unexpected error: {str(e)}", execution_id=execution_id
         )
@@ -434,22 +428,14 @@ async def lifespan(app: FastAPI):
         blocked_domains = [d.strip() for d in blocked_str.split(",") if d.strip()]
         browser_relay = BrowserRelay(
             max_sessions=int(os.environ.get("BROWSER_MAX_SESSIONS", "3")),
-            session_timeout_minutes=int(
-                os.environ.get("BROWSER_SESSION_TIMEOUT", "10")
-            ),
+            session_timeout_minutes=int(os.environ.get("BROWSER_SESSION_TIMEOUT", "10")),
             blocked_domains=blocked_domains,
             container_memory=os.environ.get("BROWSER_CONTAINER_MEMORY", "1024m"),
             container_shm_size=os.environ.get("BROWSER_CONTAINER_SHM_SIZE", "256m"),
             container_tmpfs_size=os.environ.get("BROWSER_CONTAINER_TMPFS_SIZE", "128M"),
-            navigate_timeout_ms=int(
-                os.environ.get("BROWSER_NAVIGATE_TIMEOUT_MS", "30000")
-            ),
-            snapshot_timeout_ms=int(
-                os.environ.get("BROWSER_SNAPSHOT_TIMEOUT_MS", "15000")
-            ),
-            block_heavy_resources=os.environ.get(
-                "BROWSER_BLOCK_HEAVY_RESOURCES", "true"
-            ).lower()
+            navigate_timeout_ms=int(os.environ.get("BROWSER_NAVIGATE_TIMEOUT_MS", "30000")),
+            snapshot_timeout_ms=int(os.environ.get("BROWSER_SNAPSHOT_TIMEOUT_MS", "15000")),
+            block_heavy_resources=os.environ.get("BROWSER_BLOCK_HEAVY_RESOURCES", "true").lower()
             in ("true", "1", "yes"),
         )
         await browser_relay.start()
@@ -668,9 +654,7 @@ async def imessage_recent(
 ) -> BridgeResponse:
     """Get recent iMessages via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(
-            ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg"
-        )
+        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
 
     cmd = ["/opt/homebrew/bin/imsg", "recent", "--limit", str(request.limit)]
     return run_command(cmd)
@@ -682,9 +666,7 @@ async def imessage_send(
 ) -> BridgeResponse:
     """Send iMessage via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(
-            ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg"
-        )
+        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
 
     cmd = ["/opt/homebrew/bin/imsg", "send", "--to", request.to, "--text", request.text]
     return run_command(cmd)
@@ -694,9 +676,7 @@ async def imessage_send(
 async def imessage_chats(_: bool = Depends(authenticate_imessage)) -> BridgeResponse:
     """Get iMessage chats via imsg CLI."""
     if not _check_imsg_available():
-        return BridgeResponse(
-            ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg"
-        )
+        return BridgeResponse(ok=False, error="imsg CLI not found at /opt/homebrew/bin/imsg")
 
     cmd = ["/opt/homebrew/bin/imsg", "chats"]
     return run_command(cmd)

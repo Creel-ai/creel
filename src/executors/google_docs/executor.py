@@ -207,9 +207,7 @@ def main() -> None:
 
     if not action:
         print(
-            json.dumps(
-                {"error": "ACTION is required (read, create, append, replace, insert)"}
-            ),
+            json.dumps({"error": "ACTION is required (read, create, append, replace, insert)"}),
             file=sys.stderr,
         )
         sys.exit(1)

@@ -100,9 +100,7 @@ def start_scheduler(
         def _heartbeat_loop():
             while True:
                 heartbeat_event.set()
-                if shutdown_event is not None and shutdown_event.wait(
-                    heartbeat_interval
-                ):
+                if shutdown_event is not None and shutdown_event.wait(heartbeat_interval):
                     break
                 elif shutdown_event is None:
                     threading.Event().wait(heartbeat_interval)

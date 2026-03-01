@@ -37,9 +37,7 @@ class JSONFormatter(logging.Formatter):
 
         # Include any extra fields passed via `extra`
         for key in record.__dict__:
-            if key not in logging.LogRecord(
-                "", 0, "", 0, "", (), None
-            ).__dict__ and key not in (
+            if key not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__ and key not in (
                 "message",
                 "args",
             ):
@@ -55,9 +53,7 @@ _STANDARD_KEYS: set[str] | None = None
 def _standard_keys() -> set[str]:
     global _STANDARD_KEYS
     if _STANDARD_KEYS is None:
-        _STANDARD_KEYS = set(
-            logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
-        ) | {
+        _STANDARD_KEYS = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()) | {
             "message",
             "args",
         }

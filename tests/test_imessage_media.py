@@ -231,9 +231,7 @@ class TestQueryAttachments:
         assert len(attachments) == 2
         assert all(a.type == AttachmentType.IMAGE for a in attachments)
 
-    def test_skip_attachment_with_no_file_and_no_transfer_name(
-        self, tmp_path: Path
-    ) -> None:
+    def test_skip_attachment_with_no_file_and_no_transfer_name(self, tmp_path: Path) -> None:
         """Attachments with neither a file nor a transfer_name should be skipped."""
         db_path = tmp_path / "chat.db"
         _create_chat_db(db_path)
@@ -393,9 +391,7 @@ class TestListenWithAttachments:
     """Test that listen() passes IncomingMessage to callback for media messages."""
 
     def _make_channel(self, db_path: Path) -> IMessageChannel:
-        channel = IMessageChannel(
-            allowed_senders=["friend@example.com"], poll_interval=1
-        )
+        channel = IMessageChannel(allowed_senders=["friend@example.com"], poll_interval=1)
         channel.MESSAGES_DB = db_path
         return channel
 
@@ -433,9 +429,7 @@ class TestListenWithAttachments:
         # callback was called with (sender_id, text)
         callback.assert_called_once_with("friend@example.com", "hello")
 
-    def test_attachment_message_calls_callback_with_incoming_message(
-        self, tmp_path: Path
-    ) -> None:
+    def test_attachment_message_calls_callback_with_incoming_message(self, tmp_path: Path) -> None:
         """Messages with attachments should invoke callback(IncomingMessage)."""
         db_path = tmp_path / "chat.db"
         _create_chat_db(db_path)
@@ -630,9 +624,7 @@ class TestDaemonServiceIncomingMessage:
         result = service.send_message("user1", "hello")
 
         assert result == "ok"
-        mock_server.handle_message.assert_called_once_with(
-            "user1", "hello", auto_approve=False
-        )
+        mock_server.handle_message.assert_called_once_with("user1", "hello", auto_approve=False)
 
     def test_incoming_message_with_no_text(self) -> None:
         """IncomingMessage with text=None should pass empty string to handle_message."""
@@ -649,9 +641,7 @@ class TestDaemonServiceIncomingMessage:
         incoming = IncomingMessage(
             sender_id="user1",
             text=None,
-            attachments=[
-                Attachment(type=AttachmentType.VOICE, file_path=Path("/tmp/voice.caf"))
-            ],
+            attachments=[Attachment(type=AttachmentType.VOICE, file_path=Path("/tmp/voice.caf"))],
         )
 
         result = service.send_message(incoming)

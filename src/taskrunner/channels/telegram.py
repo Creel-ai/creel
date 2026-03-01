@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from taskrunner.channels.base import (
     Attachment as BaseAttachment,
+)
+from taskrunner.channels.base import (
     Channel,
     IncomingMessage,
     LegacyCallback,
@@ -20,6 +22,8 @@ from taskrunner.channels.base import (
 from taskrunner.channels.message import (
     Attachment,
     AttachmentType,
+)
+from taskrunner.channels.message import (
     IncomingMessage as MediaMessage,
 )
 from taskrunner.channels.mixins import BridgeClientMixin, PollingChannelMixin
@@ -108,9 +112,7 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
             logger.debug("Skipping empty message to %s", recipient)
             return
         if recipient not in self._allowed_recipients:
-            logger.warning(
-                "Blocked outbound message to %s — not in allowed recipients", recipient
-            )
+            logger.warning("Blocked outbound message to %s — not in allowed recipients", recipient)
             return
         self._bridge.send_message(recipient, text)
         logger.info("Sent Telegram message to %s (%d chars)", recipient, len(text))
@@ -121,9 +123,7 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
     # --- PollingChannelMixin implementation ---
 
     def _poll_once(self) -> list[IncomingMessage]:
-        raw_messages = self._bridge.get_updates(
-            offset=self._offset, timeout=self._poll_timeout
-        )
+        raw_messages = self._bridge.get_updates(offset=self._offset, timeout=self._poll_timeout)
         result: list[IncomingMessage] = []
 
         for msg in raw_messages:
@@ -140,9 +140,7 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
             if text is None and not msg.media:
                 continue
 
-            logger.info(
-                "Telegram from %s (@%s)", msg.sender_id, msg.sender_username
-            )
+            logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
             if text:
                 logger.debug("Telegram message text: %s", text[:80])
 
@@ -188,9 +186,7 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
         if self._send_typing:
             self._bridge.send_typing(msg.sender_id)
 
-    def _dispatch_message(
-        self, msg: IncomingMessage, callback: LegacyCallback
-    ) -> str:
+    def _dispatch_message(self, msg: IncomingMessage, callback: LegacyCallback) -> str:
         """Override dispatch to pass media attachments through."""
         attachments = msg.metadata.get("_attachments")
         if attachments:
@@ -200,7 +196,7 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
                 attachments=attachments,
                 channel="telegram",
             )
-            return callback(media_msg)
+            return callback(media_msg)  # type: ignore[call-arg,arg-type]
         return callback(msg.sender_id, msg.text)
 
     # --- Access control ---
@@ -356,9 +352,9 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
                     attachments=attachments,
                     channel="telegram",
                 )
-                response = await asyncio.to_thread(callback, incoming)
+                response = await asyncio.to_thread(callback, incoming)  # type: ignore[call-arg,arg-type]
             else:
-                response = await asyncio.to_thread(callback, chat_id, processed_text)
+                response = await asyncio.to_thread(callback, chat_id, processed_text or "")
             await asyncio.to_thread(self.send, chat_id, response)
 
         return {"status": "ok"}

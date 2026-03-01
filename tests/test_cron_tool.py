@@ -139,9 +139,7 @@ class TestActionList:
 
     def test_list_includes_schedule_info(self, tmp_path: Path) -> None:
         mgr = _make_manager(tmp_path)
-        mgr.store.add(
-            _make_job("Daily", schedule=Schedule(kind="cron", expr="0 8 * * *"))
-        )
+        mgr.store.add(_make_job("Daily", schedule=Schedule(kind="cron", expr="0 8 * * *")))
 
         result = _call(mgr, action="list")
         job = result["jobs"][0]

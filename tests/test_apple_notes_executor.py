@@ -76,19 +76,13 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_URL environment variable not set"
-            ):
+            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
                 call_bridge("/notes/list")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
-        ):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
-            ):
+        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
+            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
                 call_bridge("/notes/list")
 
     @patch("executors.apple_notes.executor.requests.post")
@@ -154,9 +148,7 @@ class TestNotesOperations:
 
         assert result["ok"] is True
         assert result["output"] == "search results"
-        mock_call_bridge.assert_called_once_with(
-            "/notes/search", {"query": "test query"}
-        )
+        mock_call_bridge.assert_called_once_with("/notes/search", {"query": "test query"})
 
     @patch("executors.apple_notes.executor.call_bridge")
     def test_create_note_basic(self, mock_call_bridge):

@@ -246,9 +246,7 @@ class TestAudioConversion:
 
         with (
             patch("shutil.which", return_value="/usr/local/bin/ffmpeg"),
-            patch(
-                "subprocess.run", side_effect=subprocess.CalledProcessError(1, "ffmpeg")
-            ),
+            patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "ffmpeg")),
             patch("httpx.post", return_value=fake_resp) as mock_post,
         ):
             result = svc.transcribe(audio)

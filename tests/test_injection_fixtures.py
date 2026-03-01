@@ -15,9 +15,7 @@ from tests.injection_fixtures import ALL_BENIGN, ALL_INJECTIONS
 
 # Ensure we have enough fixtures
 def test_minimum_injection_count() -> None:
-    assert (
-        len(ALL_INJECTIONS) >= 50
-    ), f"Expected 50+ injections, got {len(ALL_INJECTIONS)}"
+    assert len(ALL_INJECTIONS) >= 50, f"Expected 50+ injections, got {len(ALL_INJECTIONS)}"
 
 
 def test_minimum_benign_count() -> None:

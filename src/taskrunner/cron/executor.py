@@ -49,9 +49,7 @@ class JobExecutor:
     def _execute_main(self, job: CronJob) -> None:
         """Inject a system event into the main conversation session."""
         if self._inject_event is None:
-            raise RuntimeError(
-                "Cannot execute main-session job: no event injector configured"
-            )
+            raise RuntimeError("Cannot execute main-session job: no event injector configured")
 
         event_text = f"[Scheduled: {job.name}]\n{job.payload.message}"
         self._inject_event(event_text)
@@ -60,9 +58,7 @@ class JobExecutor:
     def _execute_isolated(self, job: CronJob) -> None:
         """Run a fresh agent turn in a dedicated session."""
         if self._agent_def is None:
-            raise RuntimeError(
-                "Cannot execute isolated job: no agent definition configured"
-            )
+            raise RuntimeError("Cannot execute isolated job: no agent definition configured")
 
         # Build LLM config, applying model override if specified
         llm_config = self._agent_def.llm.model_copy()

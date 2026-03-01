@@ -123,9 +123,7 @@ def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_pa
     env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response", stderr="", returncode=0)
 
-    with patch(
-        "taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")
-    ):
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
     cmd = mock_run.call_args[0][0]
@@ -144,9 +142,7 @@ def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path)
     env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response", stderr="", returncode=0)
 
-    with patch(
-        "taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")
-    ):
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
     contents = env_file.read_text()
@@ -163,9 +159,7 @@ def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch, tmp
     env_file = tmp_path / "test.env"
     mock_run.return_value = MagicMock(stdout="response", stderr="", returncode=0)
 
-    with patch(
-        "taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")
-    ):
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
     contents = env_file.read_text()
@@ -406,9 +400,7 @@ class TestSummarizeMessages:
 
     @patch("taskrunner.llm._run_llm_direct")
     @patch("taskrunner.llm._get_client")
-    def test_truncation_at_200_chars(
-        self, mock_get_client, mock_direct, monkeypatch
-    ) -> None:
+    def test_truncation_at_200_chars(self, mock_get_client, mock_direct, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         mock_direct.return_value = "summary"
 

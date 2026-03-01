@@ -12,9 +12,7 @@ from guardian.audit import AuditLogger
 class TestDailyRotation:
     def test_daily_rotation_uses_date_suffix(self, tmp_path: Path) -> None:
         logger = AuditLogger(tmp_path / "audit.jsonl", rotate_daily=True)
-        logger.log_screen(
-            input_hash="abc", input_length=10, blocked=False, source="test"
-        )
+        logger.log_screen(input_hash="abc", input_length=10, blocked=False, source="test")
 
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         expected = tmp_path / f"audit-{today}.jsonl"
@@ -29,25 +27,19 @@ class TestDailyRotation:
         with patch("guardian.audit.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 1, 15, tzinfo=UTC)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-            logger.log_screen(
-                input_hash="a", input_length=1, blocked=False, source="test"
-            )
+            logger.log_screen(input_hash="a", input_length=1, blocked=False, source="test")
 
         with patch("guardian.audit.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 1, 16, tzinfo=UTC)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-            logger.log_screen(
-                input_hash="b", input_length=2, blocked=True, source="test"
-            )
+            logger.log_screen(input_hash="b", input_length=2, blocked=True, source="test")
 
         assert (tmp_path / "audit-2025-01-15.jsonl").exists()
         assert (tmp_path / "audit-2025-01-16.jsonl").exists()
 
     def test_no_rotation_by_default(self, tmp_path: Path) -> None:
         logger = AuditLogger(tmp_path / "audit.jsonl")
-        logger.log_screen(
-            input_hash="abc", input_length=10, blocked=False, source="test"
-        )
+        logger.log_screen(input_hash="abc", input_length=10, blocked=False, source="test")
         assert (tmp_path / "audit.jsonl").exists()
 
 
@@ -59,9 +51,7 @@ class TestSizeBasedRotation:
 
         # Write enough to exceed the limit
         for i in range(5):
-            logger.log_screen(
-                input_hash=f"hash{i}", input_length=i, blocked=False, source="test"
-            )
+            logger.log_screen(input_hash=f"hash{i}", input_length=i, blocked=False, source="test")
 
         # The rotated file should exist
         rotated = log_file.with_suffix(".jsonl.1")
@@ -74,9 +64,7 @@ class TestSizeBasedRotation:
 
         # Set max size very small so next write triggers rotation
         logger = AuditLogger(log_file, max_size_mb=0.000001)  # ~1 byte
-        logger.log_screen(
-            input_hash="new", input_length=1, blocked=False, source="test"
-        )
+        logger.log_screen(input_hash="new", input_length=1, blocked=False, source="test")
 
         rotated = log_file.with_suffix(".jsonl.1")
         assert rotated.exists()
@@ -87,9 +75,7 @@ class TestSizeBasedRotation:
         logger = AuditLogger(log_file, max_size_mb=0)
 
         for i in range(10):
-            logger.log_screen(
-                input_hash=f"hash{i}", input_length=i, blocked=False, source="test"
-            )
+            logger.log_screen(input_hash=f"hash{i}", input_length=i, blocked=False, source="test")
 
         rotated = log_file.with_suffix(".jsonl.1")
         assert not rotated.exists()
@@ -106,9 +92,7 @@ class TestCombinedRotation:
         )
 
         for i in range(10):
-            logger.log_screen(
-                input_hash=f"hash{i}", input_length=i, blocked=False, source="test"
-            )
+            logger.log_screen(input_hash=f"hash{i}", input_length=i, blocked=False, source="test")
 
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         daily_file = tmp_path / f"audit-{today}.jsonl"

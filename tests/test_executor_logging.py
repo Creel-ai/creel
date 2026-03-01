@@ -43,9 +43,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_failure_stderr_in_exception(
-        self, mock_decrypt, mock_run, mock_ensure, config
-    ):
+    def test_failure_stderr_in_exception(self, mock_decrypt, mock_run, mock_ensure, config):
         """Non-zero exit should raise RuntimeError with stderr content."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -77,9 +75,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_timeout_raises_runtime_error(
-        self, mock_decrypt, mock_run, mock_ensure, config
-    ):
+    def test_timeout_raises_runtime_error(self, mock_decrypt, mock_run, mock_ensure, config):
         """Timeout should raise RuntimeError with executor name and timeout."""
         from taskrunner.orchestrator import _run_executor_container
 
@@ -131,9 +127,7 @@ class TestRunExecutorContainer:
     @patch("taskrunner.orchestrator._ensure_image")
     @patch("taskrunner.orchestrator.subprocess.run")
     @patch("taskrunner.orchestrator.decrypt_env_file", return_value={})
-    def test_stderr_truncated_in_error(
-        self, mock_decrypt, mock_run, mock_ensure, config
-    ):
+    def test_stderr_truncated_in_error(self, mock_decrypt, mock_run, mock_ensure, config):
         """Very long stderr should be truncated in the error message."""
         from taskrunner.orchestrator import _run_executor_container
 

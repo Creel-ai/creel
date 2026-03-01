@@ -123,9 +123,7 @@ class TestProtocolSerialization:
     def test_tool_results_message_shape(self):
         msg = {
             "type": "tool_results",
-            "results": [
-                {"tool_use_id": "toolu_123", "content": "sunny", "is_error": False}
-            ],
+            "results": [{"tool_use_id": "toolu_123", "content": "sunny", "is_error": False}],
         }
         parsed = json.loads(json.dumps(msg))
         assert parsed["results"][0]["is_error"] is False
@@ -162,9 +160,7 @@ class TestHandleToolRequest:
     def test_basic_tool_execution(self, mock_execute):
         mock_execute.return_value = '{"temp": "72"}'
 
-        calls = [
-            {"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}
-        ]
+        calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
             calls,
             _make_tools(),
@@ -185,9 +181,7 @@ class TestHandleToolRequest:
     def test_tool_execution_error(self, mock_execute):
         mock_execute.side_effect = RuntimeError("Network error")
 
-        calls = [
-            {"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}
-        ]
+        calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
             calls,
             _make_tools(),
@@ -210,9 +204,7 @@ class TestHandleToolRequest:
         deny_decision.reason = "Policy forbids this"
         guardian.validate_action.return_value = deny_decision
 
-        calls = [
-            {"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}
-        ]
+        calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
             calls,
             _make_tools(),
@@ -242,9 +234,7 @@ class TestHandleToolRequest:
 
         confirm_fn = MagicMock(return_value=True)
 
-        calls = [
-            {"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}
-        ]
+        calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         results, pending = _handle_tool_request(
             calls,
             _make_tools(),
@@ -268,9 +258,7 @@ class TestHandleToolRequest:
         review_decision.reason = "Needs approval"
         guardian.validate_action.return_value = review_decision
 
-        calls = [
-            {"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}
-        ]
+        calls = [{"id": "toolu_1", "name": "check_weather", "input": {"location": "Denver"}}]
         messages = [{"role": "user", "content": "Weather?"}]
         results, pending = _handle_tool_request(
             calls,
@@ -304,9 +292,7 @@ class TestHandleToolRequest:
                 executor="gmail_readonly",
                 description="Read email",
                 parameters={
-                    "message_id": ToolParameter(
-                        type="string", description="ID", required=True
-                    )
+                    "message_id": ToolParameter(type="string", description="ID", required=True)
                 },
                 classify_output=True,
             ),
@@ -322,9 +308,7 @@ class TestHandleToolRequest:
         screen_result.classifier_result = MagicMock(confidence=0.95)
         guardian.screen_tool_result.return_value = screen_result
 
-        calls = [
-            {"id": "toolu_1", "name": "read_email", "input": {"message_id": "abc"}}
-        ]
+        calls = [{"id": "toolu_1", "name": "read_email", "input": {"message_id": "abc"}}]
         results, pending = _handle_tool_request(
             calls,
             tools,

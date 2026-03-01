@@ -43,9 +43,7 @@ class PollingChannelMixin:
         Override to send typing indicators, log, etc.  The default is a no-op.
         """
 
-    def _dispatch_message(
-        self, msg: IncomingMessage, callback: LegacyCallback
-    ) -> str:
+    def _dispatch_message(self, msg: IncomingMessage, callback: LegacyCallback) -> str:
         """Dispatch a single message to the callback and return the response.
 
         The default calls ``callback(sender_id, text)``.  Channels that need

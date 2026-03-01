@@ -57,9 +57,7 @@ class TestExtractText:
 class TestReadDoc:
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_read_extracts_plain_text(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_read_extracts_plain_text(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -69,11 +67,7 @@ class TestReadDoc:
             "title": "My Doc",
             "body": {
                 "content": [
-                    {
-                        "paragraph": {
-                            "elements": [{"textRun": {"content": "Hello world\n"}}]
-                        }
-                    }
+                    {"paragraph": {"elements": [{"textRun": {"content": "Hello world\n"}}]}}
                 ]
             },
         }
@@ -86,9 +80,7 @@ class TestReadDoc:
 
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_read_empty_document(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_read_empty_document(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -107,9 +99,7 @@ class TestReadDoc:
 class TestCreateDoc:
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_create_with_title_only(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_create_with_title_only(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -127,9 +117,7 @@ class TestCreateDoc:
 
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_create_with_body(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_create_with_body(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -194,9 +182,7 @@ class TestReplaceInDoc:
 
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_replace_with_match_case(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_replace_with_match_case(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -230,9 +216,7 @@ class TestReplaceInDoc:
 class TestInsertInDoc:
     @patch("executors.google_docs.executor.get_credentials")
     @patch("executors.google_docs.executor.build")
-    def test_insert_at_index(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_insert_at_index(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -246,9 +230,7 @@ class TestInsertInDoc:
 
 class TestMainEntrypoint:
     @patch("executors.google_docs.executor.read_document")
-    def test_main_dispatches_read_action(
-        self, mock_read: MagicMock, monkeypatch
-    ) -> None:
+    def test_main_dispatches_read_action(self, mock_read: MagicMock, monkeypatch) -> None:
         monkeypatch.setenv("ACTION", "read")
         monkeypatch.setenv("DOCUMENT_ID", "doc-1")
         mock_read.return_value = {"documentId": "doc-1", "title": "T", "content": "c"}
@@ -258,9 +240,7 @@ class TestMainEntrypoint:
         mock_read.assert_called_once_with("doc-1")
 
     @patch("executors.google_docs.executor.create_document")
-    def test_main_dispatches_create_action(
-        self, mock_create: MagicMock, monkeypatch
-    ) -> None:
+    def test_main_dispatches_create_action(self, mock_create: MagicMock, monkeypatch) -> None:
         monkeypatch.setenv("ACTION", "create")
         monkeypatch.setenv("TITLE", "New Doc")
         mock_create.return_value = {"documentId": "new", "url": "http://x"}

@@ -159,9 +159,7 @@ class CoherenceChecker:
             )
 
         except Exception:
-            logger.warning(
-                "Coherence check failed — defaulting to coherent", exc_info=True
-            )
+            logger.warning("Coherence check failed — defaulting to coherent", exc_info=True)
             return CoherenceResult(
                 coherent=True,
                 confidence=0.0,

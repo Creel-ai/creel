@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
-class AttachmentType(str, enum.Enum):
+class AttachmentType(enum.StrEnum):
     """Type of media attachment."""
 
     IMAGE = "image"

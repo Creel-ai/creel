@@ -51,9 +51,7 @@ class ImageBuildCache:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         # key -> (event, result_or_none, error_or_none)
-        self._builds: dict[
-            str, tuple[threading.Event, str | None, Exception | None]
-        ] = {}
+        self._builds: dict[str, tuple[threading.Event, str | None, Exception | None]] = {}
 
     def ensure_image(self, image: str) -> str:
         """Build (or wait for) a Docker image.  Returns the usable image ref."""
@@ -164,14 +162,10 @@ def _compute_executor_hash(executor_dir: Path) -> str:
     """
     h = sha256()
     # Executor-specific files
-    paths = sorted(
-        p for pattern in _HASH_GLOBS for p in executor_dir.glob(pattern) if p.is_file()
-    )
+    paths = sorted(p for pattern in _HASH_GLOBS for p in executor_dir.glob(pattern) if p.is_file())
     # Shared files in the build context (src/executors/)
     context_dir = executor_dir.parent
-    shared = sorted(
-        p for pattern in _HASH_GLOBS for p in context_dir.glob(pattern) if p.is_file()
-    )
+    shared = sorted(p for pattern in _HASH_GLOBS for p in context_dir.glob(pattern) if p.is_file())
     for p in paths:
         h.update(p.relative_to(executor_dir).as_posix().encode())
         h.update(p.read_bytes())
@@ -504,12 +498,8 @@ def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
 
         add_raw = config.args.get("add_labels", "")
         remove_raw = config.args.get("remove_labels", "")
-        add_labels = [
-            label.strip() for label in add_raw.split(",") if label.strip()
-        ] or None
-        remove_labels = [
-            label.strip() for label in remove_raw.split(",") if label.strip()
-        ] or None
+        add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
+        remove_labels = [label.strip() for label in remove_raw.split(",") if label.strip()] or None
         result = modify_message(message_id, add_labels, remove_labels)
     elif action == "trash":
         from executors.gmail_modify.executor import trash_message
@@ -520,9 +510,7 @@ def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
 
         result = delete_message(message_id)
     else:
-        raise ValueError(
-            f"gmail_modify: unknown action '{action}' (use modify/trash/delete)"
-        )
+        raise ValueError(f"gmail_modify: unknown action '{action}' (use modify/trash/delete)")
 
     return json.dumps(result, indent=2)
 
@@ -631,9 +619,7 @@ def _exec_google_sheets_inline(config: ExecutorConfig) -> str:
         value_input_option = config.args.get("value_input_option", "USER_ENTERED")
         result = append_to_sheet(spreadsheet_id, range_, data, value_input_option)
     else:
-        raise ValueError(
-            f"google_sheets: unknown action '{action}' (use read/create/write/append)"
-        )
+        raise ValueError(f"google_sheets: unknown action '{action}' (use read/create/write/append)")
 
     return json.dumps(result, indent=2)
 
@@ -694,13 +680,9 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     server_url = os.environ.get("BLUEBUBBLES_URL", "")
     password = os.environ.get("BLUEBUBBLES_PASSWORD", "")
     allowed_recipients = {
-        v.strip()
-        for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",")
-        if v.strip()
+        v.strip() for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",") if v.strip()
     }
-    allowed_chats = {
-        v.strip() for v in os.environ.get("ALLOWED_CHATS", "").split(",") if v.strip()
-    }
+    allowed_chats = {v.strip() for v in os.environ.get("ALLOWED_CHATS", "").split(",") if v.strip()}
 
     result: object
     if action == "get_recent_messages":
@@ -1136,18 +1118,14 @@ def _build_image(
         build_cmd.extend(["-t", t])
     build_cmd.extend(["-f", str(dockerfile), str(context)])
 
-    logger.info(
-        "Building image %s from %s (Dockerfile: %s)", tags[0], context, dockerfile
-    )
+    logger.info("Building image %s from %s (Dockerfile: %s)", tags[0], context, dockerfile)
     build_result = subprocess.run(
         build_cmd,
         capture_output=True,
         text=True,
     )
     if build_result.returncode != 0:
-        build_err = (
-            build_result.stderr.strip() if build_result.stderr else "unknown error"
-        )
+        build_err = build_result.stderr.strip() if build_result.stderr else "unknown error"
         logger.error("Docker build failed for %s:\n%s", tags[0], build_err)
         raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
 
@@ -1293,9 +1271,7 @@ def _run_executor_container(
 
         # Mount dynamic workspace for file_ops executor
         if _workspace_mount:
-            docker_cmd.extend(
-                ["-v", f"{_workspace_mount[0]}:/workspace:{_workspace_mount[1]}"]
-            )
+            docker_cmd.extend(["-v", f"{_workspace_mount[0]}:/workspace:{_workspace_mount[1]}"])
 
         # Add network isolation if disabled
         if tool_config and not tool_config.network:
@@ -1320,9 +1296,7 @@ def _run_executor_container(
                     config.timeout,
                     stderr,
                 )
-            raise RuntimeError(
-                f"Executor '{config.name}' timed out after {config.timeout}s"
-            ) from e
+            raise RuntimeError(f"Executor '{config.name}' timed out after {config.timeout}s") from e
 
     # Log stderr regardless of exit code
     stderr = result.stderr.strip() if result.stderr else ""

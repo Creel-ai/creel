@@ -144,9 +144,7 @@ def main() -> None:
         if not tool_use_blocks:
             # Final text response
             text = _extract_text(response)
-            messages.append(
-                {"role": "assistant", "content": _serialize_content(response.content)}
-            )
+            messages.append({"role": "assistant", "content": _serialize_content(response.content)})
             _send(
                 {
                     "type": "final",
@@ -162,9 +160,7 @@ def main() -> None:
             return
 
         # Tool calls - send request to host
-        messages.append(
-            {"role": "assistant", "content": _serialize_content(response.content)}
-        )
+        messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         calls = []
         for block in tool_use_blocks:
@@ -217,9 +213,7 @@ def main() -> None:
                         (c["name"] for c in calls if c["id"] == r["tool_use_id"]),
                         "unknown",
                     ),
-                    "input": next(
-                        (c["input"] for c in calls if c["id"] == r["tool_use_id"]), {}
-                    ),
+                    "input": next((c["input"] for c in calls if c["id"] == r["tool_use_id"]), {}),
                     "output": r["content"],
                     "is_error": r.get("is_error", False),
                 }

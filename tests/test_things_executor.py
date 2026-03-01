@@ -53,19 +53,13 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_URL environment variable not set"
-            ):
+            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
                 call_bridge("/things/inbox")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
-        ):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
-            ):
+        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
+            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
                 call_bridge("/things/inbox")
 
     @patch("executors.things.executor.requests.post")
@@ -135,9 +129,7 @@ class TestThingsOperations:
         result = search("test query")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/things/search", {"query": "test query"}
-        )
+        mock_call_bridge.assert_called_once_with("/things/search", {"query": "test query"})
 
     @patch("executors.things.executor.call_bridge")
     def test_projects(self, mock_call_bridge):

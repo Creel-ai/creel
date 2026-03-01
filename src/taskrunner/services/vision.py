@@ -105,8 +105,7 @@ class VisionProcessor:
 
         if needs_pillow and not _has_pillow():
             logger.warning(
-                "Pillow is required to process %s images. "
-                "Install with: pip install Pillow",
+                "Pillow is required to process %s images. Install with: pip install Pillow",
                 ext,
             )
             return None
@@ -176,10 +175,8 @@ class VisionProcessor:
             ratio = self._max_pixels / max(w, h)
             new_w = int(w * ratio)
             new_h = int(h * ratio)
-            img = img.resize((new_w, new_h), Image.LANCZOS)
-            logger.debug(
-                "Resized %s from %dx%d to %dx%d", file_path.name, w, h, new_w, new_h
-            )
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)  # type: ignore[assignment,union-attr]
+            logger.debug("Resized %s from %dx%d to %dx%d", file_path.name, w, h, new_w, new_h)
 
         buf = io.BytesIO()
         # Determine PIL save format from extension
@@ -188,7 +185,7 @@ class VisionProcessor:
         if pil_format == "JPEG":
             # Convert RGBA to RGB for JPEG
             if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+                img = img.convert("RGB")  # type: ignore[assignment]
             save_kwargs["quality"] = self._quality
         img.save(buf, format=pil_format, **save_kwargs)
         return buf.getvalue(), media_type
@@ -206,7 +203,7 @@ class VisionProcessor:
             ratio = self._max_pixels / max(w, h)
             new_w = int(w * ratio)
             new_h = int(h * ratio)
-            img = img.resize((new_w, new_h), Image.LANCZOS)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)  # type: ignore[assignment,union-attr]
             logger.debug(
                 "Resized %s from %dx%d to %dx%d",
                 file_path.name,
@@ -217,7 +214,7 @@ class VisionProcessor:
             )
 
         if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
+            img = img.convert("RGB")  # type: ignore[assignment]
 
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=self._quality)

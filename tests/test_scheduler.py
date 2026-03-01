@@ -71,9 +71,7 @@ def test_shutdown_event_stops_scheduler(mock_run_task, tmp_path):
 
     with (
         patch("apscheduler.schedulers.blocking.BlockingScheduler.start") as mock_start,
-        patch(
-            "apscheduler.schedulers.blocking.BlockingScheduler.shutdown"
-        ) as mock_shutdown,
+        patch("apscheduler.schedulers.blocking.BlockingScheduler.shutdown") as mock_shutdown,
     ):
         # Simulate start() blocking until shutdown is called
         def _block_until_shutdown():
@@ -105,9 +103,7 @@ def test_keyboard_interrupt_stops_scheduler(mock_run_task, tmp_path):
             "apscheduler.schedulers.blocking.BlockingScheduler.start",
             side_effect=KeyboardInterrupt,
         ),
-        patch(
-            "apscheduler.schedulers.blocking.BlockingScheduler.shutdown"
-        ) as mock_shutdown,
+        patch("apscheduler.schedulers.blocking.BlockingScheduler.shutdown") as mock_shutdown,
     ):
         start_scheduler(tasks_dir=tasks_dir)
 

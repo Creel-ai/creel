@@ -74,19 +74,13 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_URL environment variable not set"
-            ):
+            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
                 call_bridge("/git/status")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
-        ):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
-            ):
+        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
+            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
                 call_bridge("/git/status")
 
     @patch("executors.git_ops.executor.requests.post")
@@ -180,9 +174,7 @@ class TestGitOperations:
         result = log()
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/git/log", {"max_count": 10, "oneline": True}
-        )
+        mock_call_bridge.assert_called_once_with("/git/log", {"max_count": 10, "oneline": True})
 
     @patch("executors.git_ops.executor.call_bridge")
     def test_log_custom(self, mock_call_bridge):
@@ -192,9 +184,7 @@ class TestGitOperations:
         result = log(max_count=5, oneline=False)
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/git/log", {"max_count": 5, "oneline": False}
-        )
+        mock_call_bridge.assert_called_once_with("/git/log", {"max_count": 5, "oneline": False})
 
     @patch("executors.git_ops.executor.call_bridge")
     def test_commit_basic(self, mock_call_bridge):
@@ -268,9 +258,7 @@ class TestGitOperations:
         result = push()
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/git/push", {"remote": "origin"}, timeout=60
-        )
+        mock_call_bridge.assert_called_once_with("/git/push", {"remote": "origin"}, timeout=60)
 
     @patch("executors.git_ops.executor.call_bridge")
     def test_push_with_branch(self, mock_call_bridge):
@@ -380,9 +368,7 @@ class TestMainFunction:
         """Test main with log action and custom params."""
         mock_log.return_value = {"ok": True, "output": "commits"}
 
-        with patch.dict(
-            os.environ, {"ACTION": "log", "MAX_COUNT": "5", "ONELINE": "false"}
-        ):
+        with patch.dict(os.environ, {"ACTION": "log", "MAX_COUNT": "5", "ONELINE": "false"}):
             from executors.git_ops.executor import main
 
             main()
@@ -410,9 +396,7 @@ class TestMainFunction:
         """Test main with commit -a action."""
         mock_commit.return_value = {"ok": True, "output": "committed"}
 
-        with patch.dict(
-            os.environ, {"ACTION": "commit", "MESSAGE": "Update", "ALL": "true"}
-        ):
+        with patch.dict(os.environ, {"ACTION": "commit", "MESSAGE": "Update", "ALL": "true"}):
             from executors.git_ops.executor import main
 
             main()
@@ -565,9 +549,7 @@ class TestBridgeEndpoints:
                     "execution_id": "test-id",
                 },
             )
-            response = client.post(
-                "/git/status", json={"short": True}, headers=auth_headers
-            )
+            response = client.post("/git/status", json={"short": True}, headers=auth_headers)
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -609,9 +591,7 @@ class TestBridgeEndpoints:
                     "execution_id": "test-id",
                 },
             )
-            response = client.post(
-                "/git/diff", json={"cached": True}, headers=auth_headers
-            )
+            response = client.post("/git/diff", json={"cached": True}, headers=auth_headers)
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -632,9 +612,7 @@ class TestBridgeEndpoints:
                     "execution_id": "test-id",
                 },
             )
-            response = client.post(
-                "/git/diff", json={"path": "README.md"}, headers=auth_headers
-            )
+            response = client.post("/git/diff", json={"path": "README.md"}, headers=auth_headers)
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -676,9 +654,7 @@ class TestBridgeEndpoints:
                     "execution_id": "test-id",
                 },
             )
-            response = client.post(
-                "/git/commit", json={"message": "Fix bug"}, headers=auth_headers
-            )
+            response = client.post("/git/commit", json={"message": "Fix bug"}, headers=auth_headers)
 
         assert response.status_code == 200
         args = mock_run.call_args
@@ -826,23 +802,17 @@ class TestBridgeEndpoints:
 
     def test_git_branch_rejects_flag_injection(self, client, auth_headers):
         """Test /git/branch rejects names starting with '-'."""
-        response = client.post(
-            "/git/branch", json={"name": "--delete"}, headers=auth_headers
-        )
+        response = client.post("/git/branch", json={"name": "--delete"}, headers=auth_headers)
         assert response.status_code == 422
 
     def test_git_push_rejects_flag_in_remote(self, client, auth_headers):
         """Test /git/push rejects remote names starting with '-'."""
-        response = client.post(
-            "/git/push", json={"remote": "--force"}, headers=auth_headers
-        )
+        response = client.post("/git/push", json={"remote": "--force"}, headers=auth_headers)
         assert response.status_code == 422
 
     def test_git_push_rejects_flag_in_branch(self, client, auth_headers):
         """Test /git/push rejects branch names starting with '-'."""
-        response = client.post(
-            "/git/push", json={"branch": "--all"}, headers=auth_headers
-        )
+        response = client.post("/git/push", json={"branch": "--all"}, headers=auth_headers)
         assert response.status_code == 422
 
     def test_git_endpoint_unauthorized(self, client):

@@ -128,9 +128,7 @@ class TestMemoryManager:
             path = mm.daily_path()
             # Find the line number of the entry (after header)
             lines = path.read_text().splitlines()
-            entry_line = next(
-                i for i, line in enumerate(lines, 1) if "Delete me" in line
-            )
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Delete me" in line)
             today_str = datetime.now(UTC).date().isoformat()
             result = mm.delete_memory(today_str, entry_line)
             assert "Deleted" in result
@@ -156,9 +154,7 @@ class TestMemoryManager:
             mm.update_long_term("- Line to delete")
             # Find the line number
             lines = mm.long_term_path.read_text().splitlines()
-            entry_line = next(
-                i for i, line in enumerate(lines, 1) if "Line to delete" in line
-            )
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Line to delete" in line)
             result = mm.delete_memory("long_term", entry_line)
             assert "Deleted" in result
             assert "Line to delete" not in mm.long_term_path.read_text()
@@ -171,13 +167,9 @@ class TestMemoryManager:
             mm.remember("Old text")
             path = mm.daily_path()
             lines = path.read_text().splitlines()
-            entry_line = next(
-                i for i, line in enumerate(lines, 1) if "Old text" in line
-            )
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Old text" in line)
             today_str = datetime.now(UTC).date().isoformat()
-            result = mm.edit_memory(
-                today_str, entry_line, "- [10:00] **general**: New text"
-            )
+            result = mm.edit_memory(today_str, entry_line, "- [10:00] **general**: New text")
             assert "Edited" in result
             assert "old: " in result
             assert "new: " in result
@@ -197,9 +189,7 @@ class TestMemoryManager:
             mm = self._make_manager(td)
             mm.update_long_term("- Old fact")
             lines = mm.long_term_path.read_text().splitlines()
-            entry_line = next(
-                i for i, line in enumerate(lines, 1) if "Old fact" in line
-            )
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Old fact" in line)
             result = mm.edit_memory("long_term", entry_line, "- New fact")
             assert "Edited" in result
             assert "New fact" in mm.long_term_path.read_text()
@@ -277,9 +267,7 @@ class TestMemoryManager:
 
     def test_daily_limit_rejects_when_full(self):
         with tempfile.TemporaryDirectory() as td:
-            mm = MemoryManager(
-                workspace_dir=td, timezone_name="UTC", max_daily_entries=3
-            )
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_daily_entries=3)
             mm.remember("Entry 1")
             mm.remember("Entry 2")
             mm.remember("Entry 3")
@@ -291,9 +279,7 @@ class TestMemoryManager:
 
     def test_daily_limit_allows_under_limit(self):
         with tempfile.TemporaryDirectory() as td:
-            mm = MemoryManager(
-                workspace_dir=td, timezone_name="UTC", max_daily_entries=5
-            )
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_daily_entries=5)
             result = mm.remember("Entry 1")
             assert "Remembered" in result
             result = mm.remember("Entry 2")
@@ -301,9 +287,7 @@ class TestMemoryManager:
 
     def test_long_term_limit_rejects_when_full(self):
         with tempfile.TemporaryDirectory() as td:
-            mm = MemoryManager(
-                workspace_dir=td, timezone_name="UTC", max_long_term_lines=5
-            )
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_long_term_lines=5)
             # Header takes 2 lines ("# Long-Term Memory\n\n"), then content lines
             mm.update_long_term("Line 1")
             mm.update_long_term("Line 2")
@@ -313,8 +297,6 @@ class TestMemoryManager:
 
     def test_long_term_limit_allows_under_limit(self):
         with tempfile.TemporaryDirectory() as td:
-            mm = MemoryManager(
-                workspace_dir=td, timezone_name="UTC", max_long_term_lines=200
-            )
+            mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_long_term_lines=200)
             result = mm.update_long_term("Some fact")
             assert "updated" in result.lower()

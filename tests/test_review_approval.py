@@ -89,9 +89,7 @@ class FakeGuardian:
         self._audit = None
 
     def validate_action(self, tool_name, tool_input):
-        return ActionDecision(
-            verdict=self._verdict, tool_name=tool_name, reason=self._reason
-        )
+        return ActionDecision(verdict=self._verdict, tool_name=tool_name, reason=self._reason)
 
     def log_action_outcome(self, tool_name, stage, outcome):
         pass
@@ -292,9 +290,7 @@ def test_chat_y_approves_and_executes(mock_exec, tmp_path):
 def test_chat_n_denies(tmp_path):
     """Replying 'N' denies the pending action."""
     server = _make_chat_server(tmp_path)
-    action = server._approval_queue.add(
-        "sender1", "send_email", {"to": "x@y.com"}, "flagged"
-    )
+    action = server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
 
     response = server.handle_message("sender1", "n")
 
@@ -340,9 +336,7 @@ def test_chat_auto_approve_passes_confirm_action(mock_run, tmp_path):
     assert response == "Task created."
     # Verify confirm_action was passed (not None)
     call_kwargs = mock_run.call_args
-    confirm_fn = call_kwargs.kwargs.get("confirm_action") or call_kwargs[1].get(
-        "confirm_action"
-    )
+    confirm_fn = call_kwargs.kwargs.get("confirm_action") or call_kwargs[1].get("confirm_action")
     assert confirm_fn is not None
     # The auto-confirm callback should always return True
     assert confirm_fn("some_tool", {}, "test reason") is True
@@ -364,9 +358,7 @@ def test_chat_no_auto_approve_has_no_confirm(mock_run, tmp_path):
     server.handle_message("sender1", "hello")
 
     call_kwargs = mock_run.call_args
-    confirm_fn = call_kwargs.kwargs.get("confirm_action") or call_kwargs[1].get(
-        "confirm_action"
-    )
+    confirm_fn = call_kwargs.kwargs.get("confirm_action") or call_kwargs[1].get("confirm_action")
     assert confirm_fn is None
 
 
@@ -484,9 +476,7 @@ def test_chat_approval_sends_imessage(tmp_path):
     server = _make_chat_server(tmp_path, imessage_channel=mock_channel)
     server._agent_def.channels.imessage = agent_def.channels.imessage
 
-    action = server._approval_queue.add(
-        "sender1", "send_email", {"to": "x@y.com"}, "flagged"
-    )
+    action = server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
     server._send_approval_request("sender1", action)
 
     mock_channel.send.assert_called_once()

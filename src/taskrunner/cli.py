@@ -243,9 +243,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     tasks_dir = _tasks_dir(args)
     task_file = tasks_dir / f"{args.task_name}.yaml"
     if not task_file.exists():
-        print(
-            f"Error: Task '{args.task_name}' not found at {task_file}", file=sys.stderr
-        )
+        print(f"Error: Task '{args.task_name}' not found at {task_file}", file=sys.stderr)
         return 1
 
     try:
@@ -315,9 +313,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     tasks_dir = _tasks_dir(args)
     task_file = tasks_dir / f"{args.task_name}.yaml"
     if not task_file.exists():
-        print(
-            f"Error: Task '{args.task_name}' not found at {task_file}", file=sys.stderr
-        )
+        print(f"Error: Task '{args.task_name}' not found at {task_file}", file=sys.stderr)
         return 1
 
     try:
@@ -425,9 +421,7 @@ def _build_daemon_channel(agent_def, channel_type: str):
     if entry is not None:
         channel = registry.create_channel(channel_type, config)
         # Return channel as reply_channel if it can send messages
-        reply_channel = (
-            channel if ChannelCapability.SEND in entry.meta.capabilities else None
-        )
+        reply_channel = channel if ChannelCapability.SEND in entry.meta.capabilities else None
         return channel, reply_channel
 
     raise ValueError(
@@ -640,9 +634,7 @@ def cmd_daemon_start(args: argparse.Namespace) -> int:
             text=True,
         )
         existing_out = (existing.stdout or "") + "\n" + (existing.stderr or "")
-        if existing.returncode != 0 and not _allow_launchd_bootstrap_failure(
-            existing_out
-        ):
+        if existing.returncode != 0 and not _allow_launchd_bootstrap_failure(existing_out):
             print(
                 f"Error: failed to bootstrap launchd service {label}: {existing_out.strip()}",
                 file=sys.stderr,
@@ -782,9 +774,7 @@ def cmd_daemon_install(args: argparse.Namespace) -> int:
         text=True,
     )
     bootstrap_out = (bootstrap.stdout or "") + "\n" + (bootstrap.stderr or "")
-    if bootstrap.returncode != 0 and not _allow_launchd_bootstrap_failure(
-        bootstrap_out
-    ):
+    if bootstrap.returncode != 0 and not _allow_launchd_bootstrap_failure(bootstrap_out):
         print(
             f"Error: failed to bootstrap launchd service {label}: {bootstrap_out.strip()}",
             file=sys.stderr,
@@ -900,9 +890,7 @@ def cmd_daemon_stop(args: argparse.Namespace) -> int:
         return 0
 
     if not _pid_is_running(pid):
-        print(
-            "Daemon pid file found, but process is not running. Cleaning up stale files."
-        )
+        print("Daemon pid file found, but process is not running. Cleaning up stale files.")
         _cleanup_stale_daemon_files(pid_path, socket_path)
         return 0
 
@@ -1239,9 +1227,7 @@ def cmd_cron_edit(args: argparse.Namespace) -> int:
     if getattr(args, "cron", None):
         fields["schedule"] = Schedule(kind="cron", expr=args.cron, tz=tz).model_dump()
     elif getattr(args, "every", None):
-        fields["schedule"] = Schedule(
-            kind="every", expr=str(args.every), tz=tz
-        ).model_dump()
+        fields["schedule"] = Schedule(kind="every", expr=str(args.every), tz=tz).model_dump()
     elif getattr(args, "at", None):
         fields["schedule"] = Schedule(kind="at", expr=args.at, tz=tz).model_dump()
 
@@ -1370,11 +1356,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         print(f"Error: Agent config not found at {args.agent_config}", file=sys.stderr)
         return 1
 
-    log_file = (
-        agent_def.guardian.audit.log_file
-        if agent_def.guardian
-        else "guardian_audit.jsonl"
-    )
+    log_file = agent_def.guardian.audit.log_file if agent_def.guardian else "guardian_audit.jsonl"
     tail = 0 if args.all else args.tail
 
     entries = read_audit_log(
@@ -1411,9 +1393,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
             icon = {"allow": "✅", "review": "⚠️", "deny": "🚫"}.get(verdict, "❓")
             tool = entry.get("tool_name", "?")
             rule = entry.get("matched_rule", "")
-            print(
-                f"[{ts}] {event}: {icon} {verdict} {tool} (rule: {rule or 'default'})"
-            )
+            print(f"[{ts}] {event}: {icon} {verdict} {tool} (rule: {rule or 'default'})")
 
         elif event == "tool_result":
             icon = "✅" if entry.get("success") else "❌"
@@ -1465,17 +1445,13 @@ def main() -> int:
         prog="creel",
         description="LLM Task Runner - secure, scheduled LLM task execution",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument(
         "--containers",
         action="store_true",
         help="Run executors/LLM in Docker containers",
     )
-    parser.add_argument(
-        "--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory"
-    )
+    parser.add_argument("--tasks-dir", type=Path, default=DEFAULT_TASKS_DIR, help="Tasks directory")
     parser.add_argument(
         "--agent-config",
         type=Path,
@@ -1498,9 +1474,7 @@ def main() -> int:
     # run command
     run_parser = subparsers.add_parser("run", help="Run a task immediately")
     run_parser.add_argument("task_name", help="Name of the task to run")
-    run_parser.add_argument(
-        "--dry", action="store_true", help="Dry run (render prompt only)"
-    )
+    run_parser.add_argument("--dry", action="store_true", help="Dry run (render prompt only)")
 
     # schedule command
     subparsers.add_parser("schedule", help="Start scheduler for all tasks")
@@ -1509,9 +1483,7 @@ def main() -> int:
     subparsers.add_parser("list", help="List available tasks")
 
     # validate command
-    validate_parser = subparsers.add_parser(
-        "validate", help="Validate a task definition"
-    )
+    validate_parser = subparsers.add_parser("validate", help="Validate a task definition")
     validate_parser.add_argument("task_name", help="Name of the task to validate")
 
     # attach command
@@ -1557,12 +1529,8 @@ def main() -> int:
         default=None,
         help="Filter by event type (screen_input, validate_action, tool_result)",
     )
-    audit_parser.add_argument(
-        "--all", action="store_true", help="Show all entries (no tail limit)"
-    )
-    audit_parser.add_argument(
-        "--tool", type=str, default=None, help="Filter by tool name"
-    )
+    audit_parser.add_argument("--all", action="store_true", help="Show all entries (no tail limit)")
+    audit_parser.add_argument("--tool", type=str, default=None, help="Filter by tool name")
     audit_parser.add_argument(
         "--since",
         type=str,
@@ -1571,9 +1539,7 @@ def main() -> int:
     )
 
     # encrypt command
-    encrypt_parser = subparsers.add_parser(
-        "encrypt", help="Encrypt a .env file with age"
-    )
+    encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
     encrypt_parser.add_argument("env_file", help="Path to plaintext .env file")
     encrypt_parser.add_argument(
         "--recipient",
@@ -1725,9 +1691,7 @@ def main() -> int:
     ]
 
     # send command
-    send_parser = subparsers.add_parser(
-        "send", help="Send one message to the running daemon"
-    )
+    send_parser = subparsers.add_parser("send", help="Send one message to the running daemon")
     send_parser.add_argument("message", help="Message text")
     send_parser.add_argument(
         "--sender-id",
@@ -1780,13 +1744,9 @@ def main() -> int:
     cron_add_parser.add_argument("--every", type=int, help="Interval in seconds")
     cron_add_parser.add_argument("--at", help="One-shot ISO 8601 timestamp")
     cron_add_parser.add_argument("--message", help="Agent turn message")
-    cron_add_parser.add_argument(
-        "--system-event", help="System event message (main session)"
-    )
+    cron_add_parser.add_argument("--system-event", help="System event message (main session)")
     cron_add_parser.add_argument("--model", help="Model override")
-    cron_add_parser.add_argument(
-        "--timeout-seconds", type=int, help="Timeout in seconds"
-    )
+    cron_add_parser.add_argument("--timeout-seconds", type=int, help="Timeout in seconds")
     cron_add_parser.add_argument(
         "--target",
         choices=["main", "isolated"],
@@ -1799,9 +1759,7 @@ def main() -> int:
         default="none",
         help="Delivery mode (default: none)",
     )
-    cron_add_parser.add_argument(
-        "--delivery-channel", help="Channel name for announce delivery"
-    )
+    cron_add_parser.add_argument("--delivery-channel", help="Channel name for announce delivery")
     cron_add_parser.add_argument("--delivery-url", help="URL for webhook delivery")
     cron_add_parser.add_argument("--tz", default="UTC", help="Timezone (default: UTC)")
     cron_add_parser.add_argument(
@@ -1824,15 +1782,11 @@ def main() -> int:
     cron_remove_parser.add_argument("job_id", help="Job ID to remove")
 
     # cron run
-    cron_run_parser = cron_subparsers.add_parser(
-        "run", help="Trigger a job immediately"
-    )
+    cron_run_parser = cron_subparsers.add_parser("run", help="Trigger a job immediately")
     cron_run_parser.add_argument("job_id", help="Job ID to run")
 
     # cron runs
-    cron_runs_parser = cron_subparsers.add_parser(
-        "runs", help="Show run history for a job"
-    )
+    cron_runs_parser = cron_subparsers.add_parser("runs", help="Show run history for a job")
     cron_runs_parser.add_argument("job_id", help="Job ID to show runs for")
     cron_runs_parser.add_argument(
         "--tail",

@@ -67,9 +67,7 @@ class TestExtractSlideText:
 class TestReadSlides:
     @patch("executors.google_slides.executor.get_credentials")
     @patch("executors.google_slides.executor.build")
-    def test_read_extracts_slide_text(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_read_extracts_slide_text(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -132,9 +130,7 @@ class TestReadSlides:
 class TestCreateSlides:
     @patch("executors.google_slides.executor.get_credentials")
     @patch("executors.google_slides.executor.build")
-    def test_create_with_title(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_create_with_title(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -152,9 +148,7 @@ class TestCreateSlides:
 class TestAddSlide:
     @patch("executors.google_slides.executor.get_credentials")
     @patch("executors.google_slides.executor.build")
-    def test_add_slide_returns_slide_id(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_add_slide_returns_slide_id(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -177,9 +171,7 @@ class TestAddSlide:
 
     @patch("executors.google_slides.executor.get_credentials")
     @patch("executors.google_slides.executor.build")
-    def test_add_slide_default_layout(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_add_slide_default_layout(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -218,9 +210,7 @@ class TestReplaceInSlides:
 
 class TestMainEntrypoint:
     @patch("executors.google_slides.executor.read_presentation")
-    def test_main_dispatches_read_action(
-        self, mock_read: MagicMock, monkeypatch
-    ) -> None:
+    def test_main_dispatches_read_action(self, mock_read: MagicMock, monkeypatch) -> None:
         monkeypatch.setenv("ACTION", "read")
         monkeypatch.setenv("PRESENTATION_ID", "pres-1")
         mock_read.return_value = {
@@ -235,9 +225,7 @@ class TestMainEntrypoint:
         mock_read.assert_called_once_with("pres-1")
 
     @patch("executors.google_slides.executor.create_presentation")
-    def test_main_dispatches_create_action(
-        self, mock_create: MagicMock, monkeypatch
-    ) -> None:
+    def test_main_dispatches_create_action(self, mock_create: MagicMock, monkeypatch) -> None:
         monkeypatch.setenv("ACTION", "create")
         monkeypatch.setenv("TITLE", "New Pres")
         mock_create.return_value = {"presentationId": "new", "url": "http://x"}

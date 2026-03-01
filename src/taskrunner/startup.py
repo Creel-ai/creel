@@ -40,9 +40,7 @@ def validate_secrets(agent_def) -> None:
     for channel_id in agent_def.channels.configured_channels():
         channel_cfg = agent_def.channels.get_channel_config(channel_id)
         if channel_cfg and channel_cfg.get("secrets"):
-            secrets_paths.append(
-                (f"channels.{channel_id}.secrets", channel_cfg["secrets"])
-            )
+            secrets_paths.append((f"channels.{channel_id}.secrets", channel_cfg["secrets"]))
 
     if not secrets_paths:
         logger.debug("No secrets files referenced, skipping validation")
@@ -72,9 +70,7 @@ def validate_secrets(agent_def) -> None:
                 errors.append(f"{label}: failed to decrypt {path}: {e}")
 
     if errors:
-        msg = "Startup secrets validation failed:\n" + "\n".join(
-            f"  • {e}" for e in errors
-        )
+        msg = "Startup secrets validation failed:\n" + "\n".join(f"  • {e}" for e in errors)
         raise SecretsValidationError(msg)
 
     logger.info("All %d secret file(s) validated successfully", len(secrets_paths))

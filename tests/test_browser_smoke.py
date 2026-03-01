@@ -139,9 +139,7 @@ class TestManagedModeSmoke:
         assert r1["title"] == "Example Domain"
 
         # Second page
-        r2 = await relay.navigate(
-            session_id, "https://www.iana.org/help/example-domains"
-        )
+        r2 = await relay.navigate(session_id, "https://www.iana.org/help/example-domains")
         assert r2["url"].startswith("https://www.iana.org")
         assert len(r2["content"]) > 0
 

@@ -65,13 +65,9 @@ class MemoryManager:
 
         # Rate limit: count existing entries in today's file
         if path.exists():
-            entry_count = sum(
-                1 for line in path.read_text().splitlines() if line.startswith("- [")
-            )
+            entry_count = sum(1 for line in path.read_text().splitlines() if line.startswith("- ["))
             if entry_count >= self._max_daily_entries:
-                logger.warning(
-                    "Daily memory limit reached (%d entries)", self._max_daily_entries
-                )
+                logger.warning("Daily memory limit reached (%d entries)", self._max_daily_entries)
                 return f"Daily memory limit reached ({self._max_daily_entries} entries). Try again tomorrow."
 
         timestamp = today.strftime("%H:%M")
@@ -103,9 +99,7 @@ class MemoryManager:
         # Rate limit: check line count
         line_count = len(path.read_text().splitlines())
         if line_count >= self._max_long_term_lines:
-            logger.warning(
-                "Long-term memory limit reached (%d lines)", self._max_long_term_lines
-            )
+            logger.warning("Long-term memory limit reached (%d lines)", self._max_long_term_lines)
             return f"Long-term memory limit reached ({self._max_long_term_lines} lines). Consider editing existing entries."
 
         with open(path, "a") as f:
@@ -279,9 +273,7 @@ class MemoryManager:
         for path in daily_files:
             try:
                 content = path.read_text()
-                entry_count = sum(
-                    1 for line in content.splitlines() if line.startswith("- [")
-                )
+                entry_count = sum(1 for line in content.splitlines() if line.startswith("- ["))
                 size = path.stat().st_size
                 lines.append(f"  {path.stem}  {entry_count} entries  {size} bytes")
             except OSError:
@@ -332,9 +324,7 @@ class MemoryManager:
                 content = path.read_text()
             except OSError:
                 continue
-            entry_count = sum(
-                1 for line in content.splitlines() if line.startswith("- [")
-            )
+            entry_count = sum(1 for line in content.splitlines() if line.startswith("- ["))
 
             if entry_count > 0:
                 # Append summary to MEMORY.md
@@ -342,15 +332,11 @@ class MemoryManager:
                 if not lt_path.exists():
                     lt_path.write_text("# Long-Term Memory\n\n")
                 with open(lt_path, "a") as f:
-                    f.write(
-                        f"- [{file_date.isoformat()}] {entry_count} entries (compacted)\n"
-                    )
+                    f.write(f"- [{file_date.isoformat()}] {entry_count} entries (compacted)\n")
 
             path.unlink()
             compacted += 1
-            logger.info(
-                "Compacted memory file: %s (%d entries)", path.name, entry_count
-            )
+            logger.info("Compacted memory file: %s (%d entries)", path.name, entry_count)
 
         if compacted == 0:
             return "No files to compact."

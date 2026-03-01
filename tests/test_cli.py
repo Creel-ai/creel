@@ -252,9 +252,7 @@ class TestCmdRun:
         assert rc == 1
         assert "boom" in capsys.readouterr().err
 
-    def test_exception_verbose_prints_traceback(
-        self, cli_args, sample_task_yaml, capsys
-    ) -> None:
+    def test_exception_verbose_prints_traceback(self, cli_args, sample_task_yaml, capsys) -> None:
         task_path = sample_task_yaml()
         args = cli_args(
             task_name="test_task",
@@ -444,9 +442,7 @@ class TestCmdDaemonStop:
             patch.object(cli, "_pid_is_running", return_value=True),
             patch("os.kill"),
             patch("time.sleep"),
-            patch(
-                "time.time", side_effect=[0.0, 0.0, 1.0]
-            ),  # immediately past deadline
+            patch("time.time", side_effect=[0.0, 0.0, 1.0]),  # immediately past deadline
         ):
             rc = cli.cmd_daemon_stop(args)
         assert rc == 1
@@ -532,9 +528,7 @@ class TestCmdDaemonStatus:
 
         with (
             patch.object(cli, "_pid_is_running", return_value=True),
-            patch.object(
-                cli, "_daemon_request", side_effect=ConnectionError("refused")
-            ),
+            patch.object(cli, "_daemon_request", side_effect=ConnectionError("refused")),
         ):
             rc = cli.cmd_daemon_status(args)
         assert rc == 1
@@ -755,9 +749,7 @@ class TestCmdSendNonStreaming:
 
     def test_connection_error(self, cli_args, capsys) -> None:
         args = self._make_send_args(cli_args)
-        with patch.object(
-            cli, "_daemon_request", side_effect=ConnectionError("refused")
-        ):
+        with patch.object(cli, "_daemon_request", side_effect=ConnectionError("refused")):
             rc = cli.cmd_send(args)
         assert rc == 1
         assert "refused" in capsys.readouterr().err
@@ -796,9 +788,7 @@ class TestCmdEncrypt:
         env_file = tmp_path / "test.env"
         env_file.write_text("SECRET=hunter2\n")
 
-        args = cli_args(
-            env_file=str(env_file), recipient=str(pub_file), output=None, delete=False
-        )
+        args = cli_args(env_file=str(env_file), recipient=str(pub_file), output=None, delete=False)
         rc = cli.cmd_encrypt(args)
         assert rc == 0
         assert (tmp_path / "test.env.enc").exists()
@@ -812,9 +802,7 @@ class TestCmdEncrypt:
         env_file = tmp_path / "test.env"
         env_file.write_text("SECRET=hunter2\n")
 
-        args = cli_args(
-            env_file=str(env_file), recipient=str(pub_file), output=None, delete=True
-        )
+        args = cli_args(env_file=str(env_file), recipient=str(pub_file), output=None, delete=True)
         rc = cli.cmd_encrypt(args)
         assert rc == 0
         assert (tmp_path / "test.env.enc").exists()
@@ -885,9 +873,7 @@ class TestMain:
         assert rc == 0
         assert "No tasks found" in capsys.readouterr().out
 
-    def test_dispatches_to_validate(
-        self, monkeypatch, sample_task_yaml, capsys
-    ) -> None:
+    def test_dispatches_to_validate(self, monkeypatch, sample_task_yaml, capsys) -> None:
         p = sample_task_yaml()
         monkeypatch.setattr(
             "sys.argv",

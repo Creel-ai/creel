@@ -49,19 +49,13 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_URL environment variable not set"
-            ):
+            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
                 call_bridge("/imessage/recent")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
-        ):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
-            ):
+        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
+            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
                 call_bridge("/imessage/recent")
 
     @patch("executors.imessage_bridge.executor.requests.post")
@@ -188,9 +182,7 @@ class TestMainFunction:
     @patch("builtins.print")
     def test_main_send_missing_text(self, mock_print):
         """Test main function with send action but missing TEXT."""
-        with patch.dict(
-            os.environ, {"ACTION": "send", "TO": "friend@example.com"}, clear=True
-        ):
+        with patch.dict(os.environ, {"ACTION": "send", "TO": "friend@example.com"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.imessage_bridge.executor import main
 

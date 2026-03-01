@@ -105,9 +105,7 @@ class DaemonService:
                     channel=msg.channel or "unknown",
                 )
         with self._lock:
-            return self._server.handle_message(
-                sender_id_or_msg, text, auto_approve=auto_approve
-            )
+            return self._server.handle_message(sender_id_or_msg, text, auto_approve=auto_approve)
 
     def stream_message(
         self,
@@ -258,10 +256,7 @@ class DaemonService:
                 if session is None:
                     # Session may have just been created but not yet saved to disk
                     session = mgr.get_or_create(sender_id)
-                    if (
-                        session.session_id != session_id
-                        or session.sender_id != sender_id
-                    ):
+                    if session.session_id != session_id or session.sender_id != sender_id:
                         raise ValueError(f"Session {session_id} not found")
                 elif session.sender_id != sender_id:
                     raise ValueError(f"Session {session_id} not found")
@@ -495,9 +490,7 @@ class DaemonService:
             mgr = self._server._session_mgr
             stats = mgr.session_stats()
 
-            scheduler_running = bool(
-                self._scheduler_thread and self._scheduler_thread.is_alive()
-            )
+            scheduler_running = bool(self._scheduler_thread and self._scheduler_thread.is_alive())
 
             channels: list[dict[str, Any]] = []
             for name in sorted(self._channel_state):

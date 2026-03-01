@@ -83,9 +83,7 @@ def connect(
 
 def navigate(session_id: str, url: str) -> dict[str, Any]:
     """Navigate to a URL via bridge."""
-    return call_bridge(
-        "/browser/navigate", {"session_id": session_id, "url": url}, timeout=60
-    )
+    return call_bridge("/browser/navigate", {"session_id": session_id, "url": url}, timeout=60)
 
 
 def get_content(session_id: str, selector: str | None = None) -> dict[str, Any]:
@@ -98,9 +96,7 @@ def get_content(session_id: str, selector: str | None = None) -> dict[str, Any]:
 
 def click(session_id: str, selector: str) -> dict[str, Any]:
     """Click an element via bridge."""
-    return call_bridge(
-        "/browser/click", {"session_id": session_id, "selector": selector}
-    )
+    return call_bridge("/browser/click", {"session_id": session_id, "selector": selector})
 
 
 def type_text(session_id: str, selector: str, text: str) -> dict[str, Any]:
@@ -112,9 +108,7 @@ def type_text(session_id: str, selector: str, text: str) -> dict[str, Any]:
 
 def screenshot(session_id: str, full_page: bool = False) -> dict[str, Any]:
     """Take a screenshot via bridge."""
-    return call_bridge(
-        "/browser/screenshot", {"session_id": session_id, "full_page": full_page}
-    )
+    return call_bridge("/browser/screenshot", {"session_id": session_id, "full_page": full_page})
 
 
 def get_links(session_id: str) -> dict[str, Any]:

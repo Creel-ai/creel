@@ -65,9 +65,7 @@ def get_google_access_token_from_json(
         cached_token = _token_cache.get(cache_key)
     token_age = time.time() - last_refresh if last_refresh else float("inf")
 
-    should_refresh = (
-        force_refresh or not cached_token or token_age > max_token_age_seconds
-    )
+    should_refresh = force_refresh or not cached_token or token_age > max_token_age_seconds
     if should_refresh:
         creds = _build_refreshable_credentials(credentials_json, source=cache_key)
         try:
@@ -76,9 +74,7 @@ def get_google_access_token_from_json(
             raise RuntimeError(f"Token refresh failed for {cache_key}: {e}") from e
 
         if not creds.token:
-            raise RuntimeError(
-                f"Token refresh failed for {cache_key}: no access token returned"
-            )
+            raise RuntimeError(f"Token refresh failed for {cache_key}: no access token returned")
 
         with _lock:
             _token_refresh_log[cache_key] = time.time()

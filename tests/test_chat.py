@@ -193,9 +193,7 @@ class TestSystemPrompt:
         assert "Custom system prompt from file" in prompt
 
     def test_falls_back_to_inline_if_file_missing(self, tmp_path) -> None:
-        agent_def = _make_agent_def(
-            tmp_path, system_prompt_file="/nonexistent/file.txt"
-        )
+        agent_def = _make_agent_def(tmp_path, system_prompt_file="/nonexistent/file.txt")
         server = ChatServer(agent_def)
         prompt = server._build_system_prompt()
         assert "test assistant" in prompt
@@ -349,9 +347,7 @@ class TestSendIMessage:
 
         agent_def = _make_agent_def(
             tmp_path,
-            channels=ChannelsConfig(
-                imessage=IMessageChannelConfig(listen_to="+1234567890")
-            ),
+            channels=ChannelsConfig(imessage=IMessageChannelConfig(listen_to="+1234567890")),
         )
         server = ChatServer(agent_def)
 

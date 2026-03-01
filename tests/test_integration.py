@@ -40,9 +40,7 @@ class TestFullPipeline:
             or call_kwargs[0][0]
         )
         assert any(
-            m.get("content") == "What's the weather?"
-            for m in messages
-            if isinstance(m, dict)
+            m.get("content") == "What's the weather?" for m in messages if isinstance(m, dict)
         )
 
     @patch("taskrunner.agent.call_llm")
@@ -74,9 +72,7 @@ class TestFullPipeline:
         user_messages = [
             m
             for m in messages
-            if isinstance(m, dict)
-            and m.get("role") == "user"
-            and isinstance(m.get("content"), str)
+            if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)
         ]
         assert len(user_messages) >= 2
 

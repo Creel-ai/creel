@@ -232,9 +232,7 @@ class SessionManager:
         self._save(session)
         return session
 
-    def add_user_message_blocks(
-        self, sender_id: str, content_blocks: list[dict]
-    ) -> Session:
+    def add_user_message_blocks(self, sender_id: str, content_blocks: list[dict]) -> Session:
         """Add a user message with content blocks (e.g. text + images).
 
         Used when media attachments produce multi-modal content for the LLM.
@@ -316,9 +314,7 @@ class SessionManager:
             return
 
         keep_count = len(session.messages) // 2
-        split_idx = self._find_safe_split(
-            session.messages, len(session.messages) - keep_count
-        )
+        split_idx = self._find_safe_split(session.messages, len(session.messages) - keep_count)
         older = session.messages[:split_idx]
         recent = session.messages[split_idx:]
 
@@ -337,9 +333,7 @@ class SessionManager:
 
         summary_msg = {
             "role": "user",
-            "content": (
-                f"[CONVERSATION SUMMARY]\n<summary>\n{summary_text}\n</summary>"
-            ),
+            "content": (f"[CONVERSATION SUMMARY]\n<summary>\n{summary_text}\n</summary>"),
         }
 
         session.messages = [summary_msg] + recent
@@ -395,9 +389,7 @@ class SessionManager:
         return messages
 
     @staticmethod
-    def _trim_preserving_tool_pairs(
-        messages: list[dict], max_history: int
-    ) -> list[dict]:
+    def _trim_preserving_tool_pairs(messages: list[dict], max_history: int) -> list[dict]:
         """Trim messages to max_history while keeping complete tool-call pairs.
 
         A tool-call sequence is:
@@ -536,9 +528,7 @@ class SessionManager:
 
     def session_stats(self) -> dict[str, int]:
         """Return stored session count and active sender count."""
-        session_files = [
-            p for p in self._dir.glob("*.json") if p.name != _ACTIVE_INDEX_FILE
-        ]
+        session_files = [p for p in self._dir.glob("*.json") if p.name != _ACTIVE_INDEX_FILE]
         active_senders = len(self._load_active_index())
         return {"stored": len(session_files), "active_senders": active_senders}
 

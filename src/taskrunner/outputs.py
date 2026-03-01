@@ -40,11 +40,7 @@ def _send_imessage(text: str, to: str) -> None:
 
     # Validate phone number format (basic check)
     cleaned = (
-        to.replace("+", "")
-        .replace("-", "")
-        .replace(" ", "")
-        .replace("(", "")
-        .replace(")", "")
+        to.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
     )
     if not cleaned.isdigit():
         raise ValueError(f"Invalid phone number: {to}")

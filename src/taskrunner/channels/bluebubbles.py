@@ -68,9 +68,7 @@ class BlueBubblesChannel(Channel):
                         last_ts = ts
             except Exception:
                 consecutive_errors += 1
-                backoff = min(
-                    self._poll_interval * (2**consecutive_errors), max_backoff
-                )
+                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
                 logger.exception(
                     "Error polling BlueBubbles (consecutive=%d, backoff=%.1fs)",
                     consecutive_errors,

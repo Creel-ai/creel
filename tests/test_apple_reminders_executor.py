@@ -49,19 +49,13 @@ class TestBridgeClient:
     def test_call_bridge_missing_url(self):
         """Test that missing BRIDGE_URL raises error."""
         with patch.dict(os.environ, {"BRIDGE_TOKEN": "test-token"}, clear=True):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_URL environment variable not set"
-            ):
+            with pytest.raises(RuntimeError, match="BRIDGE_URL environment variable not set"):
                 call_bridge("/reminders/list")
 
     def test_call_bridge_missing_token(self):
         """Test that missing BRIDGE_TOKEN raises error."""
-        with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True
-        ):
-            with pytest.raises(
-                RuntimeError, match="BRIDGE_TOKEN environment variable not set"
-            ):
+        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8099"}, clear=True):
+            with pytest.raises(RuntimeError, match="BRIDGE_TOKEN environment variable not set"):
                 call_bridge("/reminders/list")
 
     @patch("executors.apple_reminders.executor.requests.post")
@@ -122,9 +116,7 @@ class TestRemindersOperations:
         result = list_reminders("overdue")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/reminders/list", {"filter": "overdue"}
-        )
+        mock_call_bridge.assert_called_once_with("/reminders/list", {"filter": "overdue"})
 
     @patch("executors.apple_reminders.executor.call_bridge")
     def test_add_reminder_basic(self, mock_call_bridge):
@@ -134,9 +126,7 @@ class TestRemindersOperations:
         result = add_reminder("Test Reminder")
 
         assert result["ok"] is True
-        mock_call_bridge.assert_called_once_with(
-            "/reminders/add", {"title": "Test Reminder"}
-        )
+        mock_call_bridge.assert_called_once_with("/reminders/add", {"title": "Test Reminder"})
 
     @patch("executors.apple_reminders.executor.call_bridge")
     def test_add_reminder_with_list_and_due(self, mock_call_bridge):

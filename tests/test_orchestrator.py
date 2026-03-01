@@ -211,9 +211,7 @@ class TestRunExecutorInline:
 
     def test_dispatch_exec(self) -> None:
         cfg = self._cfg(command="echo hi")
-        with patch(
-            "taskrunner.orchestrator._exec_exec_inline", return_value="hi"
-        ) as mock_fn:
+        with patch("taskrunner.orchestrator._exec_exec_inline", return_value="hi") as mock_fn:
             result = _run_executor_inline("exec", cfg)
         assert result == "hi"
         mock_fn.assert_called_once_with(cfg)
@@ -249,9 +247,7 @@ class TestRunExecutorInline:
 
 
 class TestExecutorSecrets:
-    def test_secrets_loaded_and_restored(
-        self, tmp_path, age_keypair, monkeypatch
-    ) -> None:
+    def test_secrets_loaded_and_restored(self, tmp_path, age_keypair, monkeypatch) -> None:
         """_run_executor_inline should load secrets and restore env after."""
         key_file, pub_file = age_keypair
         monkeypatch.setenv("AGE_IDENTITY_FILE", str(key_file))
@@ -282,9 +278,7 @@ class TestExecutorSecrets:
         # Should be cleaned up after
         assert os.environ.get("MY_EXEC_SECRET") is None
 
-    def test_secrets_restored_on_exception(
-        self, tmp_path, age_keypair, monkeypatch
-    ) -> None:
+    def test_secrets_restored_on_exception(self, tmp_path, age_keypair, monkeypatch) -> None:
         """Env vars should be restored even if executor raises."""
         key_file, pub_file = age_keypair
         monkeypatch.setenv("AGE_IDENTITY_FILE", str(key_file))
@@ -331,9 +325,7 @@ class TestExecutorSecrets:
 
         def fake_weather(config):
             captured_env["GOOGLE_ACCESS_TOKEN"] = os.environ.get("GOOGLE_ACCESS_TOKEN")
-            captured_env["GOOGLE_CREDENTIALS_JSON"] = os.environ.get(
-                "GOOGLE_CREDENTIALS_JSON"
-            )
+            captured_env["GOOGLE_CREDENTIALS_JSON"] = os.environ.get("GOOGLE_CREDENTIALS_JSON")
             return '{"ok": true}'
 
         with (
@@ -396,14 +388,10 @@ class TestAgentMode:
         mock_result.stop_reason = "end_turn"
 
         with (
-            patch(
-                "taskrunner.orchestrator._run_executor_inline", return_value='{"ok":1}'
-            ),
+            patch("taskrunner.orchestrator._run_executor_inline", return_value='{"ok":1}'),
             patch("taskrunner.orchestrator.run_llm"),
             patch("taskrunner.orchestrator.send_output"),
-            patch(
-                "taskrunner.agent.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch("taskrunner.agent.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = run_task(task_path)
 
@@ -428,9 +416,7 @@ class TestAgentMode:
         mock_result.stop_reason = "end_turn"
 
         with (
-            patch(
-                "taskrunner.orchestrator._run_executor_inline", return_value='{"ok":1}'
-            ),
+            patch("taskrunner.orchestrator._run_executor_inline", return_value='{"ok":1}'),
             patch("taskrunner.orchestrator.run_llm"),
             patch("taskrunner.orchestrator.send_output"),
             patch(
@@ -463,9 +449,7 @@ class TestAgentMode:
         os.environ["AGE_IDENTITY_FILE"] = str(key_file)
         try:
             with (
-                patch(
-                    "taskrunner.orchestrator._run_executor_inline", return_value="{}"
-                ),
+                patch("taskrunner.orchestrator._run_executor_inline", return_value="{}"),
                 patch("taskrunner.orchestrator.run_llm", return_value="ok"),
                 patch("taskrunner.orchestrator.send_output"),
             ):
@@ -535,9 +519,7 @@ class TestGoogleDocsInline:
         mock_read.assert_called_once_with("doc-1")
 
     def test_google_docs_inline_dispatches_create(self) -> None:
-        cfg = ExecutorConfig(
-            args={"action": "create", "title": "New Doc", "body": "Hello"}
-        )
+        cfg = ExecutorConfig(args={"action": "create", "title": "New Doc", "body": "Hello"})
         with patch(
             "executors.google_docs.executor.create_document",
             return_value={"documentId": "new", "url": "http://x"},
@@ -547,9 +529,7 @@ class TestGoogleDocsInline:
         mock_create.assert_called_once_with("New Doc", "Hello")
 
     def test_google_docs_inline_dispatches_append(self) -> None:
-        cfg = ExecutorConfig(
-            args={"action": "append", "document_id": "doc-1", "text": "more"}
-        )
+        cfg = ExecutorConfig(args={"action": "append", "document_id": "doc-1", "text": "more"})
         with patch(
             "executors.google_docs.executor.append_text",
             return_value={"documentId": "doc-1", "appended": True},
@@ -758,9 +738,7 @@ class TestGoogleExecutorsE2E:
             patch("taskrunner.orchestrator.run_llm") as mock_llm,
             patch("taskrunner.orchestrator.send_output"),
         ):
-            mock_sheets.return_value = json.dumps(
-                {"values": [["Name", "Age"], ["Alice", "30"]]}
-            )
+            mock_sheets.return_value = json.dumps({"values": [["Name", "Age"], ["Alice", "30"]]})
             mock_llm.return_value = "The sheet contains Alice, age 30."
             result = run_task(path)
 

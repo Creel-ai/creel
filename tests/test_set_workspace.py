@@ -325,24 +325,16 @@ class TestWorkspaceInjection:
         tools = _make_file_ops_tools()
 
         # Set to dir1
-        execute_tool_call(
-            "set_workspace", {"path": str(dir1)}, tools, session_state=state
-        )
+        execute_tool_call("set_workspace", {"path": str(dir1)}, tools, session_state=state)
         r1 = json.loads(
-            execute_tool_call(
-                "read_file", {"file_path": "f.txt"}, tools, session_state=state
-            )
+            execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state)
         )
         assert r1["content"] == "from dir1"
 
         # Switch to dir2
-        execute_tool_call(
-            "set_workspace", {"path": str(dir2)}, tools, session_state=state
-        )
+        execute_tool_call("set_workspace", {"path": str(dir2)}, tools, session_state=state)
         r2 = json.loads(
-            execute_tool_call(
-                "read_file", {"file_path": "f.txt"}, tools, session_state=state
-            )
+            execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state)
         )
         assert r2["content"] == "from dir2"
 

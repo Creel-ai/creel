@@ -105,9 +105,7 @@ def get_recent_messages(
         # Validate chat access
         if allowed_chats and chat_id not in allowed_chats:
             raise RuntimeError(f"Chat '{chat_id}' not in allowed chats")
-        data = _api(
-            "GET", f"/chat/{chat_id}/message", server_url, password, params=params
-        )
+        data = _api("GET", f"/chat/{chat_id}/message", server_url, password, params=params)
     else:
         data = _api("GET", "/message", server_url, password, params=params)
 
@@ -156,9 +154,7 @@ def send_message(
     _check_rate_limit()
 
     if len(text) > MAX_MESSAGE_LENGTH:
-        raise RuntimeError(
-            f"Message too long ({len(text)} chars, max {MAX_MESSAGE_LENGTH})"
-        )
+        raise RuntimeError(f"Message too long ({len(text)} chars, max {MAX_MESSAGE_LENGTH})")
 
     _api(
         "POST",
@@ -272,9 +268,7 @@ def main() -> None:
             text = _env("TEXT")
             if not chat_id or not text:
                 raise RuntimeError("CHAT_ID and TEXT required for send_message")
-            result = send_message(
-                server_url, password, allowed_recipients, chat_id, text
-            )
+            result = send_message(server_url, password, allowed_recipients, chat_id, text)
         elif action == "send_reaction":
             chat_id = _env("CHAT_ID")
             message_guid = _env("MESSAGE_GUID")

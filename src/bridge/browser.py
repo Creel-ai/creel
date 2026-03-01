@@ -305,17 +305,13 @@ class BrowserRelay:
                         timeout=self._navigate_timeout_ms,
                     )
                     try:
-                        await session.page.wait_for_load_state(
-                            "networkidle", timeout=10000
-                        )
+                        await session.page.wait_for_load_state("networkidle", timeout=10000)
                     except Exception:
                         pass  # Continue with whatever has loaded; SPAs may never idle
 
                     title = await session.page.title()
                     current_url = session.page.url
-                    content, was_partial = await self._get_accessibility_tree(
-                        session.page
-                    )
+                    content, was_partial = await self._get_accessibility_tree(session.page)
                     partial = was_partial
                     return title, current_url, content
 
@@ -343,9 +339,7 @@ class BrowserRelay:
             result["partial"] = True
         return result
 
-    async def get_content(
-        self, session_id: str, selector: str | None = None
-    ) -> dict[str, Any]:
+    async def get_content(self, session_id: str, selector: str | None = None) -> dict[str, Any]:
         """Get the current page content as an accessibility tree.
 
         Args:
@@ -362,9 +356,7 @@ class BrowserRelay:
             session.last_used = time.time()
             title = await session.page.title()
             current_url = session.page.url
-            content, partial = await self._get_accessibility_tree(
-                session.page, selector
-            )
+            content, partial = await self._get_accessibility_tree(session.page, selector)
 
         result: dict[str, Any] = {
             "title": title,
@@ -410,9 +402,7 @@ class BrowserRelay:
                 "url": current_url,
             }
 
-    async def type_text(
-        self, session_id: str, selector: str, text: str
-    ) -> dict[str, Any]:
+    async def type_text(self, session_id: str, selector: str, text: str) -> dict[str, Any]:
         """Type text into an input element.
 
         Args:
@@ -444,9 +434,7 @@ class BrowserRelay:
 
             return {"ok": True, "url": current_url}
 
-    async def screenshot(
-        self, session_id: str, full_page: bool = False
-    ) -> dict[str, Any]:
+    async def screenshot(self, session_id: str, full_page: bool = False) -> dict[str, Any]:
         """Take a screenshot of the current page.
 
         Args:
@@ -759,9 +747,7 @@ class BrowserRelay:
                     pass
                 await asyncio.sleep(0.5)
 
-        raise TimeoutError(
-            f"CDP endpoint {cdp_url} did not become available within {timeout}s"
-        )
+        raise TimeoutError(f"CDP endpoint {cdp_url} did not become available within {timeout}s")
 
     async def _cleanup_loop(self) -> None:
         """Periodically clean up idle and dead sessions."""
@@ -830,9 +816,7 @@ def _start_chromium_container(
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Failed to start Chromium container: {result.stderr.strip()}"
-        )
+        raise RuntimeError(f"Failed to start Chromium container: {result.stderr.strip()}")
 
     container_id = result.stdout.strip()
 
@@ -845,17 +829,13 @@ def _start_chromium_container(
     )
     if port_result.returncode != 0:
         _stop_container(container_id)
-        raise RuntimeError(
-            f"Failed to get container port: {port_result.stderr.strip()}"
-        )
+        raise RuntimeError(f"Failed to get container port: {port_result.stderr.strip()}")
 
     # Output format: "127.0.0.1:XXXXX" or "0.0.0.0:XXXXX"
     port_line = port_result.stdout.strip().splitlines()[0]
     host_port = int(port_line.rsplit(":", 1)[1])
 
-    logger.info(
-        "Started Chromium container %s on port %d", container_id[:12], host_port
-    )
+    logger.info("Started Chromium container %s on port %d", container_id[:12], host_port)
     return container_id, host_port
 
 
@@ -880,9 +860,7 @@ def _reap_orphaned_containers() -> int:
         return 0
 
     if result.returncode != 0:
-        logger.debug(
-            "docker ps failed (rc=%d): %s", result.returncode, result.stderr.strip()
-        )
+        logger.debug("docker ps failed (rc=%d): %s", result.returncode, result.stderr.strip())
         return 0
 
     container_ids = result.stdout.strip().splitlines()
@@ -951,9 +929,7 @@ def _find_chrome_binary() -> str:
     )
 
 
-def _start_native_chrome(
-    chrome_binary: str, headless: bool = True
-) -> tuple[Any, int, str]:
+def _start_native_chrome(chrome_binary: str, headless: bool = True) -> tuple[Any, int, str]:
     """Launch Chrome as a subprocess with a fresh temp profile.
 
     Args:

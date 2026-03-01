@@ -63,17 +63,13 @@ class ApprovalQueue:
         action = PendingAction.create(sender_id, tool_name, tool_input, reason)
         self._actions[action.id] = action
         self._save()
-        logger.info(
-            "Queued pending action %s: %s for %s", action.id, tool_name, sender_id
-        )
+        logger.info("Queued pending action %s: %s for %s", action.id, tool_name, sender_id)
         return action
 
     def get_pending(self, sender_id: str) -> PendingAction | None:
         """Get the most recent pending action for a sender."""
         pending = [
-            a
-            for a in self._actions.values()
-            if a.sender_id == sender_id and a.status == "pending"
+            a for a in self._actions.values() if a.sender_id == sender_id and a.status == "pending"
         ]
         if not pending:
             return None

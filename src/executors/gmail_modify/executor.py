@@ -43,12 +43,7 @@ def modify_message(
     if remove_labels:
         body["removeLabelIds"] = remove_labels
 
-    result = (
-        service.users()
-        .messages()
-        .modify(userId="me", id=message_id, body=body)
-        .execute()
-    )
+    result = service.users().messages().modify(userId="me", id=message_id, body=body).execute()
 
     return {
         "id": result["id"],
@@ -115,9 +110,7 @@ def main() -> None:
         if action == "modify":
             add_raw = os.environ.get("ADD_LABELS", "")
             remove_raw = os.environ.get("REMOVE_LABELS", "")
-            add_labels = [
-                label.strip() for label in add_raw.split(",") if label.strip()
-            ] or None
+            add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
             remove_labels = [
                 label.strip() for label in remove_raw.split(",") if label.strip()
             ] or None

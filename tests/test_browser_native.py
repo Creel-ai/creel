@@ -103,9 +103,7 @@ class TestStartNativeChrome:
         )
         mock_popen.return_value = process_mock
 
-        process, port, temp_dir = _start_native_chrome(
-            "/usr/bin/google-chrome", headless=True
-        )
+        process, port, temp_dir = _start_native_chrome("/usr/bin/google-chrome", headless=True)
 
         assert port == 41234
         assert temp_dir == "/tmp/creel-chrome-test123"
@@ -139,9 +137,7 @@ class TestStartNativeChrome:
     @patch("bridge.browser.shutil.rmtree")
     @patch("bridge.browser.subprocess.Popen")
     @patch("bridge.browser.tempfile.mkdtemp", return_value="/tmp/creel-chrome-fail")
-    def test_native_chrome_port_detection_failure(
-        self, mock_mkdtemp, mock_popen, mock_rmtree
-    ):
+    def test_native_chrome_port_detection_failure(self, mock_mkdtemp, mock_popen, mock_rmtree):
         """Should raise RuntimeError if port can't be detected."""
         process_mock = MagicMock()
         # Simulate Chrome exiting immediately
@@ -197,6 +193,4 @@ class TestCloseNativeSession:
         assert "native-1" not in relay._sessions
         browser_mock.close.assert_called_once()
         process_mock.terminate.assert_called_once()
-        mock_rmtree.assert_called_once_with(
-            "/tmp/creel-chrome-test", ignore_errors=True
-        )
+        mock_rmtree.assert_called_once_with("/tmp/creel-chrome-test", ignore_errors=True)

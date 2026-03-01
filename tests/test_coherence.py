@@ -31,9 +31,7 @@ class TestCoherenceChecker:
         assert result.coherent is True
 
     @patch("taskrunner.llm._get_client")
-    def test_coherent_action(
-        self, mock_get_client: MagicMock, config: CoherenceConfig
-    ) -> None:
+    def test_coherent_action(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"coherent": true, "confidence": 0.95, "reasoning": "Weather check matches request"}'
@@ -41,16 +39,12 @@ class TestCoherenceChecker:
         mock_get_client.return_value = mock_client
 
         checker = CoherenceChecker(config)
-        result = checker.check(
-            "what's the weather?", "check_weather", {"location": "Denver"}
-        )
+        result = checker.check("what's the weather?", "check_weather", {"location": "Denver"})
         assert result.coherent is True
         assert result.confidence == 0.95
 
     @patch("taskrunner.llm._get_client")
-    def test_incoherent_action(
-        self, mock_get_client: MagicMock, config: CoherenceConfig
-    ) -> None:
+    def test_incoherent_action(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"coherent": false, "confidence": 0.92, "reasoning": "User asked about weather but agent is sending email"}'
@@ -58,9 +52,7 @@ class TestCoherenceChecker:
         mock_get_client.return_value = mock_client
 
         checker = CoherenceChecker(config)
-        result = checker.check(
-            "what's the weather?", "send_email", {"to": "hacker@evil.com"}
-        )
+        result = checker.check("what's the weather?", "send_email", {"to": "hacker@evil.com"})
         assert result.coherent is False
         assert "email" in result.reasoning.lower()
 
@@ -90,9 +82,7 @@ class TestCoherenceChecker:
         assert result.coherent is True
 
     @patch("taskrunner.llm._get_client")
-    def test_usage_stats(
-        self, mock_get_client: MagicMock, config: CoherenceConfig
-    ) -> None:
+    def test_usage_stats(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"coherent": true, "confidence": 0.9, "reasoning": "ok"}'

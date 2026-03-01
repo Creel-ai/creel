@@ -32,9 +32,7 @@ class TestLLMJudge:
         assert judge.judge("anything") is None
 
     @patch("taskrunner.llm._get_client")
-    def test_injection_detected(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
-    ) -> None:
+    def test_injection_detected(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"is_injection": true, "confidence": 0.92, "reasoning": "Tries to override system prompt"}'
@@ -51,9 +49,7 @@ class TestLLMJudge:
         assert "override" in result.reasoning
 
     @patch("taskrunner.llm._get_client")
-    def test_safe_input(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
-    ) -> None:
+    def test_safe_input(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"is_injection": false, "confidence": 0.1, "reasoning": "Normal question"}'
@@ -88,9 +84,7 @@ class TestLLMJudge:
         self, mock_get_client: MagicMock, config: LLMJudgeConfig
     ) -> None:
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
-            "not valid json at all"
-        )
+        mock_client.messages.create.return_value = _mock_response("not valid json at all")
         mock_get_client.return_value = mock_client
 
         judge = LLMJudge(config)
@@ -101,9 +95,7 @@ class TestLLMJudge:
         assert "failed" in result.reasoning.lower()
 
     @patch("taskrunner.llm._get_client")
-    def test_uses_correct_model(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
-    ) -> None:
+    def test_uses_correct_model(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response(
             '{"is_injection": false, "confidence": 0.0, "reasoning": "ok"}'

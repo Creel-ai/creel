@@ -172,9 +172,7 @@ class TestNotesEndpoints:
         """Test notes list endpoint."""
         from bridge.server import BridgeResponse
 
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="note1\nnote2", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="note1\nnote2", error="")
 
         response = client.post("/notes/list", headers=notes_auth_headers)
 
@@ -189,13 +187,9 @@ class TestNotesEndpoints:
     @patch("bridge.server.run_command")
     def test_notes_list_with_folder(self, mock_run_command, client, notes_auth_headers):
         """Test notes list endpoint with folder filter."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="filtered notes", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="filtered notes", error="")
 
-        response = client.post(
-            "/notes/list", json={"folder": "work"}, headers=notes_auth_headers
-        )
+        response = client.post("/notes/list", json={"folder": "work"}, headers=notes_auth_headers)
 
         assert response.status_code == 200
         result = response.json()
@@ -207,9 +201,7 @@ class TestNotesEndpoints:
     @patch("bridge.server.run_command")
     def test_notes_search(self, mock_run_command, client, notes_auth_headers):
         """Test notes search endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="search results", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="search results", error="")
 
         response = client.post(
             "/notes/search", json={"query": "test query"}, headers=notes_auth_headers
@@ -226,9 +218,7 @@ class TestNotesEndpoints:
     @patch("bridge.server.run_command")
     def test_notes_create(self, mock_run_command, client, notes_auth_headers):
         """Test notes create endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="note created", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="note created", error="")
 
         response = client.post(
             "/notes/create",
@@ -252,9 +242,7 @@ class TestRemindersEndpoints:
     @patch("bridge.server.run_command")
     def test_reminders_list_all(self, mock_run_command, client, reminders_auth_headers):
         """Test reminders list endpoint with 'all' filter."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="all reminders", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="all reminders", error="")
 
         response = client.post(
             "/reminders/list", json={"filter": "all"}, headers=reminders_auth_headers
@@ -268,13 +256,9 @@ class TestRemindersEndpoints:
         mock_run_command.assert_called_once_with(["remindctl", "all"])
 
     @patch("bridge.server.run_command")
-    def test_reminders_list_today(
-        self, mock_run_command, client, reminders_auth_headers
-    ):
+    def test_reminders_list_today(self, mock_run_command, client, reminders_auth_headers):
         """Test reminders list endpoint with 'today' filter."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="today reminders", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="today reminders", error="")
 
         response = client.post(
             "/reminders/list", json={"filter": "today"}, headers=reminders_auth_headers
@@ -290,9 +274,7 @@ class TestRemindersEndpoints:
     @patch("bridge.server.run_command")
     def test_reminders_add(self, mock_run_command, client, reminders_auth_headers):
         """Test reminders add endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="reminder added", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="reminder added", error="")
 
         response = client.post(
             "/reminders/add",
@@ -332,13 +314,9 @@ class TestBridgeErrorHandling:
     """Test error handling in bridge endpoints."""
 
     @patch("bridge.server.run_command")
-    def test_command_error_propagation(
-        self, mock_run_command, client, notes_auth_headers
-    ):
+    def test_command_error_propagation(self, mock_run_command, client, notes_auth_headers):
         """Test that command errors are properly propagated to the API response."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=False, output="", error="Command failed"
-        )
+        mock_run_command.return_value = BridgeResponse(ok=False, output="", error="Command failed")
 
         response = client.post("/notes/list", headers=notes_auth_headers)
 
@@ -354,9 +332,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_inbox_default(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 inbox endpoint with default limit."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="inbox items", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="inbox items", error="")
 
         response = client.post("/things/inbox", headers=things_auth_headers)
 
@@ -368,17 +344,11 @@ class TestThingsEndpoints:
         mock_run_command.assert_called_once_with(["things", "inbox", "--limit", "50"])
 
     @patch("bridge.server.run_command")
-    def test_things_inbox_custom_limit(
-        self, mock_run_command, client, things_auth_headers
-    ):
+    def test_things_inbox_custom_limit(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 inbox endpoint with custom limit."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="inbox items", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="inbox items", error="")
 
-        response = client.post(
-            "/things/inbox", json={"limit": 25}, headers=things_auth_headers
-        )
+        response = client.post("/things/inbox", json={"limit": 25}, headers=things_auth_headers)
 
         assert response.status_code == 200
         result = response.json()
@@ -390,9 +360,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_today(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 today endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="today items", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="today items", error="")
 
         response = client.post("/things/today", headers=things_auth_headers)
 
@@ -406,9 +374,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_upcoming(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 upcoming endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="upcoming items", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="upcoming items", error="")
 
         response = client.post("/things/upcoming", headers=things_auth_headers)
 
@@ -422,9 +388,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_search(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 search endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="search results", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="search results", error="")
 
         response = client.post(
             "/things/search", json={"query": "test query"}, headers=things_auth_headers
@@ -440,9 +404,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_projects(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 projects endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="projects", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="projects", error="")
 
         response = client.post("/things/projects", headers=things_auth_headers)
 
@@ -456,9 +418,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_add_basic(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 add endpoint with basic parameters."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="item added", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="item added", error="")
 
         response = client.post(
             "/things/add", json={"title": "Test Task"}, headers=things_auth_headers
@@ -474,9 +434,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_add_full(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 add endpoint with all parameters."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="item added", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="item added", error="")
 
         response = client.post(
             "/things/add",
@@ -517,9 +475,7 @@ class TestThingsEndpoints:
     @patch("bridge.server.run_command")
     def test_things_update(self, mock_run_command, client, things_auth_headers):
         """Test Things 3 update endpoint."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="item updated", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="item updated", error="")
 
         response = client.post(
             "/things/update",
@@ -563,9 +519,7 @@ class TestIMessageEndpoints:
     ):
         """Test iMessage recent endpoint with default limit."""
         mock_check_imsg.return_value = True
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="recent messages", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="recent messages", error="")
 
         response = client.post("/imessage/recent", headers=imessage_auth_headers)
 
@@ -585,9 +539,7 @@ class TestIMessageEndpoints:
     ):
         """Test iMessage recent endpoint with custom limit."""
         mock_check_imsg.return_value = True
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="recent messages", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="recent messages", error="")
 
         response = client.post(
             "/imessage/recent", json={"limit": 10}, headers=imessage_auth_headers
@@ -618,14 +570,10 @@ class TestIMessageEndpoints:
 
     @patch("bridge.server._check_imsg_available")
     @patch("bridge.server.run_command")
-    def test_imessage_send(
-        self, mock_run_command, mock_check_imsg, client, imessage_auth_headers
-    ):
+    def test_imessage_send(self, mock_run_command, mock_check_imsg, client, imessage_auth_headers):
         """Test iMessage send endpoint."""
         mock_check_imsg.return_value = True
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="message sent", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="message sent", error="")
 
         response = client.post(
             "/imessage/send",
@@ -650,9 +598,7 @@ class TestIMessageEndpoints:
         )
 
     @patch("bridge.server._check_imsg_available")
-    def test_imessage_send_cli_not_available(
-        self, mock_check_imsg, client, imessage_auth_headers
-    ):
+    def test_imessage_send_cli_not_available(self, mock_check_imsg, client, imessage_auth_headers):
         """Test iMessage send endpoint when CLI is not available."""
         mock_check_imsg.return_value = False
 
@@ -669,14 +615,10 @@ class TestIMessageEndpoints:
 
     @patch("bridge.server._check_imsg_available")
     @patch("bridge.server.run_command")
-    def test_imessage_chats(
-        self, mock_run_command, mock_check_imsg, client, imessage_auth_headers
-    ):
+    def test_imessage_chats(self, mock_run_command, mock_check_imsg, client, imessage_auth_headers):
         """Test iMessage chats endpoint."""
         mock_check_imsg.return_value = True
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="chat list", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="chat list", error="")
 
         response = client.post("/imessage/chats", headers=imessage_auth_headers)
 
@@ -688,9 +630,7 @@ class TestIMessageEndpoints:
         mock_run_command.assert_called_once_with(["/opt/homebrew/bin/imsg", "chats"])
 
     @patch("bridge.server._check_imsg_available")
-    def test_imessage_chats_cli_not_available(
-        self, mock_check_imsg, client, imessage_auth_headers
-    ):
+    def test_imessage_chats_cli_not_available(self, mock_check_imsg, client, imessage_auth_headers):
         """Test iMessage chats endpoint when CLI is not available."""
         mock_check_imsg.return_value = False
 
@@ -717,17 +657,13 @@ class TestScopedAuthentication:
         response = client.post("/notes/list", headers=things_headers)
         assert response.status_code == 401
 
-    def test_cross_scope_access_denied_reminders_to_imessage(
-        self, client, scoped_tokens
-    ):
+    def test_cross_scope_access_denied_reminders_to_imessage(self, client, scoped_tokens):
         """Test that reminders token cannot access imessage endpoints."""
         reminders_headers = {"Authorization": f"Bearer {scoped_tokens['REMINDERS']}"}
         response = client.post("/imessage/recent", headers=reminders_headers)
         assert response.status_code == 401
 
-    def test_cross_scope_access_denied_imessage_to_reminders(
-        self, client, scoped_tokens
-    ):
+    def test_cross_scope_access_denied_imessage_to_reminders(self, client, scoped_tokens):
         """Test that imessage token cannot access reminders endpoints."""
         imessage_headers = {"Authorization": f"Bearer {scoped_tokens['IMESSAGE']}"}
         response = client.post("/reminders/list", headers=imessage_headers)
@@ -738,13 +674,9 @@ class TestArgumentInjectionPrevention:
     """Test that the bridge prevents command injection attacks."""
 
     @patch("bridge.server.run_command")
-    def test_no_shell_injection_in_search(
-        self, mock_run_command, client, notes_auth_headers
-    ):
+    def test_no_shell_injection_in_search(self, mock_run_command, client, notes_auth_headers):
         """Test that malicious search queries don't enable shell injection."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="safe output", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="safe output", error="")
 
         # Try a malicious query that would be dangerous with shell=True
         malicious_query = "test; rm -rf /; echo done"
@@ -755,18 +687,12 @@ class TestArgumentInjectionPrevention:
         assert response.status_code == 200
 
         # Verify the command was called with the query as a single argument
-        mock_run_command.assert_called_once_with(
-            ["memo", "notes", "-s", malicious_query]
-        )
+        mock_run_command.assert_called_once_with(["memo", "notes", "-s", malicious_query])
 
     @patch("bridge.server.run_command")
-    def test_no_shell_injection_in_create(
-        self, mock_run_command, client, notes_auth_headers
-    ):
+    def test_no_shell_injection_in_create(self, mock_run_command, client, notes_auth_headers):
         """Test that malicious note titles/bodies don't enable shell injection."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="safe output", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="safe output", error="")
 
         # Try malicious title and body
         malicious_title = "title; rm -rf /"
@@ -790,9 +716,7 @@ class TestArgumentInjectionPrevention:
         self, mock_run_command, client, things_auth_headers
     ):
         """Test that malicious Things search queries don't enable shell injection."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="safe output", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="safe output", error="")
 
         # Try a malicious query that would be dangerous with shell=True
         malicious_query = "test && rm important_file"
@@ -808,13 +732,9 @@ class TestArgumentInjectionPrevention:
         mock_run_command.assert_called_once_with(["things", "search", malicious_query])
 
     @patch("bridge.server.run_command")
-    def test_no_shell_injection_in_things_add(
-        self, mock_run_command, client, things_auth_headers
-    ):
+    def test_no_shell_injection_in_things_add(self, mock_run_command, client, things_auth_headers):
         """Test that malicious Things task titles don't enable shell injection."""
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="safe output", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="safe output", error="")
 
         # Try malicious title and notes
         malicious_title = "task; curl evil.com"
@@ -840,9 +760,7 @@ class TestArgumentInjectionPrevention:
     ):
         """Test that malicious iMessage content doesn't enable shell injection."""
         mock_check_imsg.return_value = True
-        mock_run_command.return_value = BridgeResponse(
-            ok=True, output="safe output", error=""
-        )
+        mock_run_command.return_value = BridgeResponse(ok=True, output="safe output", error="")
 
         # Try malicious recipient and message
         malicious_to = "user@evil.com; curl bad.com"

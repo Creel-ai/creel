@@ -16,9 +16,7 @@ from taskrunner.services.vision import (
 )
 
 
-def _make_png(
-    tmp_path: Path, name: str = "photo.png", size: tuple[int, int] = (100, 100)
-) -> Path:
+def _make_png(tmp_path: Path, name: str = "photo.png", size: tuple[int, int] = (100, 100)) -> Path:
     """Create a minimal valid PNG file using Pillow."""
     from PIL import Image
 
@@ -28,9 +26,7 @@ def _make_png(
     return path
 
 
-def _make_jpeg(
-    tmp_path: Path, name: str = "photo.jpg", size: tuple[int, int] = (100, 100)
-) -> Path:
+def _make_jpeg(tmp_path: Path, name: str = "photo.jpg", size: tuple[int, int] = (100, 100)) -> Path:
     """Create a minimal valid JPEG file using Pillow."""
     from PIL import Image
 
@@ -40,9 +36,7 @@ def _make_jpeg(
     return path
 
 
-def _make_bmp(
-    tmp_path: Path, name: str = "photo.bmp", size: tuple[int, int] = (100, 100)
-) -> Path:
+def _make_bmp(tmp_path: Path, name: str = "photo.bmp", size: tuple[int, int] = (100, 100)) -> Path:
     """Create a minimal valid BMP file using Pillow."""
     from PIL import Image
 

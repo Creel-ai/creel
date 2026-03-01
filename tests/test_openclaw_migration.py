@@ -25,9 +25,7 @@ def test_phase1_imports_workspace_memory_and_history(tmp_path: Path) -> None:
     _write(source / "MEMORY.md", "# Long-Term Memory\n- likes tea\n")
     _write(source / "USER.md", "# User\n- timezone: America/New_York\n")
     _write(source / "AGENTS.md", "# Agents\nFollow instructions.\n")
-    _write(
-        source / "memory" / "2026-02-01.md", "# Memory - 2026-02-01\n- [10:00] note\n"
-    )
+    _write(source / "memory" / "2026-02-01.md", "# Memory - 2026-02-01\n- [10:00] note\n")
 
     history_payload = {
         "sender_id": "alice",
@@ -51,17 +49,13 @@ def test_phase1_imports_workspace_memory_and_history(tmp_path: Path) -> None:
     )
     report = OpenClawMigrator(options).run()
 
-    assert (target / "workspace" / "SOUL.md").read_text(
-        encoding="utf-8"
-    ) == "# Soul\nBe precise.\n"
+    assert (target / "workspace" / "SOUL.md").read_text(encoding="utf-8") == "# Soul\nBe precise.\n"
     assert (target / "workspace" / "MEMORY.md").exists()
     assert (target / "workspace" / "USER.md").exists()
     assert (target / "workspace" / "AGENTS.md").exists()
     assert (target / "workspace" / "memory" / "2026-02-01.md").exists()
 
-    session_files = [
-        p for p in (target / "sessions").glob("*.json") if p.name != "_active.json"
-    ]
+    session_files = [p for p in (target / "sessions").glob("*.json") if p.name != "_active.json"]
     assert len(session_files) == 1
     session_payload = json.loads(session_files[0].read_text(encoding="utf-8"))
     assert session_payload["sender_id"] == "alice"
@@ -69,9 +63,7 @@ def test_phase1_imports_workspace_memory_and_history(tmp_path: Path) -> None:
     assert session_payload["messages"][1]["role"] == "assistant"
     assert session_payload["messages"][1]["content"][0]["type"] == "text"
 
-    active = json.loads(
-        (target / "sessions" / "_active.json").read_text(encoding="utf-8")
-    )
+    active = json.loads((target / "sessions" / "_active.json").read_text(encoding="utf-8"))
     assert active["alice"] == session_payload["session_id"]
     assert report.errors == []
 
@@ -105,7 +97,8 @@ cron_jobs:
     prompt: "Send my digest"
     tools:
       - web_lookup
-""".strip() + "\n",
+""".strip()
+        + "\n",
     )
 
     options = OpenClawMigratorOptions(
@@ -164,16 +157,12 @@ def test_phase3_builds_skill_hybrid_outputs(tmp_path: Path) -> None:
     assert (target / "workspace" / "openclaw_skills" / "persona.md").exists()
     assert (target / "workspace" / "openclaw_skills" / "websearch.md").exists()
 
-    checklist_path = (
-        target / "migrations" / "openclaw" / "skills" / "MANUAL_CHECKLIST.md"
-    )
+    checklist_path = target / "migrations" / "openclaw" / "skills" / "MANUAL_CHECKLIST.md"
     checklist = checklist_path.read_text(encoding="utf-8")
     assert "gmail_ops" in checklist
 
     overlay = yaml.safe_load(
-        (target / "migrations" / "openclaw" / "agent.overlay.yaml").read_text(
-            encoding="utf-8"
-        )
+        (target / "migrations" / "openclaw" / "agent.overlay.yaml").read_text(encoding="utf-8")
     )
     tool_defs = overlay.get("tools", {})
     assert any(tool.get("executor") == "brave_search" for tool in tool_defs.values())

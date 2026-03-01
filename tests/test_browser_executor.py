@@ -23,9 +23,7 @@ class TestCallBridge:
                 executor.call_bridge("/browser/connect", {})
 
     def test_missing_bridge_token(self):
-        with patch.dict(
-            os.environ, {"BRIDGE_URL": "http://localhost:8766"}, clear=True
-        ):
+        with patch.dict(os.environ, {"BRIDGE_URL": "http://localhost:8766"}, clear=True):
             os.environ.pop("BRIDGE_TOKEN", None)
             with pytest.raises(RuntimeError, match="BRIDGE_TOKEN"):
                 executor.call_bridge("/browser/connect", {})
@@ -213,9 +211,7 @@ class TestWrapperFunctions:
         mock_bridge.return_value = {"ok": True, "sessions": []}
         result = executor.sessions()
         assert result["ok"] is True
-        mock_bridge.assert_called_once_with(
-            "/browser/sessions", method="GET", timeout=10
-        )
+        mock_bridge.assert_called_once_with("/browser/sessions", method="GET", timeout=10)
 
 
 class TestMain:

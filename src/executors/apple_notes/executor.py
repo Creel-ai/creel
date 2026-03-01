@@ -15,9 +15,7 @@ from typing import Any
 import requests
 
 
-def call_bridge(
-    endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30
-) -> dict:
+def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
     """Make an HTTP call to the bridge server.
 
     Args:
@@ -77,9 +75,7 @@ def search_notes(query: str) -> dict[str, Any]:
     return call_bridge("/notes/search", {"query": query})
 
 
-def create_note(
-    title: str, body: str = "", folder: str | None = None
-) -> dict[str, Any]:
+def create_note(title: str, body: str = "", folder: str | None = None) -> dict[str, Any]:
     """Create a note via bridge."""
     data = {"title": title, "body": body}
     if folder:
@@ -100,9 +96,7 @@ def main() -> None:
         elif action == "search":
             query = os.environ.get("QUERY")
             if not query:
-                raise ValueError(
-                    "QUERY environment variable required for search action"
-                )
+                raise ValueError("QUERY environment variable required for search action")
             result = search_notes(query)
 
         elif action == "create":
@@ -111,18 +105,14 @@ def main() -> None:
             folder = os.environ.get("FOLDER")
 
             if not title:
-                raise ValueError(
-                    "TITLE environment variable required for create action"
-                )
+                raise ValueError("TITLE environment variable required for create action")
 
             result = create_note(title, body, folder)
 
         elif action == "read":
             # Note: memo CLI doesn't have a direct read by ID function,
             # so we'd need to implement this differently or use search
-            raise NotImplementedError(
-                "Read action not implemented - use search instead"
-            )
+            raise NotImplementedError("Read action not implemented - use search instead")
 
         else:
             raise ValueError(f"Unknown action: {action}")

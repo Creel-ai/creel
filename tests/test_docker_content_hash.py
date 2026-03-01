@@ -104,9 +104,7 @@ class TestEnsureImageContentHash:
         return executor_dir
 
     @patch("taskrunner.orchestrator.subprocess.run")
-    def test_builds_with_hash_tag_when_missing(
-        self, mock_run: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_builds_with_hash_tag_when_missing(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """When no hashed image exists, build with hash + latest tags."""
         executor_dir = self._setup_executor_dir(tmp_path)
         content_hash = _compute_executor_hash(executor_dir)
@@ -133,9 +131,7 @@ class TestEnsureImageContentHash:
         assert "executor-weather:latest" in tags
 
     @patch("taskrunner.orchestrator.subprocess.run")
-    def test_skips_build_when_hash_exists(
-        self, mock_run: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_skips_build_when_hash_exists(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """When the hashed image already exists, skip build."""
         self._setup_executor_dir(tmp_path)
 
@@ -151,9 +147,7 @@ class TestEnsureImageContentHash:
         assert mock_run.call_count == 1
 
     @patch("taskrunner.orchestrator.subprocess.run")
-    def test_non_executor_image_unchanged(
-        self, mock_run: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_non_executor_image_unchanged(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """Non-executor images (e.g. llm-runner) pass through unchanged."""
         llm_dir = tmp_path / "src" / "llm"
         llm_dir.mkdir(parents=True)
@@ -168,9 +162,7 @@ class TestEnsureImageContentHash:
         assert result == "llm-runner:latest"
 
     @patch("taskrunner.orchestrator.subprocess.run")
-    def test_missing_dockerfile_raises(
-        self, mock_run: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_missing_dockerfile_raises(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """Missing Dockerfile should raise FileNotFoundError."""
         # Create dir but no Dockerfile
         (tmp_path / "src" / "executors" / "weather").mkdir(parents=True)

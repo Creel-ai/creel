@@ -84,9 +84,7 @@ class TestExtractBody:
                         {
                             "mimeType": "text/plain",
                             "body": {
-                                "data": base64.urlsafe_b64encode(
-                                    b"Nested plain"
-                                ).decode(),
+                                "data": base64.urlsafe_b64encode(b"Nested plain").decode(),
                             },
                         },
                     ],
@@ -183,9 +181,7 @@ class TestFetchEmails:
 
     @patch("executors.gmail_readonly.executor.get_credentials")
     @patch("executors.gmail_readonly.executor.build")
-    def test_fetch_emails_metadata_mode(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_fetch_emails_metadata_mode(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
 
         # Set up mock service
@@ -273,9 +269,7 @@ class TestFetchEmails:
 
     @patch("executors.gmail_readonly.executor.get_credentials")
     @patch("executors.gmail_readonly.executor.build")
-    def test_fetch_emails_empty_results(
-        self, mock_build: MagicMock, mock_creds: MagicMock
-    ) -> None:
+    def test_fetch_emails_empty_results(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
         mock_creds.return_value = MagicMock()
 
         mock_service = MagicMock()

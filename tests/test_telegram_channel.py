@@ -107,12 +107,8 @@ class TestPollingMode:
 
     def test_poll_loop_filters_by_allowed_senders(self):
         msgs = [
-            _make_msg(
-                sender_id="allowed", sender_username="good", text="yes", update_id=1
-            ),
-            _make_msg(
-                sender_id="blocked", sender_username="bad", text="no", update_id=2
-            ),
+            _make_msg(sender_id="allowed", sender_username="good", text="yes", update_id=1),
+            _make_msg(sender_id="blocked", sender_username="bad", text="no", update_id=2),
         ]
         bridge = MockBridge(messages=msgs)
 
@@ -137,18 +133,12 @@ class TestPollingMode:
 
         # chat_id is used as sender_id in callback — here it matches sender_id
         # because in DMs chat_id == sender_id
-        assert (
-            any("allowed" in p or "42" in p for p in processed) or len(processed) >= 1
-        )
+        assert any("allowed" in p or "42" in p for p in processed) or len(processed) >= 1
 
     def test_poll_loop_filters_by_allowed_senders_username(self):
         msgs = [
-            _make_msg(
-                sender_id="1", sender_username="allowed_user", text="yes", update_id=1
-            ),
-            _make_msg(
-                sender_id="2", sender_username="blocked_user", text="no", update_id=2
-            ),
+            _make_msg(sender_id="1", sender_username="allowed_user", text="yes", update_id=1),
+            _make_msg(sender_id="2", sender_username="blocked_user", text="no", update_id=2),
         ]
         bridge = MockBridge(messages=msgs)
 
@@ -637,9 +627,7 @@ class TestRegisterPlugin:
         _, factory = register_plugin()
 
         fake_env = {"TELEGRAM_BOT_TOKEN": "decrypted-token-123"}
-        with patch(
-            "taskrunner.secrets.decrypt_env_file", return_value=fake_env
-        ) as mock_decrypt:
+        with patch("taskrunner.secrets.decrypt_env_file", return_value=fake_env) as mock_decrypt:
             channel = factory(
                 {
                     "secrets": "secrets/telegram.env.enc",
@@ -677,9 +665,7 @@ class TestOutboundFiltering:
 
     def test_send_allows_verified_sender_via_username(self):
         """@username-only config: inbound passes by username, then reply uses numeric chat_id."""
-        msg = _make_msg(
-            sender_id="55", sender_username="alice", chat_id="55", text="hi"
-        )
+        msg = _make_msg(sender_id="55", sender_username="alice", chat_id="55", text="hi")
         bridge = MockBridge(messages=[msg])
 
         channel = TelegramChannel(

@@ -40,9 +40,7 @@ class TestScanForCredentials:
         assert any(m.pattern_name == "github_fine_grained" for m in matches)
 
     def test_detect_anthropic_key(self) -> None:
-        text = (
-            "ANTHROPIC_API_KEY=sk-ant-abcdef1234567890abcdef1234567890abcdef1234567890"
-        )
+        text = "ANTHROPIC_API_KEY=sk-ant-abcdef1234567890abcdef1234567890abcdef1234567890"
         matches = scan_for_credentials(text)
         assert any(m.pattern_name == "anthropic_api_key" for m in matches)
 

@@ -70,9 +70,7 @@ class _StubChatServer:
     """Minimal chat-server shape for testing event injection."""
 
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(
-            sessions_dir=str(sessions_dir), max_history=50
-        )
+        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
         self._guardian = None
         self.injected_events: list[tuple[str, str]] = []
 
@@ -656,9 +654,7 @@ class TestExecutionModes:
         assert messages[0]["content"] == "Analyze overnight logs"
 
     @patch("taskrunner.cron.executor.run_agent_loop")
-    def test_isolated_job_model_override(
-        self, mock_agent_loop, minimal_agent_def, tmp_path: Path
-    ):
+    def test_isolated_job_model_override(self, mock_agent_loop, minimal_agent_def, tmp_path: Path):
         """An isolated job with a model override should use the specified model."""
         from dataclasses import dataclass
         from dataclasses import field as dc_field
@@ -694,9 +690,7 @@ class TestExecutionModes:
         mgr.shutdown()
 
         call_kwargs = mock_agent_loop.call_args
-        llm_config = call_kwargs.kwargs.get("llm_config") or call_kwargs[1].get(
-            "llm_config"
-        )
+        llm_config = call_kwargs.kwargs.get("llm_config") or call_kwargs[1].get("llm_config")
         if llm_config is None:
             llm_config = call_kwargs[0][1]
         assert llm_config.model == "claude-opus-4-20250514"

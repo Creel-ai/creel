@@ -196,9 +196,7 @@ class DaemonApiClient:
                 detail = resp.json().get("detail", "")
             except Exception:
                 detail = resp.text
-            raise RuntimeError(
-                f"Daemon API {method} {path} failed ({resp.status_code}): {detail}"
-            )
+            raise RuntimeError(f"Daemon API {method} {path} failed ({resp.status_code}): {detail}")
 
         if not resp.text:
             return {}
@@ -293,9 +291,7 @@ class DaemonTuiAdapter:
     def resume_session(self, sender_id: str, session_id: str) -> RemoteSession:
         summary = self._client.resume_session(sender_id, session_id)
         self._active_session_id = str(summary["session_id"])
-        messages = self._client.get_history(
-            sender_id, self._active_session_id, limit=200
-        )
+        messages = self._client.get_history(sender_id, self._active_session_id, limit=200)
         return RemoteSession(
             sender_id=str(summary.get("sender_id", sender_id)),
             session_id=self._active_session_id,

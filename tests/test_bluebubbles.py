@@ -45,9 +45,7 @@ def _clear_rate_limiter():
 def test_send_message_blocked_recipient():
     """Sending to a recipient not in the allowlist raises an error."""
     with pytest.raises(RuntimeError, match="not in allowlist"):
-        send_message(
-            SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+19999999999", "hello"
-        )
+        send_message(SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+19999999999", "hello")
 
 
 def test_send_message_empty_allowlist():
@@ -97,9 +95,7 @@ def test_rate_limit_enforced():
     _send_timestamps.extend([now] * 10)
 
     with pytest.raises(RuntimeError, match="Rate limit exceeded"):
-        send_message(
-            SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", "hello"
-        )
+        send_message(SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", "hello")
 
 
 # --- Message length ---
@@ -109,9 +105,7 @@ def test_message_length_enforced():
     """Messages exceeding MAX_MESSAGE_LENGTH are rejected."""
     long_text = "x" * (MAX_MESSAGE_LENGTH + 1)
     with pytest.raises(RuntimeError, match="Message too long"):
-        send_message(
-            SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", long_text
-        )
+        send_message(SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", long_text)
 
 
 # --- Reaction validation ---
@@ -138,9 +132,7 @@ def test_send_message_allowed(mock_req):
     """Sending to an allowed recipient succeeds."""
     mock_req.return_value = _mock_api_response({"guid": "msg-123"})
 
-    result = send_message(
-        SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", "Hello!"
-    )
+    result = send_message(SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", "Hello!")
 
     assert result["status"] == "sent"
     assert result["chat_id"] == "iMessage;-;+11234567890"

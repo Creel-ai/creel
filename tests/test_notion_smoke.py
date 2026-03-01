@@ -27,9 +27,7 @@ pytestmark = [pytest.mark.smoke]
 
 
 def _resolve_secrets_path() -> Path:
-    configured = os.environ.get(
-        "NOTION_SMOKE_SECRETS_FILE", "secrets/notion_read.env.enc"
-    )
+    configured = os.environ.get("NOTION_SMOKE_SECRETS_FILE", "secrets/notion_read.env.enc")
     path = Path(configured).expanduser()
     if path.is_absolute():
         return path
@@ -80,15 +78,9 @@ _KEY_SKIP_REASON = _missing_reason(["NOTION_API_KEY"])
 _PAGE_SKIP_REASON = _missing_reason(["NOTION_API_KEY", "NOTION_TEST_PAGE_ID"])
 _DB_SKIP_REASON = _missing_reason(["NOTION_API_KEY", "NOTION_TEST_DATABASE_ID"])
 
-requires_notion_key = pytest.mark.skipif(
-    bool(_KEY_SKIP_REASON), reason=_KEY_SKIP_REASON
-)
-requires_notion_page = pytest.mark.skipif(
-    bool(_PAGE_SKIP_REASON), reason=_PAGE_SKIP_REASON
-)
-requires_notion_database = pytest.mark.skipif(
-    bool(_DB_SKIP_REASON), reason=_DB_SKIP_REASON
-)
+requires_notion_key = pytest.mark.skipif(bool(_KEY_SKIP_REASON), reason=_KEY_SKIP_REASON)
+requires_notion_page = pytest.mark.skipif(bool(_PAGE_SKIP_REASON), reason=_PAGE_SKIP_REASON)
+requires_notion_database = pytest.mark.skipif(bool(_DB_SKIP_REASON), reason=_DB_SKIP_REASON)
 
 
 @requires_notion_key

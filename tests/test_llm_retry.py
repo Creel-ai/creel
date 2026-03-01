@@ -30,9 +30,7 @@ def _mock_message() -> MagicMock:
 
 
 def _make_api_error(status_code: int) -> anthropic.APIStatusError:
-    resp = httpx.Response(
-        status_code, request=httpx.Request("POST", "https://api.anthropic.com")
-    )
+    resp = httpx.Response(status_code, request=httpx.Request("POST", "https://api.anthropic.com"))
     return anthropic.APIStatusError(
         message=f"Error {status_code}",
         response=resp,

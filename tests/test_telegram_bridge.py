@@ -76,9 +76,7 @@ class TestGetUpdates:
             ],
         }
         with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                json=MagicMock(return_value=api_response)
-            )
+            mock_post.return_value = MagicMock(json=MagicMock(return_value=api_response))
             messages = bridge.get_updates(offset=None, timeout=10)
             assert len(messages) == 1
             msg = messages[0]
@@ -107,9 +105,7 @@ class TestGetUpdates:
             ],
         }
         with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                json=MagicMock(return_value=api_response)
-            )
+            mock_post.return_value = MagicMock(json=MagicMock(return_value=api_response))
             messages = bridge.get_updates()
             assert len(messages) == 1
             assert messages[0].text == "check this photo"

@@ -50,9 +50,7 @@ class FakeAgentResult:
 class FakeLLMConfig:
     """Minimal stand-in for LLMConfig with model_copy support."""
 
-    def __init__(
-        self, model: str = "claude-sonnet-4-20250514", secrets: str | None = None
-    ):
+    def __init__(self, model: str = "claude-sonnet-4-20250514", secrets: str | None = None):
         self.model = model
         self.secrets = secrets
 

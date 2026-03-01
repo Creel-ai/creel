@@ -102,8 +102,7 @@ class TranscriptionService:
 
         if not shutil.which("ffmpeg"):
             logger.warning(
-                "ffmpeg not found; sending %s to Whisper API as-is "
-                "(transcription may fail)",
+                "ffmpeg not found; sending %s to Whisper API as-is (transcription may fail)",
                 file_path.suffix,
             )
             return file_path
@@ -158,9 +157,7 @@ class TranscriptionService:
                 response = httpx.post(
                     _API_URL,
                     headers={"Authorization": f"Bearer {api_key}"},
-                    files={
-                        "file": (converted_path.name, f, "application/octet-stream")
-                    },
+                    files={"file": (converted_path.name, f, "application/octet-stream")},
                     data={"model": self._model},
                     timeout=_API_TIMEOUT,
                 )
@@ -208,9 +205,7 @@ class TranscriptionService:
             if txt_path.exists():
                 text = txt_path.read_text().strip()
                 txt_path.unlink(missing_ok=True)
-                logger.info(
-                    "Transcribed (local) %s (%d chars)", converted_path.name, len(text)
-                )
+                logger.info("Transcribed (local) %s (%d chars)", converted_path.name, len(text))
                 return text
 
             logger.warning("Whisper produced no output for %s", converted_path)

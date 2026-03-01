@@ -203,9 +203,7 @@ class OpenClawMigrator:
         required = {"SOUL.md", "USER.md", "AGENTS.md"}
 
         direct_has = sum((direct / name).exists() for name in required)
-        nested_has = (
-            sum((nested / name).exists() for name in required) if nested.is_dir() else 0
-        )
+        nested_has = sum((nested / name).exists() for name in required) if nested.is_dir() else 0
 
         if nested_has > direct_has:
             return nested
@@ -405,8 +403,7 @@ class OpenClawMigrator:
                     continue
                 rel_text = str(rel).lower()
                 if any(
-                    token in rel_text
-                    for token in ("conversation", "session", "history", "chat")
+                    token in rel_text for token in ("conversation", "session", "history", "chat")
                 ):
                     paths.append(candidate)
             for candidate in sorted(self.source_root.rglob("*.jsonl")):
@@ -415,8 +412,7 @@ class OpenClawMigrator:
                     continue
                 rel_text = str(rel).lower()
                 if any(
-                    token in rel_text
-                    for token in ("conversation", "session", "history", "chat")
+                    token in rel_text for token in ("conversation", "session", "history", "chat")
                 ):
                     paths.append(candidate)
 
@@ -504,27 +500,18 @@ class OpenClawMigrator:
         if not types:
             return False
         # OpenClaw JSONL sessions typically contain session/message/model_change/custom events.
-        return bool(
-            types.intersection({"session", "message", "model_change", "custom"})
-        )
+        return bool(types.intersection({"session", "message", "model_change", "custom"}))
 
     @staticmethod
     def _looks_like_message(item: Any) -> bool:
         if not isinstance(item, dict):
             return False
-        role = (
-            item.get("role")
-            or item.get("author")
-            or item.get("speaker")
-            or item.get("from")
-        )
+        role = item.get("role") or item.get("author") or item.get("speaker") or item.get("from")
         if role is None:
             return False
         if "content" in item:
             return True
-        return any(
-            k in item for k in ("text", "message", "body", "output", "input", "value")
-        )
+        return any(k in item for k in ("text", "message", "body", "output", "input", "value"))
 
     def _normalize_conversation(
         self,
@@ -663,9 +650,7 @@ class OpenClawMigrator:
             )
             content_text = ""
             if isinstance(content, list):
-                content_text = self._extract_text_from_blocks(content) or self._to_text(
-                    content
-                )
+                content_text = self._extract_text_from_blocks(content) or self._to_text(content)
             else:
                 content_text = self._to_text(content)
             block: dict[str, Any] = {
@@ -717,11 +702,7 @@ class OpenClawMigrator:
                                     "type": "tool_use",
                                     "id": str(tool_id),
                                     "name": str(tool_name),
-                                    "input": (
-                                        tool_input
-                                        if isinstance(tool_input, dict)
-                                        else {}
-                                    ),
+                                    "input": (tool_input if isinstance(tool_input, dict) else {}),
                                 }
                             )
                         continue
@@ -928,9 +909,7 @@ class OpenClawMigrator:
             phase=phase,
         )
 
-    def _load_openclaw_config(
-        self, phase: str
-    ) -> tuple[Path | None, dict[str, Any] | None]:
+    def _load_openclaw_config(self, phase: str) -> tuple[Path | None, dict[str, Any] | None]:
         for rel in DEFAULT_CONFIG_CANDIDATES:
             path = self.source_root / rel
             if not path.exists():
@@ -1058,9 +1037,7 @@ class OpenClawMigrator:
 
             if "whatsapp" in joined:
                 channel_cfg: dict[str, Any] = {
-                    "phone_number": str(
-                        cfg.get("phone_number") or cfg.get("phone") or "$PHONE"
-                    ),
+                    "phone_number": str(cfg.get("phone_number") or cfg.get("phone") or "$PHONE"),
                 }
                 mode = str(cfg.get("mode") or "").strip()
                 if mode in {"polling", "webhook"}:
@@ -1139,10 +1116,7 @@ class OpenClawMigrator:
                 job = {}
 
             cron = (
-                job.get("schedule")
-                or job.get("cron")
-                or job.get("expression")
-                or job.get("rrule")
+                job.get("schedule") or job.get("cron") or job.get("expression") or job.get("rrule")
             )
             normalized_cron = self._normalize_cron(cron)
             if not normalized_cron:
@@ -1206,9 +1180,7 @@ class OpenClawMigrator:
             for key, value in job["executors"].items():
                 if isinstance(value, dict):
                     result[str(key)] = {
-                        k: v
-                        for k, v in value.items()
-                        if k in {"secrets", "args", "timeout"}
+                        k: v for k, v in value.items() if k in {"secrets", "args", "timeout"}
                     }
                 else:
                     result[str(key)] = {}
@@ -1364,9 +1336,7 @@ class OpenClawMigrator:
         if manual_items:
             checklist = (
                 "# OpenClaw Skills Manual Migration Checklist\n\n"
-                "The following skills need manual migration:\n\n"
-                + "\n".join(manual_items)
-                + "\n"
+                "The following skills need manual migration:\n\n" + "\n".join(manual_items) + "\n"
             )
             self._write_text(
                 phase=phase,
@@ -1406,9 +1376,7 @@ class OpenClawMigrator:
         lower = text.lower()
         executors = self._guess_executors(lower)
         has_code_block = "```" in content
-        has_command_markers = any(
-            token in lower for token in ("curl ", "pip ", "npm ", "docker ")
-        )
+        has_command_markers = any(token in lower for token in ("curl ", "pip ", "npm ", "docker "))
 
         if executors and not has_code_block and not has_command_markers:
             return "executor-equivalent", executors
@@ -1418,9 +1386,7 @@ class OpenClawMigrator:
             return "mixed/unsupported", executors
         return "prompt-only", executors
 
-    def _format_skill_context(
-        self, skill_name: str, rel_source: str, content: str
-    ) -> str:
+    def _format_skill_context(self, skill_name: str, rel_source: str, content: str) -> str:
         max_chars = 1500
         body = content.strip()
         if len(body) > max_chars:
@@ -1439,9 +1405,7 @@ class OpenClawMigrator:
     ) -> None:
         existing = ""
         if destination.exists():
-            read = self._read_text(
-                destination, phase, "read_generated_section_destination"
-            )
+            read = self._read_text(destination, phase, "read_generated_section_destination")
             if read is None:
                 return
             existing = read
@@ -1475,9 +1439,7 @@ class OpenClawMigrator:
         if not self._agent_overlay:
             return
 
-        overlay_yaml = yaml.safe_dump(
-            self._agent_overlay, sort_keys=False, allow_unicode=True
-        )
+        overlay_yaml = yaml.safe_dump(self._agent_overlay, sort_keys=False, allow_unicode=True)
         self._write_text(
             phase=phase,
             action="write_agent_overlay",
@@ -1495,9 +1457,7 @@ class OpenClawMigrator:
                     if isinstance(payload, dict):
                         base = payload
                 except Exception:
-                    self._warn(
-                        f"Could not parse target agent config: {self.agent_config_path}"
-                    )
+                    self._warn(f"Could not parse target agent config: {self.agent_config_path}")
 
         merged = self._deep_merge_dicts(base, self._agent_overlay)
         merged_yaml = yaml.safe_dump(merged, sort_keys=False, allow_unicode=True)
@@ -1520,9 +1480,7 @@ class OpenClawMigrator:
             )
 
     @staticmethod
-    def _deep_merge_dicts(
-        base: dict[str, Any], overlay: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _deep_merge_dicts(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
         result = dict(base)
         for key, value in overlay.items():
             if isinstance(value, dict) and isinstance(result.get(key), dict):

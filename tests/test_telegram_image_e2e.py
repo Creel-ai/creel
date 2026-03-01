@@ -269,9 +269,7 @@ class TestDownloadMedia:
         bridge = MockTelegramBridge(file_data={"photo123": jpeg_bytes})
         channel = TelegramChannel(bridge=bridge, allowed_senders=["42"])
 
-        media = [
-            TelegramMedia(file_id="photo123", file_type="photo", mime_type="image/jpeg")
-        ]
+        media = [TelegramMedia(file_id="photo123", file_type="photo", mime_type="image/jpeg")]
         attachments = channel._download_media(media)
 
         assert len(attachments) == 1
@@ -318,11 +316,7 @@ class TestPollingWithPhoto:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[
-                TelegramMedia(
-                    file_id="photo_abc", file_type="photo", mime_type="image/jpeg"
-                )
-            ],
+            media=[TelegramMedia(file_id="photo_abc", file_type="photo", mime_type="image/jpeg")],
         )
         bridge = MockTelegramBridge(
             messages=[photo_msg],
@@ -374,9 +368,7 @@ class TestPollingWithPhoto:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[
-                TelegramMedia(file_id="p1", file_type="photo", mime_type="image/jpeg")
-            ],
+            media=[TelegramMedia(file_id="p1", file_type="photo", mime_type="image/jpeg")],
         )
         bridge = MockTelegramBridge(
             messages=[photo_msg],
@@ -618,12 +610,8 @@ class TestE2ETelegramImage:
         }
 
         with (
-            patch.object(
-                server._vision, "prepare_image", return_value=mock_vision_block
-            ),
-            patch(
-                "taskrunner.chat.run_agent_loop", return_value=mock_result
-            ) as mock_loop,
+            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
+            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             # Create an Attachment as if downloaded from Telegram
             attachment = Attachment(
@@ -697,9 +685,7 @@ class TestE2ETelegramImage:
         )
 
         with (
-            patch.object(
-                server._vision, "prepare_image", return_value=mock_vision_block
-            ),
+            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
             patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
         ):
             response = server.handle_message(
@@ -761,9 +747,7 @@ class TestE2ETelegramImage:
             mime_type="image/jpeg",
         )
 
-        with patch(
-            "taskrunner.chat.run_agent_loop", return_value=mock_result
-        ) as mock_loop:
+        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "42",
                 "What is this?",
@@ -809,11 +793,7 @@ class TestE2ETelegramImage:
             update_id=100,
             is_group=False,
             message_id=1,
-            media=[
-                TelegramMedia(
-                    file_id="tg_photo_1", file_type="photo", mime_type="image/jpeg"
-                )
-            ],
+            media=[TelegramMedia(file_id="tg_photo_1", file_type="photo", mime_type="image/jpeg")],
         )
         bridge = MockTelegramBridge(
             messages=[photo_msg],
@@ -832,9 +812,7 @@ class TestE2ETelegramImage:
         server = ChatServer(agent_def)
 
         with (
-            patch.object(
-                server._vision, "prepare_image", return_value=mock_vision_block
-            ),
+            patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
             patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
         ):
 

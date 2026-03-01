@@ -43,9 +43,7 @@ class TestFastClassifier:
                 match="Install the dependencies or run with guardian disabled",
             ):
                 FastClassifier(
-                    FastClassifierConfig(
-                        enabled=True, threshold=0.85, model_name="test-model"
-                    )
+                    FastClassifierConfig(enabled=True, threshold=0.85, model_name="test-model")
                 )
 
     def test_injection_detected(self, clf: FastClassifier) -> None:

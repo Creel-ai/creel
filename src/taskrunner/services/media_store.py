@@ -120,9 +120,7 @@ class MediaStore:
                 file_path.unlink()
                 deleted += 1
                 # Remove from hash index
-                self._hash_index = {
-                    h: p for h, p in self._hash_index.items() if p != file_path
-                }
+                self._hash_index = {h: p for h, p in self._hash_index.items() if p != file_path}
 
         # Prune empty date/channel directories
         self._prune_empty_dirs()
@@ -161,17 +159,14 @@ class MediaStore:
 
     def _download(self, url: str) -> bytes:
         """Download a file from *url* with size limit enforcement."""
-        with httpx.stream(
-            "GET", url, timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True
-        ) as resp:
+        with httpx.stream("GET", url, timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True) as resp:
             resp.raise_for_status()
 
             # Check Content-Length header first if available
             content_length = resp.headers.get("content-length")
             if content_length and int(content_length) > self._max_file_size:
                 raise ValueError(
-                    f"Remote file exceeds max size "
-                    f"({content_length} > {self._max_file_size})"
+                    f"Remote file exceeds max size ({content_length} > {self._max_file_size})"
                 )
 
             chunks: list[bytes] = []

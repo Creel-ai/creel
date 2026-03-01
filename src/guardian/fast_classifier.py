@@ -43,9 +43,7 @@ class FastClassifier:
 
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model = ORTModelForSequenceClassification.from_pretrained(model_name)
-            self._pipeline = pipeline(
-                "text-classification", model=model, tokenizer=tokenizer
-            )
+            self._pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
             self._backend = "onnx"
             logger.info("Fast classifier loaded via optimum/ONNX: %s", model_name)
             return
@@ -56,9 +54,7 @@ class FastClassifier:
         try:
             from transformers import pipeline
 
-            self._pipeline = pipeline(
-                "text-classification", model=model_name, truncation=True
-            )
+            self._pipeline = pipeline("text-classification", model=model_name, truncation=True)
             self._backend = "transformers"
             logger.info("Fast classifier loaded via transformers: %s", model_name)
             return
@@ -111,9 +107,7 @@ class FastClassifier:
         if self._pipeline is None:
             return None
 
-        chunks = [
-            text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)
-        ]
+        chunks = [text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)]
 
         best: ClassifierResult | None = None
         t0 = time.perf_counter()
@@ -159,9 +153,7 @@ class FastClassifier:
                 if best is None or confidence > best.confidence:
                     best = result
             except Exception:
-                logger.warning(
-                    "Fast classifier inference failed on chunk", exc_info=True
-                )
+                logger.warning("Fast classifier inference failed on chunk", exc_info=True)
                 continue
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -175,9 +167,7 @@ class FastClassifier:
 
         return best
 
-    def classify_detailed(
-        self, text: str
-    ) -> tuple[ClassifierResult | None, list[dict]]:
+    def classify_detailed(self, text: str) -> tuple[ClassifierResult | None, list[dict]]:
         """Classify text and return per-chunk diagnostic details.
 
         Same logic as ``classify()`` but collects a details list with one
@@ -194,9 +184,7 @@ class FastClassifier:
         if self._pipeline is None:
             return None, []
 
-        chunks = [
-            text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)
-        ]
+        chunks = [text[i : i + CHUNK_SIZE] for i in range(0, max(len(text), 1), CHUNK_SIZE)]
 
         best: ClassifierResult | None = None
         chunk_details: list[dict] = []
@@ -243,9 +231,7 @@ class FastClassifier:
                 if best is None or confidence > best.confidence:
                     best = result
             except Exception:
-                logger.warning(
-                    "Fast classifier inference failed on chunk", exc_info=True
-                )
+                logger.warning("Fast classifier inference failed on chunk", exc_info=True)
                 continue
 
         return best, chunk_details

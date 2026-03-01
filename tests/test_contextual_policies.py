@@ -53,7 +53,8 @@ class TestMatchCondition:
 @pytest.fixture
 def contextual_policy(tmp_path: Path) -> PolicyEngine:
     p = tmp_path / "policy.yaml"
-    p.write_text(textwrap.dedent("""\
+    p.write_text(
+        textwrap.dedent("""\
         allow:
           - check_weather
           - send_email
@@ -76,7 +77,8 @@ def contextual_policy(tmp_path: Path) -> PolicyEngine:
           - tool: upload_*
             arg: visibility
             pattern: "public"
-    """))
+    """)
+    )
     return PolicyEngine(p)
 
 
@@ -88,17 +90,11 @@ class TestDenyWhen:
         assert "external.com" in decision.reason
 
     def test_deny_when_second_rule(self, contextual_policy: PolicyEngine) -> None:
-        decision = contextual_policy.evaluate(
-            "send_email", {"to": "info@competitor.com"}
-        )
+        decision = contextual_policy.evaluate("send_email", {"to": "info@competitor.com"})
         assert decision.verdict == ActionVerdict.DENY
 
-    def test_deny_when_no_match_falls_through(
-        self, contextual_policy: PolicyEngine
-    ) -> None:
-        decision = contextual_policy.evaluate(
-            "send_email", {"to": "friend@internal.com"}
-        )
+    def test_deny_when_no_match_falls_through(self, contextual_policy: PolicyEngine) -> None:
+        decision = contextual_policy.evaluate("send_email", {"to": "friend@internal.com"})
         assert decision.verdict == ActionVerdict.ALLOW
 
     def test_deny_when_missing_arg(self, contextual_policy: PolicyEngine) -> None:
@@ -111,9 +107,7 @@ class TestDenyWhen:
 
     def test_deny_when_tool_no_match(self, contextual_policy: PolicyEngine) -> None:
         """deny_when for send_email should not affect other tools."""
-        decision = contextual_policy.evaluate(
-            "check_weather", {"to": "spy@external.com"}
-        )
+        decision = contextual_policy.evaluate("check_weather", {"to": "spy@external.com"})
         assert decision.verdict == ActionVerdict.ALLOW
 
     def test_static_deny_still_works(self, contextual_policy: PolicyEngine) -> None:
@@ -142,14 +136,16 @@ class TestBackwardCompatibility:
     def test_old_style_policy_still_works(self, tmp_path: Path) -> None:
         """Policy without deny_when/review_when should work as before."""
         p = tmp_path / "policy.yaml"
-        p.write_text(textwrap.dedent("""\
+        p.write_text(
+            textwrap.dedent("""\
             allow:
               - check_weather
             review:
               - send_*
             deny:
               - delete_*
-        """))
+        """)
+        )
         engine = PolicyEngine(p)
         assert engine.evaluate("check_weather").verdict == ActionVerdict.ALLOW
         assert engine.evaluate("send_email").verdict == ActionVerdict.REVIEW

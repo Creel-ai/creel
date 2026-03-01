@@ -26,9 +26,7 @@ class TestQuietHours:
 
     def test_within_quiet_hours_same_day(self):
         """Test detection when quiet hours are within the same day."""
-        config = QuietHoursConfig(
-            enabled=True, start="09:00", end="17:00", timezone="UTC"
-        )
+        config = QuietHoursConfig(enabled=True, start="09:00", end="17:00", timezone="UTC")
 
         with patch("taskrunner.quiet_hours.datetime") as mock_dt:
             # Test within quiet hours
@@ -52,9 +50,7 @@ class TestQuietHours:
 
     def test_outside_quiet_hours_same_day(self):
         """Test detection when outside quiet hours within the same day."""
-        config = QuietHoursConfig(
-            enabled=True, start="09:00", end="17:00", timezone="UTC"
-        )
+        config = QuietHoursConfig(enabled=True, start="09:00", end="17:00", timezone="UTC")
 
         with patch("taskrunner.quiet_hours.datetime") as mock_dt:
             # Test before quiet hours
@@ -73,9 +69,7 @@ class TestQuietHours:
 
     def test_midnight_crossing_within_quiet_hours(self):
         """Test overnight ranges (23:00 → 08:00 crossing midnight)."""
-        config = QuietHoursConfig(
-            enabled=True, start="23:00", end="08:00", timezone="UTC"
-        )
+        config = QuietHoursConfig(enabled=True, start="23:00", end="08:00", timezone="UTC")
 
         with patch("taskrunner.quiet_hours.datetime") as mock_dt:
             # Test late night (after start)
@@ -106,9 +100,7 @@ class TestQuietHours:
 
     def test_midnight_crossing_outside_quiet_hours(self):
         """Test times outside overnight ranges."""
-        config = QuietHoursConfig(
-            enabled=True, start="23:00", end="08:00", timezone="UTC"
-        )
+        config = QuietHoursConfig(enabled=True, start="23:00", end="08:00", timezone="UTC")
 
         with patch("taskrunner.quiet_hours.datetime") as mock_dt:
             # Test middle of the day
@@ -185,9 +177,7 @@ class TestQuietHours:
 
     def test_error_handling(self):
         """Test error handling for invalid time formats."""
-        config = QuietHoursConfig(
-            enabled=True, start="invalid-time", end="08:00", timezone="UTC"
-        )
+        config = QuietHoursConfig(enabled=True, start="invalid-time", end="08:00", timezone="UTC")
 
         # Should return False on error (fail safe)
         assert is_quiet_hours(config) is False

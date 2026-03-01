@@ -35,6 +35,11 @@ from taskrunner.channels.telegram_bridge import (
 )
 from taskrunner.channels.webhook import WebhookChannelMixin
 
+try:
+    from starlette.requests import Request as _WebhookRequest
+except ImportError:  # pragma: no cover — starlette ships with FastAPI
+    _WebhookRequest = None  # type: ignore[assignment,misc]
+
 if TYPE_CHECKING:
     from taskrunner.channels.plugin import ChannelPluginMeta
 
@@ -284,7 +289,7 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
             },
         ]
 
-    async def _handle_webhook(self, request) -> dict:
+    async def _handle_webhook(self, request: _WebhookRequest) -> dict:  # type: ignore[valid-type]
         """Handle incoming Telegram webhook update."""
         from fastapi import HTTPException
 
@@ -407,7 +412,7 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
                 os.environ[k] = v
 
         cfg = TelegramChannelConfig(**config)
-        bridge = HttpTelegramBridge(cfg.bot_token)
+        bridge = HttpTelegramBridge(cfg.bot_token, api_base_url=cfg.api_base_url)
         return TelegramChannel(
             bridge=bridge,
             mode=cfg.mode,

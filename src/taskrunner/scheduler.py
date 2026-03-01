@@ -22,26 +22,6 @@ from taskrunner.orchestrator import run_task
 logger = logging.getLogger(__name__)
 
 
-def _cron_history_path() -> Path:
-    """Return path to the cron history JSONL file."""
-    creel_home = Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))
-    return creel_home / "cron-history.jsonl"
-
-
-def _append_cron_history(record: dict) -> None:
-    """Append a run record to the cron history JSONL file.
-
-    Creates the file and parent directories if they don't exist.
-    """
-    path = _cron_history_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a") as f:
-            f.write(json.dumps(record) + "\n")
-    except OSError:
-        logger.warning("Failed to write cron history to %s", path, exc_info=True)
-
-
 def start_scheduler(
     tasks_dir: str | Path = "tasks",
     use_containers: bool = False,
@@ -117,6 +97,26 @@ def start_scheduler(
         scheduler.shutdown()
 
     return scheduler
+
+
+def _cron_history_path() -> Path:
+    """Return path to the cron history JSONL file."""
+    creel_home = Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))
+    return creel_home / "cron-history.jsonl"
+
+
+def _append_cron_history(record: dict) -> None:
+    """Append a run record to the cron history JSONL file.
+
+    Creates the file and parent directories if they don't exist.
+    """
+    path = _cron_history_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        logger.warning("Failed to write cron history to %s", path, exc_info=True)
 
 
 def _run_task_safe(

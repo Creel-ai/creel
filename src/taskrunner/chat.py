@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -95,22 +94,9 @@ class ChatServer:
                 max_daily_entries=agent_def.workspace.max_daily_entries,
                 max_long_term_lines=agent_def.workspace.max_long_term_lines,
             )
-
-            memory = self._memory
-
-            def _compact() -> None:
-                try:
-                    memory.compact_daily_files(
-                        days_to_keep=agent_def.workspace.compact_after_days,
-                    )
-                except Exception:
-                    logger.exception("Background memory compaction failed")
-
-            threading.Thread(
-                target=_compact,
-                daemon=True,
-                name="creel-memory-compact",
-            ).start()
+            self._memory.compact_daily_files(
+                days_to_keep=agent_def.workspace.compact_after_days,
+            )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
         # Per-sender session state (e.g. workspace path for file_ops)

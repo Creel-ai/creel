@@ -40,9 +40,7 @@ class Guardian:
         self._classifier = FastClassifier(config.fast_classifier)
         self._judge = LLMJudge(config.llm_judge)
         policy_file = config.policy.policy_file or str(paths.policies_dir() / "default.yaml")
-        self._policy = (
-            PolicyEngine(policy_file) if config.policy.enabled else None
-        )
+        self._policy = PolicyEngine(policy_file) if config.policy.enabled else None
         self._coherence = CoherenceChecker(config.coherence)
 
         audit_file = config.audit.log_file or str(paths.audit_log())

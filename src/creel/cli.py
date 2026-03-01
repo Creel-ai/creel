@@ -37,8 +37,8 @@ from typing import Literal, cast
 from creel import paths
 from creel.models import load_all_tasks, load_task
 from creel.orchestrator import run_task
-from creel.secrets import parse_env_file
 from creel.scheduler import start_scheduler
+from creel.secrets import parse_env_file
 
 logger = logging.getLogger(__name__)
 
@@ -156,18 +156,22 @@ def _allow_launchd_bootstrap_failure(output: str) -> bool:
     return "already loaded" in output.lower()
 
 
-def _build_daemon_run_command(args: argparse.Namespace, socket_path: Path, pid_path: Path) -> list[str]:
+def _build_daemon_run_command(
+    args: argparse.Namespace, socket_path: Path, pid_path: Path
+) -> list[str]:
     exe = paths.creel_executable()
     if exe:
         cmd = [exe]
     else:
         cmd = [sys.executable, "-m", "creel"]
-    cmd.extend([
-        "--tasks-dir",
-        str(Path(args.tasks_dir).resolve()),
-        "--agent-config",
-        str(Path(args.agent_config or _default_agent_config()).resolve()),
-    ])
+    cmd.extend(
+        [
+            "--tasks-dir",
+            str(Path(args.tasks_dir).resolve()),
+            "--agent-config",
+            str(Path(args.agent_config or _default_agent_config()).resolve()),
+        ]
+    )
     if args.containers:
         cmd.append("--containers")
     if args.no_judge:
@@ -194,8 +198,6 @@ def _build_daemon_run_command(args: argparse.Namespace, socket_path: Path, pid_p
     if getattr(args, "http_port", None) is not None:
         cmd.extend(["--http-port", str(args.http_port)])
     return cmd
-
-
 
 
 def _print_log_errors(log_path: Path, offset: int = 0) -> None:
@@ -526,7 +528,10 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config or _default_agent_config()}", file=sys.stderr)
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
         return 1
 
     try:
@@ -1379,10 +1384,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
     try:
         agent_def = _load_agent_def(args)
     except FileNotFoundError:
-        print(f"Error: Agent config not found at {args.agent_config or _default_agent_config()}", file=sys.stderr)
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
         return 1
 
-    log_file = agent_def.guardian.audit.log_file if (agent_def.guardian and agent_def.guardian.audit.log_file) else str(paths.audit_log())
+    log_file = (
+        agent_def.guardian.audit.log_file
+        if (agent_def.guardian and agent_def.guardian.audit.log_file)
+        else str(paths.audit_log())
+    )
     tail = 0 if args.all else args.tail
 
     entries = read_audit_log(
@@ -1476,11 +1488,15 @@ def main() -> int:
         "--containers", action="store_true", help="Run executors/LLM in Docker containers"
     )
     parser.add_argument(
-        "--tasks-dir", type=Path, default=None,
+        "--tasks-dir",
+        type=Path,
+        default=None,
         help=f"Tasks directory (default: {_default_tasks_dir()})",
     )
     parser.add_argument(
-        "--agent-config", type=Path, default=None,
+        "--agent-config",
+        type=Path,
+        default=None,
         help=f"Path to agent.yaml config (default: {_default_agent_config()})",
     )
     parser.add_argument(
@@ -1498,14 +1514,14 @@ def main() -> int:
 
     # init command
     init_parser = subparsers.add_parser("init", help="Scaffold ~/.creel/ directory")
-    init_parser.add_argument(
-        "--force", action="store_true", help="Overwrite existing files"
-    )
+    init_parser.add_argument("--force", action="store_true", help="Overwrite existing files")
     init_parser.add_argument(
         "--migrate", action="store_true", help="Copy existing repo config into ~/.creel/"
     )
     init_parser.add_argument(
-        "--repo-root", type=str, default=None,
+        "--repo-root",
+        type=str,
+        default=None,
         help="Repo root to migrate from (default: current directory)",
     )
 
@@ -1598,11 +1614,15 @@ def main() -> int:
     # --- Shared daemon parent parsers (to avoid option duplication) ---
     _daemon_paths_parent = argparse.ArgumentParser(add_help=False)
     _daemon_paths_parent.add_argument(
-        "--socket-path", type=Path, default=None,
+        "--socket-path",
+        type=Path,
+        default=None,
         help="Unix socket path (default: ~/.creel/daemon.sock)",
     )
     _daemon_paths_parent.add_argument(
-        "--pid-file", type=Path, default=None,
+        "--pid-file",
+        type=Path,
+        default=None,
         help="PID file path (default: ~/.creel/daemon.pid)",
     )
 
@@ -1613,13 +1633,17 @@ def main() -> int:
         help=f"launchd service label (default: {DEFAULT_DAEMON_LABEL})",
     )
     _daemon_launchd_parent.add_argument(
-        "--plist-path", type=Path, default=None,
+        "--plist-path",
+        type=Path,
+        default=None,
         help="launchd plist path (default: ~/Library/LaunchAgents/com.creel.daemon.plist)",
     )
 
     _daemon_runtime_parent = argparse.ArgumentParser(add_help=False)
     _daemon_runtime_parent.add_argument(
-        "--log-file", type=Path, default=None,
+        "--log-file",
+        type=Path,
+        default=None,
         help="Daemon log file (default: ~/.creel/daemon.log)",
     )
     _daemon_runtime_parent.add_argument(

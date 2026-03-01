@@ -452,6 +452,7 @@ def load_agent_config(path: str | Path | None = None) -> AgentDefinition:
     """Load the global agent configuration from a YAML file."""
     if path is None:
         from creel import paths
+
         path = paths.agent_config()
     path = Path(path)
     if not path.exists():

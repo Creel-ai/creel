@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from executors.notion.executor import run_action
 from creel.secrets import decrypt_env_file
+from executors.notion.executor import run_action
 
 # Mark this module as smoke-only.
 pytestmark = [pytest.mark.smoke]

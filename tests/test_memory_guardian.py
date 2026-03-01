@@ -5,10 +5,10 @@ from __future__ import annotations
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from guardian.types import ClassifierResult, ScreenResult
 from creel.agent import run_agent_loop
 from creel.memory import MemoryManager
 from creel.models import AgentConfig, LLMConfig
+from guardian.types import ClassifierResult, ScreenResult
 
 # --- Helpers ---
 

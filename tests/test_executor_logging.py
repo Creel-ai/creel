@@ -153,9 +153,7 @@ class TestRunExecutorContainer:
             ),
         },
     )
-    @patch(
-        "creel.oauth.get_google_access_token_from_json", return_value="ya29.container-token"
-    )
+    @patch("creel.oauth.get_google_access_token_from_json", return_value="ya29.container-token")
     @patch("creel.orchestrator.tempfile.NamedTemporaryFile")
     def test_google_credentials_json_replaced_with_access_token(
         self,

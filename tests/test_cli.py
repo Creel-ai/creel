@@ -115,7 +115,6 @@ class TestBuildDaemonRunCommand:
         assert "--no-scheduler" in cmd
 
 
-
 class TestBuildDaemonChannel:
     def test_none_channel(self, minimal_agent_def) -> None:
         ch, im = cli._build_daemon_channel(minimal_agent_def, "none")

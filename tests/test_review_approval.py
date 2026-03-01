@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-from guardian.types import ActionDecision, ActionVerdict
 from creel.approvals import ApprovalQueue
+from guardian.types import ActionDecision, ActionVerdict
 
 # ── ApprovalQueue tests ─────────────────────────────────────────────
 

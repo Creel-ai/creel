@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from executors.exec.executor import run_command
 from creel.models import ExecutorConfig, MountConfig, ToolConfig
 from creel.orchestrator import _run_executor_container
+from executors.exec.executor import run_command
 
 
 class TestExecExecutor:

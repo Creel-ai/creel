@@ -1,7 +1,5 @@
 """Tests for creel init — directory scaffolding, templates, and migration."""
 
-from pathlib import Path
-
 from creel import paths
 from creel.init import init, migrate
 

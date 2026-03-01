@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from guardian.types import ActionVerdict
 from creel.container_agent import (
     _handle_tool_request,
     _recv_from_container,
@@ -16,6 +15,7 @@ from creel.container_agent import (
     run_agent_loop_container,
 )
 from creel.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
+from guardian.types import ActionVerdict
 
 # ---------------------------------------------------------------------------
 # Helpers

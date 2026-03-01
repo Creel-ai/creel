@@ -31,7 +31,6 @@ def init(*, force: bool = False) -> list[str]:
 
     Returns a list of human-readable status lines.
     """
-    home = paths.creel_home()
     lines: list[str] = []
 
     # Create directories
@@ -50,14 +49,18 @@ def init(*, force: bool = False) -> list[str]:
 
     # Copy templates
     wrote = _copy_template("agent.yaml", paths.agent_config(), force=force)
-    lines.append(f"  {'wrote' if wrote else 'exists (use --force to overwrite)'}: {paths.agent_config()}")
+    lines.append(
+        f"  {'wrote' if wrote else 'exists (use --force to overwrite)'}: {paths.agent_config()}"
+    )
 
     wrote = _copy_template(
         "policies/default.yaml",
         paths.policies_dir() / "default.yaml",
         force=force,
     )
-    lines.append(f"  {'wrote' if wrote else 'exists (use --force to overwrite)'}: {paths.policies_dir() / 'default.yaml'}")
+    lines.append(
+        f"  {'wrote' if wrote else 'exists (use --force to overwrite)'}: {paths.policies_dir() / 'default.yaml'}"
+    )
 
     return lines
 

@@ -10,7 +10,6 @@ import pytest
 
 from creel.channels.whatsapp import WhatsAppChannel
 from creel.channels.whatsapp_bridge import (
-    HttpWhatsAppBridge,
     WhatsAppBridge,
     WhatsAppMessage,
 )

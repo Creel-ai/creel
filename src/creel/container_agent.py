@@ -18,7 +18,6 @@ import tempfile
 import time
 from typing import TYPE_CHECKING, Any
 
-from guardian.types import ActionVerdict
 from creel.agent import (
     AgentResult,
     PendingApproval,
@@ -29,6 +28,7 @@ from creel.agent import (
 from creel.models import AgentConfig, BridgeConfig, LLMConfig, ToolConfig
 from creel.orchestrator import _ensure_image
 from creel.tools import build_tool_definitions, execute_tool_call
+from guardian.types import ActionVerdict
 
 if TYPE_CHECKING:
     from collections.abc import Callable

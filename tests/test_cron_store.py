@@ -4,14 +4,14 @@ import json
 
 import pytest
 
-from taskrunner.cron.models import (
+from creel.cron.models import (
     CronJob,
     Payload,
     RunRecord,
     RunStatus,
     Schedule,
 )
-from taskrunner.cron.store import JobStore
+from creel.cron.store import JobStore
 
 
 def _make_job(name: str = "test job", **kwargs) -> CronJob:

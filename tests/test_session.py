@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from taskrunner.session import SessionManager, _sanitize_sender_id
+from creel.session import SessionManager, _sanitize_sender_id
 
 # -- existing tests (updated for new session_id / title fields) --
 

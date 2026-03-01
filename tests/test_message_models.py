@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.channels.message import Attachment, AttachmentType, IncomingMessage
 
 
 class TestAttachment:
@@ -104,8 +104,8 @@ class TestChatServerAttachmentsParam:
         """ChatServer.handle_message accepts attachments keyword arg."""
         from unittest.mock import MagicMock, patch
 
-        from taskrunner.chat import ChatServer
-        from taskrunner.models import (
+        from creel.chat import ChatServer
+        from creel.models import (
             AgentConfig,
             AgentDefinition,
             ChannelsConfig,
@@ -141,7 +141,7 @@ class TestChatServerAttachmentsParam:
 
         att = Attachment(type=AttachmentType.IMAGE, file_path=Path("/tmp/test.jpg"))
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result):
+        with patch("creel.chat.run_agent_loop", return_value=mock_result):
             # Should not raise when attachments is passed
             result = server.handle_message("user1", "describe this", attachments=[att])
         assert result == "response"
@@ -150,8 +150,8 @@ class TestChatServerAttachmentsParam:
         """Backward compat: handle_message works without attachments arg."""
         from unittest.mock import MagicMock, patch
 
-        from taskrunner.chat import ChatServer
-        from taskrunner.models import (
+        from creel.chat import ChatServer
+        from creel.models import (
             AgentConfig,
             AgentDefinition,
             ChannelsConfig,
@@ -185,6 +185,6 @@ class TestChatServerAttachmentsParam:
         mock_result.pending_approval = None
         mock_result.last_input_tokens = 0
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result):
+        with patch("creel.chat.run_agent_loop", return_value=mock_result):
             result = server.handle_message("user1", "hello")
         assert result == "response"

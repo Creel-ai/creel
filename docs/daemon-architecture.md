@@ -8,8 +8,8 @@ The legacy CLI currently bundles agent loop, iMessage listener, scheduler, and b
 
 Phase 0/1 introduces:
 
-- a transport-agnostic daemon service layer (`taskrunner.daemon.service.DaemonService`)
-- draft API/event contracts (`taskrunner.daemon.contracts`)
+- a transport-agnostic daemon service layer (`creel.daemon.service.DaemonService`)
+- draft API/event contracts (`creel.daemon.contracts`)
 - initial CLI wiring for `daemon start|stop|status|run`, `attach`, and `send`
 
 ## Runtime Boundaries

@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.cron.executor import JobExecutor
-from taskrunner.cron.models import CronJob, Delivery, Payload, Schedule
+from creel.cron.executor import JobExecutor
+from creel.cron.models import CronJob, Delivery, Payload, Schedule
 
 # -- Helpers --
 
@@ -123,7 +123,7 @@ class TestExecuteMain:
 
 
 class TestExecuteIsolated:
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_calls_agent_loop(self, mock_agent_loop):
         """Isolated jobs should call run_agent_loop with the payload message."""
         mock_agent_loop.return_value = FakeAgentResult()
@@ -140,7 +140,7 @@ class TestExecuteIsolated:
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "do the thing"
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_uses_agent_def_config(self, mock_agent_loop):
         """Isolated jobs should use the agent definition's LLM and tool configs."""
         mock_agent_loop.return_value = FakeAgentResult()
@@ -154,7 +154,7 @@ class TestExecuteIsolated:
         assert call_kwargs["llm_config"].model == "claude-sonnet-4-20250514"
         assert call_kwargs["tools_config"] == {}
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_model_override(self, mock_agent_loop):
         """When payload.model is set, it should override the default model."""
         mock_agent_loop.return_value = FakeAgentResult()
@@ -167,7 +167,7 @@ class TestExecuteIsolated:
         call_kwargs = mock_agent_loop.call_args[1]
         assert call_kwargs["llm_config"].model == "claude-haiku-4-5-20251001"
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_no_model_override_uses_default(self, mock_agent_loop):
         """When payload.model is None, the default model should be used."""
         mock_agent_loop.return_value = FakeAgentResult()
@@ -188,7 +188,7 @@ class TestExecuteIsolated:
         with pytest.raises(RuntimeError, match="no agent definition"):
             executor(job)
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_passes_use_containers(self, mock_agent_loop):
         """The use_containers flag should be passed through to run_agent_loop."""
         mock_agent_loop.return_value = FakeAgentResult()
@@ -206,7 +206,7 @@ class TestExecuteIsolated:
 
 
 class TestExecuteIsolatedDelivery:
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_none_delivery(self, mock_agent_loop):
         """Isolated job with 'none' delivery should not call channel_send."""
         mock_agent_loop.return_value = FakeAgentResult(text="result")
@@ -219,7 +219,7 @@ class TestExecuteIsolatedDelivery:
 
         channel_send.assert_not_called()
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_announce_delivery(self, mock_agent_loop):
         """Isolated job with 'announce' delivery should send output to the channel."""
         mock_agent_loop.return_value = FakeAgentResult(text="Agent says hello")
@@ -237,7 +237,7 @@ class TestExecuteIsolatedDelivery:
         channel_send.assert_called_once_with("whatsapp", "Agent says hello")
 
     @patch("httpx.post")
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_webhook_delivery(self, mock_agent_loop, mock_post):
         """Isolated job with 'webhook' delivery should POST output to the URL."""
         mock_agent_loop.return_value = FakeAgentResult(text="result payload")
@@ -259,7 +259,7 @@ class TestExecuteIsolatedDelivery:
         call_args = mock_post.call_args
         assert call_args[1]["json"]["output"] == "result payload"
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_delivery_best_effort_on_failure(self, mock_agent_loop):
         """If delivery fails with best_effort=True, execution should not raise."""
         mock_agent_loop.return_value = FakeAgentResult(text="result")
@@ -283,7 +283,7 @@ class TestExecuteIsolatedDelivery:
 
 
 class TestExecutorWithManager:
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_executor_as_callable(self, mock_agent_loop):
         """JobExecutor should be usable as the CronManager executor callback."""
         mock_agent_loop.return_value = FakeAgentResult()
@@ -305,7 +305,7 @@ class TestExecutorWithManager:
         executor(main_job)
         inject_event.assert_called_once()
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_model_copy_does_not_mutate_original(self, mock_agent_loop):
         """Model override should not mutate the original agent_def config."""
         mock_agent_loop.return_value = FakeAgentResult()

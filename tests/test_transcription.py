@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from taskrunner.services.transcription import (
+from creel.services.transcription import (
     NEEDS_CONVERSION,
     WHISPER_SUPPORTED_FORMATS,
     TranscriptionService,

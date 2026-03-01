@@ -19,9 +19,9 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from taskrunner.secrets import parse_env_file
-from taskrunner.outputs import send_output
-from taskrunner.models import OutputConfig
+from creel.secrets import parse_env_file
+from creel.outputs import send_output
+from creel.models import OutputConfig
 
 
 def main() -> None:

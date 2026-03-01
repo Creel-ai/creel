@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from taskrunner.chat import ChatServer
-from taskrunner.models import (
+from creel.chat import ChatServer
+from creel.models import (
     AgentConfig,
     AgentDefinition,
     ChannelsConfig,
@@ -146,9 +146,9 @@ class TestContainerMode:
 
         mock_result = _make_agent_result("container response")
         with (
-            patch("taskrunner.chat.run_agent_loop"),
+            patch("creel.chat.run_agent_loop"),
             patch(
-                "taskrunner.container_agent.run_agent_loop_container",
+                "creel.container_agent.run_agent_loop_container",
                 return_value=mock_result,
             ) as mock_container,
         ):
@@ -163,7 +163,7 @@ class TestContainerMode:
 
         mock_result = _make_agent_result("direct response")
         with patch(
-            "taskrunner.chat.run_agent_loop",
+            "creel.chat.run_agent_loop",
             return_value=mock_result,
         ) as mock_direct:
             result = server.handle_message("user1", "hello")
@@ -243,7 +243,7 @@ class TestApprovalFlow:
             pending_approval=pending,
         )
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result):
+        with patch("creel.chat.run_agent_loop", return_value=mock_result):
             result = server.handle_message("user1", "send an email")
 
         assert "approval" in result.lower() or "waiting" in result.lower()
@@ -275,7 +275,7 @@ class TestApprovalFlow:
         )
 
         with patch(
-            "taskrunner.chat.execute_tool_call",
+            "creel.chat.execute_tool_call",
             return_value='{"temp": 72}',
         ):
             result = server.handle_message("user1", "y")
@@ -295,7 +295,7 @@ class TestApprovalFlow:
         )
 
         with patch(
-            "taskrunner.chat.execute_tool_call",
+            "creel.chat.execute_tool_call",
             side_effect=RuntimeError("executor crashed"),
         ):
             result = server.handle_message("user1", "y")
@@ -337,13 +337,13 @@ class TestSendIMessage:
         mock_channel = MagicMock()
         server._reply_channel = mock_channel
 
-        with patch("taskrunner.chat.should_suppress", return_value=True):
+        with patch("creel.chat.should_suppress", return_value=True):
             server._send_reply("user1", "hello", proactive=True)
 
         mock_channel.send.assert_not_called()
 
     def test_direct_reply_ignores_quiet_hours(self, tmp_path) -> None:
-        from taskrunner.models import IMessageChannelConfig
+        from creel.models import IMessageChannelConfig
 
         agent_def = _make_agent_def(
             tmp_path,
@@ -354,7 +354,7 @@ class TestSendIMessage:
         mock_channel = MagicMock()
         server._reply_channel = mock_channel
 
-        with patch("taskrunner.chat.should_suppress", return_value=True):
+        with patch("creel.chat.should_suppress", return_value=True):
             server._send_reply("user1", "reply msg", proactive=False)
 
         # Direct replies should still go through

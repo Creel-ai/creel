@@ -16,10 +16,10 @@ import io
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from taskrunner.channels.imessage import IMessageChannel
-from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
-from taskrunner.chat import ChatServer
-from taskrunner.models import (
+from creel.channels.imessage import IMessageChannel
+from creel.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.chat import ChatServer
+from creel.models import (
     AgentConfig,
     AgentDefinition,
     ChannelsConfig,
@@ -290,7 +290,7 @@ class TestMissingAttachmentFile:
 
         mock_result = _make_agent_result("Just text response")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "what was that photo?",
@@ -426,7 +426,7 @@ class TestE2EIMessageImage:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.IMAGE,
@@ -480,7 +480,7 @@ class TestE2EIMessageImage:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.IMAGE,
@@ -536,7 +536,7 @@ class TestE2EIMessageImage:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
+            patch("creel.chat.run_agent_loop", return_value=mock_result),
         ):
             response = server.handle_message(
                 incoming.sender_id,
@@ -590,7 +590,7 @@ class TestE2EIMessageImage:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
 
             def callback(*args):
@@ -680,7 +680,7 @@ class TestE2EIMessageImage:
                 "prepare_image",
                 side_effect=[mock_vision_block_jpg, mock_vision_block_png],
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachments = [
                 Attachment(
@@ -746,7 +746,7 @@ class TestE2EIMessageImage:
 
         mock_result = _make_agent_result("Text only response")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "What is this?",

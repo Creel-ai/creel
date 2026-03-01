@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskrunner.session import SessionManager
+from creel.session import SessionManager
 
 
 def _tool_call_conversation() -> list[dict]:

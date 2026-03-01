@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from taskrunner.secrets import (
+from creel.secrets import (
     _parse_env,
     decrypt_env_file,
     encrypt_env_file,

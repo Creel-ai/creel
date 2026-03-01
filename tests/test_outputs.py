@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskrunner.models import OutputConfig
-from taskrunner.outputs import MESSAGE_PREFIX, send_output
+from creel.models import OutputConfig
+from creel.outputs import MESSAGE_PREFIX, send_output
 
 
 def test_stdout_output(capsys) -> None:

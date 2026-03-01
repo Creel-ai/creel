@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from taskrunner import cli
+from creel import cli
 
 
 def _make_args(
@@ -34,7 +34,7 @@ def test_cmd_send_stream_prints_tokens(tmp_path: Path, monkeypatch, capsys) -> N
             yield {"type": "token", "payload": {"text": "hello"}}
             yield {"type": "final", "payload": {"text": "echo:hello"}}
 
-    monkeypatch.setattr("taskrunner.daemon.client.DaemonApiClient", _FakeClient)
+    monkeypatch.setattr("creel.daemon.client.DaemonApiClient", _FakeClient)
     args = _make_args(tmp_path, stream=True)
 
     rc = cli.cmd_send(args)
@@ -53,7 +53,7 @@ def test_cmd_send_stream_error_event(tmp_path: Path, monkeypatch, capsys) -> Non
             del sender_id, text, session_id, auto_approve
             yield {"type": "error", "payload": {"error": "boom"}}
 
-    monkeypatch.setattr("taskrunner.daemon.client.DaemonApiClient", _FakeClient)
+    monkeypatch.setattr("creel.daemon.client.DaemonApiClient", _FakeClient)
     args = _make_args(tmp_path, stream=True)
 
     rc = cli.cmd_send(args)
@@ -75,7 +75,7 @@ def test_cmd_send_stream_auto_approve_forwarded(tmp_path: Path, monkeypatch, cap
             received_auto_approve.append(auto_approve)
             yield {"type": "final", "payload": {"text": "done"}}
 
-    monkeypatch.setattr("taskrunner.daemon.client.DaemonApiClient", _FakeClient)
+    monkeypatch.setattr("creel.daemon.client.DaemonApiClient", _FakeClient)
     args = _make_args(tmp_path, stream=True, auto_approve=True)
 
     rc = cli.cmd_send(args)

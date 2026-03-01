@@ -1,6 +1,6 @@
 """Shared Google credential utility for executors.
 
-Executors receive only a short-lived access token from taskrunner. Refresh
+Executors receive only a short-lived access token from creel. Refresh
 tokens and client secrets must never be present in executor runtime env vars.
 """
 

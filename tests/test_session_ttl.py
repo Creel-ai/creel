@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from taskrunner.session import SessionManager
+from creel.session import SessionManager
 
 
 class TestSessionTTL:
@@ -60,7 +60,7 @@ class TestSessionTTL:
         assert mgr.cleanup_expired("cli") == 0
 
     def test_ttl_config_in_model(self):
-        from taskrunner.models import SessionConfig
+        from creel.models import SessionConfig
 
         cfg = SessionConfig(ttl_hours=48)
         assert cfg.ttl_hours == 48

@@ -18,11 +18,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from taskrunner.channels.base import Channel
-from taskrunner.cron.delivery import deliver
-from taskrunner.cron.executor import JobExecutor
-from taskrunner.cron.manager import CronManager
-from taskrunner.cron.models import (
+from creel.channels.base import Channel
+from creel.cron.delivery import deliver
+from creel.cron.executor import JobExecutor
+from creel.cron.manager import CronManager
+from creel.cron.models import (
     CronJob,
     Delivery,
     Payload,
@@ -30,9 +30,9 @@ from taskrunner.cron.models import (
     RunStatus,
     Schedule,
 )
-from taskrunner.cron.store import JobStore
-from taskrunner.cron.tool import handle_cron_tool
-from taskrunner.session import SessionManager
+from creel.cron.store import JobStore
+from creel.cron.tool import handle_cron_tool
+from creel.session import SessionManager
 
 # -- Helpers --
 
@@ -609,7 +609,7 @@ class TestExecutionModes:
         assert "[Scheduled: team sync]" in text
         assert "Time for the team sync!" in text
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_job_runs_fresh_agent_turn(
         self, mock_agent_loop, minimal_agent_def, tmp_path: Path
     ):
@@ -653,7 +653,7 @@ class TestExecutionModes:
             messages = call_kwargs[0][0]
         assert messages[0]["content"] == "Analyze overnight logs"
 
-    @patch("taskrunner.cron.executor.run_agent_loop")
+    @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_job_model_override(self, mock_agent_loop, minimal_agent_def, tmp_path: Path):
         """An isolated job with a model override should use the specified model."""
         from dataclasses import dataclass

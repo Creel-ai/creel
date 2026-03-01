@@ -11,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from taskrunner.migrations.openclaw import cli_main
+from creel.migrations.openclaw import cli_main
 
 
 if __name__ == "__main__":

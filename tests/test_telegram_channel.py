@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from taskrunner.channels.telegram import TelegramChannel
-from taskrunner.channels.telegram_bridge import (
+from creel.channels.telegram import TelegramChannel
+from creel.channels.telegram_bridge import (
     TelegramBridge,
     TelegramMessage,
 )
@@ -570,7 +570,7 @@ class TestWebhookSecretRequired:
     def test_webhook_mode_requires_secret(self):
         from pydantic import ValidationError
 
-        from taskrunner.models import TelegramChannelConfig
+        from creel.models import TelegramChannelConfig
 
         with pytest.raises(ValidationError, match="webhook_secret"):
             TelegramChannelConfig(
@@ -581,7 +581,7 @@ class TestWebhookSecretRequired:
             )
 
     def test_polling_mode_allows_empty_secret(self):
-        from taskrunner.models import TelegramChannelConfig
+        from creel.models import TelegramChannelConfig
 
         cfg = TelegramChannelConfig(
             bot_token="fake-token",
@@ -594,8 +594,8 @@ class TestWebhookSecretRequired:
 
 class TestRegisterPlugin:
     def test_register_plugin_returns_meta_and_factory(self):
-        from taskrunner.channels.plugin import ChannelCapability
-        from taskrunner.channels.telegram import register_plugin
+        from creel.channels.plugin import ChannelCapability
+        from creel.channels.telegram import register_plugin
 
         meta, factory = register_plugin()
         assert meta.id == "telegram"
@@ -606,7 +606,7 @@ class TestRegisterPlugin:
         assert ChannelCapability.GROUP_CHAT in meta.capabilities
 
     def test_factory_returns_channel(self):
-        from taskrunner.channels.telegram import register_plugin
+        from creel.channels.telegram import register_plugin
 
         _, factory = register_plugin()
         channel = factory(
@@ -622,12 +622,12 @@ class TestRegisterPlugin:
         """Factory decrypts secrets/*.env.enc and loads env before config expansion."""
         from unittest.mock import patch
 
-        from taskrunner.channels.telegram import register_plugin
+        from creel.channels.telegram import register_plugin
 
         _, factory = register_plugin()
 
         fake_env = {"TELEGRAM_BOT_TOKEN": "decrypted-token-123"}
-        with patch("taskrunner.secrets.decrypt_env_file", return_value=fake_env) as mock_decrypt:
+        with patch("creel.secrets.decrypt_env_file", return_value=fake_env) as mock_decrypt:
             channel = factory(
                 {
                     "secrets": "secrets/telegram.env.enc",
@@ -701,7 +701,7 @@ class TestDenyByDefault:
     def test_empty_allowed_senders_raises(self):
         from pydantic import ValidationError
 
-        from taskrunner.models import TelegramChannelConfig
+        from creel.models import TelegramChannelConfig
 
         with pytest.raises(ValidationError, match="allowed_senders"):
             TelegramChannelConfig(

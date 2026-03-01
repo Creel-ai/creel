@@ -1,0 +1,27 @@
+allow:
+  - check_weather
+  - check_calendar
+  - check_email
+  - read_email
+  - check_drive
+  - web_search
+  - fetch_url
+  - read_file
+  - list_files
+  - remember
+  - search_memory
+  - list_memory_files
+  - update_long_term_memory
+
+review:
+  - send_*
+  - upload_*
+  - create_*
+  - complete_*
+  - mark_*
+  - trash_*
+  - write_file
+  - edit_file
+
+deny:
+  - delete_*

@@ -7,7 +7,7 @@ import io
 from pathlib import Path
 from unittest.mock import patch
 
-from taskrunner.services.vision import (
+from creel.services.vision import (
     NEEDS_CONVERSION,
     SUPPORTED_IMAGE_FORMATS,
     VisionProcessor,
@@ -217,7 +217,7 @@ class TestFormatConversion:
         img_path.write_bytes(b"fake-heic-data")
 
         vp = VisionProcessor()
-        with patch("taskrunner.services.vision._has_pillow", return_value=False):
+        with patch("creel.services.vision._has_pillow", return_value=False):
             result = vp.prepare_image(img_path)
 
         assert result is None
@@ -276,7 +276,7 @@ class TestWithoutPillow:
         raw_bytes = img_path.read_bytes()
 
         vp = VisionProcessor()
-        with patch("taskrunner.services.vision._has_pillow", return_value=False):
+        with patch("creel.services.vision._has_pillow", return_value=False):
             result = vp.prepare_image(img_path)
 
         assert result is not None
@@ -289,7 +289,7 @@ class TestWithoutPillow:
         raw_bytes = img_path.read_bytes()
 
         vp = VisionProcessor()
-        with patch("taskrunner.services.vision._has_pillow", return_value=False):
+        with patch("creel.services.vision._has_pillow", return_value=False):
             result = vp.prepare_image(img_path)
 
         assert result is not None

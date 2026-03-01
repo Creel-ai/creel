@@ -6,8 +6,8 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from taskrunner.channels.imessage import IMessageChannel
-from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.channels.imessage import IMessageChannel
+from creel.channels.message import Attachment, AttachmentType, IncomingMessage
 from tests.helpers.imessage_db import (
     create_chat_db as _create_chat_db,
 )
@@ -514,7 +514,7 @@ class TestListenWithAttachments:
         db_path = tmp_path / "chat.db"
         _create_chat_db(db_path)
         _insert_handle(db_path, 1, "friend@example.com")
-        from taskrunner.outputs import MESSAGE_PREFIX
+        from creel.outputs import MESSAGE_PREFIX
 
         _insert_message(db_path, 1, f"{MESSAGE_PREFIX} my reply", handle_id=1)
 
@@ -576,7 +576,7 @@ class TestDaemonServiceIncomingMessage:
 
     def test_incoming_message_passes_attachments(self) -> None:
         """DaemonService should forward attachments to ChatServer.handle_message."""
-        from taskrunner.daemon.service import DaemonService
+        from creel.daemon.service import DaemonService
 
         mock_server = MagicMock()
         mock_server.handle_message.return_value = "response"
@@ -611,7 +611,7 @@ class TestDaemonServiceIncomingMessage:
 
     def test_plain_text_still_works(self) -> None:
         """DaemonService.send_message(sender_id, text) still works as before."""
-        from taskrunner.daemon.service import DaemonService
+        from creel.daemon.service import DaemonService
 
         mock_server = MagicMock()
         mock_server.handle_message.return_value = "ok"
@@ -628,7 +628,7 @@ class TestDaemonServiceIncomingMessage:
 
     def test_incoming_message_with_no_text(self) -> None:
         """IncomingMessage with text=None should pass empty string to handle_message."""
-        from taskrunner.daemon.service import DaemonService
+        from creel.daemon.service import DaemonService
 
         mock_server = MagicMock()
         mock_server.handle_message.return_value = "response"

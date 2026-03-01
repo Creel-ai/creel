@@ -80,14 +80,14 @@ class PolicyConfig(BaseModel):
     """Configuration for YAML-based policy engine."""
 
     enabled: bool = True
-    policy_file: str = "policies/default.yaml"
+    policy_file: str = ""  # resolved at runtime via creel.paths
 
 
 class AuditConfig(BaseModel):
     """Configuration for the JSONL audit logger."""
 
     enabled: bool = True
-    log_file: str = "guardian_audit.jsonl"
+    log_file: str = ""  # resolved at runtime via creel.paths
     rotate_daily: bool = False
     max_size_mb: float = 0  # 0 = no size limit
 

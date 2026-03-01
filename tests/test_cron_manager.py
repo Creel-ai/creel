@@ -7,14 +7,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from taskrunner.cron.manager import CronManager, _make_trigger
-from taskrunner.cron.models import (
+from creel.cron.manager import CronManager, _make_trigger
+from creel.cron.models import (
     CronJob,
     Payload,
     RunStatus,
     Schedule,
 )
-from taskrunner.cron.store import JobStore
+from creel.cron.store import JobStore
 
 # -- Helpers --
 

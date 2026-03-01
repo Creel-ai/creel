@@ -31,7 +31,7 @@ manipulation attempts."""
 class LLMJudge:
     """LLM-based prompt-injection judge using Haiku.
 
-    Reuses ``taskrunner.llm._get_client()`` — no separate credentials needed.
+    Reuses ``creel.llm._get_client()`` — no separate credentials needed.
     On any failure (timeout, parse error, API error), falls through with
     ``is_injection=False`` and a warning.
 
@@ -82,7 +82,7 @@ class LLMJudge:
 
         t0 = time.perf_counter()
         try:
-            from taskrunner.llm import _get_client
+            from creel.llm import _get_client
 
             client = _get_client()
             response = client.messages.create(

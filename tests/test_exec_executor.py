@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from creel.models import ExecutorConfig, MountConfig, ToolConfig
+from creel.orchestrator import _run_executor_container
 from executors.exec.executor import run_command
-from taskrunner.models import ExecutorConfig, MountConfig, ToolConfig
-from taskrunner.orchestrator import _run_executor_container
 
 
 class TestExecExecutor:
@@ -168,7 +168,7 @@ class TestToolConfigExtensions:
 class TestContainerExecution:
     """Tests for container execution with mount and network options."""
 
-    @patch("taskrunner.orchestrator._ensure_image")
+    @patch("creel.orchestrator._ensure_image")
     @patch("subprocess.run")
     @patch("tempfile.NamedTemporaryFile")
     def test_container_with_mounts(self, mock_tempfile, mock_subprocess, mock_ensure_image) -> None:
@@ -206,7 +206,7 @@ class TestContainerExecution:
         mount_arg = docker_cmd[mount_idx + 1]
         assert "/home/user/workspace:/mnt/home/user/workspace:rw" == mount_arg
 
-    @patch("taskrunner.orchestrator._ensure_image")
+    @patch("creel.orchestrator._ensure_image")
     @patch("subprocess.run")
     @patch("tempfile.NamedTemporaryFile")
     def test_container_with_network_enabled(
@@ -239,7 +239,7 @@ class TestContainerExecution:
         docker_cmd = mock_subprocess.call_args[0][0]
         assert "--network=none" not in docker_cmd
 
-    @patch("taskrunner.orchestrator._ensure_image")
+    @patch("creel.orchestrator._ensure_image")
     @patch("subprocess.run")
     @patch("tempfile.NamedTemporaryFile")
     def test_container_with_image_override(

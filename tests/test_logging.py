@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
-from taskrunner.log import (
+from creel.log import (
     generate_request_id,
     request_id_var,
     setup_logging,

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskrunner.models import (
+from creel.models import (
     AgentConfig,
     ExecutorConfig,
     SessionConfig,

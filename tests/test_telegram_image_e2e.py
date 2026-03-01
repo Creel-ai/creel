@@ -19,12 +19,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
-from taskrunner.channels.telegram import (
+from creel.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.channels.telegram import (
     TelegramChannel,
     _telegram_file_type_to_attachment,
 )
-from taskrunner.channels.telegram_bridge import (
+from creel.channels.telegram_bridge import (
     TelegramMedia,
     TelegramMessage,
     _extract_media,
@@ -199,7 +199,7 @@ class TestExtractMedia:
 
     def test_parse_message_includes_media(self):
         """_parse_message should populate the media field for photo updates."""
-        from taskrunner.channels.telegram_bridge import HttpTelegramBridge
+        from creel.channels.telegram_bridge import HttpTelegramBridge
 
         bridge = HttpTelegramBridge.__new__(HttpTelegramBridge)
         update = {
@@ -558,7 +558,7 @@ class TestE2ETelegramImage:
     """Full integration test: Telegram photo → ChatServer → LLM → response."""
 
     def _make_agent_def(self, tmp_path: Path):
-        from taskrunner.models import (
+        from creel.models import (
             AgentConfig,
             AgentDefinition,
             ChannelsConfig,
@@ -589,7 +589,7 @@ class TestE2ETelegramImage:
 
     def test_full_image_flow(self, tmp_path: Path):
         """Simulate complete flow: poll → download → store → vision → LLM → reply."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         jpeg_bytes = _make_jpeg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -611,7 +611,7 @@ class TestE2ETelegramImage:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             # Create an Attachment as if downloaded from Telegram
             attachment = Attachment(
@@ -652,7 +652,7 @@ class TestE2ETelegramImage:
 
     def test_full_image_flow_via_incoming_message(self, tmp_path: Path):
         """Simulate the DaemonService path: IncomingMessage → ChatServer."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         jpeg_bytes = _make_jpeg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -686,7 +686,7 @@ class TestE2ETelegramImage:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
+            patch("creel.chat.run_agent_loop", return_value=mock_result),
         ):
             response = server.handle_message(
                 incoming.sender_id,
@@ -703,7 +703,7 @@ class TestE2ETelegramImage:
 
     def test_media_disabled_ignores_attachments(self, tmp_path: Path):
         """When media is disabled, attachments are silently ignored."""
-        from taskrunner.models import (
+        from creel.models import (
             AgentConfig,
             AgentDefinition,
             ChannelsConfig,
@@ -729,7 +729,7 @@ class TestE2ETelegramImage:
             media=None,  # media disabled
         )
 
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         server = ChatServer(agent_def)
 
@@ -747,7 +747,7 @@ class TestE2ETelegramImage:
             mime_type="image/jpeg",
         )
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "42",
                 "What is this?",
@@ -766,7 +766,7 @@ class TestE2ETelegramImage:
 
     def test_polling_e2e_image_flow(self, tmp_path: Path):
         """Full E2E: Telegram poll receives photo → download → ChatServer processes → reply sent."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         jpeg_bytes = _make_jpeg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -813,7 +813,7 @@ class TestE2ETelegramImage:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_vision_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result),
+            patch("creel.chat.run_agent_loop", return_value=mock_result),
         ):
 
             def callback(*args):

@@ -91,7 +91,7 @@ class CoherenceChecker:
 
         t0 = time.perf_counter()
         try:
-            from taskrunner.llm import _get_client
+            from creel.llm import _get_client
 
             extra_context = ""
             if prior_tools:

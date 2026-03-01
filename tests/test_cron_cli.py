@@ -6,15 +6,15 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
-from taskrunner import cli
-from taskrunner.cron.models import (
+from creel import cli
+from creel.cron.models import (
     CronJob,
     Payload,
     RunRecord,
     RunStatus,
     Schedule,
 )
-from taskrunner.cron.store import JobStore
+from creel.cron.store import JobStore
 
 # -- Helpers --
 

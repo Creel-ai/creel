@@ -7,6 +7,8 @@ import os
 
 import pytest
 
+from creel.models import ExecutorConfig
+from creel.orchestrator import _exec_file_ops_inline
 from executors.file_ops.executor import (
     _safe_path,
     action_edit,
@@ -15,8 +17,6 @@ from executors.file_ops.executor import (
     action_write,
     main,
 )
-from taskrunner.models import ExecutorConfig
-from taskrunner.orchestrator import _exec_file_ops_inline
 
 
 @pytest.fixture()

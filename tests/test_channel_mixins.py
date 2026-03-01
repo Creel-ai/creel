@@ -5,13 +5,13 @@ from __future__ import annotations
 import threading
 import time
 
-from taskrunner.channels.base import (
+from creel.channels.base import (
     Attachment,
     Channel,
     IncomingMessage,
     OutgoingMessage,
 )
-from taskrunner.channels.mixins import BridgeClientMixin, PollingChannelMixin
+from creel.channels.mixins import BridgeClientMixin, PollingChannelMixin
 
 # ---------------------------------------------------------------------------
 # PollingChannelMixin

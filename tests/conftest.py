@@ -10,7 +10,7 @@ import pyrage
 import pytest
 import yaml
 
-from taskrunner.models import (
+from creel.models import (
     AgentConfig,
     AgentDefinition,
     ChannelsConfig,

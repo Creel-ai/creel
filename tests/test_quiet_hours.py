@@ -4,8 +4,8 @@ from datetime import datetime
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from taskrunner.models import QuietHoursConfig
-from taskrunner.quiet_hours import is_quiet_hours, should_suppress
+from creel.models import QuietHoursConfig
+from creel.quiet_hours import is_quiet_hours, should_suppress
 
 
 class TestQuietHours:
@@ -16,7 +16,7 @@ class TestQuietHours:
         config = QuietHoursConfig(enabled=False)
 
         # Should never be quiet hours when disabled
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Test during what would be quiet hours
             mock_dt.now.return_value = datetime(
                 2024, 1, 1, 1, 0, tzinfo=ZoneInfo("UTC")
@@ -28,7 +28,7 @@ class TestQuietHours:
         """Test detection when quiet hours are within the same day."""
         config = QuietHoursConfig(enabled=True, start="09:00", end="17:00", timezone="UTC")
 
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Test within quiet hours
             mock_dt.now.return_value = datetime(
                 2024, 1, 1, 12, 0, tzinfo=ZoneInfo("UTC")
@@ -52,7 +52,7 @@ class TestQuietHours:
         """Test detection when outside quiet hours within the same day."""
         config = QuietHoursConfig(enabled=True, start="09:00", end="17:00", timezone="UTC")
 
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Test before quiet hours
             mock_dt.now.return_value = datetime(
                 2024, 1, 1, 8, 0, tzinfo=ZoneInfo("UTC")
@@ -71,7 +71,7 @@ class TestQuietHours:
         """Test overnight ranges (23:00 → 08:00 crossing midnight)."""
         config = QuietHoursConfig(enabled=True, start="23:00", end="08:00", timezone="UTC")
 
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Test late night (after start)
             mock_dt.now.return_value = datetime(
                 2024, 1, 1, 23, 30, tzinfo=ZoneInfo("UTC")
@@ -102,7 +102,7 @@ class TestQuietHours:
         """Test times outside overnight ranges."""
         config = QuietHoursConfig(enabled=True, start="23:00", end="08:00", timezone="UTC")
 
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Test middle of the day
             mock_dt.now.return_value = datetime(
                 2024, 1, 1, 15, 0, tzinfo=ZoneInfo("UTC")
@@ -130,7 +130,7 @@ class TestQuietHours:
             enabled=True, start="23:00", end="08:00", timezone="UTC", allow_urgent=True
         )
 
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Set time within quiet hours
             mock_dt.now.return_value = datetime(
                 2024, 1, 1, 1, 0, tzinfo=ZoneInfo("UTC")
@@ -148,7 +148,7 @@ class TestQuietHours:
             enabled=True, start="23:00", end="08:00", timezone="UTC", allow_urgent=False
         )
 
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Set time within quiet hours
             mock_dt.now.return_value = datetime(
                 2024, 1, 1, 1, 0, tzinfo=ZoneInfo("UTC")
@@ -167,7 +167,7 @@ class TestQuietHours:
             timezone="America/Denver",  # MST/MDT
         )
 
-        with patch("taskrunner.quiet_hours.datetime") as mock_dt:
+        with patch("creel.quiet_hours.datetime") as mock_dt:
             # Set time that would be outside quiet hours in UTC but inside in Denver
             # 06:00 UTC = 23:00 MST (during standard time)
             mock_dt.now.return_value = datetime(

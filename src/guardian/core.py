@@ -34,14 +34,19 @@ class Guardian:
     """
 
     def __init__(self, config: GuardianConfig) -> None:
+        from creel import paths
+
         self._config = config
         self._classifier = FastClassifier(config.fast_classifier)
         self._judge = LLMJudge(config.llm_judge)
-        self._policy = PolicyEngine(config.policy.policy_file) if config.policy.enabled else None
+        policy_file = config.policy.policy_file or str(paths.policies_dir() / "default.yaml")
+        self._policy = PolicyEngine(policy_file) if config.policy.enabled else None
         self._coherence = CoherenceChecker(config.coherence)
+
+        audit_file = config.audit.log_file or str(paths.audit_log())
         self._audit = (
             AuditLogger(
-                config.audit.log_file,
+                audit_file,
                 rotate_daily=config.audit.rotate_daily,
                 max_size_mb=config.audit.max_size_mb,
             )
@@ -54,7 +59,7 @@ class Guardian:
                 error_threshold=config.drift.error_threshold,
                 error_window_size=config.drift.error_window_size,
                 new_tool_grace_count=config.drift.new_tool_grace_count,
-                audit_log_path=config.audit.log_file if config.audit.enabled else None,
+                audit_log_path=audit_file if config.audit.enabled else None,
             )
             if config.drift.enabled
             else None

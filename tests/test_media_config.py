@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from taskrunner.models import (
+from creel.models import (
     AgentConfig,
     AgentDefinition,
     ChannelsConfig,
@@ -203,7 +203,7 @@ class TestChatServerMediaConfig:
 
     def test_media_none_services_disabled(self, tmp_path: Path) -> None:
         """When media is None, all media services should be None."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         agent_def = AgentDefinition(**self._base_kwargs(tmp_path))
         server = ChatServer(agent_def)
@@ -213,7 +213,7 @@ class TestChatServerMediaConfig:
 
     def test_media_disabled_services_disabled(self, tmp_path: Path) -> None:
         """When media.enabled is False, all media services should be None."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         kwargs = self._base_kwargs(tmp_path)
         kwargs["media"] = MediaConfig(enabled=False)
@@ -225,10 +225,10 @@ class TestChatServerMediaConfig:
 
     def test_media_enabled_services_created(self, tmp_path: Path) -> None:
         """When media.enabled is True, all media services are initialized."""
-        from taskrunner.chat import ChatServer
-        from taskrunner.services.media_store import MediaStore
-        from taskrunner.services.transcription import TranscriptionService
-        from taskrunner.services.vision import VisionProcessor
+        from creel.chat import ChatServer
+        from creel.services.media_store import MediaStore
+        from creel.services.transcription import TranscriptionService
+        from creel.services.vision import VisionProcessor
 
         kwargs = self._base_kwargs(tmp_path)
         kwargs["media"] = MediaConfig(
@@ -258,8 +258,8 @@ class TestChatServerMediaConfig:
     def test_media_disabled_attachments_ignored(self, tmp_path: Path) -> None:
         """Attachments are silently ignored when media is disabled."""
 
-        from taskrunner.channels.message import Attachment, AttachmentType
-        from taskrunner.chat import ChatServer
+        from creel.channels.message import Attachment, AttachmentType
+        from creel.chat import ChatServer
 
         agent_def = AgentDefinition(**self._base_kwargs(tmp_path))
         server = ChatServer(agent_def)
@@ -276,7 +276,7 @@ class TestChatServerMediaConfig:
 
     def test_storage_dir_tilde_expanded(self, tmp_path: Path) -> None:
         """storage_dir with ~ should be expanded to home directory."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         kwargs = self._base_kwargs(tmp_path)
         kwargs["media"] = MediaConfig(enabled=True, storage_dir="~/test-media")

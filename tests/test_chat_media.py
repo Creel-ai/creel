@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from taskrunner.channels.message import Attachment, AttachmentType
-from taskrunner.chat import ChatServer
-from taskrunner.models import (
+from creel.channels.message import Attachment, AttachmentType
+from creel.chat import ChatServer
+from creel.models import (
     AgentConfig,
     AgentDefinition,
     ChannelsConfig,
@@ -288,7 +288,7 @@ class TestHandleMessageWithAttachments:
 
         with (
             patch.object(server._vision, "prepare_image", return_value=mock_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "What is this?", attachments=[attachment])
 
@@ -325,7 +325,7 @@ class TestHandleMessageWithAttachments:
 
         with (
             patch.object(server._transcription, "transcribe", return_value="Turn off the lights"),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "", attachments=[attachment])
 
@@ -345,7 +345,7 @@ class TestHandleMessageWithAttachments:
         server = self._server(tmp_path)
         mock_result = _make_agent_result("Hello!")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             result = server.handle_message("user1", "Hi there")
 
         assert result == "Hello!"
@@ -386,7 +386,7 @@ class TestHandleMessageWithAttachments:
         with (
             patch.object(server._transcription, "transcribe", return_value="What is this?"),
             patch.object(server._vision, "prepare_image", return_value=mock_block),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "", attachments=[voice_att, image_att])
 

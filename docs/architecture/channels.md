@@ -22,10 +22,10 @@ flowchart TD
 
 ```toml
 [project.entry-points."creel.channels"]
-imessage = "taskrunner.channels.imessage:register_plugin"
-bluebubbles = "taskrunner.channels.bluebubbles:register_plugin"
-whatsapp = "taskrunner.channels.whatsapp:register_plugin"
-telegram = "taskrunner.channels.telegram:register_plugin"
+imessage = "creel.channels.imessage:register_plugin"
+bluebubbles = "creel.channels.bluebubbles:register_plugin"
+whatsapp = "creel.channels.whatsapp:register_plugin"
+telegram = "creel.channels.telegram:register_plugin"
 ```
 
 When entry points aren't available (e.g. running from source with `PYTHONPATH`), the registry falls back to directly importing the modules listed in `ChannelRegistry._BUILTIN_CHANNELS`.
@@ -141,9 +141,9 @@ Outbound `send()` calls are restricted to the union of `allowed_chats` and numer
 
 ## Adding a New Channel
 
-1. Create `src/taskrunner/channels/<name>.py` implementing the `Channel` ABC (`listen`, `send`, `stop`).
+1. Create `src/creel/channels/<name>.py` implementing the `Channel` ABC (`listen`, `send`, `stop`).
 2. Add a `register_plugin()` function returning `(ChannelPluginMeta, factory)`.
-3. Add a Pydantic config model in `src/taskrunner/models.py`.
+3. Add a Pydantic config model in `src/creel/models.py`.
 4. Register the entry point in `pyproject.toml` under `[project.entry-points."creel.channels"]`.
 5. Add the module path to `ChannelRegistry._BUILTIN_CHANNELS` for dev fallback.
 6. Add channel config to `agent.yaml` under `channels:`.

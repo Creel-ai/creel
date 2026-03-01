@@ -7,8 +7,8 @@ import os
 
 import pytest
 
-from taskrunner.models import ToolConfig, ToolParameter
-from taskrunner.tools import (
+from creel.models import ToolConfig, ToolParameter
+from creel.tools import (
     _is_blocked_path,
     _validate_workspace_path,
     build_tool_definitions,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from taskrunner.session import Session, SessionManager
+from creel.session import Session, SessionManager
 
 
 class TestSessionIDEntropy:
@@ -154,13 +154,13 @@ class TestSessionConfigEncryption:
     """Tests for encryption_key in SessionConfig."""
 
     def test_session_config_encryption_key_default(self) -> None:
-        from taskrunner.models import SessionConfig
+        from creel.models import SessionConfig
 
         config = SessionConfig()
         assert config.encryption_key is None
 
     def test_session_config_encryption_key_set(self) -> None:
-        from taskrunner.models import SessionConfig
+        from creel.models import SessionConfig
 
         config = SessionConfig(encryption_key="my-secret")
         assert config.encryption_key == "my-secret"

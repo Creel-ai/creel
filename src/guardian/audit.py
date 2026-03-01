@@ -8,7 +8,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskrunner.log import request_id_var
+from creel.log import request_id_var
 
 logger = logging.getLogger(__name__)
 

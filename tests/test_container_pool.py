@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.container_pool import (
+from creel.container_pool import (
     ContainerPool,
     ContainerPoolConfig,
     ManagedContainer,
@@ -154,7 +154,7 @@ class TestContainerPool:
         assert stats["enabled"] is True
         pool.shutdown()
 
-    @patch("taskrunner.container_pool.subprocess.Popen")
+    @patch("creel.container_pool.subprocess.Popen")
     def test_acquire_starts_new_container(self, mock_popen):
         proc = MagicMock()
         proc.poll.return_value = None
@@ -249,8 +249,8 @@ class TestContainerPool:
         assert pool._idle[key] == []
         pool.shutdown()
 
-    @patch("taskrunner.container_pool.subprocess.run")
-    @patch("taskrunner.container_pool.subprocess.Popen")
+    @patch("creel.container_pool.subprocess.run")
+    @patch("creel.container_pool.subprocess.Popen")
     def test_acquire_skips_dead_idle_container(self, mock_popen, mock_run):
         pool = _make_pool()
 
@@ -454,7 +454,7 @@ class TestContainerAgentPoolIntegration:
 
     def test_run_with_pool_acquires_and_releases(self):
         """Pool acquire/release should be called around protocol execution."""
-        from taskrunner.container_agent import _run_with_pool
+        from creel.container_agent import _run_with_pool
 
         pool = MagicMock()
         container = _make_container()
@@ -494,7 +494,7 @@ class TestContainerAgentPoolIntegration:
 
     def test_run_with_pool_kills_on_error(self):
         """On protocol error, container should be killed, not released."""
-        from taskrunner.container_agent import _run_with_pool
+        from creel.container_agent import _run_with_pool
 
         pool = MagicMock()
         container = _make_container()

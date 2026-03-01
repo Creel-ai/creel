@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.whatsapp_bridge import (
+from creel.channels.whatsapp_bridge import (
     HttpWhatsAppBridge,
     NeonizeWhatsAppBridge,
     WhatsAppMessage,

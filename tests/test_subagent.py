@@ -9,10 +9,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
-from taskrunner.subagents.executor import handle_subagent_tool
-from taskrunner.subagents.manager import SubAgentManager
-from taskrunner.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
+from creel.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
+from creel.subagents.executor import handle_subagent_tool
+from creel.subagents.manager import SubAgentManager
+from creel.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,7 +41,7 @@ def _make_agent_config() -> AgentConfig:
 
 def _mock_agent_result(text: str = "Done."):
     """Return a mock AgentResult."""
-    from taskrunner.agent import AgentResult
+    from creel.agent import AgentResult
 
     return AgentResult(
         text=text,
@@ -114,7 +114,7 @@ class TestSubAgentModels:
 
 
 class TestSubAgentManager:
-    @patch("taskrunner.agent.run_agent_loop", side_effect=ImportError)
+    @patch("creel.agent.run_agent_loop", side_effect=ImportError)
     def test_spawn_returns_agent_id(self, _mock):
         """spawn() should return an ID immediately without blocking."""
         manager = _make_manager()
@@ -124,7 +124,7 @@ class TestSubAgentManager:
         assert isinstance(agent_id, str)
         assert len(agent_id) == 8  # token_hex(4) -> 8 chars
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_spawn_creates_running_agent(self, mock_loop):
         mock_loop.return_value = _mock_agent_result("All done")
         manager = _make_manager()
@@ -136,7 +136,7 @@ class TestSubAgentManager:
         assert info is not None
         assert info.id == agent_id
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_list_agents_returns_all(self, mock_loop):
         mock_loop.return_value = _mock_agent_result()
         manager = _make_manager()
@@ -150,7 +150,7 @@ class TestSubAgentManager:
         assert id1 in ids
         assert id2 in ids
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_list_agents_newest_first(self, mock_loop):
         mock_loop.return_value = _mock_agent_result()
         manager = _make_manager()
@@ -165,7 +165,7 @@ class TestSubAgentManager:
         # newest first
         assert agents[0].id == id2
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_agent_completes_with_result(self, mock_loop):
         mock_loop.return_value = _mock_agent_result("The answer is 42.")
         callback = MagicMock()
@@ -180,7 +180,7 @@ class TestSubAgentManager:
         assert "42" in info.result_summary
         assert info.completed_at is not None
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_result_callback_fires_on_completion(self, mock_loop):
         mock_loop.return_value = _mock_agent_result("result text")
         callback = MagicMock()
@@ -191,7 +191,7 @@ class TestSubAgentManager:
 
         callback.assert_called_once_with(agent_id, "result text")
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_agent_failure_sets_status(self, mock_loop):
         mock_loop.side_effect = RuntimeError("LLM exploded")
         callback = MagicMock()
@@ -206,7 +206,7 @@ class TestSubAgentManager:
         assert "LLM exploded" in info.error
         callback.assert_called_once()
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_kill_terminates_agent(self, mock_loop):
         # Make the agent loop block until cancelled
         cancel_event = threading.Event()
@@ -231,12 +231,12 @@ class TestSubAgentManager:
         assert info is not None
         assert info.status == SubAgentStatus.KILLED
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_kill_nonexistent_returns_false(self, mock_loop):
         manager = _make_manager()
         assert manager.kill("nonexistent") is False
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_kill_completed_returns_false(self, mock_loop):
         mock_loop.return_value = _mock_agent_result()
         manager = _make_manager()
@@ -246,7 +246,7 @@ class TestSubAgentManager:
 
         assert manager.kill(agent_id) is False
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_steer_queues_message(self, mock_loop):
         call_count = 0
 
@@ -269,7 +269,7 @@ class TestSubAgentManager:
 
         time.sleep(0.3)
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_steer_nonrunning_returns_false(self, mock_loop):
         mock_loop.return_value = _mock_agent_result()
         manager = _make_manager()
@@ -279,7 +279,7 @@ class TestSubAgentManager:
 
         assert manager.steer(agent_id, "too late") is False
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_timeout_sets_status(self, mock_loop):
         """Agent should be marked TIMEOUT when it exceeds timeout_seconds."""
         block = threading.Event()
@@ -301,7 +301,7 @@ class TestSubAgentManager:
         assert info.error == "Timed out"
         block.set()  # unblock the thread
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_concurrent_spawns(self, mock_loop):
         """Multiple sub-agents can run concurrently."""
 
@@ -329,7 +329,7 @@ class TestSubAgentManager:
 
         assert callback.call_count == 3
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_model_override(self, mock_loop):
         """Spawn with model override should pass different LLMConfig."""
         captured_config = {}
@@ -347,7 +347,7 @@ class TestSubAgentManager:
         assert captured_config.get("llm_config") is not None
         assert captured_config["llm_config"].model == "claude-haiku-4-5-20251001"
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_result_truncated_at_2000_chars(self, mock_loop):
         long_text = "x" * 3000
         mock_loop.return_value = _mock_agent_result(long_text)
@@ -360,12 +360,12 @@ class TestSubAgentManager:
         assert info is not None
         assert len(info.result_summary) <= 2003 + 3  # 2000 + "..."
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_get_nonexistent_returns_none(self, mock_loop):
         manager = _make_manager()
         assert manager.get("nope") is None
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_default_label(self, mock_loop):
         mock_loop.return_value = _mock_agent_result()
         manager = _make_manager()
@@ -387,7 +387,7 @@ class TestSubAgentExecutor:
     def _manager(self):
         return _make_manager()
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_spawn_action(self, mock_loop):
         mock_loop.return_value = _mock_agent_result("spawned ok")
         manager = self._manager()
@@ -409,13 +409,13 @@ class TestSubAgentExecutor:
         result = json.loads(handle_subagent_tool({"action": "spawn"}, manager))
         assert "error" in result
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_list_action_empty(self, mock_loop):
         manager = self._manager()
         result = json.loads(handle_subagent_tool({"action": "list"}, manager))
         assert result["agents"] == []
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_list_action_with_agents(self, mock_loop):
         mock_loop.return_value = _mock_agent_result("done")
         manager = self._manager()
@@ -430,7 +430,7 @@ class TestSubAgentExecutor:
         assert len(result["agents"]) == 1
         assert result["agents"][0]["label"] == "worker"
 
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_kill_action(self, mock_loop):
         block = threading.Event()
 
@@ -498,11 +498,11 @@ class TestSubAgentExecutor:
 
 
 class TestToolsIntegration:
-    @patch("taskrunner.agent.run_agent_loop")
+    @patch("creel.agent.run_agent_loop")
     def test_execute_tool_call_dispatches_subagent(self, mock_loop):
         """execute_tool_call should dispatch to subagent handler."""
         mock_loop.return_value = _mock_agent_result("sub done")
-        from taskrunner.tools import execute_tool_call
+        from creel.tools import execute_tool_call
 
         manager = _make_manager()
         result = execute_tool_call(
@@ -517,7 +517,7 @@ class TestToolsIntegration:
 
     def test_execute_tool_call_without_manager_raises(self):
         """Without a manager, 'subagent' should fall through to unknown tool."""
-        from taskrunner.tools import execute_tool_call
+        from creel.tools import execute_tool_call
 
         with pytest.raises(ValueError, match="Unknown tool"):
             execute_tool_call(
@@ -534,21 +534,21 @@ class TestToolsIntegration:
 
 class TestToolDefinitions:
     def test_subagent_tool_included_when_enabled(self):
-        from taskrunner.tools import build_tool_definitions
+        from creel.tools import build_tool_definitions
 
         defs = build_tool_definitions(_make_tools(), include_subagent_tool=True)
         names = [d["name"] for d in defs]
         assert "subagent" in names
 
     def test_subagent_tool_excluded_by_default(self):
-        from taskrunner.tools import build_tool_definitions
+        from creel.tools import build_tool_definitions
 
         defs = build_tool_definitions(_make_tools())
         names = [d["name"] for d in defs]
         assert "subagent" not in names
 
     def test_subagent_tool_schema_has_action(self):
-        from taskrunner.tools import BUILTIN_SUBAGENT_TOOL
+        from creel.tools import BUILTIN_SUBAGENT_TOOL
 
         schema = BUILTIN_SUBAGENT_TOOL["input_schema"]
         assert "action" in schema["properties"]

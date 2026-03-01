@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.message import Attachment, AttachmentType
-from taskrunner.services.media_store import MediaStore
+from creel.channels.message import Attachment, AttachmentType
+from creel.services.media_store import MediaStore
 
 
 class TestSaveFromBytes:

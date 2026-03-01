@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from taskrunner.chat import ChatServer
-from taskrunner.models import AgentDefinition
+from creel.chat import ChatServer
+from creel.models import AgentDefinition
 
 
 class TestFullPipeline:
     """End-to-end: incoming message → ChatServer → agent loop → mock LLM → response."""
 
-    @patch("taskrunner.agent.call_llm")
+    @patch("creel.agent.call_llm")
     def test_stdin_to_response(
         self, mock_call_llm, minimal_agent_def: AgentDefinition, monkeypatch
     ):
@@ -43,7 +43,7 @@ class TestFullPipeline:
             m.get("content") == "What's the weather?" for m in messages if isinstance(m, dict)
         )
 
-    @patch("taskrunner.agent.call_llm")
+    @patch("creel.agent.call_llm")
     def test_session_persists_across_messages(
         self, mock_call_llm, minimal_agent_def: AgentDefinition, monkeypatch
     ):
@@ -76,7 +76,7 @@ class TestFullPipeline:
         ]
         assert len(user_messages) >= 2
 
-    @patch("taskrunner.agent.call_llm")
+    @patch("creel.agent.call_llm")
     def test_clear_resets_session(
         self, mock_call_llm, minimal_agent_def: AgentDefinition, monkeypatch
     ):
@@ -96,7 +96,7 @@ class TestFullPipeline:
         result = server.handle_message("test-user", "clear")
         assert "cleared" in result.lower()
 
-    @patch("taskrunner.agent.call_llm")
+    @patch("creel.agent.call_llm")
     def test_tool_call_round_trip(
         self, mock_call_llm, minimal_agent_def: AgentDefinition, monkeypatch
     ):
@@ -124,7 +124,7 @@ class TestFullPipeline:
         mock_call_llm.side_effect = [first_response, second_response]
 
         # Add a tool to the agent definition
-        from taskrunner.models import ToolConfig
+        from creel.models import ToolConfig
 
         minimal_agent_def.tools = {
             "test_tool": ToolConfig(
@@ -136,7 +136,7 @@ class TestFullPipeline:
         server = ChatServer(minimal_agent_def, use_containers=False)
 
         # Mock the tool execution
-        with patch("taskrunner.agent.execute_tool_call", return_value="Tool output"):
+        with patch("creel.agent.execute_tool_call", return_value="Tool output"):
             result = server.handle_message("test-user", "Use the tool")
 
         assert "result" in result.lower() or "Here is" in result

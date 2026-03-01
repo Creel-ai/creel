@@ -20,9 +20,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
-from taskrunner.channels.telegram import TelegramChannel
-from taskrunner.channels.telegram_bridge import (
+from creel.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.channels.telegram import TelegramChannel
+from creel.channels.telegram_bridge import (
     TelegramMedia,
     TelegramMessage,
     _extract_media,
@@ -393,7 +393,7 @@ class TestE2ETelegramVoice:
     """Full integration test: Telegram voice → ChatServer → transcription → LLM → response."""
 
     def _make_agent_def(self, tmp_path: Path):
-        from taskrunner.models import (
+        from creel.models import (
             AgentConfig,
             AgentDefinition,
             ChannelsConfig,
@@ -424,7 +424,7 @@ class TestE2ETelegramVoice:
 
     def test_full_voice_flow(self, tmp_path: Path):
         """Simulate complete flow: attachment → store → transcribe → LLM → reply."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         ogg_bytes = _make_ogg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -444,7 +444,7 @@ class TestE2ETelegramVoice:
                 "transcribe",
                 return_value="Hello, this is a test",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -483,7 +483,7 @@ class TestE2ETelegramVoice:
 
     def test_voice_only_no_accompanying_text(self, tmp_path: Path):
         """Voice message with no text — transcription becomes the entire message."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         ogg_bytes = _make_ogg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -499,7 +499,7 @@ class TestE2ETelegramVoice:
 
         with (
             patch.object(server._transcription, "transcribe", return_value="Just a voice note"),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -527,7 +527,7 @@ class TestE2ETelegramVoice:
 
     def test_transcription_failure_shows_fallback(self, tmp_path: Path):
         """When transcription fails, a fallback message is sent to the LLM."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         ogg_bytes = _make_ogg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -543,7 +543,7 @@ class TestE2ETelegramVoice:
 
         with (
             patch.object(server._transcription, "transcribe", return_value=""),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -576,7 +576,7 @@ class TestE2ETelegramVoice:
 
     def test_polling_e2e_voice_flow(self, tmp_path: Path):
         """Full E2E: Telegram poll receives voice → download → ChatServer transcribes → reply sent."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         ogg_bytes = _make_ogg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -619,7 +619,7 @@ class TestE2ETelegramVoice:
                 "transcribe",
                 return_value="Hello, this is a test",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
 
             def callback(*args):
@@ -666,7 +666,7 @@ class TestE2ETelegramVoice:
     @pytest.mark.asyncio
     async def test_webhook_e2e_voice_flow(self, tmp_path: Path):
         """Full E2E: Telegram webhook receives voice → download → ChatServer transcribes → reply."""
-        from taskrunner.chat import ChatServer
+        from creel.chat import ChatServer
 
         ogg_bytes = _make_ogg_bytes()
         agent_def = self._make_agent_def(tmp_path)
@@ -695,7 +695,7 @@ class TestE2ETelegramVoice:
                 "transcribe",
                 return_value="testing one two three",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
 
             def callback(*args):

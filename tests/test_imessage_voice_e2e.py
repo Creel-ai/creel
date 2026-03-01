@@ -16,10 +16,10 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from taskrunner.channels.imessage import IMessageChannel
-from taskrunner.channels.message import Attachment, AttachmentType, IncomingMessage
-from taskrunner.chat import ChatServer
-from taskrunner.models import (
+from creel.channels.imessage import IMessageChannel
+from creel.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.chat import ChatServer
+from creel.models import (
     AgentConfig,
     AgentDefinition,
     ChannelsConfig,
@@ -248,7 +248,7 @@ class TestMissingVoiceFile:
 
         mock_result = _make_agent_result("I couldn't process the audio.")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "did you hear that?",
@@ -371,19 +371,19 @@ class TestCafConversion:
 
     def test_caf_is_in_needs_conversion_set(self) -> None:
         """Verify .caf is registered as needing conversion in TranscriptionService."""
-        from taskrunner.services.transcription import NEEDS_CONVERSION
+        from creel.services.transcription import NEEDS_CONVERSION
 
         assert ".caf" in NEEDS_CONVERSION
 
     def test_caf_not_in_whisper_supported(self) -> None:
         """Verify .caf is NOT in Whisper's natively supported formats."""
-        from taskrunner.services.transcription import WHISPER_SUPPORTED_FORMATS
+        from creel.services.transcription import WHISPER_SUPPORTED_FORMATS
 
         assert ".caf" not in WHISPER_SUPPORTED_FORMATS
 
     def test_maybe_convert_calls_ffmpeg_for_caf(self, tmp_path: Path) -> None:
         """TranscriptionService._maybe_convert should call ffmpeg for .caf files."""
-        from taskrunner.services.transcription import TranscriptionService
+        from creel.services.transcription import TranscriptionService
 
         service = TranscriptionService(api_key="test-key")
         caf_file = tmp_path / "voice.caf"
@@ -407,7 +407,7 @@ class TestCafConversion:
 
     def test_maybe_convert_returns_original_without_ffmpeg(self, tmp_path: Path) -> None:
         """Without ffmpeg, _maybe_convert should return the original .caf path."""
-        from taskrunner.services.transcription import TranscriptionService
+        from creel.services.transcription import TranscriptionService
 
         service = TranscriptionService(api_key="test-key")
         caf_file = tmp_path / "voice.caf"
@@ -444,7 +444,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="I want pizza for dinner",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -497,7 +497,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="Here is my voice note",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -537,7 +537,7 @@ class TestE2EIMessageVoice:
 
         with (
             patch.object(server._transcription, "transcribe", return_value=""),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             attachment = Attachment(
                 type=AttachmentType.VOICE,
@@ -600,7 +600,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="This is from iMessage",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             response = server.handle_message(
                 incoming.sender_id,
@@ -664,7 +664,7 @@ class TestE2EIMessageVoice:
                 "transcribe",
                 return_value="Hello from iMessage voice",
             ),
-            patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop,
+            patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
 
             def callback(*args):
@@ -749,7 +749,7 @@ class TestE2EIMessageVoice:
 
         mock_result = _make_agent_result("Text only response")
 
-        with patch("taskrunner.chat.run_agent_loop", return_value=mock_result) as mock_loop:
+        with patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop:
             response = server.handle_message(
                 "friend@icloud.com",
                 "did you hear that?",

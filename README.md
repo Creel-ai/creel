@@ -1016,7 +1016,7 @@ creel/
 ├── secrets/               # Encrypted .env files (gitignored)
 ├── scripts/               # Utility scripts (encryption, OAuth setup)
 ├── src/
-│   ├── taskrunner/
+│   ├── creel/
 │   │   ├── cli.py         # creel CLI entrypoint
 │   │   ├── daemon/        # Daemon service, API, client contracts
 │   │   ├── chat.py        # Agent/session router

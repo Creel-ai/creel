@@ -286,12 +286,12 @@ class TestDebugMode:
 class TestChatIntegration:
     """Test Guardian integration with ChatServer (mocked agent loop)."""
 
-    @patch("taskrunner.chat.run_agent_loop")
+    @patch("creel.chat.run_agent_loop")
     def test_blocked_input_skips_agent(
         self, mock_agent_loop: MagicMock, tmp_path: Path, policy_file: Path
     ) -> None:
-        from taskrunner.chat import ChatServer
-        from taskrunner.models import AgentDefinition
+        from creel.chat import ChatServer
+        from creel.models import AgentDefinition
 
         config = GuardianConfig(
             enabled=True,
@@ -321,12 +321,12 @@ class TestChatIntegration:
         mock_agent_loop.assert_not_called()
         assert "can't process" in response.lower()
 
-    @patch("taskrunner.chat.run_agent_loop")
+    @patch("creel.chat.run_agent_loop")
     def test_clean_input_reaches_agent(
         self, mock_agent_loop: MagicMock, tmp_path: Path, policy_file: Path
     ) -> None:
-        from taskrunner.chat import ChatServer
-        from taskrunner.models import AgentDefinition
+        from creel.chat import ChatServer
+        from creel.models import AgentDefinition
 
         config = GuardianConfig(
             enabled=True,

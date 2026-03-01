@@ -13,7 +13,7 @@ import threading
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from creel.llm import run_llm
 from creel.models import BridgeConfig, ExecutorConfig, TaskDefinition, ToolConfig, load_task
@@ -176,6 +176,13 @@ _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "imessage_bridge": "IMESSAGE",
     "browser": "BROWSER",
     "git_ops": "GIT",
+}
+
+_HOST_AUTH_REGISTRY: dict[str, dict[str, Any]] = {
+    "github": {
+        "host_path": "~/.config/gh",
+        "container_path": "/home/executor/.config/gh",
+    },
 }
 
 
@@ -1244,6 +1251,23 @@ def _run_executor_container(
                 # Expand ~ to home directory
                 host_path = os.path.expanduser(mount.path)
                 docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
+
+        # Mount host CLI auth directory (e.g. gh config) when host_auth is enabled
+        if tool_config and tool_config.host_auth:
+            executor_name = config.name or ""
+            auth_entry = _HOST_AUTH_REGISTRY.get(executor_name)
+            if auth_entry is None:
+                raise ValueError(
+                    f"host_auth is not supported for executor '{executor_name}' "
+                    f"(supported: {sorted(_HOST_AUTH_REGISTRY)})"
+                )
+            host_path = Path(os.path.expanduser(auth_entry["host_path"]))
+            if not host_path.is_dir():
+                raise RuntimeError(
+                    f"Host auth directory not found: {host_path} — "
+                    f"run `gh auth login` to authenticate first"
+                )
+            docker_cmd.extend(["-v", f"{host_path}:{auth_entry['container_path']}:ro"])
 
         # Mount dynamic workspace for file_ops executor
         if _workspace_mount:

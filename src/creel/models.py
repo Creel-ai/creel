@@ -93,6 +93,7 @@ class ToolConfig(BaseModel):
     mounts: list[MountConfig] = Field(default_factory=list)
     network: bool = False
     image: str | None = None
+    host_auth: bool = False
 
 
 class AgentConfig(BaseModel):

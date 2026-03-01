@@ -40,6 +40,8 @@ from creel.orchestrator import run_task
 from creel.secrets import parse_env_file
 from creel.scheduler import start_scheduler
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_DAEMON_LABEL = "com.creel.daemon"
 
 
@@ -1470,11 +1472,6 @@ def main() -> int:
         description="LLM Task Runner - secure, scheduled LLM task execution",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
-    parser.add_argument(
-        "--containers",
-        action="store_true",
-        help="Run executors/LLM in Docker containers",
-    )
     parser.add_argument(
         "--containers", action="store_true", help="Run executors/LLM in Docker containers"
     )

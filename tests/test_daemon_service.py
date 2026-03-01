@@ -143,15 +143,11 @@ def test_channel_lifecycle(daemon_service: DaemonService) -> None:
     assert daemon_service.start_channel("imessage") is True
     assert channel.started.wait(timeout=1)
 
-    running_state = next(
-        c for c in daemon_service.status()["channels"] if c["name"] == "imessage"
-    )
+    running_state = next(c for c in daemon_service.status()["channels"] if c["name"] == "imessage")
     assert running_state["running"] is True
 
     assert daemon_service.stop_channel("imessage", timeout=1) is True
     assert channel.stopped.wait(timeout=1)
 
-    stopped_state = next(
-        c for c in daemon_service.status()["channels"] if c["name"] == "imessage"
-    )
+    stopped_state = next(c for c in daemon_service.status()["channels"] if c["name"] == "imessage")
     assert stopped_state["running"] is False

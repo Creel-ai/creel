@@ -10,7 +10,6 @@ import pytest
 from creel.cron.executor import JobExecutor
 from creel.cron.models import CronJob, Delivery, Payload, Schedule
 
-
 # -- Helpers --
 
 
@@ -273,9 +272,7 @@ class TestExecuteIsolatedDelivery:
             schedule=Schedule(kind="cron", expr="0 8 * * *"),
             target="isolated",
             payload=Payload(message="do stuff"),
-            delivery=Delivery(
-                mode="announce", channel="whatsapp", best_effort=True
-            ),
+            delivery=Delivery(mode="announce", channel="whatsapp", best_effort=True),
         )
 
         # Should not raise despite delivery failure

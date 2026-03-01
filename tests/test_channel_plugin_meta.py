@@ -20,8 +20,15 @@ def test_capability_flags_combine():
 
 def test_capability_all_members():
     expected = {
-        "POLLING", "WEBHOOK", "SEND", "MEDIA", "REACTIONS",
-        "READ_RECEIPTS", "TYPING_INDICATOR", "GROUP_CHAT", "WAIT_FOR_REPLY",
+        "POLLING",
+        "WEBHOOK",
+        "SEND",
+        "MEDIA",
+        "REACTIONS",
+        "READ_RECEIPTS",
+        "TYPING_INDICATOR",
+        "GROUP_CHAT",
+        "WAIT_FOR_REPLY",
     }
     actual = {c.name for c in ChannelCapability}
     assert actual == expected
@@ -37,6 +44,7 @@ def test_plugin_meta_frozen():
     assert meta.label == "Test Channel"
 
     import pytest
+
     with pytest.raises(AttributeError):
         meta.id = "changed"  # type: ignore[misc]
 

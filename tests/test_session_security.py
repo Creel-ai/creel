@@ -59,7 +59,7 @@ class TestSessionEncryption:
             sessions_dir=str(tmp_path),
             encryption_key=encryption_key,
         )
-        session = mgr.add_user_message("cli", "Secret message")
+        mgr.add_user_message("cli", "Secret message")
 
         # File should not contain plaintext
         files = [f for f in tmp_path.glob("*.json") if f.name != "_active.json"]
@@ -109,16 +109,14 @@ class TestSessionEncryption:
     def test_no_encryption_by_default(self, tmp_path: Path) -> None:
         """Without encryption_key, sessions should be stored as plain JSON."""
         mgr = SessionManager(sessions_dir=str(tmp_path))
-        session = mgr.add_user_message("cli", "Visible message")
+        mgr.add_user_message("cli", "Visible message")
 
         files = [f for f in tmp_path.glob("*.json") if f.name != "_active.json"]
         raw = files[0].read_text()
         data = json.loads(raw)
         assert data["messages"][0]["content"] == "Visible message"
 
-    def test_list_sessions_with_encryption(
-        self, tmp_path: Path, encryption_key: str
-    ) -> None:
+    def test_list_sessions_with_encryption(self, tmp_path: Path, encryption_key: str) -> None:
         """list_sessions should work with encrypted files."""
         pytest.importorskip("cryptography")
 
@@ -127,7 +125,7 @@ class TestSessionEncryption:
             encryption_key=encryption_key,
         )
         mgr.add_user_message("cli", "Session 1")
-        s2 = mgr.new_session("cli")
+        mgr.new_session("cli")
         mgr.add_user_message("cli", "Session 2")
 
         sessions = mgr.list_sessions("cli")

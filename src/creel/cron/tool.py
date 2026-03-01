@@ -15,6 +15,7 @@ from creel.cron.models import (
     CronJob,
     Delivery,
     Payload,
+    RunRecord,
     Schedule,
 )
 
@@ -37,9 +38,7 @@ CRON_TOOL_DEFINITION = {
             },
             "job_id": {
                 "type": "string",
-                "description": (
-                    "Job ID (required for update, remove, run, runs)."
-                ),
+                "description": ("Job ID (required for update, remove, run, runs)."),
             },
             "name": {
                 "type": "string",
@@ -67,9 +66,7 @@ CRON_TOOL_DEFINITION = {
             },
             "message": {
                 "type": "string",
-                "description": (
-                    "The message or prompt for the job payload (required for add)."
-                ),
+                "description": ("The message or prompt for the job payload (required for add)."),
             },
             "target": {
                 "type": "string",
@@ -157,10 +154,12 @@ def handle_cron_tool(
 def _action_list(manager: CronManager) -> str:
     """List all jobs (managed + legacy)."""
     jobs = manager.list_jobs()
-    return json.dumps({
-        "jobs": [_job_summary(j) for j in jobs],
-        "count": len(jobs),
-    })
+    return json.dumps(
+        {
+            "jobs": [_job_summary(j) for j in jobs],
+            "count": len(jobs),
+        }
+    )
 
 
 def _action_add(tool_input: dict[str, Any], manager: CronManager) -> str:
@@ -214,10 +213,12 @@ def _action_add(tool_input: dict[str, Any], manager: CronManager) -> str:
     )
     manager.add_job(job)
 
-    return json.dumps({
-        "status": "created",
-        "job": _job_summary(job),
-    })
+    return json.dumps(
+        {
+            "status": "created",
+            "job": _job_summary(job),
+        }
+    )
 
 
 def _action_update(tool_input: dict[str, Any], manager: CronManager) -> str:
@@ -249,10 +250,12 @@ def _action_update(tool_input: dict[str, Any], manager: CronManager) -> str:
         return json.dumps({"status": "no_changes", "job": _job_summary(job)})
 
     updated = manager.update_job(job_id, **fields)
-    return json.dumps({
-        "status": "updated",
-        "job": _job_summary(updated),
-    })
+    return json.dumps(
+        {
+            "status": "updated",
+            "job": _job_summary(updated),
+        }
+    )
 
 
 def _action_remove(tool_input: dict[str, Any], manager: CronManager) -> str:
@@ -266,10 +269,12 @@ def _action_remove(tool_input: dict[str, Any], manager: CronManager) -> str:
     except KeyError:
         return json.dumps({"error": f"Job '{job_id}' not found"})
 
-    return json.dumps({
-        "status": "removed",
-        "job": _job_summary(removed),
-    })
+    return json.dumps(
+        {
+            "status": "removed",
+            "job": _job_summary(removed),
+        }
+    )
 
 
 def _action_run(tool_input: dict[str, Any], manager: CronManager) -> str:
@@ -284,10 +289,12 @@ def _action_run(tool_input: dict[str, Any], manager: CronManager) -> str:
 
     manager.trigger_job(job_id)
 
-    return json.dumps({
-        "status": "triggered",
-        "job": _job_summary(job),
-    })
+    return json.dumps(
+        {
+            "status": "triggered",
+            "job": _job_summary(job),
+        }
+    )
 
 
 def _action_runs(tool_input: dict[str, Any], manager: CronManager) -> str:
@@ -304,12 +311,14 @@ def _action_runs(tool_input: dict[str, Any], manager: CronManager) -> str:
         return json.dumps({"error": f"Job '{job_id}' not found"})
 
     job_name = job.name if job else "(deleted)"
-    return json.dumps({
-        "job_id": job_id,
-        "job_name": job_name,
-        "runs": [_run_summary(r) for r in runs],
-        "count": len(runs),
-    })
+    return json.dumps(
+        {
+            "job_id": job_id,
+            "job_name": job_name,
+            "runs": [_run_summary(r) for r in runs],
+            "count": len(runs),
+        }
+    )
 
 
 def _job_summary(job: CronJob) -> dict[str, Any]:

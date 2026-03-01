@@ -7,20 +7,46 @@ import hmac
 import json
 import logging
 import os
-import time
-from typing import Any, Callable
+import re
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from creel.channels.base import Channel
-from creel.channels.webhook import WebhookChannelMixin
+from creel.channels.base import (
+    Attachment as BaseAttachment,
+)
+from creel.channels.base import (
+    Channel,
+    IncomingMessage,
+    LegacyCallback,
+)
+from creel.channels.message import (
+    Attachment,
+    AttachmentType,
+)
+from creel.channels.message import (
+    IncomingMessage as MediaMessage,
+)
+from creel.channels.mixins import BridgeClientMixin, PollingChannelMixin
 from creel.channels.telegram_bridge import (
     HttpTelegramBridge,
     TelegramBridge,
+    TelegramMedia,
+    TelegramMessage,
 )
+from creel.channels.webhook import WebhookChannelMixin
+
+try:
+    from starlette.requests import Request as _WebhookRequest
+except ImportError:  # pragma: no cover — starlette ships with FastAPI
+    _WebhookRequest = None  # type: ignore[assignment,misc]
+
+if TYPE_CHECKING:
+    from creel.channels.plugin import ChannelPluginMeta
 
 logger = logging.getLogger(__name__)
 
 
-class TelegramChannel(WebhookChannelMixin, Channel):
+class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixin, Channel):
     """Telegram messaging channel.
 
     Supports two operating modes:
@@ -55,18 +81,19 @@ class TelegramChannel(WebhookChannelMixin, Channel):
                 "Telegram webhook mode with no secret — "
                 "any sender can push updates to the webhook endpoint"
             )
-        self._callback: Callable[[str, str], str] | None = None
+        self._callback: LegacyCallback | None = None
         self._bot_username: str = ""
+        self._offset: int | None = None
 
         # Build allowed outbound recipients from numeric sender IDs + chat IDs
         self._allowed_recipients: set[str] = set(allowed_chats or [])
-        for s in (allowed_senders or []):
+        for s in allowed_senders or []:
             if not s.startswith("@"):
                 self._allowed_recipients.add(s)
 
     # --- Channel interface ---
 
-    def listen(self, callback: Callable[[str, str], str]) -> None:
+    def listen(self, callback: LegacyCallback) -> None:
         self._callback = callback
 
         # Cache bot username for @mention detection in groups
@@ -81,11 +108,14 @@ class TelegramChannel(WebhookChannelMixin, Channel):
             # Clear any existing webhook before polling
             self._bridge.delete_webhook()
             logger.info("Telegram channel listening in polling mode")
-            self._poll_loop(callback)
+            self._run_poll_loop(callback)
 
         logger.info("Telegram channel stopped")
 
     def send(self, recipient: str, text: str) -> None:
+        if not text:
+            logger.debug("Skipping empty message to %s", recipient)
+            return
         if recipient not in self._allowed_recipients:
             logger.warning("Blocked outbound message to %s — not in allowed recipients", recipient)
             return
@@ -95,53 +125,88 @@ class TelegramChannel(WebhookChannelMixin, Channel):
     def stop(self) -> None:
         self._stop_requested = True
 
-    # --- Polling mode ---
+    # --- PollingChannelMixin implementation ---
 
-    def _poll_loop(self, callback: Callable[[str, str], str]) -> None:
-        offset: int | None = None
-        consecutive_errors = 0
-        max_backoff = 60
+    def _poll_once(self) -> list[IncomingMessage]:
+        raw_messages = self._bridge.get_updates(offset=self._offset, timeout=self._poll_timeout)
+        result: list[IncomingMessage] = []
 
-        while not self._stop_requested:
-            try:
-                messages = self._bridge.get_updates(offset=offset, timeout=self._poll_timeout)
-                consecutive_errors = 0
+        for msg in raw_messages:
+            # Advance offset past this update
+            self._offset = msg.update_id + 1
 
-                for msg in messages:
-                    # Advance offset past this update
-                    offset = msg.update_id + 1
+            if not self._is_allowed(msg):
+                continue
 
-                    if not self._is_allowed(msg):
-                        continue
+            self._allowed_recipients.add(msg.chat_id)
 
-                    self._allowed_recipients.add(msg.chat_id)
+            text = self._extract_text(msg)
+            # Allow media-only messages (no text) through when attachments present
+            if text is None and not msg.media:
+                continue
 
-                    text = self._extract_text(msg)
-                    if text is None:
-                        continue
+            logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
+            if text:
+                logger.debug("Telegram message text: %s", text[:80])
 
-                    logger.info("Telegram from %s (@%s)", msg.sender_id, msg.sender_username)
-                    logger.debug("Telegram message text: %s", text[:80])
+            # Download media attachments if present
+            media: list[BaseAttachment] | None = None
+            attachments: list[Attachment] | None = None
+            if msg.media:
+                attachments = self._download_media(msg.media)
+                media = [
+                    BaseAttachment(
+                        data=att.data or b"",
+                        filename=att.file_name or "unknown",
+                        mime_type=att.mime_type,
+                        size=att.file_size,
+                    )
+                    for att in attachments
+                ]
 
-                    if self._send_typing:
-                        self._bridge.send_typing(msg.chat_id)
+            metadata: dict[str, Any] = {
+                "sender_user_id": msg.sender_id,
+                "sender_username": msg.sender_username,
+                "message_id": msg.message_id,
+                "update_id": msg.update_id,
+            }
+            if attachments:
+                metadata["_attachments"] = attachments
 
-                    response = callback(msg.chat_id, text)
-                    self.send(msg.chat_id, response)
-
-            except Exception:
-                consecutive_errors += 1
-                backoff = min(2 ** consecutive_errors, max_backoff)
-                logger.exception(
-                    "Error polling Telegram (consecutive=%d, backoff=%.1fs)",
-                    consecutive_errors,
-                    backoff,
+            result.append(
+                IncomingMessage(
+                    sender_id=msg.chat_id,
+                    text=text or "",
+                    channel="telegram",
+                    group_id=msg.chat_id if msg.is_group else None,
+                    media=media,
+                    metadata=metadata,
                 )
-                time.sleep(backoff)
+            )
+
+        return result
+
+    def _before_dispatch(self, msg: IncomingMessage) -> None:
+        """Send a typing indicator just before the LLM callback runs."""
+        if self._send_typing:
+            self._bridge.send_typing(msg.sender_id)
+
+    def _dispatch_message(self, msg: IncomingMessage, callback: LegacyCallback) -> str:
+        """Override dispatch to pass media attachments through."""
+        attachments = msg.metadata.get("_attachments")
+        if attachments:
+            media_msg = MediaMessage(
+                sender_id=msg.sender_id,
+                text=msg.text or None,
+                attachments=attachments,
+                channel="telegram",
+            )
+            return callback(media_msg)  # type: ignore[call-arg,arg-type]
+        return callback(msg.sender_id, msg.text)
 
     # --- Access control ---
 
-    def _is_allowed(self, msg) -> bool:
+    def _is_allowed(self, msg: TelegramMessage) -> bool:
         """Check if a message passes sender/chat access control."""
         if not self._allowed_senders:
             return False
@@ -162,7 +227,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
 
     # --- Group mention handling ---
 
-    def _extract_text(self, msg) -> str | None:
+    def _extract_text(self, msg: TelegramMessage) -> str | None:
         """Extract processable text from a message.
 
         In group chats, only processes messages mentioning @botusername.
@@ -177,10 +242,38 @@ class TelegramChannel(WebhookChannelMixin, Channel):
             if mention.lower() not in text.lower():
                 return None
             # Strip the mention (case-insensitive)
-            import re
             text = re.sub(re.escape(mention), "", text, flags=re.IGNORECASE).strip()
 
         return text if text else None
+
+    # --- Media handling ---
+
+    def _download_media(self, media_list: list[TelegramMedia]) -> list[Attachment]:
+        """Download Telegram media files and convert to Attachment objects."""
+        attachments: list[Attachment] = []
+        for media in media_list:
+            try:
+                data = self._bridge.download_file(media.file_id)
+            except Exception:
+                logger.warning(
+                    "Failed to download Telegram file %s",
+                    media.file_id,
+                    exc_info=True,
+                )
+                continue
+
+            # Map Telegram file_type to AttachmentType
+            att_type = _telegram_file_type_to_attachment(media.file_type)
+            attachments.append(
+                Attachment(
+                    type=att_type,
+                    data=data,
+                    mime_type=media.mime_type,
+                    file_name=media.file_name,
+                    file_size=media.file_size or len(data),
+                )
+            )
+        return attachments
 
     # --- Webhook mode ---
 
@@ -196,7 +289,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
             },
         ]
 
-    async def _handle_webhook(self, request) -> dict:
+    async def _handle_webhook(self, request: _WebhookRequest) -> dict:  # type: ignore[valid-type]
         """Handle incoming Telegram webhook update."""
         from fastapi import HTTPException
 
@@ -221,10 +314,14 @@ class TelegramChannel(WebhookChannelMixin, Channel):
         text = msg_data.get("text", "") or msg_data.get("caption", "")
         chat_id = str(chat.get("id", ""))
 
-        if not text:
-            return {"status": "ok"}
+        # Extract media from webhook payload
+        from creel.channels.telegram_bridge import TelegramMessage, _extract_media
 
-        from creel.channels.telegram_bridge import TelegramMessage
+        media = _extract_media(msg_data)
+
+        # Allow media-only messages (no text) through when media is present
+        if not text and not media:
+            return {"status": "ok"}
 
         msg = TelegramMessage(
             sender_id=str(sender.get("id", "")),
@@ -234,6 +331,7 @@ class TelegramChannel(WebhookChannelMixin, Channel):
             update_id=body.get("update_id", 0),
             is_group=chat_type in ("group", "supergroup"),
             message_id=msg_data.get("message_id", 0),
+            media=media or None,
         )
 
         if not self._is_allowed(msg):
@@ -242,14 +340,26 @@ class TelegramChannel(WebhookChannelMixin, Channel):
         self._allowed_recipients.add(msg.chat_id)
 
         processed_text = self._extract_text(msg)
-        if processed_text is None:
+        # Allow media-only messages with no text through
+        if processed_text is None and not msg.media:
             return {"status": "ok"}
 
         callback = self._webhook_callback or self._callback
         if callback:
             if self._send_typing:
                 self._bridge.send_typing(chat_id)
-            response = await asyncio.to_thread(callback, chat_id, processed_text)
+
+            if msg.media:
+                attachments = await asyncio.to_thread(self._download_media, msg.media)
+                incoming = MediaMessage(
+                    sender_id=chat_id,
+                    text=processed_text,
+                    attachments=attachments,
+                    channel="telegram",
+                )
+                response = await asyncio.to_thread(callback, incoming)  # type: ignore[call-arg,arg-type]
+            else:
+                response = await asyncio.to_thread(callback, chat_id, processed_text or "")
             await asyncio.to_thread(self.send, chat_id, response)
 
         return {"status": "ok"}
@@ -257,12 +367,21 @@ class TelegramChannel(WebhookChannelMixin, Channel):
     # --- Health ---
 
     def health_check(self) -> dict[str, Any]:
-        bridge_health = self._bridge.health()
-        return {
-            "healthy": not self._stop_requested and bridge_health.get("healthy", False),
-            "mode": self._mode,
-            "bridge": bridge_health,
-        }
+        return self._bridge_health_check()
+
+
+_TELEGRAM_TYPE_MAP: dict[str, AttachmentType] = {
+    "photo": AttachmentType.IMAGE,
+    "voice": AttachmentType.VOICE,
+    "audio": AttachmentType.AUDIO,
+    "video": AttachmentType.VIDEO,
+    "document": AttachmentType.FILE,
+}
+
+
+def _telegram_file_type_to_attachment(file_type: str) -> AttachmentType:
+    """Map a TelegramMedia file_type to an AttachmentType."""
+    return _TELEGRAM_TYPE_MAP.get(file_type, AttachmentType.FILE)
 
 
 def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:
@@ -293,7 +412,7 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
                 os.environ[k] = v
 
         cfg = TelegramChannelConfig(**config)
-        bridge = HttpTelegramBridge(cfg.bot_token)
+        bridge = HttpTelegramBridge(cfg.bot_token, api_base_url=cfg.api_base_url)
         return TelegramChannel(
             bridge=bridge,
             mode=cfg.mode,

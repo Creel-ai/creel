@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import threading
-import time
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -45,7 +44,7 @@ class MockBridge(WhatsAppBridge):
     def get_latest_timestamp(self):
         if self._initial_ts is not None:
             return self._initial_ts
-        return datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        return datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
 
     def health(self):
         return {"healthy": self.connected}
@@ -55,7 +54,7 @@ def _make_msg(sender="user1", text="hello", ts_seconds=1):
     return WhatsAppMessage(
         sender=sender,
         text=text,
-        timestamp=datetime(2025, 1, 1, 12, 0, ts_seconds, tzinfo=timezone.utc),
+        timestamp=datetime(2025, 1, 1, 12, 0, ts_seconds, tzinfo=UTC),
         message_id=f"msg-{ts_seconds}",
     )
 
@@ -208,9 +207,11 @@ class TestWebhookHMAC:
         request = MagicMock()
         request.body = MagicMock(return_value=raw)
         request.body.return_value = raw
+
         # Make request.body() an awaitable
         async def _body():
             return raw
+
         request.body = _body
         request.json = MagicMock(return_value=payload)
         request.headers = {"X-Hub-Signature-256": f"sha256={sig}"}
@@ -235,12 +236,15 @@ class TestWebhookHMAC:
         raw = json.dumps(payload).encode()
 
         request = MagicMock()
+
         async def _body():
             return raw
+
         request.body = _body
         request.headers = {"X-Hub-Signature-256": "sha256=badsignature"}
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await channel._handle_webhook(request)
         assert exc_info.value.status_code == 403
@@ -262,12 +266,15 @@ class TestWebhookHMAC:
         raw = json.dumps(payload).encode()
 
         request = MagicMock()
+
         async def _body():
             return raw
+
         request.body = _body
         request.headers = {}
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await channel._handle_webhook(request)
         assert exc_info.value.status_code == 403
@@ -291,8 +298,10 @@ class TestWebhookHMAC:
         raw = json.dumps(payload).encode()
 
         request = MagicMock()
+
         async def _body():
             return raw
+
         request.body = _body
         request.headers = {}
 
@@ -302,8 +311,9 @@ class TestWebhookHMAC:
 
 class TestWebhookVerifyTokenRequired:
     def test_webhook_mode_requires_verify_token(self):
-        from creel.models import WhatsAppChannelConfig
         from pydantic import ValidationError
+
+        from creel.models import WhatsAppChannelConfig
 
         with pytest.raises(ValidationError, match="webhook_verify_token"):
             WhatsAppChannelConfig(
@@ -325,8 +335,8 @@ class TestWebhookVerifyTokenRequired:
 
 class TestRegisterPlugin:
     def test_register_plugin_returns_meta_and_factory(self):
-        from creel.channels.whatsapp import register_plugin
         from creel.channels.plugin import ChannelCapability
+        from creel.channels.whatsapp import register_plugin
 
         meta, factory = register_plugin()
         assert meta.id == "whatsapp"

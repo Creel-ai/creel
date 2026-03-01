@@ -16,7 +16,7 @@ from googleapiclient.discovery import build
 try:
     from executors.google_creds import get_credentials
 except ModuleNotFoundError:
-    from google_creds import get_credentials
+    from google_creds import get_credentials  # type: ignore[no-redef]
 
 
 def list_files(query: str = "", max_results: int = 20) -> list[dict]:
@@ -38,6 +38,12 @@ def list_files(query: str = "", max_results: int = 20) -> list[dict]:
         "fields": "files(id, name, mimeType, modifiedTime, size)",
     }
     if query:
+        # If the query doesn't look like Drive query syntax (no operators),
+        # wrap it as a fullText search.
+        _DRIVE_OPERATORS = ("contains", "=", "!=", "<", ">", "<=", ">=", " in ", "has")
+        if not any(op in query for op in _DRIVE_OPERATORS):
+            escaped = query.replace("\\", "\\\\").replace("'", "\\'")
+            query = f"fullText contains '{escaped}'"
         params["q"] = query
 
     results = service.files().list(**params).execute()

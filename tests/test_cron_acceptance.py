@@ -14,11 +14,9 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from creel.channels.base import Channel
 from creel.cron.delivery import deliver
@@ -35,7 +33,6 @@ from creel.cron.models import (
 from creel.cron.store import JobStore
 from creel.cron.tool import handle_cron_tool
 from creel.session import SessionManager
-
 
 # -- Helpers --
 
@@ -59,13 +56,13 @@ def _make_job(name: str = "test job", **kwargs) -> CronJob:
 
 def _future_iso(seconds: int = 2) -> str:
     """Return an ISO 8601 timestamp `seconds` in the future."""
-    dt = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    dt = datetime.now(UTC) + timedelta(seconds=seconds)
     return dt.isoformat()
 
 
 def _past_iso(seconds: int = 60) -> str:
     """Return an ISO 8601 timestamp `seconds` in the past."""
-    dt = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+    dt = datetime.now(UTC) - timedelta(seconds=seconds)
     return dt.isoformat()
 
 
@@ -73,9 +70,7 @@ class _StubChatServer:
     """Minimal chat-server shape for testing event injection."""
 
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(
-            sessions_dir=str(sessions_dir), max_history=50
-        )
+        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
         self._guardian = None
         self.injected_events: list[tuple[str, str]] = []
 
@@ -290,7 +285,9 @@ class TestEndToEndCLIFlow:
 
         # Track delivery calls
         channel = _StubChannel()
-        channel_send = lambda name, text: channel.send(name, text)
+
+        def channel_send(name: str, text: str) -> None:
+            channel.send(name, text)
 
         # Executor that returns through delivery
         def executor_fn(job: CronJob) -> None:
@@ -444,7 +441,9 @@ class TestEndToEndAgentToolFlow:
         sessions_dir.mkdir()
         chat_server = _StubChatServer(sessions_dir)
 
-        inject_event = lambda text: chat_server.inject_system_event("main", text)
+        def inject_event(text: str) -> None:
+            chat_server.inject_system_event("main", text)
+
         executor = JobExecutor(inject_event=inject_event)
         mgr = CronManager(store, executor=executor)
 
@@ -528,16 +527,18 @@ class TestEndToEndAgentToolFlow:
         mgr = CronManager(store)
 
         # Add
-        result = json.loads(handle_cron_tool(
-            {
-                "action": "add",
-                "name": "daily report",
-                "schedule_kind": "every",
-                "schedule_expr": "3600",
-                "message": "Generate daily report",
-            },
-            mgr,
-        ))
+        result = json.loads(
+            handle_cron_tool(
+                {
+                    "action": "add",
+                    "name": "daily report",
+                    "schedule_kind": "every",
+                    "schedule_expr": "3600",
+                    "message": "Generate daily report",
+                },
+                mgr,
+            )
+        )
         assert result["status"] == "created"
         job_id = result["job"]["id"]
 
@@ -547,18 +548,22 @@ class TestEndToEndAgentToolFlow:
         assert result["jobs"][0]["name"] == "daily report"
 
         # Update
-        result = json.loads(handle_cron_tool(
-            {"action": "update", "job_id": job_id, "name": "weekly report"},
-            mgr,
-        ))
+        result = json.loads(
+            handle_cron_tool(
+                {"action": "update", "job_id": job_id, "name": "weekly report"},
+                mgr,
+            )
+        )
         assert result["status"] == "updated"
         assert result["job"]["name"] == "weekly report"
 
         # Remove
-        result = json.loads(handle_cron_tool(
-            {"action": "remove", "job_id": job_id},
-            mgr,
-        ))
+        result = json.loads(
+            handle_cron_tool(
+                {"action": "remove", "job_id": job_id},
+                mgr,
+            )
+        )
         assert result["status"] == "removed"
 
         # List should be empty
@@ -582,7 +587,9 @@ class TestExecutionModes:
         sessions_dir.mkdir()
         chat_server = _StubChatServer(sessions_dir)
 
-        inject_event = lambda text: chat_server.inject_system_event("main", text)
+        def inject_event(text: str) -> None:
+            chat_server.inject_system_event("main", text)
+
         executor = JobExecutor(inject_event=inject_event)
         mgr = CronManager(store, executor=executor)
 
@@ -607,7 +614,8 @@ class TestExecutionModes:
         self, mock_agent_loop, minimal_agent_def, tmp_path: Path
     ):
         """An isolated job should run a fresh agent loop."""
-        from dataclasses import dataclass, field as dc_field
+        from dataclasses import dataclass
+        from dataclasses import field as dc_field
 
         @dataclass
         class FakeResult:
@@ -646,11 +654,10 @@ class TestExecutionModes:
         assert messages[0]["content"] == "Analyze overnight logs"
 
     @patch("creel.cron.executor.run_agent_loop")
-    def test_isolated_job_model_override(
-        self, mock_agent_loop, minimal_agent_def, tmp_path: Path
-    ):
+    def test_isolated_job_model_override(self, mock_agent_loop, minimal_agent_def, tmp_path: Path):
         """An isolated job with a model override should use the specified model."""
-        from dataclasses import dataclass, field as dc_field
+        from dataclasses import dataclass
+        from dataclasses import field as dc_field
 
         @dataclass
         class FakeResult:
@@ -891,7 +898,9 @@ class TestEdgeCasesAcceptance:
         mgr.add_job(j2)
         mgr.start()
 
-        _poll_until(lambda: len(store.get_runs(j1.id)) >= 1 and len(store.get_runs(j2.id)) >= 1, timeout=5)
+        _poll_until(
+            lambda: len(store.get_runs(j1.id)) >= 1 and len(store.get_runs(j2.id)) >= 1, timeout=5
+        )
         mgr.shutdown()
 
         # Both should have history entries
@@ -956,8 +965,8 @@ class TestEdgeCasesAcceptance:
         # Should still be functional for adding runs
         record = RunRecord(
             job_id="test",
-            started_at=datetime.now(timezone.utc).isoformat(),
-            ended_at=datetime.now(timezone.utc).isoformat(),
+            started_at=datetime.now(UTC).isoformat(),
+            ended_at=datetime.now(UTC).isoformat(),
             status=RunStatus.SUCCESS,
         )
         store.add_run(record)

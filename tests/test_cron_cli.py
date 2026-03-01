@@ -4,21 +4,17 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from creel import cli
 from creel.cron.models import (
     CronJob,
-    Delivery,
     Payload,
     RunRecord,
     RunStatus,
     Schedule,
 )
 from creel.cron.store import JobStore
-
 
 # -- Helpers --
 
@@ -231,9 +227,7 @@ class TestCmdCronAdd:
         assert jobs[0].schedule.kind == "at"
         assert jobs[0].schedule.tz == "America/Denver"
 
-    def test_add_system_event_forces_main_target(
-        self, tmp_path: Path, capsys
-    ) -> None:
+    def test_add_system_event_forces_main_target(self, tmp_path: Path, capsys) -> None:
         args = _cron_args(
             tmp_path,
             name="Reminder",
@@ -694,8 +688,8 @@ class TestCmdCronRuns:
             store.add_run(
                 RunRecord(
                     job_id=job.id,
-                    started_at=f"2026-01-{i+1:02d}T08:00:00+00:00",
-                    ended_at=f"2026-01-{i+1:02d}T08:00:01+00:00",
+                    started_at=f"2026-01-{i + 1:02d}T08:00:00+00:00",
+                    ended_at=f"2026-01-{i + 1:02d}T08:00:01+00:00",
                     status=RunStatus.SUCCESS,
                 )
             )
@@ -820,9 +814,7 @@ class TestCronMainDispatch:
         assert rc == 0
         assert "No runs recorded" in capsys.readouterr().out
 
-    def test_cron_no_subcommand_shows_help(
-        self, monkeypatch, tmp_path: Path, capsys
-    ) -> None:
+    def test_cron_no_subcommand_shows_help(self, monkeypatch, tmp_path: Path, capsys) -> None:
         monkeypatch.setattr("sys.argv", ["creel", "cron"])
         rc = cli.main()
         assert rc == 1

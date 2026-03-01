@@ -8,7 +8,9 @@ from pathlib import Path
 from creel import cli
 
 
-def _make_args(tmp_path: Path, stream: bool = True, auto_approve: bool = False) -> argparse.Namespace:
+def _make_args(
+    tmp_path: Path, stream: bool = True, auto_approve: bool = False
+) -> argparse.Namespace:
     return argparse.Namespace(
         sender_id="cli",
         message="hello",
@@ -84,12 +86,12 @@ def test_cmd_send_stream_auto_approve_forwarded(tmp_path: Path, monkeypatch, cap
 
 def test_cmd_send_non_stream_auto_approve_in_payload(tmp_path: Path, monkeypatch, capsys) -> None:
     """--auto-approve flag is included in non-streaming HTTP payload."""
-    import json
 
     captured_payloads = []
 
     class _FakeResponse:
         status_code = 200
+
         def json(self):
             return {"text": "done"}
 

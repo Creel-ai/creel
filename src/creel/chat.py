@@ -5,17 +5,23 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from creel.agent import run_agent_loop
 from creel.approvals import ApprovalQueue
+from creel.channels.message import Attachment, AttachmentType
 from creel.log import generate_request_id, request_id_var
 from creel.memory import MemoryManager
 from creel.models import AgentDefinition
 from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
+from creel.services.media_store import MediaStore
+from creel.services.transcription import TranscriptionService
+from creel.services.vision import VisionProcessor
 from creel.session import SessionManager
+from creel.subagents import SubAgentManager
 from creel.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -37,25 +43,48 @@ class ChatServer:
         self,
         agent_def: AgentDefinition,
         use_containers: bool = False,
-        reply_channel: object | None = None,
-        confirm_fn: object | None = None,
+        reply_channel: Any | None = None,
+        confirm_fn: Callable[[str, dict, str], bool] | None = None,
         # Backward compat alias
-        imessage_channel: object | None = None,
+        imessage_channel: Any | None = None,
         cron_manager: object | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._cron_manager = cron_manager
-        self._start_time = datetime.now(timezone.utc)
+        self._start_time = datetime.now(UTC)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
+
+        # Initialize warm container pool if using containers
+        self._container_pool = None
+        if use_containers:
+            from creel.container_pool import ContainerPool, ContainerPoolConfig
+
+            pool_config = agent_def.llm.container_pool
+            self._container_pool = ContainerPool(
+                ContainerPoolConfig(
+                    enabled=pool_config.enabled,
+                    idle_timeout_seconds=pool_config.idle_timeout_seconds,
+                    max_containers=pool_config.max_containers,
+                )
+            )
+            if pool_config.enabled:
+                logger.info(
+                    "Container pool enabled (idle_timeout=%ds, max=%d)",
+                    pool_config.idle_timeout_seconds,
+                    pool_config.max_containers,
+                )
         # Build summarize_fn if summarization is enabled
         summarize_fn = None
         if agent_def.session.summarize_on_trim:
+
             def _do_summarize(messages: list[dict]) -> str:
                 from creel.llm import summarize_messages
+
                 if agent_def.llm.secrets:
                     from creel.orchestrator import _load_secrets_to_env
+
                     _load_secrets_to_env(agent_def.llm.secrets)
                 return summarize_messages(
                     messages,
@@ -63,6 +92,7 @@ class ChatServer:
                     max_tokens=agent_def.session.summary_max_tokens,
                     use_container=use_containers,
                 )
+
             summarize_fn = _do_summarize
 
         self._session_mgr = SessionManager(
@@ -122,12 +152,51 @@ class ChatServer:
             self._guardian.warm_up()
             logger.info("Guardian enabled")
 
+        # Initialize media services for attachment processing
+        media_cfg = agent_def.media
+        if media_cfg is not None and media_cfg.enabled:
+            storage_dir = Path(media_cfg.storage_dir).expanduser()
+            self._media_store: MediaStore | None = MediaStore(
+                base_dir=storage_dir,
+                max_file_size=media_cfg.max_file_size_mb * 1024 * 1024,
+                retention_days=media_cfg.retention_days,
+            )
+            self._transcription: TranscriptionService | None = TranscriptionService(
+                backend=media_cfg.transcription.backend,
+                model=media_cfg.transcription.model,
+                api_key=media_cfg.transcription.api_key,
+            )
+            self._vision: VisionProcessor | None = VisionProcessor(
+                provider="anthropic",
+                max_pixels=media_cfg.vision.max_pixels,
+                quality=media_cfg.vision.quality,
+            )
+            logger.info("Media services enabled (storage: %s)", storage_dir)
+        else:
+            self._media_store = None
+            self._transcription = None
+            self._vision = None
+
+        # Initialize sub-agent manager
+        self._subagent_manager = SubAgentManager(
+            llm_config=agent_def.llm,
+            tools_config=agent_def.tools,
+            agent_config=agent_def.agent,
+            system_prompt=None,  # built lazily per request
+            use_containers=use_containers,
+            guardian=self._guardian,
+            bridge_config=agent_def.bridge,
+            result_callback=self._on_subagent_result,
+        )
+
     def handle_message(
         self,
         sender_id: str,
         text: str,
         on_text_delta: Callable[[str], None] | None = None,
         *,
+        attachments: list[Attachment] | None = None,
+        channel: str = "unknown",
         auto_approve: bool = False,
     ) -> str:
         """Process an incoming message and return a response."""
@@ -171,7 +240,9 @@ class ChatServer:
             pending = self._approval_queue.get_pending(sender_id)
             if pending is not None:
                 return self._handle_approval_response(
-                    sender_id, pending, stripped.lower() in _APPROVE_WORDS,
+                    sender_id,
+                    pending,
+                    stripped.lower() in _APPROVE_WORDS,
                 )
 
         # Screen input through guardian (before adding to session)
@@ -190,8 +261,24 @@ class ChatServer:
                 "Reply Y to approve or N to deny."
             )
 
-        # Add user message and get session with history
-        session = self._session_mgr.add_user_message(sender_id, text)
+        # Process media attachments (voice transcription + image vision)
+        text, image_content_blocks = self._process_attachments(
+            text,
+            attachments,
+            sender_id,
+            channel=channel,
+        )
+
+        # Add user message: use content blocks when images are present
+        if image_content_blocks:
+            content_blocks: list[dict] = [{"type": "text", "text": text}]
+            content_blocks.extend(image_content_blocks)
+            session = self._session_mgr.add_user_message_blocks(
+                sender_id,
+                content_blocks,
+            )
+        else:
+            session = self._session_mgr.add_user_message(sender_id, text)
 
         # Build system prompt using the prompt builder
         system_prompt = self._build_system_prompt()
@@ -199,6 +286,7 @@ class ChatServer:
         # Load LLM secrets if configured
         if self._agent_def.llm.secrets:
             from creel.orchestrator import _load_secrets_to_env
+
             _load_secrets_to_env(self._agent_def.llm.secrets)
 
         # Build the confirm_action callback for this request.
@@ -207,17 +295,22 @@ class ChatServer:
         # being queued for async approval the CLI caller can never answer.
         confirm_action = self._confirm_fn
         if auto_approve and confirm_action is not None:
-            logger.debug("auto_approve requested but confirm_fn already set; using existing confirm_fn")
+            logger.debug(
+                "auto_approve requested but confirm_fn already set; using existing confirm_fn"
+            )
         elif auto_approve:
+
             def _auto_confirm(tool_name: str, tool_input: dict, reason: str) -> bool:
                 logger.info("Auto-approving %s (reason: %s)", tool_name, reason)
                 if self._guardian is not None:
                     self._guardian.log_action_outcome(tool_name, "review", "auto_approved_by_cli")
                 return True
+
             confirm_action = _auto_confirm
 
         # Look up per-sender session state (workspace path, etc.)
         session_state = self._session_states.setdefault(sender_id, {})
+        session_state["sender_id"] = sender_id
 
         # Run the agent loop (containerized or direct)
         if self._use_containers:
@@ -235,6 +328,7 @@ class ChatServer:
                 memory_manager=self._memory,
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
+                container_pool=self._container_pool,
             )
         else:
             result = run_agent_loop(
@@ -251,6 +345,7 @@ class ChatServer:
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
                 cron_manager=self._cron_manager,
+                subagent_manager=self._subagent_manager,
             )
 
         logger.info(
@@ -286,6 +381,109 @@ class ChatServer:
 
         return result.text
 
+    def _process_attachments(
+        self,
+        text: str,
+        attachments: list[Attachment] | None,
+        sender_id: str,
+        channel: str = "unknown",
+    ) -> tuple[str, list[dict]]:
+        """Process media attachments, returning updated text and image content blocks.
+
+        Voice/audio attachments are transcribed and their text is prepended to the
+        user message. Image attachments are converted to LLM content blocks.
+
+        Returns:
+            (updated_text, image_content_blocks) — text with transcriptions prepended
+            and a list of image content block dicts for the LLM.
+        """
+        if not attachments:
+            return text, []
+
+        if self._media_store is None:
+            logger.info("Media disabled — ignoring %d attachment(s)", len(attachments))
+            return text, []
+
+        voice_parts: list[str] = []
+        image_blocks: list[dict] = []
+
+        for attachment in attachments:
+            if attachment.type in (AttachmentType.VOICE, AttachmentType.AUDIO):
+                self._process_voice_attachment(attachment, sender_id, voice_parts, channel)
+            elif attachment.type == AttachmentType.IMAGE:
+                self._process_image_attachment(attachment, sender_id, image_blocks, channel)
+
+        # Prepend transcribed voice text to the user message
+        if voice_parts:
+            voice_text = "\n".join(voice_parts)
+            text = f"{voice_text}\n{text}" if text else voice_text
+
+        return text, image_blocks
+
+    def _process_voice_attachment(
+        self,
+        attachment: Attachment,
+        sender_id: str,
+        voice_parts: list[str],
+        channel: str = "unknown",
+    ) -> None:
+        """Save, transcribe a voice attachment and append to voice_parts."""
+        assert self._media_store is not None  # guarded by _process_attachments
+        assert self._transcription is not None
+        try:
+            saved_path = self._media_store.save_media(attachment, channel=channel)
+        except Exception:
+            logger.warning("Failed to save voice attachment", exc_info=True)
+            voice_parts.append("[Voice message: could not save audio file]")
+            return
+
+        transcribed = self._transcription.transcribe(saved_path)
+        if transcribed:
+            voice_parts.append(f"[Voice message]: {transcribed}")
+        else:
+            voice_parts.append(f"[Voice message: transcription failed] (file: {saved_path.name})")
+
+    def _process_image_attachment(
+        self,
+        attachment: Attachment,
+        sender_id: str,
+        image_blocks: list[dict],
+        channel: str = "unknown",
+    ) -> None:
+        """Save an image attachment and prepare it as an LLM content block."""
+        assert self._media_store is not None  # guarded by _process_attachments
+        assert self._vision is not None
+        try:
+            saved_path = self._media_store.save_media(attachment, channel=channel)
+        except Exception:
+            logger.warning("Failed to save image attachment", exc_info=True)
+            return
+
+        content_block = self._vision.prepare_image(saved_path)
+        if content_block is not None:
+            image_blocks.append(content_block)
+        else:
+            logger.warning("Image could not be processed: %s", saved_path)
+
+    def _on_subagent_result(self, agent_id: str, result_text: str) -> None:
+        """Callback fired when a sub-agent completes, fails, or times out.
+
+        Injects a system event into the parent sender's session so the LLM
+        sees the result on the next interaction.
+        """
+        info = self._subagent_manager.get(agent_id)
+        label = info.label if info else agent_id
+        status = info.status.value if info else "unknown"
+        if info and info.error:
+            event = f"[Sub-agent '{label}' {status}] {info.error}"
+        else:
+            summary = result_text[:500] + "..." if len(result_text) > 500 else result_text
+            event = f"[Sub-agent '{label}' {status}] {summary}"
+        logger.info("Sub-agent %s result: %s", agent_id, status)
+        sender_id = info.sender_id if info else ""
+        if sender_id:
+            self.inject_system_event(sender_id, event)
+
     def _send_approval_request(self, sender_id: str, action) -> None:
         """Send an approval request message via iMessage (or log it)."""
         # Check quiet hours before sending proactive approval request
@@ -319,15 +517,16 @@ class ChatServer:
             logger.info("Approval request (no reply channel): %s", msg)
 
     def _handle_approval_response(
-        self, sender_id: str, pending, approved: bool,
+        self,
+        sender_id: str,
+        pending,
+        approved: bool,
     ) -> str:
         """Resolve a pending action and execute if approved."""
         self._approval_queue.resolve(pending.id, approved)
 
         if not approved:
-            result_msg = f"❌ Action denied: {pending.tool_name}"
-            self._send_reply(sender_id, result_msg, proactive=False)  # Direct reply to approval
-            return result_msg
+            return f"❌ Action denied: {pending.tool_name}"
 
         # Execute the tool with full context (session_state, memory)
         session_state = self._session_states.get(sender_id)
@@ -346,10 +545,11 @@ class ChatServer:
             logger.exception("Tool execution failed after approval")
             result_msg = f"✅ Approved but execution failed: {e}"
 
-        self._send_reply(sender_id, result_msg, proactive=False)  # Direct reply to approval
         return result_msg
 
-    def _send_reply(self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False) -> None:
+    def _send_reply(
+        self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False
+    ) -> None:
         """Send a message via the reply channel if available.
 
         Args:
@@ -360,7 +560,11 @@ class ChatServer:
         """
         # Check quiet hours for proactive messages only
         if proactive and should_suppress(self._agent_def.quiet_hours, urgent=urgent):
-            logger.info("Message suppressed due to quiet hours (proactive=%s, urgent=%s)", proactive, urgent)
+            logger.info(
+                "Message suppressed due to quiet hours (proactive=%s, urgent=%s)",
+                proactive,
+                urgent,
+            )
             return
 
         if self._reply_channel:
@@ -415,12 +619,11 @@ class ChatServer:
         lines = ["Sessions:", ""]
         for s in sessions:
             marker = " *" if s["session_id"] == active_id else ""
-            dt = datetime.fromtimestamp(s["last_active"], tz=timezone.utc)
+            dt = datetime.fromtimestamp(s["last_active"], tz=UTC)
             date_str = dt.strftime("%Y-%m-%d %H:%M")
             title = s["title"] or "(untitled)"
             lines.append(
-                f"  {s['session_id']}{marker}  {title}  "
-                f"({s['message_count']} msgs, {date_str})"
+                f"  {s['session_id']}{marker}  {title}  ({s['message_count']} msgs, {date_str})"
             )
         lines.append("")
         lines.append("* = active session. Use /resume <id> to switch.")
@@ -442,7 +645,7 @@ class ChatServer:
     def _format_status(self, sender_id: str) -> str:
         """Format server status information."""
         session = self._session_mgr.get_or_create(sender_id)
-        uptime = datetime.now(timezone.utc) - self._start_time
+        uptime = datetime.now(UTC) - self._start_time
         hours, remainder = divmod(int(uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
 
@@ -472,6 +675,13 @@ class ChatServer:
         ]
         return "\n".join(lines)
 
+    def shutdown(self) -> None:
+        """Shut down the chat server and release resources."""
+        if self._container_pool is not None:
+            logger.info("Shutting down container pool")
+            self._container_pool.shutdown()
+            self._container_pool = None
+
     def _build_system_prompt(self) -> str:
         """Build the system prompt from workspace files, memory, and config.
 
@@ -499,11 +709,12 @@ class ChatServer:
                 screen_result = self._guardian.screen_input(memory_context)
                 if screen_result.blocked:
                     logger.warning(
-                        "Guardian blocked memory context from system prompt "
-                        "(confidence=%.3f)",
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
+                        "Guardian blocked memory context from system prompt (confidence=%.3f)",
+                        (
+                            screen_result.classifier_result.confidence
+                            if screen_result.classifier_result
+                            else 0.0
+                        ),
                     )
                     memory_context = None
 

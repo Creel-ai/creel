@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from creel.daemon.client import DaemonApiClient, DaemonTuiAdapter
-
 
 # ---------------------------------------------------------------------------
 # Shared fake client for adapter tests
@@ -300,7 +298,7 @@ class TestDaemonApiClient:
 
         with patch.object(client, "_get_client") as mock_gc:
             mock_gc.return_value.request.return_value = mock_resp
-            result = client.send_message("cli", "hello", session_id="s1")
+            client.send_message("cli", "hello", session_id="s1")
 
         call_kwargs = mock_gc.return_value.request.call_args
         assert call_kwargs.kwargs["json"]["session_id"] == "s1"

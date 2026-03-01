@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,11 +11,9 @@ from guardian.audit import AuditLogger, read_audit_log
 from guardian.fast_classifier import FastClassifier
 from guardian.llm_judge import LLMJudge
 from guardian.types import (
-    AuditConfig,
     FastClassifierConfig,
     LLMJudgeConfig,
 )
-
 
 # --- Fast Classifier ---
 
@@ -37,7 +34,9 @@ class TestFastClassifierWarmUp:
         The constructor doesn't call _load(); warm_up() only runs inference
         if a pipeline was already loaded, so it's a no-op here.
         """
-        config = FastClassifierConfig(enabled=True, model_name="nonexistent/model-that-does-not-exist-anywhere")
+        config = FastClassifierConfig(
+            enabled=True, model_name="nonexistent/model-that-does-not-exist-anywhere"
+        )
         # _load() is called lazily or not at all — the constructor just stores config.
         # If _load() is called eagerly and raises, that's expected for a bad model.
         try:
@@ -65,24 +64,30 @@ class TestLLMJudgeConditional:
 
     def test_should_run_uncertain_only_in_range(self) -> None:
         config = LLMJudgeConfig(
-            enabled=True, uncertain_only=True,
-            uncertain_low=0.5, uncertain_high=0.85,
+            enabled=True,
+            uncertain_only=True,
+            uncertain_low=0.5,
+            uncertain_high=0.85,
         )
         judge = LLMJudge(config)
         assert judge.should_run(0.7) is True
 
     def test_should_run_uncertain_only_below_range(self) -> None:
         config = LLMJudgeConfig(
-            enabled=True, uncertain_only=True,
-            uncertain_low=0.5, uncertain_high=0.85,
+            enabled=True,
+            uncertain_only=True,
+            uncertain_low=0.5,
+            uncertain_high=0.85,
         )
         judge = LLMJudge(config)
         assert judge.should_run(0.3) is False
 
     def test_should_run_uncertain_only_above_range(self) -> None:
         config = LLMJudgeConfig(
-            enabled=True, uncertain_only=True,
-            uncertain_low=0.5, uncertain_high=0.85,
+            enabled=True,
+            uncertain_only=True,
+            uncertain_low=0.5,
+            uncertain_high=0.85,
         )
         judge = LLMJudge(config)
         assert judge.should_run(0.95) is False
@@ -165,9 +170,7 @@ class TestAuditLogToolResult:
 class TestAuditLogRotation:
     def test_daily_rotation_creates_dated_file(self, tmp_path: Path) -> None:
         audit = AuditLogger(tmp_path / "audit.jsonl", rotate_daily=True)
-        audit.log_screen(
-            input_hash="x", input_length=1, blocked=False, source="test"
-        )
+        audit.log_screen(input_hash="x", input_length=1, blocked=False, source="test")
         # Should create a dated file, not plain audit.jsonl
         files = list(tmp_path.glob("audit-*.jsonl"))
         assert len(files) == 1
@@ -179,9 +182,7 @@ class TestAuditLogRotation:
         audit = AuditLogger(log_file, max_size_mb=0.001)  # ~1KB
         # Write enough to trigger rotation
         for i in range(50):
-            audit.log_screen(
-                input_hash=f"hash{i}", input_length=i, blocked=False, source="test"
-            )
+            audit.log_screen(input_hash=f"hash{i}", input_length=i, blocked=False, source="test")
         # Should have rotated
         assert log_file.exists()
         rotated = log_file.with_suffix(".jsonl.1")

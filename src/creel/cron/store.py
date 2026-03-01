@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import logging
 import os
@@ -124,7 +125,7 @@ class JobStore:
             self._save_runs()
             return record
 
-    def get_runs(self, job_id: str) -> list[RunRecord]:
+    def get_runs(self, job_id: str) -> builtins.list[RunRecord]:
         """Get run history for a job, ordered oldest first."""
         with self._lock:
             return list(self._runs.get(job_id, []))
@@ -179,10 +180,7 @@ class JobStore:
 
     def _save_runs(self) -> None:
         self._runs_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            job_id: [r.model_dump() for r in records]
-            for job_id, records in self._runs.items()
-        }
+        data = {job_id: [r.model_dump() for r in records] for job_id, records in self._runs.items()}
         self._atomic_write(self._runs_path, json.dumps(data, indent=2) + "\n")
 
     @staticmethod

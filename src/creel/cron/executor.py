@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from creel.agent import run_agent_loop
 from creel.cron.delivery import deliver
 from creel.cron.models import ChannelSendFn, CronJob
+
+if TYPE_CHECKING:
+    from creel.models import AgentDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ class JobExecutor:
 
     def __init__(
         self,
-        agent_def: object | None = None,
+        agent_def: AgentDefinition | None = None,
         inject_event: InjectEventFn | None = None,
         channel_send: ChannelSendFn | None = None,
         use_containers: bool = False,
@@ -45,9 +49,7 @@ class JobExecutor:
     def _execute_main(self, job: CronJob) -> None:
         """Inject a system event into the main conversation session."""
         if self._inject_event is None:
-            raise RuntimeError(
-                "Cannot execute main-session job: no event injector configured"
-            )
+            raise RuntimeError("Cannot execute main-session job: no event injector configured")
 
         event_text = f"[Scheduled: {job.name}]\n{job.payload.message}"
         self._inject_event(event_text)
@@ -56,9 +58,7 @@ class JobExecutor:
     def _execute_isolated(self, job: CronJob) -> None:
         """Run a fresh agent turn in a dedicated session."""
         if self._agent_def is None:
-            raise RuntimeError(
-                "Cannot execute isolated job: no agent definition configured"
-            )
+            raise RuntimeError("Cannot execute isolated job: no agent definition configured")
 
         # Build LLM config, applying model override if specified
         llm_config = self._agent_def.llm.model_copy()

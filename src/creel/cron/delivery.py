@@ -58,10 +58,11 @@ def _deliver_announce(
     """Send output to a chat channel."""
     if channel_send is None:
         raise RuntimeError(
-            f"Cannot deliver to channel '{delivery.channel}': "
-            "no channel_send callback configured"
+            f"Cannot deliver to channel '{delivery.channel}': no channel_send callback configured"
         )
-    channel_send(delivery.channel, output)
+    channel = delivery.channel
+    assert channel is not None
+    channel_send(channel, output)
     logger.info(
         "Delivered output for job '%s' to channel '%s'",
         job.name,
@@ -82,13 +83,13 @@ def _deliver_webhook(
         "job_name": job.name,
         "output": output,
     }
-    response = httpx.post(
-        delivery.url, json=payload, timeout=30, follow_redirects=False
-    )
+    url = delivery.url
+    assert url is not None
+    response = httpx.post(url, json=payload, timeout=30, follow_redirects=False)
     response.raise_for_status()
     logger.info(
         "Delivered output for job '%s' to webhook %s (status=%d)",
         job.name,
-        delivery.url,
+        url,
         response.status_code,
     )

@@ -10,13 +10,11 @@ import pytest
 from creel.cron.manager import CronManager, _make_trigger
 from creel.cron.models import (
     CronJob,
-    Delivery,
     Payload,
     RunStatus,
     Schedule,
 )
 from creel.cron.store import JobStore
-
 
 # -- Helpers --
 

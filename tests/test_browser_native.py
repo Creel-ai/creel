@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -23,7 +21,9 @@ class TestFindChromeBinary:
     @patch("bridge.browser.os.path.isfile")
     def test_find_chrome_binary_macos(self, mock_isfile, mock_system):
         """On macOS, should find Google Chrome at the standard path."""
-        mock_isfile.side_effect = lambda p: p == "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        mock_isfile.side_effect = lambda p: (
+            p == "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        )
 
         result = _find_chrome_binary()
         assert result == "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -32,6 +32,7 @@ class TestFindChromeBinary:
     @patch("bridge.browser.os.path.isfile")
     def test_find_chromium_macos(self, mock_isfile, mock_system):
         """On macOS, should fall back to Chromium if Chrome not found."""
+
         def isfile_check(p):
             if p == "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome":
                 return False
@@ -48,7 +49,9 @@ class TestFindChromeBinary:
     @patch("bridge.browser.shutil.which")
     def test_find_chrome_binary_linux(self, mock_which, mock_system):
         """On Linux, should use shutil.which to find Chrome."""
-        mock_which.side_effect = lambda name: "/usr/bin/google-chrome" if name == "google-chrome" else None
+        mock_which.side_effect = lambda name: (
+            "/usr/bin/google-chrome" if name == "google-chrome" else None
+        )
 
         result = _find_chrome_binary()
         assert result == "/usr/bin/google-chrome"
@@ -57,6 +60,7 @@ class TestFindChromeBinary:
     @patch("bridge.browser.shutil.which")
     def test_find_chromium_linux(self, mock_which, mock_system):
         """On Linux, should fall back to chromium-browser."""
+
         def which_check(name):
             if name == "chromium-browser":
                 return "/usr/bin/chromium-browser"

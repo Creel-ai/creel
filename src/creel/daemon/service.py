@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from creel.channels.base import Channel
+from creel.channels.message import IncomingMessage
 from creel.chat import ChatServer
 from creel.cron.executor import JobExecutor
 from creel.cron.manager import CronManager
@@ -79,12 +80,37 @@ class DaemonService:
             cron_manager=self._cron_manager,
         )
 
+        # Ensure cron tools are available even when the server was provided
+        # externally (e.g., by the daemon CLI which creates ChatServer first).
+        if getattr(self._server, "_cron_manager", None) is None:
+            self._server._cron_manager = self._cron_manager
+
     # --- Message and session API ---
 
-    def send_message(self, sender_id: str, text: str, *, auto_approve: bool = False) -> str:
-        """Route a message through the agent loop and return the response text."""
+    def send_message(
+        self,
+        sender_id_or_msg: str | IncomingMessage,
+        text: str = "",
+        *,
+        auto_approve: bool = False,
+    ) -> str:
+        """Route a message through the agent loop and return the response text.
+
+        Accepts either ``(sender_id, text)`` for plain text messages or a
+        single :class:`IncomingMessage` for messages with media attachments.
+        """
+        if isinstance(sender_id_or_msg, IncomingMessage):
+            msg: IncomingMessage = sender_id_or_msg
+            with self._lock:
+                return self._server.handle_message(
+                    msg.sender_id,
+                    msg.text or "",
+                    auto_approve=auto_approve,
+                    attachments=msg.attachments or None,
+                    channel=msg.channel or "unknown",
+                )
         with self._lock:
-            return self._server.handle_message(sender_id, text, auto_approve=auto_approve)
+            return self._server.handle_message(sender_id_or_msg, text, auto_approve=auto_approve)
 
     def stream_message(
         self,
@@ -362,7 +388,6 @@ class DaemonService:
 
     def start_configured_channels(self, agent_def: AgentDefinition) -> None:
         """Discover and start all channels configured in agent.yaml."""
-        from creel.channels.plugin import ChannelCapability
         from creel.channels.registry import ChannelRegistry
 
         registry = ChannelRegistry()
@@ -470,9 +495,7 @@ class DaemonService:
             mgr = self._server._session_mgr
             stats = mgr.session_stats()
 
-            scheduler_running = bool(
-                self._scheduler_thread and self._scheduler_thread.is_alive()
-            )
+            scheduler_running = bool(self._scheduler_thread and self._scheduler_thread.is_alive())
 
             channels: list[dict[str, Any]] = []
             for name in sorted(self._channel_state):

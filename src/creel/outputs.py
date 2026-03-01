@@ -39,7 +39,9 @@ def _send_imessage(text: str, to: str) -> None:
         raise RuntimeError("iMessage output is only available on macOS")
 
     # Validate phone number format (basic check)
-    cleaned = to.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    cleaned = (
+        to.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    )
     if not cleaned.isdigit():
         raise ValueError(f"Invalid phone number: {to}")
 

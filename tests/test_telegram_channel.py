@@ -166,10 +166,22 @@ class TestPollingMode:
 
     def test_poll_loop_filters_by_allowed_chats(self):
         msgs = [
-            _make_msg(chat_id="-100", text="@testbot allowed group", update_id=1, is_group=True,
-                      sender_id="1", sender_username="alice"),
-            _make_msg(chat_id="-200", text="@testbot blocked group", update_id=2, is_group=True,
-                      sender_id="2", sender_username="bob"),
+            _make_msg(
+                chat_id="-100",
+                text="@testbot allowed group",
+                update_id=1,
+                is_group=True,
+                sender_id="1",
+                sender_username="alice",
+            ),
+            _make_msg(
+                chat_id="-200",
+                text="@testbot blocked group",
+                update_id=2,
+                is_group=True,
+                sender_id="2",
+                sender_username="bob",
+            ),
         ]
         bridge = MockBridge(messages=msgs)
 
@@ -322,6 +334,7 @@ class TestGroupChat:
         t.start()
         # Give it a moment to process, then stop
         import time
+
         time.sleep(0.5)
         channel.stop()
         t.join(timeout=5)
@@ -420,17 +433,22 @@ class TestWebhookSecretToken:
         )
         channel.set_webhook_callback(lambda s, t: "ok")
 
-        payload = {"update_id": 1, "message": {
-            "message_id": 1,
-            "from": {"id": 42, "username": "alice"},
-            "chat": {"id": 42, "type": "private"},
-            "text": "hello",
-        }}
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "from": {"id": 42, "username": "alice"},
+                "chat": {"id": 42, "type": "private"},
+                "text": "hello",
+            },
+        }
         raw = json.dumps(payload).encode()
 
         request = MagicMock()
+
         async def _body():
             return raw
+
         request.body = _body
         request.headers = {"X-Telegram-Bot-Api-Secret-Token": "my-secret"}
 
@@ -449,21 +467,27 @@ class TestWebhookSecretToken:
             allowed_senders=["42"],
         )
 
-        payload = {"update_id": 1, "message": {
-            "message_id": 1,
-            "from": {"id": 42, "username": "alice"},
-            "chat": {"id": 42, "type": "private"},
-            "text": "hello",
-        }}
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "from": {"id": 42, "username": "alice"},
+                "chat": {"id": 42, "type": "private"},
+                "text": "hello",
+            },
+        }
         raw = json.dumps(payload).encode()
 
         request = MagicMock()
+
         async def _body():
             return raw
+
         request.body = _body
         request.headers = {"X-Telegram-Bot-Api-Secret-Token": "wrong-secret"}
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await channel._handle_webhook(request)
         assert exc_info.value.status_code == 403
@@ -480,21 +504,27 @@ class TestWebhookSecretToken:
             allowed_senders=["42"],
         )
 
-        payload = {"update_id": 1, "message": {
-            "message_id": 1,
-            "from": {"id": 42, "username": "alice"},
-            "chat": {"id": 42, "type": "private"},
-            "text": "hello",
-        }}
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "from": {"id": 42, "username": "alice"},
+                "chat": {"id": 42, "type": "private"},
+                "text": "hello",
+            },
+        }
         raw = json.dumps(payload).encode()
 
         request = MagicMock()
+
         async def _body():
             return raw
+
         request.body = _body
         request.headers = {}
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await channel._handle_webhook(request)
         assert exc_info.value.status_code == 403
@@ -513,17 +543,22 @@ class TestWebhookSecretToken:
         )
         channel.set_webhook_callback(lambda s, t: "ok")
 
-        payload = {"update_id": 1, "message": {
-            "message_id": 1,
-            "from": {"id": 42, "username": "alice"},
-            "chat": {"id": 42, "type": "private"},
-            "text": "hello",
-        }}
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "from": {"id": 42, "username": "alice"},
+                "chat": {"id": 42, "type": "private"},
+                "text": "hello",
+            },
+        }
         raw = json.dumps(payload).encode()
 
         request = MagicMock()
+
         async def _body():
             return raw
+
         request.body = _body
         request.headers = {}
 
@@ -534,6 +569,7 @@ class TestWebhookSecretToken:
 class TestWebhookSecretRequired:
     def test_webhook_mode_requires_secret(self):
         from pydantic import ValidationError
+
         from creel.models import TelegramChannelConfig
 
         with pytest.raises(ValidationError, match="webhook_secret"):
@@ -573,11 +609,13 @@ class TestRegisterPlugin:
         from creel.channels.telegram import register_plugin
 
         _, factory = register_plugin()
-        channel = factory({
-            "bot_token": "fake-token",
-            "mode": "polling",
-            "allowed_senders": ["123"],
-        })
+        channel = factory(
+            {
+                "bot_token": "fake-token",
+                "mode": "polling",
+                "allowed_senders": ["123"],
+            }
+        )
         assert isinstance(channel, TelegramChannel)
 
     def test_factory_decrypts_secrets(self, monkeypatch):
@@ -590,11 +628,13 @@ class TestRegisterPlugin:
 
         fake_env = {"TELEGRAM_BOT_TOKEN": "decrypted-token-123"}
         with patch("creel.secrets.decrypt_env_file", return_value=fake_env) as mock_decrypt:
-            channel = factory({
-                "secrets": "secrets/telegram.env.enc",
-                "mode": "polling",
-                "allowed_senders": ["123"],
-            })
+            channel = factory(
+                {
+                    "secrets": "secrets/telegram.env.enc",
+                    "mode": "polling",
+                    "allowed_senders": ["123"],
+                }
+            )
         mock_decrypt.assert_called_once_with("secrets/telegram.env.enc")
         assert isinstance(channel, TelegramChannel)
         assert os.environ.get("TELEGRAM_BOT_TOKEN") == "decrypted-token-123"
@@ -640,6 +680,7 @@ class TestOutboundFiltering:
             return "ok"
 
         import threading
+
         t = threading.Thread(target=channel.listen, args=(callback,))
         t.start()
         t.join(timeout=5)
@@ -659,6 +700,7 @@ class TestDenyByDefault:
 
     def test_empty_allowed_senders_raises(self):
         from pydantic import ValidationError
+
         from creel.models import TelegramChannelConfig
 
         with pytest.raises(ValidationError, match="allowed_senders"):

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from typing import Callable
+
+from creel.channels.base import LegacyCallback
 
 
 class WebhookChannelMixin:
@@ -13,9 +14,10 @@ class WebhookChannelMixin:
     and use this mixin to store the message callback and block in ``listen()``.
     """
 
-    _webhook_callback: Callable[[str, str], str] | None = None
+    _webhook_callback: LegacyCallback | None = None
+    _stop_requested: bool = False
 
-    def set_webhook_callback(self, callback: Callable[[str, str], str]) -> None:
+    def set_webhook_callback(self, callback: LegacyCallback) -> None:
         """Store the message callback for use by webhook handlers."""
         self._webhook_callback = callback
 

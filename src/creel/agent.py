@@ -6,9 +6,10 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from creel.llm import call_llm, extract_text
-from creel.models import AgentConfig, LLMConfig, ToolConfig
+from creel.models import AgentConfig, BridgeConfig, LLMConfig, ToolConfig
 from creel.tools import build_tool_definitions, execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,60 @@ def _extract_prior_tools(messages: list[dict]) -> list[str]:
     return prior
 
 
+_RETRY_PHRASES = frozenset(
+    {
+        "try again",
+        "try that again",
+        "retry",
+        "do that again",
+        "run that again",
+        "one more time",
+        "redo",
+        "again please",
+        "can you retry",
+        "please retry",
+        "try it again",
+    }
+)
+
+
+def _extract_user_request_for_coherence(messages: list[dict]) -> str:
+    """Extract the user request for coherence checking.
+
+    If the latest user message is a short retry phrase (e.g. "try that again"),
+    prepend the previous substantive user message so the coherence checker
+    understands what "that" refers to.
+    """
+    user_messages: list[str] = []
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
+        else:
+            continue
+        if text.strip():
+            user_messages.append(text.strip())
+
+    if not user_messages:
+        return ""
+
+    latest = user_messages[-1]
+
+    # Check if the latest message is a short retry phrase
+    normalised = latest.lower().rstrip("!?.").strip()
+    is_retry = normalised in _RETRY_PHRASES or any(normalised.startswith(p) for p in _RETRY_PHRASES)
+
+    if is_retry and len(user_messages) >= 2:
+        prior = user_messages[-2]
+        return f"{prior}\n\n(Follow-up: user said '{latest}', meaning retry the above)"
+
+    return latest
+
+
 def _ensure_tool_call_integrity(messages: list[dict]) -> int:
     """Repair orphaned tool_use/tool_result sequences in-place.
 
@@ -70,7 +125,8 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
             continue
 
         tool_uses = [
-            block for block in content
+            block
+            for block in content
             if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("id")
         ]
         if not tool_uses:
@@ -84,8 +140,10 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
         valid_next_list = next_role == "user" and isinstance(next_content, list)
 
         if valid_next_list:
+            assert isinstance(next_content, list)
             tool_result_blocks = [
-                block for block in next_content
+                block
+                for block in next_content
                 if isinstance(block, dict) and block.get("type") == "tool_result"
             ]
             contains_non_tool_results = any(
@@ -106,42 +164,50 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
             if not contains_non_tool_results:
                 # Pure tool_result message — append missing results in-place.
                 for tool_id in missing_ids:
-                    next_content.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": (
-                            "Tool execution was blocked or interrupted before results "
-                            "were recorded."
-                        ),
-                        "is_error": True,
-                    })
+                    next_content.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": (
+                                "Tool execution was blocked or interrupted before results "
+                                "were recorded."
+                            ),
+                            "is_error": True,
+                        }
+                    )
                 inserted_blocks += len(missing_ids)
                 i += 2
                 continue
 
             # Mixed content (text + tool_results) — insert a separate message
             # with only the missing results so we don't duplicate existing ones.
-            synthetic_for_missing = [{
+            synthetic_for_missing = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": (
+                        "Tool execution was blocked or interrupted before results were recorded."
+                    ),
+                    "is_error": True,
+                }
+                for tool_id in missing_ids
+            ]
+            messages.insert(i + 1, {"role": "user", "content": synthetic_for_missing})
+            inserted_blocks += len(synthetic_for_missing)
+            i += 3  # skip: assistant, inserted synthetic, original next_msg
+            continue
+
+        synthetic_results = [
+            {
                 "type": "tool_result",
                 "tool_use_id": tool_id,
                 "content": (
                     "Tool execution was blocked or interrupted before results were recorded."
                 ),
                 "is_error": True,
-            } for tool_id in missing_ids]
-            messages.insert(i + 1, {"role": "user", "content": synthetic_for_missing})
-            inserted_blocks += len(synthetic_for_missing)
-            i += 3  # skip: assistant, inserted synthetic, original next_msg
-            continue
-
-        synthetic_results = [{
-            "type": "tool_result",
-            "tool_use_id": tool_id,
-            "content": (
-                "Tool execution was blocked or interrupted before results were recorded."
-            ),
-            "is_error": True,
-        } for tool_id in required_ids]
+            }
+            for tool_id in required_ids
+        ]
         messages.insert(i + 1, {"role": "user", "content": synthetic_results})
         inserted_blocks += len(synthetic_results)
         i += 2
@@ -161,14 +227,15 @@ def run_agent_loop(
     agent_config: AgentConfig,
     system_prompt: str | None = None,
     use_containers: bool = False,
-    guardian: object | None = None,
+    guardian: Any | None = None,
     confirm_action: Callable[[str, dict, str], bool] | None = None,
-    memory_manager: object | None = None,
+    memory_manager: Any | None = None,
     on_text_delta: Callable[[str], None] | None = None,
     allowed_tools: list[str] | None = None,
-    bridge_config: object | None = None,
+    bridge_config: BridgeConfig | None = None,
     session_state: dict | None = None,
     cron_manager: object | None = None,
+    subagent_manager: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -184,6 +251,7 @@ def run_agent_loop(
         allowed_tools: Optional per-task tool whitelist. If set, only these
             tools may be called regardless of global policy.
         cron_manager: Optional CronManager for cron scheduling tool.
+        subagent_manager: Optional SubAgentManager for sub-agent tool.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -192,19 +260,23 @@ def run_agent_loop(
     include_workspace = bool(
         tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
     )
-    include_cron = cron_manager is not None
-    tool_defs = build_tool_definitions(
-        tools_config,
-        include_memory_tools=include_memory,
-        include_workspace_tools=include_workspace,
-        include_cron_tools=include_cron,
-    ) if tools_config else []
+    tool_defs = (
+        build_tool_definitions(
+            tools_config,
+            include_memory_tools=include_memory,
+            include_workspace_tools=include_workspace,
+            include_cron_tools=cron_manager is not None,
+            include_subagent_tool=subagent_manager is not None,
+        )
+        if tools_config
+        else []
+    )
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []
     last_input_tokens = 0
 
-    for turn in range(agent_config.max_turns):
+    for _turn in range(agent_config.max_turns):
         turns_used += 1
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
         _ensure_tool_call_integrity(messages)
@@ -263,25 +335,30 @@ def run_agent_loop(
             if allowed_tools is not None and tool_name not in allowed_tools:
                 logger.warning(
                     "Tool %s blocked by per-task scope (allowed: %s)",
-                    tool_name, allowed_tools,
+                    tool_name,
+                    allowed_tools,
                 )
                 result = (
                     f"Tool '{tool_name}' is not permitted for this task. "
                     f"Allowed tools: {', '.join(allowed_tools)}"
                 )
                 is_error = True
-                tool_history.append({
-                    "tool": tool_name,
-                    "input": tool_input,
-                    "output": result,
-                    "is_error": is_error,
-                })
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                    "is_error": is_error,
-                })
+                tool_history.append(
+                    {
+                        "tool": tool_name,
+                        "input": tool_input,
+                        "output": result,
+                        "is_error": is_error,
+                    }
+                )
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                        "is_error": is_error,
+                    }
+                )
                 continue
 
             # Guardian action validation (stage 3)
@@ -295,18 +372,22 @@ def run_agent_loop(
                     result = f"Action denied by security policy: {decision.reason}"
                     is_error = True
 
-                    tool_history.append({
-                        "tool": tool_name,
-                        "input": tool_input,
-                        "output": result,
-                        "is_error": is_error,
-                    })
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                        "is_error": is_error,
-                    })
+                    tool_history.append(
+                        {
+                            "tool": tool_name,
+                            "input": tool_input,
+                            "output": result,
+                            "is_error": is_error,
+                        }
+                    )
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                            "is_error": is_error,
+                        }
+                    )
                     continue
 
                 if decision.verdict == ActionVerdict.REVIEW:
@@ -320,18 +401,22 @@ def run_agent_loop(
                             guardian.log_action_outcome(tool_name, "review", "denied_by_user")
                             result = f"Action denied by user: {decision.reason}"
                             is_error = True
-                            tool_history.append({
-                                "tool": tool_name,
-                                "input": tool_input,
-                                "output": result,
-                                "is_error": is_error,
-                            })
-                            tool_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": result,
-                                "is_error": is_error,
-                            })
+                            tool_history.append(
+                                {
+                                    "tool": tool_name,
+                                    "input": tool_input,
+                                    "output": result,
+                                    "is_error": is_error,
+                                }
+                            )
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": result,
+                                    "is_error": is_error,
+                                }
+                            )
                             continue
                         # User approved — fall through to execute
                         guardian.log_action_outcome(tool_name, "review", "approved_by_user")
@@ -342,15 +427,19 @@ def run_agent_loop(
                         synthetic_results = []
                         for b in tool_use_blocks:
                             if b.id == block.id:
-                                msg = f"Action requires approval: {decision.reason}"
+                                approval_msg = f"Action requires approval: {decision.reason}"
                             else:
-                                msg = "Action skipped — another tool in this batch requires approval."
-                            synthetic_results.append({
-                                "type": "tool_result",
-                                "tool_use_id": b.id,
-                                "content": msg,
-                                "is_error": True,
-                            })
+                                approval_msg = (
+                                    "Action skipped — another tool in this batch requires approval."
+                                )
+                            synthetic_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": b.id,
+                                    "content": approval_msg,
+                                    "is_error": True,
+                                }
+                            )
                         messages.append({"role": "user", "content": synthetic_results})
 
                         return AgentResult(
@@ -371,14 +460,16 @@ def run_agent_loop(
             if guardian is not None:
                 # Extract the user's last message for coherence comparison
                 user_request = ""
-                for msg in reversed(messages):
-                    if msg.get("role") == "user":
-                        content = msg.get("content", "")
+                for message in reversed(messages):
+                    if message.get("role") == "user":
+                        content = message.get("content", "")
                         if isinstance(content, str):
                             user_request = content
                         elif isinstance(content, list):
                             user_request = " ".join(
-                                b.get("text", "") for b in content if b.get("type") == "text"
+                                str(block_item.get("text", ""))
+                                for block_item in content
+                                if isinstance(block_item, dict) and block_item.get("type") == "text"
                             )
                         break
 
@@ -386,29 +477,36 @@ def run_agent_loop(
                     prior_tools = _extract_prior_tools(messages)
                     available_tool_names = list(tools_config.keys()) if tools_config else None
                     coherence = guardian.check_coherence(
-                        user_request, tool_name, tool_input,
+                        user_request,
+                        tool_name,
+                        tool_input,
                         prior_tools=prior_tools,
                         available_tools=available_tool_names,
                     )
                     if not coherence.coherent:
                         logger.warning(
                             "Guardian coherence check failed for %s: %s",
-                            tool_name, coherence.reasoning,
+                            tool_name,
+                            coherence.reasoning,
                         )
                         result = f"Action blocked — not coherent with user request: {coherence.reasoning}"
                         is_error = True
-                        tool_history.append({
-                            "tool": tool_name,
-                            "input": tool_input,
-                            "output": result,
-                            "is_error": is_error,
-                        })
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                            "is_error": is_error,
-                        })
+                        tool_history.append(
+                            {
+                                "tool": tool_name,
+                                "input": tool_input,
+                                "output": result,
+                                "is_error": is_error,
+                            }
+                        )
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result,
+                                "is_error": is_error,
+                            }
+                        )
                         continue
 
             # Screen memory write content through Guardian before execution
@@ -426,22 +524,26 @@ def run_agent_loop(
                             else 0.0,
                         )
                         result = (
-                            f"[Guardian] Memory write blocked — content may contain "
-                            f"prompt injection."
+                            "[Guardian] Memory write blocked — content may contain "
+                            "prompt injection."
                         )
                         is_error = True
-                        tool_history.append({
-                            "tool": tool_name,
-                            "input": tool_input,
-                            "output": result,
-                            "is_error": is_error,
-                        })
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                            "is_error": is_error,
-                        })
+                        tool_history.append(
+                            {
+                                "tool": tool_name,
+                                "input": tool_input,
+                                "output": result,
+                                "is_error": is_error,
+                            }
+                        )
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result,
+                                "is_error": is_error,
+                            }
+                        )
                         continue
 
             t0 = time.perf_counter()
@@ -455,6 +557,7 @@ def run_agent_loop(
                     bridge_config=bridge_config,
                     session_state=session_state,
                     cron_manager=cron_manager,
+                    subagent_manager=subagent_manager,
                 )
                 is_error = False
                 elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -483,7 +586,9 @@ def run_agent_loop(
                 )
                 for alert in drift_alerts:
                     logger.warning(
-                        "Drift alert (%s): %s", alert.alert_type, alert.detail,
+                        "Drift alert (%s): %s",
+                        alert.alert_type,
+                        alert.detail,
                     )
 
             # Classify executor output for tools that return untrusted content
@@ -510,11 +615,7 @@ def run_agent_loop(
                     is_error = True
 
             # Screen search_memory results for stored injection payloads
-            if (
-                not is_error
-                and guardian is not None
-                and tool_name == "search_memory"
-            ):
+            if not is_error and guardian is not None and tool_name == "search_memory":
                 screen_result = guardian.screen_tool_result(tool_name, result)
                 if screen_result.blocked:
                     logger.warning(
@@ -538,7 +639,8 @@ def run_agent_loop(
                 if cred_matches:
                     logger.warning(
                         "Credential leak detected in %s output: %d pattern(s)",
-                        tool_name, len(cred_matches),
+                        tool_name,
+                        len(cred_matches),
                     )
                     # Log to audit using already-detected matches (no re-scan)
                     if hasattr(guardian, "_audit") and guardian._audit:
@@ -552,19 +654,23 @@ def run_agent_loop(
                         )
                     result = redacted_result
 
-            tool_history.append({
-                "tool": tool_name,
-                "input": tool_input,
-                "output": result,
-                "is_error": is_error,
-            })
+            tool_history.append(
+                {
+                    "tool": tool_name,
+                    "input": tool_input,
+                    "output": result,
+                    "is_error": is_error,
+                }
+            )
 
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": result,
-                "is_error": is_error,
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                    "is_error": is_error,
+                }
+            )
 
         # Append tool results as a user message
         messages.append({"role": "user", "content": tool_results})
@@ -606,10 +712,12 @@ def _serialize_content(content: list) -> list[dict]:
         if block.type == "text":
             serialized.append({"type": "text", "text": block.text})
         elif block.type == "tool_use":
-            serialized.append({
-                "type": "tool_use",
-                "id": block.id,
-                "name": block.name,
-                "input": block.input,
-            })
+            serialized.append(
+                {
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                }
+            )
     return serialized

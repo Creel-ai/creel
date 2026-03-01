@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from creel.channels import Channel
+
+if TYPE_CHECKING:
+    from creel.channels.plugin import ChannelPluginMeta
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +68,11 @@ class BlueBubblesChannel(Channel):
                         last_ts = ts
             except Exception:
                 consecutive_errors += 1
-                backoff = min(self._poll_interval * (2 ** consecutive_errors), max_backoff)
+                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
                 logger.exception(
                     "Error polling BlueBubbles (consecutive=%d, backoff=%.1fs)",
-                    consecutive_errors, backoff,
+                    consecutive_errors,
+                    backoff,
                 )
                 time.sleep(backoff)
                 continue
@@ -78,6 +83,9 @@ class BlueBubblesChannel(Channel):
 
     def send(self, recipient: str, text: str) -> None:
         """Send a message via BlueBubbles REST API."""
+        if not text:
+            logger.debug("Skipping empty message to %s", recipient)
+            return
         self._api(
             "POST",
             "/message/text",
@@ -120,12 +128,14 @@ class BlueBubblesChannel(Channel):
             if chats:
                 chat_guid = chats[0].get("guid", "")
 
-            messages.append({
-                "sender": sender,
-                "text": text,
-                "chat_guid": chat_guid,
-                "timestamp": msg.get("dateCreated", 0),
-            })
+            messages.append(
+                {
+                    "sender": sender,
+                    "text": text,
+                    "chat_guid": chat_guid,
+                    "timestamp": msg.get("dateCreated", 0),
+                }
+            )
 
         # Return oldest first
         messages.sort(key=lambda m: m["timestamp"])

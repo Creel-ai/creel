@@ -1,9 +1,48 @@
-"""Channel interfaces for agent communication."""
+"""Channel interfaces and message types for agent communication."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class Attachment:
+    """A media attachment on a message."""
+
+    data: bytes
+    filename: str
+    mime_type: str | None = None
+    size: int | None = None
+
+
+@dataclass
+class IncomingMessage:
+    """A message received from a channel."""
+
+    sender_id: str
+    text: str
+    channel: str
+    group_id: str | None = None
+    media: list[Attachment] | None = None
+    reply_to: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class OutgoingMessage:
+    """A message to send through a channel."""
+
+    recipient: str
+    text: str
+    media: list[Attachment] | None = None
+    reply_to: str | None = None
+
+
+# Type alias for the legacy callback signature: (sender_id, text) -> response_text
+LegacyCallback = Callable[[str, str], str]
 
 
 class Channel(ABC):
@@ -12,7 +51,7 @@ class Channel(ABC):
     _stop_requested: bool = False
 
     @abstractmethod
-    def listen(self, callback: Callable[[str, str], str]) -> None:
+    def listen(self, callback: LegacyCallback) -> None:
         """Listen for incoming messages.
 
         Args:
@@ -22,6 +61,14 @@ class Channel(ABC):
     @abstractmethod
     def send(self, recipient: str, text: str) -> None:
         """Send a message to a recipient."""
+
+    def send_message(self, msg: OutgoingMessage) -> None:
+        """Send a structured outgoing message.
+
+        Default implementation delegates to ``send()`` for backward compatibility.
+        Channels can override to handle media attachments and other fields.
+        """
+        self.send(msg.recipient, msg.text)
 
     def stop(self) -> None:
         """Request the channel to stop listening."""
@@ -44,4 +91,7 @@ class Channel(ABC):
 
     def health_check(self) -> dict[str, Any]:
         """Return health status for this channel."""
-        return {"healthy": not self._stop_requested}
+        return {
+            "channel": type(self).__name__,
+            "healthy": not self._stop_requested,
+        }

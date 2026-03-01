@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,7 +9,6 @@ import pytest
 from executors.bluebubbles.executor import (
     MAX_MESSAGE_LENGTH,
     MAX_MESSAGES_PER_REQUEST,
-    VALID_REACTIONS,
     _send_timestamps,
     get_chats,
     get_recent_messages,
@@ -43,6 +41,7 @@ def _clear_rate_limiter():
 
 # --- Recipient allowlist ---
 
+
 def test_send_message_blocked_recipient():
     """Sending to a recipient not in the allowlist raises an error."""
     with pytest.raises(RuntimeError, match="not in allowlist"):
@@ -58,10 +57,13 @@ def test_send_message_empty_allowlist():
 def test_send_reaction_blocked_recipient():
     """Reacting to a chat not in the allowlist raises an error."""
     with pytest.raises(RuntimeError, match="not in allowlist"):
-        send_reaction(SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+19999999999", "guid", "love")
+        send_reaction(
+            SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+19999999999", "guid", "love"
+        )
 
 
 # --- Message cap enforcement ---
+
 
 @patch("executors.bluebubbles.executor.requests.request")
 def test_message_cap_enforced(mock_req):
@@ -78,6 +80,7 @@ def test_message_cap_enforced(mock_req):
 
 # --- Rate limiting ---
 
+
 def test_rate_limit_enforced():
     """Exceeding send rate limit raises an error."""
     import time
@@ -92,6 +95,7 @@ def test_rate_limit_enforced():
 
 # --- Message length ---
 
+
 def test_message_length_enforced():
     """Messages exceeding MAX_MESSAGE_LENGTH are rejected."""
     long_text = "x" * (MAX_MESSAGE_LENGTH + 1)
@@ -101,13 +105,17 @@ def test_message_length_enforced():
 
 # --- Reaction validation ---
 
+
 def test_invalid_reaction_rejected():
     """Invalid reaction types are rejected."""
     with pytest.raises(RuntimeError, match="Invalid reaction"):
-        send_reaction(SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", "guid", "thumbsup")
+        send_reaction(
+            SERVER, PASSWORD, ALLOWED_RECIPIENTS, "iMessage;-;+11234567890", "guid", "thumbsup"
+        )
 
 
 # --- Successful operations (mocked HTTP) ---
+
 
 @patch("executors.bluebubbles.executor.requests.request")
 def test_send_message_allowed(mock_req):
@@ -124,15 +132,17 @@ def test_send_message_allowed(mock_req):
 @patch("executors.bluebubbles.executor.requests.request")
 def test_get_recent_messages_format(mock_req):
     """get_recent_messages returns expected format."""
-    mock_req.return_value = _mock_api_response([
-        {
-            "text": "Hey there",
-            "handle": {"address": "+11234567890"},
-            "chats": [{"chatIdentifier": "iMessage;-;+11234567890"}],
-            "dateCreated": "2026-01-01T00:00:00Z",
-            "isFromMe": False,
-        },
-    ])
+    mock_req.return_value = _mock_api_response(
+        [
+            {
+                "text": "Hey there",
+                "handle": {"address": "+11234567890"},
+                "chats": [{"chatIdentifier": "iMessage;-;+11234567890"}],
+                "dateCreated": "2026-01-01T00:00:00Z",
+                "isFromMe": False,
+            },
+        ]
+    )
 
     result = get_recent_messages(SERVER, PASSWORD, ALLOWED_CHATS)
 
@@ -150,22 +160,24 @@ def test_get_recent_messages_format(mock_req):
 @patch("executors.bluebubbles.executor.requests.request")
 def test_get_recent_messages_filters_disallowed_chats(mock_req):
     """Messages from chats not in allowed_chats are filtered out."""
-    mock_req.return_value = _mock_api_response([
-        {
-            "text": "Allowed",
-            "handle": {"address": "+11234567890"},
-            "chats": [{"chatIdentifier": "iMessage;-;+11234567890"}],
-            "dateCreated": "2026-01-01T00:00:00Z",
-            "isFromMe": False,
-        },
-        {
-            "text": "Not allowed",
-            "handle": {"address": "+19999999999"},
-            "chats": [{"chatIdentifier": "iMessage;-;+19999999999"}],
-            "dateCreated": "2026-01-01T00:00:00Z",
-            "isFromMe": False,
-        },
-    ])
+    mock_req.return_value = _mock_api_response(
+        [
+            {
+                "text": "Allowed",
+                "handle": {"address": "+11234567890"},
+                "chats": [{"chatIdentifier": "iMessage;-;+11234567890"}],
+                "dateCreated": "2026-01-01T00:00:00Z",
+                "isFromMe": False,
+            },
+            {
+                "text": "Not allowed",
+                "handle": {"address": "+19999999999"},
+                "chats": [{"chatIdentifier": "iMessage;-;+19999999999"}],
+                "dateCreated": "2026-01-01T00:00:00Z",
+                "isFromMe": False,
+            },
+        ]
+    )
 
     result = get_recent_messages(SERVER, PASSWORD, ALLOWED_CHATS)
     assert len(result) == 1
@@ -175,13 +187,15 @@ def test_get_recent_messages_filters_disallowed_chats(mock_req):
 @patch("executors.bluebubbles.executor.requests.request")
 def test_get_chats(mock_req):
     """get_chats returns expected format."""
-    mock_req.return_value = _mock_api_response([
-        {
-            "chatIdentifier": "iMessage;-;+11234567890",
-            "displayName": "John",
-            "lastMessage": {"dateCreated": "2026-01-01T00:00:00Z"},
-        },
-    ])
+    mock_req.return_value = _mock_api_response(
+        [
+            {
+                "chatIdentifier": "iMessage;-;+11234567890",
+                "displayName": "John",
+                "lastMessage": {"dateCreated": "2026-01-01T00:00:00Z"},
+            },
+        ]
+    )
 
     result = get_chats(SERVER, PASSWORD, ALLOWED_CHATS)
     assert len(result) == 1
@@ -195,8 +209,12 @@ def test_send_reaction_valid(mock_req):
     mock_req.return_value = _mock_api_response({})
 
     result = send_reaction(
-        SERVER, PASSWORD, ALLOWED_RECIPIENTS,
-        "iMessage;-;+11234567890", "msg-guid-123", "love",
+        SERVER,
+        PASSWORD,
+        ALLOWED_RECIPIENTS,
+        "iMessage;-;+11234567890",
+        "msg-guid-123",
+        "love",
     )
     assert result["status"] == "reacted"
     assert result["reaction"] == "love"

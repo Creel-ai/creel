@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from creel.models import TaskDefinition
 
 
@@ -48,6 +46,7 @@ allowed_tools:
   - check_calendar
 """)
         from creel.models import load_task
+
         task = load_task(task_file)
         assert task.allowed_tools == ["check_weather", "check_calendar"]
 
@@ -63,5 +62,6 @@ output:
   to: "-"
 """)
         from creel.models import load_task
+
         task = load_task(task_file)
         assert task.allowed_tools == []

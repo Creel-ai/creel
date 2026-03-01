@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -10,14 +9,8 @@ import yaml
 
 from creel.models import (
     AgentConfig,
-    AgentDefinition,
-    ChannelsConfig,
     ExecutorConfig,
-    IMessageChannelConfig,
-    LLMConfig,
-    OutputConfig,
     SessionConfig,
-    TaskDefinition,
     ToolConfig,
     ToolParameter,
     load_agent_config,

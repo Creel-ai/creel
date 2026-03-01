@@ -10,7 +10,6 @@ import pytest
 from creel.cron.manager import CronManager
 from creel.cron.models import (
     CronJob,
-    Delivery,
     Payload,
     RunRecord,
     RunStatus,
@@ -18,7 +17,6 @@ from creel.cron.models import (
 )
 from creel.cron.store import JobStore
 from creel.cron.tool import CRON_TOOL_DEFINITION, handle_cron_tool
-
 
 # -- Helpers --
 
@@ -70,15 +68,31 @@ class TestCronToolDefinition:
     def test_action_enum(self) -> None:
         props = CRON_TOOL_DEFINITION["input_schema"]["properties"]
         assert set(props["action"]["enum"]) == {
-            "list", "add", "update", "remove", "run", "runs",
+            "list",
+            "add",
+            "update",
+            "remove",
+            "run",
+            "runs",
         }
 
     def test_has_key_properties(self) -> None:
         props = CRON_TOOL_DEFINITION["input_schema"]["properties"]
         expected = {
-            "action", "job_id", "name", "schedule_kind", "schedule_expr",
-            "tz", "message", "target", "payload_kind", "model",
-            "delivery_mode", "delivery_channel", "delivery_url", "enabled",
+            "action",
+            "job_id",
+            "name",
+            "schedule_kind",
+            "schedule_expr",
+            "tz",
+            "message",
+            "target",
+            "payload_kind",
+            "model",
+            "delivery_mode",
+            "delivery_channel",
+            "delivery_url",
+            "enabled",
         }
         assert expected <= set(props.keys())
 
@@ -530,19 +544,23 @@ class TestActionRuns:
         job = _make_job("Has runs")
         mgr.store.add(job)
 
-        mgr.store.add_run(RunRecord(
-            job_id=job.id,
-            started_at="2026-01-15T08:00:00+00:00",
-            ended_at="2026-01-15T08:00:05+00:00",
-            status=RunStatus.SUCCESS,
-        ))
-        mgr.store.add_run(RunRecord(
-            job_id=job.id,
-            started_at="2026-01-16T08:00:00+00:00",
-            ended_at="2026-01-16T08:00:03+00:00",
-            status=RunStatus.FAILURE,
-            error="timeout",
-        ))
+        mgr.store.add_run(
+            RunRecord(
+                job_id=job.id,
+                started_at="2026-01-15T08:00:00+00:00",
+                ended_at="2026-01-15T08:00:05+00:00",
+                status=RunStatus.SUCCESS,
+            )
+        )
+        mgr.store.add_run(
+            RunRecord(
+                job_id=job.id,
+                started_at="2026-01-16T08:00:00+00:00",
+                ended_at="2026-01-16T08:00:03+00:00",
+                status=RunStatus.FAILURE,
+                error="timeout",
+            )
+        )
 
         result = _call(mgr, action="runs", job_id=job.id)
         assert result["count"] == 2
@@ -567,12 +585,14 @@ class TestActionRuns:
         job = _make_job("Clean runs")
         mgr.store.add(job)
 
-        mgr.store.add_run(RunRecord(
-            job_id=job.id,
-            started_at="2026-01-15T08:00:00+00:00",
-            ended_at="2026-01-15T08:00:05+00:00",
-            status=RunStatus.SUCCESS,
-        ))
+        mgr.store.add_run(
+            RunRecord(
+                job_id=job.id,
+                started_at="2026-01-15T08:00:00+00:00",
+                ended_at="2026-01-15T08:00:05+00:00",
+                status=RunStatus.SUCCESS,
+            )
+        )
 
         result = _call(mgr, action="runs", job_id=job.id)
         assert "error" not in result["runs"][0]

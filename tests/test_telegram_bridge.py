@@ -44,10 +44,12 @@ class TestGetMe:
     def test_get_me_caches_result(self, bridge):
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(
-                json=MagicMock(return_value={
-                    "ok": True,
-                    "result": {"id": 111, "username": "testbot"},
-                })
+                json=MagicMock(
+                    return_value={
+                        "ok": True,
+                        "result": {"id": 111, "username": "testbot"},
+                    }
+                )
             )
             result1 = bridge.get_me()
             result2 = bridge.get_me()
@@ -74,9 +76,7 @@ class TestGetUpdates:
             ],
         }
         with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                json=MagicMock(return_value=api_response)
-            )
+            mock_post.return_value = MagicMock(json=MagicMock(return_value=api_response))
             messages = bridge.get_updates(offset=None, timeout=10)
             assert len(messages) == 1
             msg = messages[0]
@@ -105,9 +105,7 @@ class TestGetUpdates:
             ],
         }
         with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                json=MagicMock(return_value=api_response)
-            )
+            mock_post.return_value = MagicMock(json=MagicMock(return_value=api_response))
             messages = bridge.get_updates()
             assert len(messages) == 1
             assert messages[0].text == "check this photo"
@@ -117,10 +115,12 @@ class TestApiError:
     def test_api_error_raises(self, bridge):
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(
-                json=MagicMock(return_value={
-                    "ok": False,
-                    "description": "Unauthorized",
-                })
+                json=MagicMock(
+                    return_value={
+                        "ok": False,
+                        "description": "Unauthorized",
+                    }
+                )
             )
             with pytest.raises(RuntimeError, match="Unauthorized"):
                 bridge.get_me()
@@ -130,10 +130,12 @@ class TestHealth:
     def test_health_returns_healthy(self, bridge):
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(
-                json=MagicMock(return_value={
-                    "ok": True,
-                    "result": {"id": 111, "username": "testbot"},
-                })
+                json=MagicMock(
+                    return_value={
+                        "ok": True,
+                        "result": {"id": 111, "username": "testbot"},
+                    }
+                )
             )
             status = bridge.health()
             assert status["healthy"] is True

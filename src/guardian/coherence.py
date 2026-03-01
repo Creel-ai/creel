@@ -80,10 +80,14 @@ class CoherenceChecker:
         (fail-open) to avoid blocking legitimate actions.
         """
         if not self._config.enabled:
-            return CoherenceResult(coherent=True, confidence=1.0, reasoning="Coherence check disabled")
+            return CoherenceResult(
+                coherent=True, confidence=1.0, reasoning="Coherence check disabled"
+            )
 
         if tool_name in _SKIP_COHERENCE:
-            return CoherenceResult(coherent=True, confidence=1.0, reasoning=f"Skipped: {tool_name} is a cleanup tool")
+            return CoherenceResult(
+                coherent=True, confidence=1.0, reasoning=f"Skipped: {tool_name} is a cleanup tool"
+            )
 
         t0 = time.perf_counter()
         try:
@@ -97,9 +101,7 @@ class CoherenceChecker:
                     f"The agent is now making the NEXT call in the sequence."
                 )
             if available_tools:
-                extra_context += (
-                    f"\n\nAvailable tools: {', '.join(available_tools)}"
-                )
+                extra_context += f"\n\nAvailable tools: {', '.join(available_tools)}"
 
             user_msg = (
                 f"User request: {user_request}\n\n"
@@ -129,6 +131,7 @@ class CoherenceChecker:
                 result = json.loads(raw_text)
             except json.JSONDecodeError:
                 import re
+
                 match = re.search(r"\{[^}]+\}", raw_text)
                 if match:
                     result = json.loads(match.group())
@@ -141,7 +144,10 @@ class CoherenceChecker:
 
             logger.info(
                 "Coherence check: coherent=%s confidence=%.3f elapsed=%.1fms tool=%s",
-                coherent, confidence, elapsed_ms, tool_name,
+                coherent,
+                confidence,
+                elapsed_ms,
+                tool_name,
             )
 
             return CoherenceResult(

@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from creel.oauth import (
-    DEFAULT_MAX_TOKEN_AGE,
     _token_cache,
     _token_refresh_log,
     check_credential_freshness,
@@ -38,11 +37,16 @@ class TestGetGoogleCredentials:
         mock_creds_cls = MagicMock()
         mock_request_cls = MagicMock()
 
-        with patch.dict(os.environ, {}, clear=True), \
-             patch.dict("sys.modules", {
-                 "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
-                 "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
-             }):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
+                    "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
+                },
+            ),
+        ):
             with pytest.raises(RuntimeError, match="not set"):
                 get_google_credentials(env_var="MISSING_VAR")
 
@@ -51,11 +55,16 @@ class TestGetGoogleCredentials:
         mock_creds_cls = MagicMock()
         mock_request_cls = MagicMock()
 
-        with patch.dict(os.environ, {"TEST_CREDS": "not json"}), \
-             patch.dict("sys.modules", {
-                 "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
-                 "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
-             }):
+        with (
+            patch.dict(os.environ, {"TEST_CREDS": "not json"}),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
+                    "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
+                },
+            ),
+        ):
             with pytest.raises(RuntimeError, match="Invalid JSON"):
                 get_google_credentials(env_var="TEST_CREDS")
 
@@ -65,11 +74,16 @@ class TestGetGoogleCredentials:
         mock_creds_cls = MagicMock()
         mock_request_cls = MagicMock()
 
-        with patch.dict(os.environ, {"TEST_CREDS": creds}), \
-             patch.dict("sys.modules", {
-                 "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
-                 "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
-             }):
+        with (
+            patch.dict(os.environ, {"TEST_CREDS": creds}),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.auth.transport.requests": MagicMock(Request=mock_request_cls),
+                    "google.oauth2.credentials": MagicMock(Credentials=mock_creds_cls),
+                },
+            ),
+        ):
             with pytest.raises(RuntimeError, match="Missing required fields"):
                 get_google_credentials(env_var="TEST_CREDS")
 
@@ -89,11 +103,16 @@ class TestGetGoogleCredentials:
             "client_id": "cid",
             "client_secret": "cs",
         }
-        with patch.dict(os.environ, {"TEST_CREDS": json.dumps(creds_data)}), \
-             patch.dict("sys.modules", {
-                 "google.auth.transport.requests": mock_gauth_mod,
-                 "google.oauth2.credentials": mock_gcreds_mod,
-             }):
+        with (
+            patch.dict(os.environ, {"TEST_CREDS": json.dumps(creds_data)}),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.auth.transport.requests": mock_gauth_mod,
+                    "google.oauth2.credentials": mock_gcreds_mod,
+                },
+            ),
+        ):
             result = get_google_credentials(env_var="TEST_CREDS")
 
         mock_creds_instance.refresh.assert_called_once()
@@ -114,11 +133,16 @@ class TestGetGoogleCredentials:
             "client_id": "cid",
             "client_secret": "cs",
         }
-        with patch.dict(os.environ, {"TEST_CREDS": json.dumps(creds_data)}), \
-             patch.dict("sys.modules", {
-                 "google.auth.transport.requests": mock_gauth_mod,
-                 "google.oauth2.credentials": mock_gcreds_mod,
-             }):
+        with (
+            patch.dict(os.environ, {"TEST_CREDS": json.dumps(creds_data)}),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.auth.transport.requests": mock_gauth_mod,
+                    "google.oauth2.credentials": mock_gcreds_mod,
+                },
+            ),
+        ):
             get_google_credentials(env_var="TEST_CREDS")
 
         assert "TEST_CREDS" in _token_refresh_log
@@ -141,11 +165,16 @@ class TestGetGoogleCredentials:
             "client_id": "cid",
             "client_secret": "cs",
         }
-        with patch.dict(os.environ, {"TEST_CREDS": json.dumps(creds_data)}), \
-             patch.dict("sys.modules", {
-                 "google.auth.transport.requests": mock_gauth_mod,
-                 "google.oauth2.credentials": mock_gcreds_mod,
-             }):
+        with (
+            patch.dict(os.environ, {"TEST_CREDS": json.dumps(creds_data)}),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.auth.transport.requests": mock_gauth_mod,
+                    "google.oauth2.credentials": mock_gcreds_mod,
+                },
+            ),
+        ):
             with pytest.raises(RuntimeError, match="Token refresh failed"):
                 get_google_credentials(env_var="TEST_CREDS")
 

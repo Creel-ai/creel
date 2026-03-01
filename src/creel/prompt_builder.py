@@ -8,7 +8,7 @@ the system prompt at the start of each session.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -89,19 +89,17 @@ def build_system_prompt(
 def _build_datetime_section(timezone_name: str) -> str:
     """Build the current date/time section."""
     try:
-        tz = ZoneInfo(timezone_name)
+        tz: tzinfo = ZoneInfo(timezone_name)
     except (KeyError, ValueError):
         logger.warning("Invalid timezone %r, falling back to UTC", timezone_name)
-        tz = timezone.utc
+        tz = UTC
 
     now = datetime.now(tz)
     formatted = now.strftime("%A, %B %d, %Y %I:%M %p %Z")
     return f"## Current Date & Time\n{formatted}\nTimezone: {timezone_name}"
 
 
-def _build_workspace_section(
-    workspace_dir: str, max_chars: int
-) -> str | None:
+def _build_workspace_section(workspace_dir: str, max_chars: int) -> str | None:
     """Load and format workspace files for injection."""
     ws_path = Path(workspace_dir)
     if not ws_path.is_dir():

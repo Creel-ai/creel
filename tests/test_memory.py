@@ -1,7 +1,7 @@
 """Tests for the memory system."""
 
 import tempfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from creel.memory import MemoryManager
@@ -128,8 +128,8 @@ class TestMemoryManager:
             path = mm.daily_path()
             # Find the line number of the entry (after header)
             lines = path.read_text().splitlines()
-            entry_line = next(i for i, l in enumerate(lines, 1) if "Delete me" in l)
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Delete me" in line)
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.delete_memory(today_str, entry_line)
             assert "Deleted" in result
             assert "Delete me" not in path.read_text()
@@ -144,7 +144,7 @@ class TestMemoryManager:
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
             mm.remember("Only entry")
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.delete_memory(today_str, 999)
             assert "out of range" in result
 
@@ -154,7 +154,7 @@ class TestMemoryManager:
             mm.update_long_term("- Line to delete")
             # Find the line number
             lines = mm.long_term_path.read_text().splitlines()
-            entry_line = next(i for i, l in enumerate(lines, 1) if "Line to delete" in l)
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Line to delete" in line)
             result = mm.delete_memory("long_term", entry_line)
             assert "Deleted" in result
             assert "Line to delete" not in mm.long_term_path.read_text()
@@ -167,8 +167,8 @@ class TestMemoryManager:
             mm.remember("Old text")
             path = mm.daily_path()
             lines = path.read_text().splitlines()
-            entry_line = next(i for i, l in enumerate(lines, 1) if "Old text" in l)
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Old text" in line)
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.edit_memory(today_str, entry_line, "- [10:00] **general**: New text")
             assert "Edited" in result
             assert "old: " in result
@@ -180,7 +180,7 @@ class TestMemoryManager:
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
             mm.remember("Entry")
-            today_str = datetime.now(timezone.utc).date().isoformat()
+            today_str = datetime.now(UTC).date().isoformat()
             result = mm.edit_memory(today_str, 999, "replacement")
             assert "out of range" in result
 
@@ -189,7 +189,7 @@ class TestMemoryManager:
             mm = self._make_manager(td)
             mm.update_long_term("- Old fact")
             lines = mm.long_term_path.read_text().splitlines()
-            entry_line = next(i for i, l in enumerate(lines, 1) if "Old fact" in l)
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Old fact" in line)
             result = mm.edit_memory("long_term", entry_line, "- New fact")
             assert "Edited" in result
             assert "New fact" in mm.long_term_path.read_text()
@@ -223,9 +223,11 @@ class TestMemoryManager:
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
             # Create an old daily file
-            old_date = (datetime.now(timezone.utc).date() - timedelta(days=10))
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
-            old_path.write_text(f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Old note\n")
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Old note\n"
+            )
             result = mm.compact_daily_files(days_to_keep=7)
             assert "Compacted 1" in result
             assert not old_path.exists()
@@ -241,9 +243,11 @@ class TestMemoryManager:
     def test_compact_appends_summary_to_long_term(self):
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
-            old_date = (datetime.now(timezone.utc).date() - timedelta(days=10))
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
-            old_path.write_text(f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Note 1\n- [11:00] **general**: Note 2\n")
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Note 1\n- [11:00] **general**: Note 2\n"
+            )
             mm.compact_daily_files(days_to_keep=7)
             lt_content = mm.long_term_path.read_text()
             assert "2 entries (compacted)" in lt_content
@@ -251,7 +255,7 @@ class TestMemoryManager:
     def test_compact_deletes_empty_files(self):
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td)
-            old_date = (datetime.now(timezone.utc).date() - timedelta(days=10))
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
             old_path.write_text(f"# Memory — {old_date.isoformat()}\n\n")
             mm.compact_daily_files(days_to_keep=7)

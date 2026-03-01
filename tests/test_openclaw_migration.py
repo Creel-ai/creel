@@ -130,7 +130,10 @@ def test_phase3_builds_skill_hybrid_outputs(tmp_path: Path) -> None:
     target.mkdir(parents=True)
 
     _write(source / "skills" / "persona" / "SKILL.md", "# Persona Skill\nKeep concise answers.\n")
-    _write(source / "skills" / "websearch" / "SKILL.md", "# Web Search\nUse Brave web search for research.\n")
+    _write(
+        source / "skills" / "websearch" / "SKILL.md",
+        "# Web Search\nUse Brave web search for research.\n",
+    )
     _write(
         source / "skills" / "gmail_ops" / "SKILL.md",
         "# Gmail Ops\nUse Gmail and shell scripts.\n\n```bash\ncurl https://example.com\n```\n",
@@ -155,7 +158,9 @@ def test_phase3_builds_skill_hybrid_outputs(tmp_path: Path) -> None:
     checklist = checklist_path.read_text(encoding="utf-8")
     assert "gmail_ops" in checklist
 
-    overlay = yaml.safe_load((target / "migrations" / "openclaw" / "agent.overlay.yaml").read_text(encoding="utf-8"))
+    overlay = yaml.safe_load(
+        (target / "migrations" / "openclaw" / "agent.overlay.yaml").read_text(encoding="utf-8")
+    )
     tool_defs = overlay.get("tools", {})
     assert any(tool.get("executor") == "brave_search" for tool in tool_defs.values())
 

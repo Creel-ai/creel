@@ -6,7 +6,7 @@ import enum
 import ipaddress
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -36,11 +36,10 @@ class Schedule(BaseModel):
     def validate_tz(cls, v: str) -> str:
         try:
             ZoneInfo(v)
-        except Exception:
+        except Exception as exc:
             raise ValueError(
-                f"Unknown timezone: '{v}'. "
-                "Use IANA timezone names like 'America/Denver' or 'UTC'."
-            )
+                f"Unknown timezone: '{v}'. Use IANA timezone names like 'America/Denver' or 'UTC'."
+            ) from exc
         return v
 
     @field_validator("expr")
@@ -50,33 +49,27 @@ class Schedule(BaseModel):
         if kind == "cron":
             parts = v.split()
             if len(parts) != 5:
-                raise ValueError(
-                    f"cron expression must have 5 parts, got {len(parts)}"
-                )
+                raise ValueError(f"cron expression must have 5 parts, got {len(parts)}")
             try:
                 from apscheduler.triggers.cron import CronTrigger
 
                 CronTrigger.from_crontab(v)
             except ValueError as e:
-                raise ValueError(f"Invalid cron expression '{v}': {e}")
+                raise ValueError(f"Invalid cron expression '{v}': {e}") from e
         elif kind == "every":
             try:
                 seconds = int(v)
             except ValueError:
                 raise ValueError(
                     f"'every' schedule expr must be an integer (seconds), got '{v}'"
-                )
+                ) from None
             if seconds < 1:
-                raise ValueError(
-                    f"'every' interval must be >= 1 second, got {seconds}"
-                )
+                raise ValueError(f"'every' interval must be >= 1 second, got {seconds}")
         elif kind == "at":
             try:
                 datetime.fromisoformat(v)
             except ValueError:
-                raise ValueError(
-                    f"'at' schedule expr must be ISO 8601, got '{v}'"
-                )
+                raise ValueError(f"'at' schedule expr must be ISO 8601, got '{v}'") from None
         return v
 
 
@@ -119,7 +112,7 @@ class Delivery(BaseModel):
         return self
 
 
-class RunStatus(str, enum.Enum):
+class RunStatus(enum.StrEnum):
     """Outcome of a single job run."""
 
     SUCCESS = "success"
@@ -142,7 +135,7 @@ class RunRecord(BaseModel):
             try:
                 datetime.fromisoformat(v)
             except ValueError:
-                raise ValueError(f"timestamp must be ISO 8601, got '{v}'")
+                raise ValueError(f"timestamp must be ISO 8601, got '{v}'") from None
         return v
 
 
@@ -153,16 +146,14 @@ def _generate_id() -> str:
 
 def now_iso() -> str:
     """Current time as an ISO 8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _validate_webhook_url(url: str) -> None:
     """Validate a webhook URL for safety (SSRF protection)."""
     parsed = urlparse(url)
     if parsed.scheme != "https":
-        raise ValueError(
-            "Webhook URL must use HTTPS"
-        )
+        raise ValueError("Webhook URL must use HTTPS")
     hostname = parsed.hostname
     if not hostname:
         raise ValueError("Webhook URL must have a hostname")
@@ -177,9 +168,7 @@ def _validate_webhook_url(url: str) -> None:
     except ValueError:
         return  # hostname is a domain name, not an IP — that's fine
     if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-        raise ValueError(
-            "Webhook URL must not target private or internal addresses"
-        )
+        raise ValueError("Webhook URL must not target private or internal addresses")
 
 
 class CronJob(BaseModel):

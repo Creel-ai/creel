@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from creel.models import AgentDefinition, ToolConfig, ToolParameter
+from creel.models import AgentDefinition, ToolConfig
 from creel.orchestrator import (
     ImageBuildCache,
     _image_cache,
@@ -15,10 +15,10 @@ from creel.orchestrator import (
     prebuild_images,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _minimal_agent_def(**overrides) -> AgentDefinition:
     """Build a minimal AgentDefinition for testing."""
@@ -46,10 +46,12 @@ def _tool(executor: str, image: str | None = None, **kwargs) -> ToolConfig:
 
 class TestCollectRequiredImages:
     def test_extracts_images_from_tools(self):
-        agent = _minimal_agent_def(tools={
-            "weather": _tool("weather"),
-            "gmail": _tool("gmail_readonly"),
-        })
+        agent = _minimal_agent_def(
+            tools={
+                "weather": _tool("weather"),
+                "gmail": _tool("gmail_readonly"),
+            }
+        )
         images = collect_required_images(agent)
         assert "executor-weather:latest" in images
         assert "executor-gmail-readonly:latest" in images
@@ -57,25 +59,31 @@ class TestCollectRequiredImages:
 
     def test_deduplicates(self):
         """Two tools with the same executor produce one image."""
-        agent = _minimal_agent_def(tools={
-            "read_email": _tool("gmail_readonly"),
-            "search_email": _tool("gmail_readonly"),
-        })
+        agent = _minimal_agent_def(
+            tools={
+                "read_email": _tool("gmail_readonly"),
+                "search_email": _tool("gmail_readonly"),
+            }
+        )
         images = collect_required_images(agent)
         assert images.count("executor-gmail-readonly:latest") == 1
 
     def test_respects_image_override(self):
-        agent = _minimal_agent_def(tools={
-            "custom": _tool("weather", image="my-custom-image:v2"),
-        })
+        agent = _minimal_agent_def(
+            tools={
+                "custom": _tool("weather", image="my-custom-image:v2"),
+            }
+        )
         images = collect_required_images(agent)
         assert "my-custom-image:v2" in images
         assert "executor-weather:latest" not in images
 
     def test_includes_llm_runner(self):
-        agent = _minimal_agent_def(tools={
-            "tool": _tool("weather"),
-        })
+        agent = _minimal_agent_def(
+            tools={
+                "tool": _tool("weather"),
+            }
+        )
         images = collect_required_images(agent)
         assert "llm-runner:latest" in images
 
@@ -85,10 +93,12 @@ class TestCollectRequiredImages:
         assert images == []
 
     def test_sorted_output(self):
-        agent = _minimal_agent_def(tools={
-            "z_tool": _tool("zebra"),
-            "a_tool": _tool("apple"),
-        })
+        agent = _minimal_agent_def(
+            tools={
+                "z_tool": _tool("zebra"),
+                "a_tool": _tool("apple"),
+            }
+        )
         images = collect_required_images(agent)
         assert images == sorted(images)
 
@@ -280,10 +290,12 @@ class TestPrebuildImages:
         """prebuild_images() spawns and completes daemon threads."""
         mock_build.side_effect = lambda img: f"built-{img}"
 
-        agent = _minimal_agent_def(tools={
-            "weather": _tool("weather"),
-            "gmail": _tool("gmail_readonly"),
-        })
+        agent = _minimal_agent_def(
+            tools={
+                "weather": _tool("weather"),
+                "gmail": _tool("gmail_readonly"),
+            }
+        )
 
         threads = prebuild_images(agent)
         assert len(threads) > 0

@@ -10,14 +10,14 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from googleapiclient.discovery import build
 
 try:
     from executors.google_creds import get_credentials
 except ModuleNotFoundError:
-    from google_creds import get_credentials
+    from google_creds import get_credentials  # type: ignore[no-redef]
 
 
 def fetch_events(range_arg: str = "today") -> list[dict]:
@@ -25,7 +25,7 @@ def fetch_events(range_arg: str = "today") -> list[dict]:
     creds = get_credentials()
     service = build("calendar", "v3", credentials=creds, cache_discovery=False)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if range_arg == "today":
         time_min = now.replace(hour=0, minute=0, second=0, microsecond=0)

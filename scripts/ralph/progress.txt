@@ -1,0 +1,566 @@
+# Ralph Progress Log
+Started: 2026-02-25
+---
+
+## Codebase Patterns
+- Python source lives in src/taskrunner/ (package name is taskrunner, not creel yet)
+- FastAPI daemon API is in src/taskrunner/daemon/api.py — use APIRouter for new endpoint groups
+- Task models and loading in src/taskrunner/models.py — use load_all_tasks()
+- Scheduler is APScheduler-based in src/taskrunner/scheduler.py
+- NEW: Full cron system in src/taskrunner/cron/ (manager, store, models, executor, delivery, tool)
+- Cron store already persists run history — check src/taskrunner/cron/store.py before building new history storage
+- Cron API router in src/taskrunner/daemon/api_cron.py — prefix="/api/cron", mounted via `app.include_router(cron_router)` in api.py
+- `_cron_to_human()` in api_cron.py converts common cron expressions to readable strings (every minute, daily at X, weekly on Y, etc.)
+- Cron history read pattern: `_read_all_history()` reads all JSONL lines, filtering/pagination done in-memory
+- Toggle pattern: regex-replace `enabled:` line in raw YAML, same as task toggle in api_tasks.py
+- Config is agent.yaml (YAML), loaded as Pydantic models — AgentDefinition in models.py
+- Config API router in src/taskrunner/daemon/api_config.py — prefix="/api/config", mounted via `app.include_router(config_router)` in api.py
+- `_find_agent_config()` locates agent.yaml: CWD first, then CREEL_HOME (same as CLI default)
+- Config validation: parse YAML → validate against AgentDefinition(**raw) — rejects invalid configs with 400
+- JSON Schema generation via `AgentDefinition.model_json_schema()` — Pydantic v2 built-in
+- Pydantic field alias: use `Field(None, alias="json")` when field name shadows BaseModel attribute
+- Telegram channel support added in src/taskrunner/channels/telegram.py
+- Daemon service layer in src/taskrunner/daemon/service.py wraps business logic
+- CREEL_HOME defaults to ~/.creel/ — state dir for daemon.sock, daemon.pid, daemon.log
+- Tasks dir configurable, defaults to tasks/ relative to working directory
+- Existing tests in tests/ — run with pytest
+- pyproject.toml uses hatchling build system
+- Bridge (FastAPI host bridge) is in src/bridge/ — separate from daemon
+- Dashboard static dir path: `_DASHBOARD_STATIC_DIR` computed from `Path(__file__).resolve().parent.parent / "dashboard_static"` in api.py
+- SPA fallback uses catch-all `/{full_path:path}` route — must be registered AFTER all other routes
+- `_mount_dashboard()` is a no-op when dashboard_static/ dir is missing (graceful degradation)
+- Tests run with `.venv/bin/python -m pytest tests/ -x -q`
+- Dashboard scaffold: Vite 7 + React 19 + TypeScript 5.9 (strict mode enabled by default in template)
+- Build script: scripts/build-dashboard.sh — npm ci + npm run build + copy dist/ to dashboard_static/
+- Vite dev proxy: /api/* and /v1/* proxied to localhost:8099
+- MUI v6 + Emotion installed; ThemeProvider in dashboard/src/ThemeContext.tsx wraps the app
+- Dark mode toggle persists to localStorage key `creel-theme`; use `useThemeMode()` hook for mode/toggle
+- Theme factory in dashboard/src/theme.ts — `buildTheme(mode)` creates MUI theme
+- React Router v6 in dashboard/src/App.tsx — routes defined as children of Layout route
+- BrowserRouter wraps the app in main.tsx
+- Layout component in dashboard/src/Layout.tsx — AppBar (fixed) + responsive Drawer + Outlet
+- Sidebar nav groups: Control, Workspace, System — defined as `NAV_GROUPS` array in Layout.tsx
+- Page components in dashboard/src/pages/ — one file per page (OverviewPage.tsx, etc.)
+- Drawer width: 240px; mobile breakpoint: `theme.breakpoints.down('md')`
+- Dashboard API router in src/taskrunner/daemon/api_dashboard.py — prefix="/api", mounted via `app.include_router(dashboard_router)` in api.py
+- Access DaemonService in endpoint handlers via `request.app.state.service`
+- Agent definition accessible via `service._agent_def` (AgentDefinition model)
+- TypeScript `erasableSyntaxOnly` disallows `public` param properties — use explicit field declarations
+- MUI Grid v2 uses `size` prop: `<Grid size={{ xs: 12, md: 4 }}>` (not `xs={12} md={4}`)
+- API client: dashboard/src/api/client.ts — typed fetch wrapper, add new API methods here
+- Types for API responses defined in client.ts alongside fetch methods
+- Task CRUD API router in src/taskrunner/daemon/api_tasks.py — prefix="/api/tasks", mounted via `app.include_router(tasks_router)` in api.py
+- Task CRUD supports both form-field requests and raw_yaml passthrough for create/update
+- Soft-delete pattern: move files to .deleted/ subdir instead of permanent removal
+- Task toggle pattern: read raw_yaml via GET /api/tasks/{name}, regex-replace `enabled:` line, PUT back with raw_yaml field
+- Types for API responses defined in dashboard/src/api/client.ts: TaskSummary, TaskDetail, TaskUpdateRequest
+- CodeMirror 6 packages: codemirror (basic setup), @codemirror/state, @codemirror/view, @codemirror/lang-yaml, @codemirror/theme-one-dark
+- js-yaml for YAML↔JSON conversion in browser; @types/js-yaml for TypeScript
+- CodeMirror editor must be recreated when dark mode changes — theme is set at EditorState creation time
+- Form↔YAML sync pattern: only convert on tab switch (not per-keystroke) to avoid feedback loops
+- TaskEditPage serves both /tasks/new (create) and /tasks/:name (edit) — `useParams().name` determines mode
+- MUI ToggleButton `value` must not be `null` — use sentinel string (e.g. 'all') instead
+- Cron API types in client.ts: CronJob, CronRunRecord, CronHistoryResponse; methods: fetchCronJobs(), toggleCronJob(), fetchCronHistory(), fetchCronRunDetail()
+- Expandable table rows pattern: wrap data row + collapse row in `<Box component="tbody">`, Collapse in a colSpan cell
+- Files API router in src/taskrunner/daemon/api_files.py — prefix="/api/files", mounted via `app.include_router(files_router)` in api.py
+- `_validate_path()` in api_files.py resolves symlinks and checks containment within CREEL_HOME — reject ../ with 400
+- `_creel_home()` helper returns `Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))` — reusable pattern for CREEL_HOME
+- File tree excludes: __pycache__, .pyc, daemon.sock, daemon.pid, *.bak, .git, .deleted; max depth 5
+- Soft-delete for files uses .trash/ subdir (vs .deleted/ for tasks) — preserves relative path structure
+- File browser API types in client.ts: FileTreeNode, FileContent, FileWriteResult; methods: fetchFileTree(), fetchFileContent(), updateFile(), createFile(), deleteFile()
+- Custom tree rendering with List/ListItemButton (not @mui/x-tree-view) — simpler for recursive FileTreeNode data
+- CodeMirror language auto-detection: `langExtension(filePath)` returns yamlMode/jsonMode/markdownMode/[] based on extension
+- react-markdown v10 for .md preview: `import Markdown from 'react-markdown'` (ESM-only)
+- Config API types in client.ts: ConfigResponse, ConfigSaveResponse; methods: fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
+- ConfigPage pattern: form↔raw sync on tab switch; `formToConfig()` preserves unknown keys via `...original` spread
+- Channels/Tools config too dynamic for static form — redirect to Raw YAML mode with explanatory note
+- Logs API router in src/taskrunner/daemon/api_logs.py — WebSocket at /ws/logs, GET /api/logs/recent, mounted via `app.include_router(logs_router)` in api.py
+- Log line parsing: `_LOG_LINE_RE` matches human-readable format `"YYYY-MM-DD HH:MM:SS [LEVEL] module: message"`, falls back to JSON log format, then raw text
+- `_passes_level_filter()` uses `_LEVEL_ORDER` dict for numeric level comparison (DEBUG=0, INFO=1, WARN=2, ERROR=3, CRITICAL=4)
+- WebSocket log tailing: tracks file position and inode to handle log rotation (inode change or file shrink resets to start)
+- Client-side level filtering via WebSocket messages: `{"level": "WARN"}` — empty/null resets filter
+- Initial backfill: WebSocket sends last 50 lines on connect before switching to tail mode
+- `_daemon_log_path()` uses CREEL_HOME pattern: `Path(os.environ.get("CREEL_HOME", Path.home() / ".creel")) / "daemon.log"`
+- react-window v2 API: `List` component with `rowComponent`, `rowCount`, `rowHeight`, `rowProps`, `listRef` (via `useListRef(null)`)
+- react-window v2 row component signature: `(props: { index, style, ariaAttributes, ...rowProps }) => ReactElement | null`
+- react-window v2 scroll-to: `listRef.current.scrollToRow({ index, align: 'end' })`
+- react-window v2 outer element access: `listRef.current.element` for scroll event listeners
+- Vite WebSocket proxy: `'/ws': { target: 'ws://localhost:8099', ws: true }`
+- Logs API types in client.ts: LogEntry, LogsRecentResponse; methods: fetchRecentLogs(), createLogsWebSocket()
+- Dashboard API auth: all /api/* routes require Bearer token via `dependencies=[Depends(require_dashboard_token)]` on router include
+- Token file: ~/.creel/dashboard-token (auto-generated UUID4 on first daemon start, chmod 600)
+- `app.state.dashboard_token` set in lifespan — auth dependency reads from there (not file on every request)
+- WebSocket auth: query param `?token=<token>` checked manually before `websocket.accept()` — FastAPI Depends don't run for WebSocket
+- Frontend auth: token stored in localStorage key `creel-dashboard-token`; `getToken()`/`setToken()`/`clearToken()` in client.ts
+- `setOnUnauthorized()` callback in client.ts triggers login dialog from AuthContext on 401 responses
+- AuthProvider in dashboard/src/AuthContext.tsx wraps app in main.tsx — shows login Dialog on missing/invalid token
+
+---
+
+## 2026-02-25 - DASH-001
+- Implemented static SPA serving from FastAPI daemon
+- Files changed: src/taskrunner/daemon/api.py
+- Added imports: Path, Request, FileResponse, StaticFiles
+- Added `_DASHBOARD_STATIC_DIR` module-level constant
+- Added `_mount_dashboard()` helper that:
+  - Checks if dashboard_static/ dir and index.html exist before mounting
+  - Mounts /assets via StaticFiles if assets/ subdir exists
+  - Registers catch-all GET route for SPA fallback
+  - Serves actual static files if they exist, otherwise returns index.html
+- Called at end of `create_daemon_app()` after all API routes are registered
+- **Learnings for future iterations:**
+  - The catch-all route must be registered last so it doesn't shadow API routes
+  - When dashboard_static/ is missing, all existing endpoints work unchanged
+  - FastAPI StaticFiles requires the directory to exist at mount time, so we guard with is_dir()
+  - All 1373 existing tests pass with no changes needed
+---
+
+## 2026-02-25 - DASH-002
+- Scaffolded Vite + React + TypeScript frontend in dashboard/
+- Files created: dashboard/ (Vite scaffold), scripts/build-dashboard.sh
+- Files changed: .gitignore, vite.config.ts
+- Scaffold created with `npm create vite@latest -- --template react-ts`
+- Simplified App.tsx to minimal Creel Dashboard placeholder, removed template boilerplate (App.css, index.css, assets/)
+- Configured Vite dev proxy: /api/* and /v1/* → localhost:8099
+- TypeScript strict mode already enabled by Vite react-ts template in tsconfig.app.json
+- Build script runs: npm ci → npm run build → copy dist/ to src/taskrunner/dashboard_static/
+- Added dashboard/node_modules/, dashboard/dist/, src/taskrunner/dashboard_static/ to .gitignore
+- npm run build produces output in dashboard/dist/ (verified)
+- Build script copies to src/taskrunner/dashboard_static/ (verified)
+- **Learnings for future iterations:**
+  - Vite 7 react-ts template uses React 19 (not 18) — fine for our purposes
+  - TypeScript strict mode is on by default in the template's tsconfig.app.json
+  - `npm ci` is used in build script (not `npm install`) for reproducible installs
+  - The `python -m pytest` command needs `.venv/bin/python` prefix (no system python)
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-003
+- Installed MUI v6: @mui/material, @mui/icons-material, @emotion/react, @emotion/styled
+- Created `dashboard/src/theme.ts` — `buildTheme(mode)` factory using `createTheme()` with primary/secondary palette colors and dark background overrides
+- Created `dashboard/src/ThemeContext.tsx` — React context providing `mode` and `toggleTheme()`, wraps MuiThemeProvider + CssBaseline, persists preference to localStorage key `creel-theme`
+- Updated `dashboard/src/main.tsx` — wraps `<App />` in `<ThemeProvider>`
+- Updated `dashboard/src/App.tsx` — MUI AppBar with "Creel Dashboard" title and dark mode toggle IconButton (Brightness4/7 icons)
+- Files created: dashboard/src/theme.ts, dashboard/src/ThemeContext.tsx
+- Files changed: dashboard/package.json, dashboard/src/main.tsx, dashboard/src/App.tsx
+- **Learnings for future iterations:**
+  - MUI v6 installed fine alongside React 19
+  - Use `<ThemeContext value={...}>` (React 19 style) instead of `<ThemeContext.Provider value={...}>`
+  - CssBaseline in the ThemeProvider ensures consistent baseline styling in both modes
+  - `npm run build` produces 316 KB gzipped bundle (101 KB gzipped) with MUI included
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-004
+- Implemented layout shell with sidebar navigation and React Router
+- Files created: dashboard/src/Layout.tsx, dashboard/src/pages/OverviewPage.tsx, TaskListPage.tsx, TaskDetailPage.tsx, TaskNewPage.tsx, CronPage.tsx, FilesPage.tsx, ConfigPage.tsx, LogsPage.tsx, NotFoundPage.tsx
+- Files changed: dashboard/src/App.tsx, dashboard/src/main.tsx, dashboard/package.json
+- Installed react-router-dom dependency
+- Layout component with:
+  - Fixed AppBar with "Creel" name, connection status Chip (green "Connected"), dark mode toggle
+  - Permanent MUI Drawer (240px) on desktop, temporary Drawer on mobile (< md breakpoint)
+  - Sidebar nav grouped: Control (Overview, Tasks, Cron Jobs), Workspace (Files, Config), System (Logs)
+  - Active page highlighted via `selected` prop on ListItemButton with custom `isActive()` helper
+  - `useMediaQuery` for responsive drawer variant switching
+- React Router v6 routes: /, /tasks, /tasks/new, /tasks/:name, /cron, /files, /config, /logs, * (404)
+- BrowserRouter wraps the entire app in main.tsx
+- 404 page with "Go to Overview" button
+- All placeholder pages render their page title as h4 Typography
+- **Learnings for future iterations:**
+  - React Router `<Route path="tasks/new">` must come before `<Route path="tasks/:name">` to avoid matching "new" as a name param
+  - NavLink `selected` state needs custom logic — use `isActive()` helper checking pathname prefix for nested routes (e.g., /tasks/*)
+  - AppBar `position="fixed"` with `zIndex: theme.zIndex.drawer + 1` keeps it above the drawer
+  - Need `<Toolbar />` spacer in both drawer content and main content to offset fixed AppBar height
+  - `npm run build` succeeds — bundle is 415 KB (132 KB gzipped) with router + layout added
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-005
+- Implemented GET /api/status endpoint returning daemon status, agent info, channels, task stats, cron info, and recent runs
+- Files created: src/taskrunner/daemon/api_dashboard.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included dashboard_router)
+- Created APIRouter with prefix="/api" in api_dashboard.py
+- Endpoint reads from DaemonService.status(), agent_def, load_all_tasks(), and cron-history.jsonl
+- Returns structured JSON: daemon (running, pid, uptime_seconds, socket), agent (name, model, provider), channels (with enabled/connected), tasks (total, scheduled), cron (enabled_jobs, total_jobs, next_run), recent_runs (last 5)
+- Sensible defaults when no tasks/channels/history exist
+- Router included in create_daemon_app() BEFORE webhook routes and SPA fallback
+- **Learnings for future iterations:**
+  - Dashboard API routes use `/api/*` prefix (via APIRouter prefix="/api"), distinct from existing `/v1/*` routes
+  - The dashboard router must be included before `_mount_dashboard()` call since the SPA catch-all would shadow `/api/*` routes
+  - `request.app.state.service` gives access to the DaemonService instance (set in lifespan)
+  - `service._agent_def` provides agent config (name, model, provider)
+  - Cron history JSONL path: `~/.creel/cron-history.jsonl` — doesn't exist yet (DASH-010 will create it)
+  - `load_all_tasks()` can throw FileNotFoundError if tasks dir doesn't exist — wrap in try/except
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-006
+- Implemented Overview page with live daemon status, agent info, channels, quick stats, and recent runs
+- Files created: dashboard/src/api/client.ts (fetch wrapper with typed StatusResponse)
+- Files changed: dashboard/src/pages/OverviewPage.tsx (full implementation replacing placeholder)
+- API client in dashboard/src/api/client.ts: typed fetch wrapper with ApiError class, fetchStatus() method
+- OverviewPage features:
+  - Fetches GET /api/status on mount and displays data in MUI Card components
+  - Daemon status card: running/stopped Chip badge, PID, human-readable uptime, socket path
+  - Agent info card: name, model, provider
+  - Channels section: list of channels with green/red outlined Chip badges
+  - Quick stats card: total tasks, scheduled tasks, enabled cron jobs, next run
+  - Recent runs: MUI Table with status Chips (success=green, failed=red, timeout=orange), relative time, duration
+  - Auto-refreshes every 30 seconds via setInterval polling
+  - Loading skeleton (Skeleton components in Card layout) while fetching
+  - Error state: Alert component when daemon unreachable; warning Alert on refresh failures
+- **Learnings for future iterations:**
+  - TypeScript `erasableSyntaxOnly` (tsconfig.app.json) disallows `public` parameter properties in constructors — use explicit field declarations instead
+  - MUI Grid v2 uses `size` prop instead of `xs`/`md` — e.g. `<Grid size={{ xs: 12, md: 4 }}>`
+  - `npm run build` produces 442 KB (139 KB gzipped) with overview page added
+  - API client lives in dashboard/src/api/client.ts — add new API methods here as needed
+  - pytest needs full path: `cd /Users/ross/.openclaw/workspace/projects/creel && .venv/bin/python -m pytest tests/ -x -q`
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-007
+- Implemented Task CRUD API endpoints: list, get, create, update, delete, run
+- Files created: src/taskrunner/daemon/api_tasks.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included tasks_router)
+- Endpoints:
+  - GET /api/tasks — lists all tasks with name, description, schedule, enabled, last_modified, file_path
+  - GET /api/tasks/{name} — full task detail with raw_yaml field
+  - POST /api/tasks — create new task, validates with TaskDefinition Pydantic model, 409 if exists
+  - PUT /api/tasks/{name} — update task, creates .bak backup before overwrite, 404 if not found
+  - DELETE /api/tasks/{name} — soft-delete to .deleted/ subdirectory, 404 if not found
+  - POST /api/tasks/{name}/run — triggers run_task() in background daemon thread, returns 202 with run_id
+- Supports both form-field based creation and raw_yaml passthrough
+- Uses same `_get_tasks_dir()` pattern from api_dashboard.py
+- **Learnings for future iterations:**
+  - Task CRUD router uses prefix="/api/tasks" (separate APIRouter from dashboard_router)
+  - `_build_task_yaml()` constructs dict from form fields; `raw_yaml` field allows direct YAML editing
+  - Soft-delete uses .deleted/ subdir with timestamp suffix for name collisions
+  - Background task execution via threading.Thread(daemon=True) — fire-and-forget with orchestrator logging
+  - Pydantic validation catches invalid task definitions before writing to disk
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-008
+- Implemented Task list page with MUI Table, search, sort, and enable/disable toggles
+- Files changed: dashboard/src/pages/TaskListPage.tsx (full implementation), dashboard/src/api/client.ts (added task API methods)
+- Features:
+  - MUI Table with columns: Name (bold, clickable → /tasks/{name}), Description, Schedule (human-readable), Last Modified (relative), Enabled (Switch toggle)
+  - Enabled toggle uses `toggleTaskEnabled()` — reads raw YAML, modifies enabled field, PUTs back to preserve all other fields
+  - TextField search filters tasks by name/description (client-side)
+  - Sortable columns: Name, Schedule, Last Modified via TableSortLabel
+  - New Task button (AddIcon) in top-right navigates to /tasks/new
+  - Empty state: "No tasks yet. Create your first task." with button
+  - Loading skeleton while fetching
+  - Error handling for both initial load failures and toggle failures
+- API client additions: TaskDetail interface, TaskSummary interface, TaskUpdateRequest interface, fetchTasks(), fetchTaskDetail(), updateTask(), toggleTaskEnabled()
+- **Learnings for future iterations:**
+  - PUT /api/tasks/{name} replaces the entire file — for partial updates like toggle, must read raw_yaml first, modify it, then send back with raw_yaml field
+  - `toggleTaskEnabled()` reads task detail, regex-replaces `enabled:` line in YAML, then PUTs back — avoids losing other fields
+  - The `stopPropagation()` on the Switch's parent TableCell prevents row click from navigating when toggling
+  - `npm run build` produces 509 KB (158 KB gzipped) with task list page
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-009
+- Implemented Task edit and create page with form mode and raw YAML editing
+- Files created: dashboard/src/pages/TaskEditPage.tsx
+- Files changed: dashboard/src/App.tsx (routing to TaskEditPage), dashboard/src/api/client.ts (added createTask, deleteTask, runTask methods), dashboard/package.json (new deps)
+- New npm dependencies: @codemirror/lang-yaml, @codemirror/view, @codemirror/state, @codemirror/commands, @codemirror/language, @codemirror/theme-one-dark, codemirror, js-yaml, @types/js-yaml
+- Features:
+  - Form mode with MUI fields: Name (slug-validated), Description (multiline), Schedule (cron with human-readable preview), Prompt (multiline, required), Model override, Max tokens, Timeout, Output type (Select: stdout/imessage/file), Output target, Enabled (Checkbox)
+  - Raw YAML tab with CodeMirror 6 editor: YAML syntax highlighting, line numbers, one-dark theme for dark mode
+  - MUI Tabs to switch between Form and Raw modes
+  - Tab switching syncs content: form→raw serializes via js-yaml, raw→form parses YAML back to form fields
+  - Save button calls POST (create) or PUT (edit) — Snackbar success toast
+  - Save disabled when no changes (dirty tracking via rawYaml vs savedYaml comparison)
+  - Run Now button (edit mode only) triggers POST /api/tasks/{name}/run
+  - Delete button (edit mode only) with Dialog confirmation
+  - Form validation: required fields show error state, slug pattern validated on name
+  - Unsaved changes warning via beforeunload event
+  - Schedule preset helper: Select dropdown with common schedules (hourly, daily 9am, weekly Monday)
+  - After creating a new task, navigates to /tasks/{name} (edit mode)
+- API client additions: createTask(), deleteTask(), runTask()
+- Replaced TaskDetailPage and TaskNewPage placeholders with single TaskEditPage
+- **Learnings for future iterations:**
+  - CodeMirror 6 requires `codemirror` (basic setup bundle), `@codemirror/state`, `@codemirror/view`, `@codemirror/lang-yaml`, and `@codemirror/theme-one-dark` as separate packages
+  - Form↔YAML sync should only happen on tab switch, not on every keystroke, to avoid loops
+  - The `internalUpdate` ref pattern prevents the external value sync from firing when the change originated from the editor itself
+  - CodeMirror editor must be recreated when dark mode changes (theme is set at creation time)
+  - `erasableSyntaxOnly` in tsconfig means no `enum` syntax — use plain objects/arrays for constants
+  - js-yaml `dump()` with `lineWidth: -1` prevents unwanted line wrapping in generated YAML
+  - Dirty tracking for edit mode compares current rawYaml against savedYaml snapshot; for create mode, checks if name or prompt are non-empty
+  - `npm run build` produces 1016 KB (324 KB gzipped) — CodeMirror adds significant bundle size
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-010
+- Implemented cron history storage: after each scheduled task execution, a JSONL record is appended to ~/.creel/cron-history.jsonl
+- Files changed: src/taskrunner/scheduler.py
+- Added `_cron_history_path()` — resolves JSONL path from CREEL_HOME env var (defaults to ~/.creel/)
+- Added `_append_cron_history(record)` — appends JSON record to JSONL file, creates file/dirs if missing, catches OSError gracefully
+- Modified `_run_task_safe()` to:
+  - Generate UUID4 run_id before execution
+  - Record started_at (UTC ISO timestamp) and start_time (monotonic) before calling run_task()
+  - Capture result summary (first 500 chars) on success
+  - Capture traceback string on failure
+  - Compute duration_ms from monotonic clock
+  - Write record: {run_id, job_name, started_at, finished_at, duration_ms, status, token_usage, error, summary}
+- token_usage is None for now (orchestrator doesn't expose token counts yet)
+- Record format matches what api_dashboard.py already reads via _read_recent_runs()
+- **Learnings for future iterations:**
+  - The existing `_read_recent_runs()` in api_dashboard.py already reads from the JSONL file — no changes needed there
+  - `_cron_history_path()` is now defined in both scheduler.py and api_dashboard.py — could be refactored to a shared util later
+  - All existing `_run_task_safe` tests still pass because `_append_cron_history` writes to `~/.creel/` without needing mocking
+  - `time.monotonic()` is more reliable than `time.time()` for duration measurement (not affected by system clock changes)
+  - job_name is derived from `Path(task_path).stem` which strips the directory and .yaml extension
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-011
+- Implemented Cron API endpoints: list jobs, toggle, paginated history, run detail
+- Files created: src/taskrunner/daemon/api_cron.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included cron_router)
+- Endpoints:
+  - GET /api/cron/jobs — lists tasks with schedule field: name, schedule, schedule_human, next_run, last_run, last_status, enabled
+  - POST /api/cron/jobs/{name}/toggle — flips enabled field in YAML with .bak backup
+  - GET /api/cron/history — paginated history with filters: ?job=name&status=success|failed|timeout&limit=50&offset=0
+  - GET /api/cron/history/{run_id} — full detail of a single run
+- `_cron_to_human()` converts common cron patterns: every minute, every N minutes, hourly, daily at HH:MM, weekly on day, monthly on Nth
+- History read uses in-memory filtering and reverse-chronological ordering
+- Toggle uses regex replacement of `enabled:` line in raw YAML (same pattern as task toggle)
+- Returns empty lists gracefully when no history file exists
+- **Learnings for future iterations:**
+  - The `_cron_to_human()` function handles most common patterns but falls back to raw expression for complex ones
+  - `next_run` is always None — would need APScheduler instance access to compute real next-run times
+  - The `_get_tasks_dir()` and `_cron_history_path()` helpers are duplicated across api_dashboard.py, api_tasks.py, and api_cron.py — candidate for shared util
+  - History pagination: all records loaded into memory then sliced — fine for typical JSONL sizes but could be optimized for very large files
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-012
+- Implemented Cron jobs page with job list panel and run history panel
+- Files changed: dashboard/src/pages/CronPage.tsx (full implementation), dashboard/src/api/client.ts (added cron API methods)
+- API client additions: CronJob, CronRunRecord, CronHistoryResponse interfaces, fetchCronJobs(), toggleCronJob(), fetchCronHistory(), fetchCronRunDetail()
+- Job list panel features:
+  - MUI Table with columns: Name, Schedule (human-readable), Next Run, Last Run, Status (Chip), Enabled (Switch toggle)
+  - Sort by next run (default), name via TableSortLabel
+  - Filter dropdown: All/Enabled/Disabled via Select
+  - Search by name via TextField
+  - Click job row to filter run history panel below (highlighted with action.selected)
+  - Toggle enabled via POST /api/cron/jobs/{name}/toggle
+  - Empty state with create button
+- Run history panel features:
+  - MUI Table with Job Name, Started (relative), Duration, Status Chip, Summary (truncated)
+  - Filter by status: ToggleButtonGroup (All/Success/Failed/Timeout)
+  - Click row to expand via MUI Collapse showing full details: run ID, timestamps, duration, tokens, summary, error
+  - Pagination: 'Load more' button at bottom, default 50 rows
+  - Selected job shown as deletable Chip in header
+- New Job dialog (MUI Dialog):
+  - Name (slug-validated), schedule type (Select: preset or cron expression), interval preset or cron input with human preview, prompt (multiline), model override, timeout, enabled checkbox, Create button
+  - Creates task via POST /api/tasks with raw YAML
+- Empty states for both panels
+- **Learnings for future iterations:**
+  - MUI ToggleButton `value` must not be `null` — use string like 'all' instead of null for the default/unset state
+  - `Box component="tbody"` can be used to group adjacent TableRows (data + collapse) in the DOM without breaking table structure
+  - History status filter uses 'all' as sentinel value, converted to `undefined` when calling API
+  - The `useNavigate` import was unused and had to be removed to pass TypeScript strict checks
+  - `npm run build` produces 1040 KB (330 KB gzipped) — cron page adds minimal to bundle since it reuses MUI components
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-013
+- Implemented File browser API endpoints for browsing and editing files in ~/.creel/
+- Files created: src/taskrunner/daemon/api_files.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included files_router)
+- Endpoints:
+  - GET /api/files/tree — recursive directory tree of ~/.creel/ with name, path, type, size_bytes, modified_at, children
+  - GET /api/files/{path} — file contents with binary detection; returns binary:true for non-text files; 1MB max
+  - PUT /api/files/{path} — write file with .bak backup, creates parent dirs if needed
+  - POST /api/files/{path} — create new file, 409 if exists, creates parent dirs
+  - DELETE /api/files/{path} — soft-delete to .trash/ subdir, 400 for protected files (agent.yaml, daemon.pid, daemon.sock)
+- Exclusions: __pycache__, .pyc, daemon.sock, daemon.pid, *.bak, .git, .deleted
+- Max tree depth: 5 levels
+- Path traversal protection: validates all paths resolve within CREEL_HOME, rejects ../ with 400
+- Text detection heuristic: known extensions + null-byte check for unknown extensions
+- **Learnings for future iterations:**
+  - Files API router uses prefix="/api/files" — same pattern as other dashboard routers
+  - `_validate_path()` resolves symlinks before checking containment to prevent symlink-based traversal
+  - `_should_exclude()` filters both exact names (daemon.sock) and suffixes (.bak, .pyc)
+  - `_is_text_file()` uses known extension list + null-byte heuristic for safe content serving
+  - Protected files check uses `target.name` (basename only) so agent.yaml is protected regardless of subdirectory
+  - `.trash/` preserves relative path structure to avoid name collisions from different subdirectories
+  - CREEL_HOME defaults to ~/.creel/ via `os.environ.get("CREEL_HOME", Path.home() / ".creel")`
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-014
+- Implemented File browser page with tree navigation and CodeMirror code editor
+- Files changed: dashboard/src/pages/FilesPage.tsx (full implementation), dashboard/src/api/client.ts (added file browser API methods), dashboard/package.json (new deps)
+- New npm dependencies: @mui/x-tree-view, @codemirror/lang-json, @codemirror/lang-markdown, react-markdown
+- API client additions: FileTreeNode, FileContent, FileWriteResult interfaces, fetchFileTree(), fetchFileContent(), updateFile(), createFile(), deleteFile()
+- Left panel features:
+  - Quick Access section pinned at top: agent.yaml, SOUL.md, USER.md, MEMORY.md
+  - Recursive expandable directory tree using custom List/ListItemButton components
+  - File icons by extension: DescriptionIcon (.yaml), ArticleIcon (.md), DataObjectIcon (.json), InsertDriveFileIcon (other), FolderIcon/FolderOpenIcon (dirs)
+  - Click file opens in right panel editor
+- Right panel features:
+  - CodeMirror 6 editor with auto-detected language mode (YAML, Markdown, JSON, plain text)
+  - Line numbers, active line highlighting, bracket matching via basicSetup
+  - Breadcrumb above editor showing ~/.creel/ + file path segments
+  - Save button and Ctrl/Cmd+S keyboard shortcut (both in CodeMirror keymap and global window listener)
+  - Unsaved changes "modified" Chip indicator next to filename in breadcrumb
+  - Markdown preview toggle: IconButton switches between Edit (CodeMirror) and Preview (react-markdown) modes
+  - Binary file detection: shows message instead of editor for non-text files
+  - Loading skeleton while fetching file content
+  - Error state on file load or save failure
+- New File dialog: TextField for path, Select for template (Blank, YAML Task, Markdown Note)
+- Empty state: "Select a file from the tree to edit" when no file selected
+- Unsaved changes warning via beforeunload event
+- **Learnings for future iterations:**
+  - Used custom tree rendering with List/ListItemButton instead of @mui/x-tree-view RichTreeView — simpler for our hierarchical data model and avoids complex item-to-component mapping
+  - react-markdown v10 is ESM-only; works fine with Vite/React 19 setup, import as `import Markdown from 'react-markdown'`
+  - CodeMirror `keymap.of()` extension allows custom keybindings like Mod-s for save within the editor
+  - The `filePath` dependency in FileEditor's useEffect ensures the editor is fully recreated when switching files (new language mode, fresh content)
+  - Global window keydown handler for Ctrl/Cmd+S provides save fallback when focus isn't in the editor
+  - `npm run build` produces 1370 KB (445 KB gzipped) — react-markdown and additional CodeMirror language modes add ~330 KB to bundle
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-015
+- Implemented Config API endpoints for reading and writing agent.yaml configuration
+- Files created: src/taskrunner/daemon/api_config.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included config_router)
+- Endpoints:
+  - GET /api/config — returns parsed agent.yaml as JSON plus raw_yaml field
+  - PUT /api/config — accepts {json: {...}} or {raw_yaml: '...'}, validates against AgentDefinition Pydantic model, creates .bak backup before overwriting, returns 400 with validation errors if invalid
+  - POST /api/config/apply — sends SIGHUP to daemon process for graceful restart, returns 202
+  - GET /api/config/schema — returns JSON Schema derived from AgentDefinition via model_json_schema()
+- Config file discovery: checks CWD agent.yaml first (matches CLI default), falls back to CREEL_HOME/agent.yaml
+- Validation round-trips through AgentDefinition(**raw) to catch type errors, missing fields, invalid values
+- .bak backup created before any write to prevent data loss
+- **Learnings for future iterations:**
+  - Pydantic BaseModel has a `.json()` method so naming a field `json` causes a shadow warning — use `Field(None, alias="json")` with a different attribute name (`config_json`)
+  - `AgentDefinition.model_json_schema()` generates full JSON Schema including all nested models (GuardianConfig, ChannelsConfig, etc.)
+  - SIGHUP is the standard Unix signal for config reload — uvicorn doesn't handle it natively but process managers do
+  - Config path discovery mirrors `_get_tasks_dir()` pattern from other API modules
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-016
+- Implemented Config editor page with form mode and raw YAML mode
+- Files changed: dashboard/src/pages/ConfigPage.tsx (full implementation), dashboard/src/api/client.ts (added config API methods)
+- API client additions: ConfigResponse, ConfigSaveResponse interfaces, fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
+- Form mode features:
+  - Collapsible MUI Accordion sections: Agent (system_prompt, model, max_tokens, max_turns), Session (dir, history, summarization, TTL, encryption), Workspace (path, timezone, memory settings), Guardian (enabled/debug, fast classifier, LLM judge, policy, audit), Quiet Hours (enabled, start/end, timezone), Bridge (enabled, URL, token), Browser (enabled, mode, sessions, timeouts, resources), Daemon (log level, port), Channels (note to use Raw mode), Tools (note to use Raw mode)
+  - Field types: TextField, Switch, Select, TextField type=number — all with FormHelperText descriptions
+  - Validation: system_prompt required, max_tokens >= 1, max_turns 1-50
+  - Validation errors shown inline via TextField error prop + helperText
+- Raw mode: full CodeMirror 6 YAML editor (reuses same YamlEditor pattern from TaskEditPage)
+- Switching tabs syncs content: form→raw serializes via yaml.dump, raw→form parses YAML back to form fields
+- Save button writes via PUT /api/config — Snackbar toast
+- Apply button saves AND triggers POST /api/config/apply with Dialog confirmation warning about daemon restart
+- Unsaved changes Chip badge next to save button showing section-level change count
+- Dirty tracking compares current YAML against savedYaml snapshot
+- Unsaved changes warning via beforeunload event
+- configToForm() and formToConfig() handle bidirectional conversion, preserving unknown keys from original config
+- **Learnings for future iterations:**
+  - Channels and Tools sections are too dynamic/complex for a static form — better to redirect users to Raw YAML mode for those
+  - The `countChanges()` function compares top-level YAML keys to compute a meaningful change count (not just "changed/not changed")
+  - `formToConfig()` spreads `...original` to preserve keys not represented in the form (e.g. tools, channels) — critical for round-trip fidelity
+  - Schema descriptions from `model_json_schema()` can be used for help text, but hardcoded descriptions are more user-friendly
+  - `npm run build` produces 1401 KB (453 KB gzipped) — ConfigPage adds ~30 KB (mostly MUI Accordion components)
+  - The `get()` helper avoids `in` operator TypeScript issues when accessing nested properties of unknown types
+  - Config API types in client.ts: ConfigResponse, ConfigSaveResponse; methods: fetchConfig(), fetchConfigSchema(), updateConfig(), applyConfig()
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-017
+- Implemented Log streaming API: WebSocket endpoint and REST fallback
+- Files created: src/taskrunner/daemon/api_logs.py
+- Files changed: src/taskrunner/daemon/api.py (imported and included logs_router)
+- Endpoints:
+  - WebSocket /ws/logs — streams daemon log lines as JSON {timestamp, level, module, message}
+  - GET /api/logs/recent?limit=200&level=INFO — returns recent lines as non-streaming fallback
+- WebSocket features:
+  - Sends last 50 lines as initial backfill on connection
+  - Tails daemon.log for new lines using file position tracking
+  - Handles log rotation: detects inode change or file shrink and resets position
+  - Client can send filter messages: {"level": "WARN"} to filter server-side
+  - Graceful disconnect handling (catches WebSocketDisconnect)
+  - 1-second polling interval for new log data and client messages
+- Log line parsing:
+  - Handles human-readable format: "YYYY-MM-DD HH:MM:SS [LEVEL] module: message"
+  - Falls back to JSON-formatted log lines (from json_mode logging)
+  - Unparseable lines returned as raw messages with INFO level
+- Level filtering: numeric ordering (DEBUG < INFO < WARN < ERROR < CRITICAL)
+- REST fallback reads entire daemon.log, parses, filters, and returns last N lines
+- **Learnings for future iterations:**
+  - FastAPI WebSocket support works well — `websocket.accept()`, `send_json()`, `receive_json()` with `asyncio.wait_for()` for non-blocking receive
+  - File tailing via seek/tell is simpler than file watchers (no inotify/kqueue dependency)
+  - Inode tracking handles log rotation (logrotate creates new file with new inode)
+  - `asyncio.wait_for(websocket.receive_json(), timeout=1.0)` provides non-blocking check for client messages while tailing
+  - The regex approach for parsing log lines is fast and handles the standard Python logging format used by the daemon
+  - WebSocket routes don't need a prefix — they register at the exact path (/ws/logs)
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-018
+- Implemented Logs page with live WebSocket streaming, level filtering, search, pause/resume, download, and reconnect
+- Files changed: dashboard/src/pages/LogsPage.tsx (full implementation), dashboard/src/api/client.ts (added logs API types and methods), dashboard/vite.config.ts (added /ws proxy), dashboard/package.json (added react-window)
+- New npm dependency: react-window v2 (for virtualized list performance with 1000 lines)
+- API client additions: LogEntry, LogsRecentResponse interfaces, fetchRecentLogs(), createLogsWebSocket()
+- Vite dev proxy: added /ws → ws://localhost:8099 for WebSocket proxying during development
+- LogsPage features:
+  - Live-updating log display using WebSocket connection to /ws/logs
+  - Level filter: MUI ToggleButtonGroup with ALL, DEBUG, INFO, WARN, ERROR (multi-select with ALL toggling logic)
+  - TextField search to filter log lines by text (client-side, matches message/module/timestamp)
+  - Pause button to stop auto-scroll — shows Chip with 'N new lines' count
+  - Click chip or unpause jumps to bottom
+  - Each log line: timestamp, level (color-coded Chip), module, message in monospace font
+  - Download button triggers file download of log content via REST API
+  - Max 1000 lines in view — older lines discarded as new arrive
+  - Graceful WebSocket reconnect with exponential backoff and 'Reconnecting...' Alert banner
+  - Falls back to polling GET /api/logs/recent if WebSocket fails
+  - Virtualized list via react-window v2 List component for performance
+  - Loading skeleton while initial connection establishes
+  - Auto-pause on manual scroll up, scroll detection via outer element event listener
+  - Connected/Disconnected status Chip
+- **Learnings for future iterations:**
+  - react-window v2 has a completely different API from v1: `List` instead of `FixedSizeList`, `rowComponent`/`rowCount`/`rowHeight`/`rowProps` instead of `children`/`itemCount`/`itemSize`
+  - react-window v2 bundles its own TypeScript types — do NOT install @types/react-window (that's for v1 only)
+  - `useListRef(null)` requires an argument (it's `typeof useRef<ListImperativeAPI>`)
+  - v2 row component receives props as flat object: `{ index, style, ariaAttributes, ...rowProps }` — not `{ index, style, data }`
+  - v2 `scrollToRow()` replaces v1 `scrollToItem()`: `listRef.current.scrollToRow({ index, align: 'end' })`
+  - v2 `listRef.current.element` gives access to the outer DOM element for scroll event listeners
+  - Vite WebSocket proxy needs `ws: true` flag and `ws://` protocol target
+  - `npm run build` produces 1415 KB (458 KB gzipped) — react-window v2 adds ~14 KB to bundle
+  - All 1373 existing tests still pass
+---
+
+## 2026-02-25 - DASH-019
+- Implemented API authentication for all /api/* dashboard endpoints
+- Files created: src/taskrunner/daemon/api_auth.py, dashboard/src/AuthContext.tsx
+- Files changed: src/taskrunner/daemon/api.py, src/taskrunner/daemon/api_logs.py, dashboard/src/api/client.ts, dashboard/src/main.tsx
+- Backend:
+  - `api_auth.py`: `ensure_dashboard_token()` loads or generates UUID4 token at ~/.creel/dashboard-token (chmod 600), `require_dashboard_token` FastAPI dependency checks Authorization: Bearer header or ?token= query param
+  - Token stored on `app.state.dashboard_token` during lifespan startup
+  - All /api/* routers included with `dependencies=[Depends(require_dashboard_token)]`
+  - WebSocket /ws/logs: manual token check via query param before accept() — FastAPI Depends don't run for WebSocket routes
+  - /health endpoint remains unauthenticated
+  - /v1/* endpoints remain unchanged (backward compat)
+  - Unauthenticated requests return 401 `{detail: "unauthorized"}`
+- Frontend:
+  - API client: `getToken()`/`setToken()`/`clearToken()` for localStorage; `request()` adds Authorization header; 401 triggers `_onUnauthorized` callback
+  - `AuthContext.tsx`: AuthProvider wraps app, shows login Dialog on missing/invalid token, validates token against GET /api/status before accepting
+  - WebSocket: `createLogsWebSocket()` includes token as ?token= query parameter
+  - Token stored in localStorage key `creel-dashboard-token`
+- **Learnings for future iterations:**
+  - FastAPI `dependencies=[Depends(...)]` on `include_router()` applies to HTTP routes but NOT WebSocket routes — WebSocket auth must be handled manually
+  - WebSocket auth via query param is standard practice since browsers can't set custom headers on WebSocket upgrade requests
+  - `websocket.close(code=4401, reason="unauthorized")` uses a custom close code (4000-4999 range) for auth failure before accept()
+  - Token file permissions set to 0o600 for security — only owner can read
+  - The `setOnUnauthorized()` callback pattern avoids tight coupling between API client and React component tree
+  - AuthProvider validates the token by making a test request to /api/status before accepting — provides immediate feedback on invalid tokens
+  - `npm run build` produces 1417 KB (459 KB gzipped) — AuthContext adds ~1 KB
+  - All 1373 existing tests still pass
+---

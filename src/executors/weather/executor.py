@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from typing import Any
 
 import httpx
 
@@ -104,7 +105,8 @@ def fetch_weather(location: str) -> dict:
     current = data.get("current", {})
     daily = data.get("daily", {})
 
-    result = {
+    forecast: list[dict[str, str]] = []
+    result: dict[str, Any] = {
         "location": area_name,
         "temp_f": str(current.get("temperature_2m", "")),
         "temp_c": "",  # Open-Meteo returns in requested unit; we request F
@@ -112,7 +114,7 @@ def fetch_weather(location: str) -> dict:
         "condition": _weather_description(current.get("weather_code", -1)),
         "humidity": str(current.get("relative_humidity_2m", "")),
         "wind_mph": str(current.get("wind_speed_10m", "")),
-        "forecast": [],
+        "forecast": forecast,
     }
 
     dates = daily.get("time", [])
@@ -121,7 +123,7 @@ def fetch_weather(location: str) -> dict:
     codes = daily.get("weather_code", [])
 
     for i in range(min(3, len(dates))):
-        result["forecast"].append(
+        forecast.append(
             {
                 "date": dates[i],
                 "high_f": str(highs[i]) if i < len(highs) else "",

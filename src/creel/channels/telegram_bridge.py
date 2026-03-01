@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ class TelegramMessage:
     update_id: int
     is_group: bool
     message_id: int
+    media: list[TelegramMedia] | None = None
 
 
 @dataclass
@@ -80,16 +81,21 @@ class TelegramBridge(ABC):
 class HttpTelegramBridge(TelegramBridge):
     """Concrete bridge that calls the Telegram Bot API over HTTPS."""
 
-    def __init__(self, bot_token: str) -> None:
+    def __init__(self, bot_token: str, api_base_url: str | None = None) -> None:
         self._token = bot_token
-        self._base_url = f"https://api.telegram.org/bot{bot_token}"
+        self._api_base_url = (api_base_url or "https://api.telegram.org").rstrip("/")
+        self._base_url = f"{self._api_base_url}/bot{bot_token}"
         self._bot_info: dict | None = None
 
     def _call(self, method: str, **kwargs) -> dict:
         """Call a Bot API method and return the result."""
         import httpx
 
-        resp = httpx.post(f"{self._base_url}/{method}", json=kwargs, timeout=max(kwargs.get("timeout", 0) + 5, 30))
+        resp = httpx.post(
+            f"{self._base_url}/{method}",
+            json=kwargs,
+            timeout=max(kwargs.get("timeout", 0) + 5, 30),
+        )
         data = resp.json()
         if not data.get("ok"):
             raise RuntimeError(f"Telegram API error on {method}: {data.get('description', data)}")
@@ -98,7 +104,11 @@ class HttpTelegramBridge(TelegramBridge):
     def get_me(self) -> dict:
         if self._bot_info is None:
             self._bot_info = self._call("getMe")
-            logger.info("Telegram bot: @%s (id=%s)", self._bot_info.get("username"), self._bot_info.get("id"))
+            logger.info(
+                "Telegram bot: @%s (id=%s)",
+                self._bot_info.get("username"),
+                self._bot_info.get("id"),
+            )
         return self._bot_info
 
     def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[TelegramMessage]:
@@ -108,7 +118,8 @@ class HttpTelegramBridge(TelegramBridge):
         # Telegram holds the connection for `timeout` seconds
         result = self._call("getUpdates", **params)
         messages = []
-        for update in result if isinstance(result, list) else []:
+        updates: list[dict] = result if isinstance(result, list) else []
+        for update in updates:
             msg = self._parse_message(update)
             if msg is not None:
                 messages.append(msg)
@@ -141,7 +152,7 @@ class HttpTelegramBridge(TelegramBridge):
 
         result = self._call("getFile", file_id=file_id)
         file_path = result.get("file_path", "")
-        url = f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+        url = f"{self._api_base_url}/file/bot{self._token}/{file_path}"
         resp = httpx.get(url, timeout=30)
         resp.raise_for_status()
         return resp.content
@@ -166,6 +177,9 @@ class HttpTelegramBridge(TelegramBridge):
         # Extract text; fall back to caption for media messages
         text = msg.get("text", "") or msg.get("caption", "")
 
+        # Extract media attachments
+        media = _extract_media(msg)
+
         return TelegramMessage(
             sender_id=str(sender.get("id", "")),
             sender_username=sender.get("username", ""),
@@ -174,7 +188,86 @@ class HttpTelegramBridge(TelegramBridge):
             update_id=update.get("update_id", 0),
             is_group=chat_type in ("group", "supergroup"),
             message_id=msg.get("message_id", 0),
+            media=media or None,
         )
+
+
+def _extract_media(msg: dict) -> list[TelegramMedia]:
+    """Extract media attachments from a raw Telegram message dict."""
+    media: list[TelegramMedia] = []
+
+    # Photos: Telegram sends an array of sizes; pick the largest
+    photos = msg.get("photo")
+    if photos:
+        best = max(photos, key=lambda p: p.get("file_size", 0))
+        media.append(
+            TelegramMedia(
+                file_id=best["file_id"],
+                file_type="photo",
+                mime_type="image/jpeg",  # Telegram photos are always JPEG
+            )
+        )
+
+    # Voice messages
+    voice = msg.get("voice")
+    if voice:
+        media.append(
+            TelegramMedia(
+                file_id=voice["file_id"],
+                file_type="voice",
+                mime_type=voice.get("mime_type", "audio/ogg"),
+                file_size=voice.get("file_size"),
+            )
+        )
+
+    # Audio files (music, podcasts, etc.)
+    audio = msg.get("audio")
+    if audio:
+        media.append(
+            TelegramMedia(
+                file_id=audio["file_id"],
+                file_type="audio",
+                file_name=audio.get("file_name"),
+                mime_type=audio.get("mime_type"),
+                file_size=audio.get("file_size"),
+            )
+        )
+
+    # Videos
+    video = msg.get("video")
+    if video:
+        media.append(
+            TelegramMedia(
+                file_id=video["file_id"],
+                file_type="video",
+                file_name=video.get("file_name"),
+                mime_type=video.get("mime_type", "video/mp4"),
+                file_size=video.get("file_size"),
+            )
+        )
+
+    # Documents (files sent as documents)
+    document = msg.get("document")
+    if document:
+        mime = document.get("mime_type", "")
+        # Classify based on MIME type
+        if mime.startswith("image/"):
+            file_type = "photo"
+        elif mime.startswith("video/"):
+            file_type = "video"
+        else:
+            file_type = "document"
+        media.append(
+            TelegramMedia(
+                file_id=document["file_id"],
+                file_type=file_type,
+                file_name=document.get("file_name"),
+                mime_type=mime or None,
+                file_size=document.get("file_size"),
+            )
+        )
+
+    return media
 
 
 def _chunk_text(text: str, limit: int) -> list[str]:

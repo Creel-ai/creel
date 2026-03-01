@@ -1045,6 +1045,9 @@ uv venv                 # creates .venv using pyenv's Python
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 
+# Enable shared git hooks (ruff lint + format on pre-commit)
+git config core.hooksPath scripts/hooks
+
 # Optional: required for live ONNX export + classifier smoke tests
 uv pip install -e ".[guardian]"
 

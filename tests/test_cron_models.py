@@ -12,7 +12,6 @@ from creel.cron.models import (
     Schedule,
 )
 
-
 # --- Schedule ---
 
 

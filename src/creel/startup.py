@@ -61,7 +61,8 @@ def validate_secrets(agent_def) -> None:
         if not p.is_absolute():
             p = paths.creel_home() / p
         if not p.exists():
-            errors.append(f"{label}: file not found: {path}")
+            # Missing file is a warning — the tool will be unavailable at runtime
+            logger.warning("%s: secrets file not found: %s (tool will be unavailable)", label, path)
             continue
 
         # Try to decrypt

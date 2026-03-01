@@ -23,10 +23,14 @@ class TestValidateSecrets:
         agent = _make_agent_def()
         validate_secrets(agent)  # should not raise
 
-    def test_missing_enc_file_raises(self, tmp_path: Path):
+    def test_missing_enc_file_warns(self, tmp_path: Path, caplog):
+        """Missing secrets file should warn, not raise."""
+        import logging
+
         agent = _make_agent_def(llm_secrets=str(tmp_path / "nonexistent.enc"))
-        with pytest.raises(SecretsValidationError, match="file not found"):
-            validate_secrets(agent)
+        with caplog.at_level(logging.WARNING):
+            validate_secrets(agent)  # should not raise
+        assert "secrets file not found" in caplog.text
 
     def test_missing_identity_file_raises(self, tmp_path: Path, monkeypatch):
         # Create a dummy .enc file
@@ -37,12 +41,17 @@ class TestValidateSecrets:
         with pytest.raises(SecretsValidationError, match="identity file not found"):
             validate_secrets(agent)
 
-    def test_tool_secrets_validated(self, tmp_path: Path):
+    def test_tool_secrets_missing_warns(self, tmp_path: Path, caplog):
+        """Missing tool secrets should warn, not raise."""
+        import logging
+
         tool = MagicMock()
         tool.secrets = str(tmp_path / "tool_secrets.enc")
         agent = _make_agent_def(tools={"my_tool": tool})
-        with pytest.raises(SecretsValidationError, match="tools.my_tool.secrets"):
-            validate_secrets(agent)
+        with caplog.at_level(logging.WARNING):
+            validate_secrets(agent)  # should not raise
+        assert "tools.my_tool.secrets" in caplog.text
+        assert "secrets file not found" in caplog.text
 
     @patch("creel.startup.decrypt_env_file")
     def test_valid_secrets_passes(self, mock_decrypt, tmp_path: Path, monkeypatch):

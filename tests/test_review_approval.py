@@ -279,6 +279,8 @@ def test_chat_y_approves_and_executes(mock_exec, tmp_path):
         memory_manager=server._memory,
         bridge_config=server._agent_def.bridge,
         session_state=server._session_states.get("sender1"),
+        cron_manager=server._cron_manager,
+        subagent_manager=server._subagent_manager,
     )
 
 

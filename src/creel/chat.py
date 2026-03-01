@@ -539,6 +539,8 @@ class ChatServer:
                 memory_manager=self._memory,
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
+                cron_manager=self._cron_manager,
+                subagent_manager=self._subagent_manager,
             )
             result_msg = f"✅ Approved and executed: {pending.tool_name}\n\nResult:\n{tool_result}"
         except Exception as e:

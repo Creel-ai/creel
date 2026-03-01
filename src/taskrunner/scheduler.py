@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import threading
+import time
+import traceback
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -94,6 +99,26 @@ def start_scheduler(
     return scheduler
 
 
+def _cron_history_path() -> Path:
+    """Return path to the cron history JSONL file."""
+    creel_home = Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))
+    return creel_home / "cron-history.jsonl"
+
+
+def _append_cron_history(record: dict) -> None:
+    """Append a run record to the cron history JSONL file.
+
+    Creates the file and parent directories if they don't exist.
+    """
+    path = _cron_history_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        logger.warning("Failed to write cron history to %s", path, exc_info=True)
+
+
 def _run_task_safe(
     task_path: str,
     use_containers: bool,
@@ -112,7 +137,10 @@ def _run_task_safe(
     try:
         result = run_task(task_path, use_containers=use_containers)
         logger.info("Task %s completed successfully (%d chars)", task_path, len(result))
+        summary = result[:500] if result else None
     except Exception as exc:
+        status = "failed"
+        error_str = traceback.format_exc()
         logger.exception("Task %s failed", task_path)
         if on_failure is not None:
             try:

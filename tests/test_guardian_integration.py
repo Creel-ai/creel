@@ -24,7 +24,8 @@ from guardian.types import (
 @pytest.fixture
 def policy_file(tmp_path: Path) -> Path:
     p = tmp_path / "policy.yaml"
-    p.write_text(textwrap.dedent("""\
+    p.write_text(
+        textwrap.dedent("""\
         allow:
           - check_weather
           - check_email
@@ -33,7 +34,8 @@ def policy_file(tmp_path: Path) -> Path:
         deny:
           - trash_*
           - delete_*
-    """))
+    """)
+    )
     return p
 
 
@@ -137,7 +139,9 @@ class TestValidateAction:
 
 
 class TestAuditIntegration:
-    def test_screen_creates_audit_entry(self, guardian: Guardian, guardian_config: GuardianConfig) -> None:
+    def test_screen_creates_audit_entry(
+        self, guardian: Guardian, guardian_config: GuardianConfig
+    ) -> None:
         guardian.screen_input("hello")
         log_path = Path(guardian_config.audit.log_file)
         assert log_path.exists()
@@ -145,7 +149,9 @@ class TestAuditIntegration:
         assert "screen_input" in content
         assert "hello" not in content  # raw text never stored
 
-    def test_action_creates_audit_entry(self, guardian: Guardian, guardian_config: GuardianConfig) -> None:
+    def test_action_creates_audit_entry(
+        self, guardian: Guardian, guardian_config: GuardianConfig
+    ) -> None:
         guardian.validate_action("check_weather", {"location": "SF"})
         log_path = Path(guardian_config.audit.log_file)
         assert log_path.exists()
@@ -156,7 +162,9 @@ class TestAuditIntegration:
         assert "location" in content
         assert "SF" not in content
 
-    def test_action_outcome_logged(self, guardian: Guardian, guardian_config: GuardianConfig) -> None:
+    def test_action_outcome_logged(
+        self, guardian: Guardian, guardian_config: GuardianConfig
+    ) -> None:
         guardian.log_action_outcome("trash_email", "review", "approved")
         log_path = Path(guardian_config.audit.log_file)
         content = log_path.read_text()
@@ -196,7 +204,13 @@ class TestDebugMode:
 
         # Mock classify_detailed to return injection with chunk details
         chunk_details = [
-            {"index": 0, "length": 25, "label": "INJECTION", "score": 0.9953, "is_injection": True},
+            {
+                "index": 0,
+                "length": 25,
+                "label": "INJECTION",
+                "score": 0.9953,
+                "is_injection": True,
+            },
         ]
         mock_result = ClassifierResult(
             is_injection=True,
@@ -220,7 +234,9 @@ class TestDebugMode:
         assert debug_record["blocked"] is True
         assert debug_record["chunks"][0]["score"] == 0.9953
 
-    def test_no_debug_no_debug_entry(self, guardian: Guardian, guardian_config: GuardianConfig) -> None:
+    def test_no_debug_no_debug_entry(
+        self, guardian: Guardian, guardian_config: GuardianConfig
+    ) -> None:
         """Without debug=True, no screen_input_debug entries are written."""
         guardian.screen_input("hello")
         log_path = Path(guardian_config.audit.log_file)
@@ -240,7 +256,13 @@ class TestDebugMode:
         g = Guardian(config)
 
         chunk_details = [
-            {"index": 0, "length": 18, "label": "SAFE", "score": 0.99, "is_injection": False},
+            {
+                "index": 0,
+                "length": 18,
+                "label": "SAFE",
+                "score": 0.99,
+                "is_injection": False,
+            },
         ]
         mock_result = ClassifierResult(
             is_injection=False,
@@ -265,7 +287,9 @@ class TestChatIntegration:
     """Test Guardian integration with ChatServer (mocked agent loop)."""
 
     @patch("taskrunner.chat.run_agent_loop")
-    def test_blocked_input_skips_agent(self, mock_agent_loop: MagicMock, tmp_path: Path, policy_file: Path) -> None:
+    def test_blocked_input_skips_agent(
+        self, mock_agent_loop: MagicMock, tmp_path: Path, policy_file: Path
+    ) -> None:
         from taskrunner.chat import ChatServer
         from taskrunner.models import AgentDefinition
 
@@ -298,7 +322,9 @@ class TestChatIntegration:
         assert "can't process" in response.lower()
 
     @patch("taskrunner.chat.run_agent_loop")
-    def test_clean_input_reaches_agent(self, mock_agent_loop: MagicMock, tmp_path: Path, policy_file: Path) -> None:
+    def test_clean_input_reaches_agent(
+        self, mock_agent_loop: MagicMock, tmp_path: Path, policy_file: Path
+    ) -> None:
         from taskrunner.chat import ChatServer
         from taskrunner.models import AgentDefinition
 

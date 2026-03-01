@@ -36,6 +36,7 @@ def _make_meta(id: str, priority: int = 100, platform: str | None = None):
 def _make_factory(**defaults):
     def factory(config):
         return _DummyChannel(**{**defaults, **config})
+
     return factory
 
 

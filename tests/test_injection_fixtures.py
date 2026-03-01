@@ -10,7 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.injection_fixtures import ALL_BENIGN, ALL_INJECTIONS, BENIGN_INPUTS
+from tests.injection_fixtures import ALL_BENIGN, ALL_INJECTIONS
+
 
 # Ensure we have enough fixtures
 def test_minimum_injection_count() -> None:
@@ -29,6 +30,7 @@ def test_injection_categories_present() -> None:
 
 # --- Parameterized tests with mocked classifier ---
 
+
 @pytest.fixture
 def mock_classifier():
     """Create a FastClassifier with mocked pipeline."""
@@ -43,15 +45,39 @@ def mock_classifier():
     def mock_pipeline(text: str):
         text_lower = text.lower()
         injection_signals = [
-            "ignore", "override", "disregard", "forget", "cancel",
-            "system prompt", "new instruction", "developer mode",
-            "dan ", "do anything now", "no restrictions",
-            "reveal", "bypass", "disable", "dump",
-            "前の指示", "ignorez", "ignoriere", "ignora",
-            "무시", "игнорируйте", "无视", "abaikan",
-            "pwned", "jailbreak", "unfiltered",
-            "[inst]", "[system]", "hacker", "attacker",
-            "exfiltrate", "credentials", "env vars",
+            "ignore",
+            "override",
+            "disregard",
+            "forget",
+            "cancel",
+            "system prompt",
+            "new instruction",
+            "developer mode",
+            "dan ",
+            "do anything now",
+            "no restrictions",
+            "reveal",
+            "bypass",
+            "disable",
+            "dump",
+            "前の指示",
+            "ignorez",
+            "ignoriere",
+            "ignora",
+            "무시",
+            "игнорируйте",
+            "无视",
+            "abaikan",
+            "pwned",
+            "jailbreak",
+            "unfiltered",
+            "[inst]",
+            "[system]",
+            "hacker",
+            "attacker",
+            "exfiltrate",
+            "credentials",
+            "env vars",
         ]
         is_inj = any(sig in text_lower for sig in injection_signals)
         if is_inj:

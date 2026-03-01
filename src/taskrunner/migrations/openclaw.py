@@ -15,7 +15,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -184,7 +184,7 @@ class OpenClawMigrator:
         self.tasks_dir = self.target_root / "tasks"
         self.agent_config_path = self.target_root / "agent.yaml"
         self.artifacts_dir = self.target_root / "migrations" / "openclaw"
-        timestamp_tag = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        timestamp_tag = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         self.backup_root = self.target_root / ".migration_backups" / timestamp_tag
 
         self._agent_overlay: dict[str, Any] = {}
@@ -193,7 +193,7 @@ class OpenClawMigrator:
             target_root=str(self.target_root),
             phases=list(options.phases),
             apply=options.apply,
-            started_at=datetime.now(timezone.utc).isoformat(),
+            started_at=datetime.now(UTC).isoformat(),
         )
 
     def _detect_workspace_source(self) -> Path:
@@ -213,7 +213,7 @@ class OpenClawMigrator:
         """Run configured migration phases."""
         if not self.source_root.is_dir():
             self._error(f"Source directory not found: {self.source_root}")
-            self._report.finished_at = datetime.now(timezone.utc).isoformat()
+            self._report.finished_at = datetime.now(UTC).isoformat()
             return self._report
 
         for phase in self.options.phases:
@@ -228,7 +228,7 @@ class OpenClawMigrator:
 
         # Always emit overlay artifacts when we have any mapped agent config.
         self._write_agent_artifacts(phase="meta")
-        self._report.finished_at = datetime.now(timezone.utc).isoformat()
+        self._report.finished_at = datetime.now(UTC).isoformat()
         return self._report
 
     # ---------------------------------------------------------------------
@@ -402,14 +402,18 @@ class OpenClawMigrator:
                 if self._ignore_discovered_relpath(rel):
                     continue
                 rel_text = str(rel).lower()
-                if any(token in rel_text for token in ("conversation", "session", "history", "chat")):
+                if any(
+                    token in rel_text for token in ("conversation", "session", "history", "chat")
+                ):
                     paths.append(candidate)
             for candidate in sorted(self.source_root.rglob("*.jsonl")):
                 rel = candidate.relative_to(self.source_root)
                 if self._ignore_discovered_relpath(rel):
                     continue
                 rel_text = str(rel).lower()
-                if any(token in rel_text for token in ("conversation", "session", "history", "chat")):
+                if any(
+                    token in rel_text for token in ("conversation", "session", "history", "chat")
+                ):
                     paths.append(candidate)
 
         # Deduplicate while preserving order.
@@ -446,8 +450,7 @@ class OpenClawMigrator:
                     rows.append(json.loads(line))
                 except json.JSONDecodeError:
                     self._warn(
-                        f"Failed to parse JSONL line {lineno} in {path}. "
-                        "Skipping that line."
+                        f"Failed to parse JSONL line {lineno} in {path}. Skipping that line."
                     )
             return self._coerce_payload_to_conversations(rows)
 
@@ -460,7 +463,14 @@ class OpenClawMigrator:
 
     def _coerce_payload_to_conversations(self, payload: Any) -> list[Any]:
         if isinstance(payload, dict):
-            for key in ("conversations", "sessions", "threads", "chats", "history", "data"):
+            for key in (
+                "conversations",
+                "sessions",
+                "threads",
+                "chats",
+                "history",
+                "data",
+            ):
                 node = payload.get(key)
                 if isinstance(node, list):
                     return node
@@ -581,7 +591,14 @@ class OpenClawMigrator:
     def _extract_sender_id(self, candidate: Any) -> str | None:
         if not isinstance(candidate, dict):
             return None
-        for key in ("sender_id", "user_id", "contact", "phone", "channel_id", "participant"):
+        for key in (
+            "sender_id",
+            "user_id",
+            "contact",
+            "phone",
+            "channel_id",
+            "participant",
+        ):
             value = candidate.get(key)
             if value:
                 return str(value)
@@ -685,7 +702,7 @@ class OpenClawMigrator:
                                     "type": "tool_use",
                                     "id": str(tool_id),
                                     "name": str(tool_name),
-                                    "input": tool_input if isinstance(tool_input, dict) else {},
+                                    "input": (tool_input if isinstance(tool_input, dict) else {}),
                                 }
                             )
                         continue
@@ -695,7 +712,10 @@ class OpenClawMigrator:
                         thinking = self._to_text(block.get("thinking"))
                         if thinking:
                             normalized_blocks.append(
-                                {"type": "text", "text": f"[Imported thinking]\n{thinking}"}
+                                {
+                                    "type": "text",
+                                    "text": f"[Imported thinking]\n{thinking}",
+                                }
                             )
                         continue
                     # Best-effort fallback for unknown assistant block types.
@@ -770,7 +790,9 @@ class OpenClawMigrator:
         return "\n\n".join(texts).strip()
 
     @staticmethod
-    def _trim_to_user_text_start(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _trim_to_user_text_start(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         trimmed = list(messages)
         while trimmed:
             first = trimmed[0]
@@ -1003,7 +1025,12 @@ class OpenClawMigrator:
 
             joined = " ".join(
                 str(part).lower()
-                for part in (name, cfg.get("type"), cfg.get("provider"), cfg.get("name"))
+                for part in (
+                    name,
+                    cfg.get("type"),
+                    cfg.get("provider"),
+                    cfg.get("name"),
+                )
                 if part
             )
             slug = self._safe_slug(name) or "integration"
@@ -1089,10 +1116,7 @@ class OpenClawMigrator:
                 job = {}
 
             cron = (
-                job.get("schedule")
-                or job.get("cron")
-                or job.get("expression")
-                or job.get("rrule")
+                job.get("schedule") or job.get("cron") or job.get("expression") or job.get("rrule")
             )
             normalized_cron = self._normalize_cron(cron)
             if not normalized_cron:
@@ -1162,7 +1186,7 @@ class OpenClawMigrator:
                     result[str(key)] = {}
             return result
 
-        result: dict[str, dict[str, Any]] = {}
+        executor_map: dict[str, dict[str, Any]] = {}
         tools_node = job.get("tools")
         if isinstance(tools_node, list):
             for tool_name in tools_node:
@@ -1170,8 +1194,8 @@ class OpenClawMigrator:
                 if not mapped:
                     continue
                 executor_name = str(mapped["executor"])
-                result[executor_name] = {}
-        return result
+                executor_map[executor_name] = {}
+        return executor_map
 
     @staticmethod
     def _normalize_cron(value: Any) -> str | None:
@@ -1244,7 +1268,9 @@ class OpenClawMigrator:
             )
 
             if classification == "prompt-only":
-                prompt_skill_sections.append(self._format_skill_context(skill_name, rel_source, content))
+                prompt_skill_sections.append(
+                    self._format_skill_context(skill_name, rel_source, content)
+                )
                 self._entry(
                     phase=phase,
                     action="classify_skill",
@@ -1256,7 +1282,9 @@ class OpenClawMigrator:
                 continue
 
             if classification == "executor-equivalent" and executors:
-                tool_name = self._unique_name(f"skill_{slug}", self._agent_overlay.setdefault("tools", {}))
+                tool_name = self._unique_name(
+                    f"skill_{slug}", self._agent_overlay.setdefault("tools", {})
+                )
                 self._agent_overlay["tools"][tool_name] = {
                     "executor": executors[0],
                     "description": f"Migrated from OpenClaw skill '{skill_name}'",
@@ -1280,8 +1308,7 @@ class OpenClawMigrator:
                 f"Suggested executors: {recommendation}."
             )
             self._manual(
-                f"Skill '{skill_name}' requires manual migration "
-                f"(classification={classification})."
+                f"Skill '{skill_name}' requires manual migration (classification={classification})."
             )
             self._entry(
                 phase=phase,
@@ -1295,8 +1322,7 @@ class OpenClawMigrator:
             section = (
                 "## Migrated OpenClaw Skill Context\n\n"
                 "These skills were imported as prompt context because they do not map "
-                "cleanly to a Creel executor.\n\n"
-                + "\n\n".join(prompt_skill_sections)
+                "cleanly to a Creel executor.\n\n" + "\n\n".join(prompt_skill_sections)
             )
             self._upsert_generated_section(
                 phase=phase,
@@ -1310,9 +1336,7 @@ class OpenClawMigrator:
         if manual_items:
             checklist = (
                 "# OpenClaw Skills Manual Migration Checklist\n\n"
-                "The following skills need manual migration:\n\n"
-                + "\n".join(manual_items)
-                + "\n"
+                "The following skills need manual migration:\n\n" + "\n".join(manual_items) + "\n"
             )
             self._write_text(
                 phase=phase,

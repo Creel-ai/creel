@@ -10,14 +10,18 @@ import logging
 import subprocess
 import tempfile
 import threading
+from datetime import UTC, datetime
 from hashlib import sha256
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from taskrunner.llm import run_llm
-from taskrunner.models import BridgeConfig, ExecutorConfig, TaskDefinition, load_task
+from taskrunner.models import BridgeConfig, ExecutorConfig, TaskDefinition, ToolConfig, load_task
 from taskrunner.outputs import send_output
 from taskrunner.secrets import decrypt_env_file
+
+if TYPE_CHECKING:
+    from taskrunner.models import AgentDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,119 @@ _GOOGLE_TOKEN_MAX_AGE_SECONDS = 3600
 _ENV_LOCK = threading.Lock()
 
 _HASH_GLOBS = ("Dockerfile", "**/*.py", "**/*.txt")
+
+
+class ImageBuildCache:
+    """Coordinates Docker image builds, deduplicating concurrent requests.
+
+    The first thread to request a given image "claims" the build; other
+    threads wait on a ``threading.Event`` until the build finishes.  On
+    failure the error is stored but cleared on the next access so that
+    retries are possible (handles transient Docker daemon failures).
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        # key -> (event, result_or_none, error_or_none)
+        self._builds: dict[str, tuple[threading.Event, str | None, Exception | None]] = {}
+
+    def ensure_image(self, image: str) -> str:
+        """Build (or wait for) a Docker image.  Returns the usable image ref."""
+        key = self._cache_key(image)
+        event: threading.Event | None = None
+        claimed = False
+
+        with self._lock:
+            if key in self._builds:
+                ev, result, error = self._builds[key]
+                if ev.is_set():
+                    if error is None:
+                        return result  # type: ignore[return-value]
+                    # Previous build failed — clear so we can retry
+                    del self._builds[key]
+                else:
+                    # Another thread is building; we'll wait outside the lock
+                    event = ev
+
+            if event is None and key not in self._builds:
+                # Claim the build
+                event = threading.Event()
+                self._builds[key] = (event, None, None)
+                claimed = True
+
+        if claimed:
+            assert event is not None
+            try:
+                result = _ensure_image_uncached(image)
+                with self._lock:
+                    self._builds[key] = (event, result, None)
+                event.set()
+                return result
+            except Exception as exc:
+                with self._lock:
+                    self._builds[key] = (event, None, exc)
+                event.set()
+                raise
+
+        # Wait for another thread's in-progress build
+        assert event is not None
+        event.wait()
+        with self._lock:
+            entry = self._builds.get(key)
+            if entry is None or entry[0] is not event:
+                # Our build was superseded by a retry; re-enter from the top
+                superseded = True
+            else:
+                superseded = False
+                _, result, error = entry
+        if superseded:
+            return self.ensure_image(image)
+        if error is not None:
+            raise RuntimeError(str(error)) from error
+        return result  # type: ignore[return-value]
+
+    def start_prebuild(self, images: list[str]) -> list[threading.Thread]:
+        """Spawn daemon threads to pre-build each image."""
+        threads = []
+        for img in images:
+            t = threading.Thread(
+                target=self._prebuild_one,
+                args=(img,),
+                daemon=True,
+                name=f"prebuild-{img}",
+            )
+            t.start()
+            threads.append(t)
+        return threads
+
+    def _prebuild_one(self, image: str) -> None:
+        try:
+            self.ensure_image(image)
+        except Exception:
+            logger.warning("Pre-build failed for %s (will retry on demand)", image)
+
+    def clear(self) -> None:
+        """Reset the cache (primarily for testing)."""
+        with self._lock:
+            self._builds.clear()
+
+    @staticmethod
+    def _cache_key(image: str) -> str:
+        """Derive the cache key.
+
+        Executor images share a key by base name (``executor-weather``)
+        since the content-hash tag is computed inside the build.  Other
+        images use their full name.
+        """
+        base = image.split(":")[0]
+        if base.startswith("executor-"):
+            # Content hash is computed inside the build, so different tags
+            # (e.g. :latest vs :abc123) map to the same build work.
+            return base
+        return image
+
+
+_image_cache = ImageBuildCache()
 
 
 def _compute_executor_hash(executor_dir: Path) -> str:
@@ -39,20 +156,10 @@ def _compute_executor_hash(executor_dir: Path) -> str:
     """
     h = sha256()
     # Executor-specific files
-    paths = sorted(
-        p
-        for pattern in _HASH_GLOBS
-        for p in executor_dir.glob(pattern)
-        if p.is_file()
-    )
+    paths = sorted(p for pattern in _HASH_GLOBS for p in executor_dir.glob(pattern) if p.is_file())
     # Shared files in the build context (src/executors/)
     context_dir = executor_dir.parent
-    shared = sorted(
-        p
-        for pattern in _HASH_GLOBS
-        for p in context_dir.glob(pattern)
-        if p.is_file()
-    )
+    shared = sorted(p for pattern in _HASH_GLOBS for p in context_dir.glob(pattern) if p.is_file())
     for p in paths:
         h.update(p.relative_to(executor_dir).as_posix().encode())
         h.update(p.read_bytes())
@@ -89,7 +196,9 @@ def _replace_google_credentials_with_access_token(env_vars: dict[str, str]) -> N
             force_refresh=False,
         )
     except Exception:
-        logger.exception("Failed to mint Google access token; executor will not receive credentials")
+        logger.exception(
+            "Failed to mint Google access token; executor will not receive credentials"
+        )
         raise
 
 
@@ -116,7 +225,7 @@ def run_task(
     logger.info("Running task: %s (mode=%s)", task.name, task.mode)
 
     # Build context with date info
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     context: dict[str, str] = {
         "date": now.strftime("%A, %B %d, %Y"),
     }
@@ -214,19 +323,19 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
         env_overrides = decrypt_env_file(config.secrets)
         _replace_google_credentials_with_access_token(env_overrides)
 
-    import os
-
     with _ENV_LOCK:
         return _run_executor_inline_locked(name, config, env_overrides)
 
 
 def _run_executor_inline_locked(
-    name: str, config: ExecutorConfig, env_overrides: dict[str, str],
+    name: str,
+    config: ExecutorConfig,
+    env_overrides: dict[str, str],
 ) -> str:
     """Inner executor dispatch, called under _ENV_LOCK."""
     import os
 
-    old_env = {}
+    old_env: dict[str, str | None] = {}
     for k, v in env_overrides.items():
         old_env[k] = os.environ.get(k)
         os.environ[k] = v
@@ -262,6 +371,12 @@ def _run_executor_inline_locked(
             return _exec_drive_inline(config)
         elif name == "drive_write":
             return _exec_drive_write_inline(config)
+        elif name == "google_docs":
+            return _exec_google_docs_inline(config)
+        elif name == "google_sheets":
+            return _exec_google_sheets_inline(config)
+        elif name == "google_slides":
+            return _exec_google_slides_inline(config)
         elif name == "bluebubbles":
             return _exec_bluebubbles_inline(config, "get_recent_messages")
         elif name == "bluebubbles_send":
@@ -278,6 +393,8 @@ def _run_executor_inline_locked(
             return _exec_brave_search_inline(config)
         elif name == "notion":
             return _exec_notion_inline(config)
+        elif name == "notion_write":
+            return _exec_notion_write_inline(config)
         elif name == "fetch_url":
             return _exec_fetch_url_inline(config)
         elif name == "browser":
@@ -286,15 +403,19 @@ def _run_executor_inline_locked(
             return _exec_exec_inline(config)
         elif name == "file_ops":
             return _exec_file_ops_inline(config)
+        elif name == "github":
+            return _exec_github_inline(config)
+        elif name == "coding":
+            return _exec_coding_inline(config)
         else:
             raise ValueError(f"Unknown inline executor: {name}")
     finally:
         # Restore original env
-        for k, v in old_env.items():
-            if v is None:
+        for k, old_value in old_env.items():
+            if old_value is None:
                 os.environ.pop(k, None)
             else:
-                os.environ[k] = v
+                os.environ[k] = old_value
 
 
 def _exec_weather_inline(config: ExecutorConfig) -> str:
@@ -371,10 +492,8 @@ def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
 
         add_raw = config.args.get("add_labels", "")
         remove_raw = config.args.get("remove_labels", "")
-        add_labels = [l.strip() for l in add_raw.split(",") if l.strip()] or None
-        remove_labels = (
-            [l.strip() for l in remove_raw.split(",") if l.strip()] or None
-        )
+        add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
+        remove_labels = [label.strip() for label in remove_raw.split(",") if label.strip()] or None
         result = modify_message(message_id, add_labels, remove_labels)
     elif action == "trash":
         from executors.gmail_modify.executor import trash_message
@@ -412,9 +531,131 @@ def _exec_drive_write_inline(config: ExecutorConfig) -> str:
     return json.dumps(result, indent=2)
 
 
+def _exec_google_docs_inline(config: ExecutorConfig) -> str:
+    """Run Google Docs executor inline."""
+    action = config.args.get("action", "")
+
+    if action == "read":
+        from executors.google_docs.executor import read_document
+
+        document_id = config.args.get("document_id", "")
+        result = read_document(document_id)
+    elif action == "create":
+        from executors.google_docs.executor import create_document
+
+        title = config.args.get("title", "")
+        body = config.args.get("body", "")
+        result = create_document(title, body)
+    elif action == "append":
+        from executors.google_docs.executor import append_text
+
+        document_id = config.args.get("document_id", "")
+        text = config.args.get("text", "")
+        result = append_text(document_id, text)
+    elif action == "replace":
+        from executors.google_docs.executor import replace_text
+
+        document_id = config.args.get("document_id", "")
+        find = config.args.get("find", "")
+        replace_with = config.args.get("replace_with", "")
+        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
+        result = replace_text(document_id, find, replace_with, match_case)
+    elif action == "insert":
+        from executors.google_docs.executor import insert_text
+
+        document_id = config.args.get("document_id", "")
+        text = config.args.get("text", "")
+        index = int(config.args.get("index", "1"))
+        result = insert_text(document_id, text, index)
+    else:
+        raise ValueError(
+            f"google_docs: unknown action '{action}' (use read/create/append/replace/insert)"
+        )
+
+    return json.dumps(result, indent=2)
+
+
+def _exec_google_sheets_inline(config: ExecutorConfig) -> str:
+    """Run Google Sheets executor inline."""
+    action = config.args.get("action", "")
+
+    if action == "read":
+        from executors.google_sheets.executor import read_sheet
+
+        spreadsheet_id = config.args.get("spreadsheet_id", "")
+        range_ = config.args.get("range", "")
+        result = read_sheet(spreadsheet_id, range_)
+    elif action == "create":
+        from executors.google_sheets.executor import create_spreadsheet
+
+        title = config.args.get("title", "")
+        sheet_name = config.args.get("sheet_name", "")
+        data = config.args.get("data", "")
+        result = create_spreadsheet(title, sheet_name, data)
+    elif action == "write":
+        from executors.google_sheets.executor import write_to_sheet
+
+        spreadsheet_id = config.args.get("spreadsheet_id", "")
+        range_ = config.args.get("range", "")
+        data = config.args.get("data", "")
+        value_input_option = config.args.get("value_input_option", "USER_ENTERED")
+        result = write_to_sheet(spreadsheet_id, range_, data, value_input_option)
+    elif action == "append":
+        from executors.google_sheets.executor import append_to_sheet
+
+        spreadsheet_id = config.args.get("spreadsheet_id", "")
+        range_ = config.args.get("range", "")
+        data = config.args.get("data", "")
+        value_input_option = config.args.get("value_input_option", "USER_ENTERED")
+        result = append_to_sheet(spreadsheet_id, range_, data, value_input_option)
+    else:
+        raise ValueError(f"google_sheets: unknown action '{action}' (use read/create/write/append)")
+
+    return json.dumps(result, indent=2)
+
+
+def _exec_google_slides_inline(config: ExecutorConfig) -> str:
+    """Run Google Slides executor inline."""
+    action = config.args.get("action", "")
+
+    if action == "read":
+        from executors.google_slides.executor import read_presentation
+
+        presentation_id = config.args.get("presentation_id", "")
+        result = read_presentation(presentation_id)
+    elif action == "create":
+        from executors.google_slides.executor import create_presentation
+
+        title = config.args.get("title", "")
+        result = create_presentation(title)
+    elif action == "add_slide":
+        from executors.google_slides.executor import add_slide
+
+        presentation_id = config.args.get("presentation_id", "")
+        title = config.args.get("title", "")
+        body = config.args.get("body", "")
+        layout = config.args.get("layout", "BLANK")
+        result = add_slide(presentation_id, title, body, layout)
+    elif action == "replace_text":
+        from executors.google_slides.executor import replace_text
+
+        presentation_id = config.args.get("presentation_id", "")
+        find = config.args.get("find", "")
+        replace_with = config.args.get("replace_with", "")
+        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
+        result = replace_text(presentation_id, find, replace_with, match_case)
+    else:
+        raise ValueError(
+            f"google_slides: unknown action '{action}' (use read/create/add_slide/replace_text)"
+        )
+
+    return json.dumps(result, indent=2)
+
+
 def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     """Run BlueBubbles executor inline."""
     import os
+
     from executors.bluebubbles.executor import (
         get_chats,
         get_recent_messages,
@@ -425,16 +666,11 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     server_url = os.environ.get("BLUEBUBBLES_URL", "")
     password = os.environ.get("BLUEBUBBLES_PASSWORD", "")
     allowed_recipients = {
-        v.strip()
-        for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",")
-        if v.strip()
+        v.strip() for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",") if v.strip()
     }
-    allowed_chats = {
-        v.strip()
-        for v in os.environ.get("ALLOWED_CHATS", "").split(",")
-        if v.strip()
-    }
+    allowed_chats = {v.strip() for v in os.environ.get("ALLOWED_CHATS", "").split(",") if v.strip()}
 
+    result: object
     if action == "get_recent_messages":
         result = get_recent_messages(
             server_url,
@@ -477,10 +713,11 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
 def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
     """Run Apple Notes executor inline via bridge."""
     import os
+
     from executors.apple_notes.executor import main as apple_notes_main
 
     # Set environment variables for the bridge-calling executor
-    old_env = {}
+    old_env: dict[str, str | None] = {}
     env_vars = {
         "ACTION": config.args.get("action", "list"),
         "FOLDER": config.args.get("folder", ""),
@@ -498,6 +735,7 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
         # Capture stdout from the bridge executor
         import sys
         from io import StringIO
+
         old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
 
@@ -510,8 +748,9 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
         # Restore environment
         sys.stdout = old_stdout
         for key in env_vars:
-            if old_env.get(key) is not None:
-                os.environ[key] = old_env[key]
+            old_value = old_env.get(key)
+            if old_value is not None:
+                os.environ[key] = old_value
             else:
                 os.environ.pop(key, None)
 
@@ -519,10 +758,11 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
 def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
     """Run Apple Reminders executor inline via bridge."""
     import os
+
     from executors.apple_reminders.executor import main as apple_reminders_main
 
     # Set environment variables for the bridge-calling executor
-    old_env = {}
+    old_env: dict[str, str | None] = {}
     env_vars = {
         "ACTION": config.args.get("action", "list"),
         "FILTER": config.args.get("filter", "all"),
@@ -541,6 +781,7 @@ def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
         # Capture stdout from the bridge executor
         import sys
         from io import StringIO
+
         old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
 
@@ -553,8 +794,9 @@ def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
         # Restore environment
         sys.stdout = old_stdout
         for key in env_vars:
-            if old_env.get(key) is not None:
-                os.environ[key] = old_env[key]
+            old_value = old_env.get(key)
+            if old_value is not None:
+                os.environ[key] = old_value
             else:
                 os.environ.pop(key, None)
 
@@ -586,6 +828,24 @@ def _exec_notion_inline(config: ExecutorConfig) -> str:
         sorts_json=config.args.get("sorts_json", ""),
         page_size=config.args.get("page_size"),
         start_cursor=config.args.get("start_cursor", ""),
+    )
+    return json.dumps(result, indent=2)
+
+
+def _exec_notion_write_inline(config: ExecutorConfig) -> str:
+    """Run Notion write executor inline."""
+    from executors.notion_write.executor import run_action
+
+    action = config.args.get("action", "")
+    if not action:
+        raise ValueError("notion_write executor requires an 'action' argument")
+
+    result = run_action(
+        action=action,
+        page_id=config.args.get("page_id", ""),
+        database_id=config.args.get("database_id", ""),
+        properties_json=config.args.get("properties_json", ""),
+        children_json=config.args.get("children_json", ""),
     )
     return json.dumps(result, indent=2)
 
@@ -710,11 +970,59 @@ def _exec_file_ops_inline(config: ExecutorConfig) -> str:
             if old_env[env_key] is None:
                 os.environ.pop(env_key, None)
             else:
-                os.environ[env_key] = old_env[env_key]
+                old_value = old_env[env_key]
+                assert old_value is not None
+                os.environ[env_key] = old_value
+
+
+def _exec_github_inline(config: ExecutorConfig) -> str:
+    """Run github executor inline."""
+    from executors.github.executor import run_gh_command
+
+    command = config.args.get("command", "")
+    repo = config.args.get("repo") or None
+
+    if not command:
+        raise ValueError("github executor requires a 'command' argument")
+
+    result = run_gh_command(command, repo)
+    return json.dumps(result, indent=2)
+
+
+def _exec_coding_inline(config: ExecutorConfig) -> str:
+    """Run coding executor inline."""
+    from executors.coding.executor import run_command
+
+    command = config.args.get("command", "")
+    workdir = config.args.get("workdir") or None
+    mount = config.args.get("mount") or None
+    timeout_str = config.args.get("timeout") or None
+
+    if not command:
+        raise ValueError("coding executor requires a 'command' argument")
+
+    timeout = None
+    if timeout_str:
+        try:
+            timeout = int(timeout_str)
+        except ValueError:
+            pass
+
+    result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
+    return json.dumps(result, indent=2)
 
 
 def _ensure_image(image: str) -> str:
-    """Build the Docker image if it doesn't already exist.
+    """Build the Docker image if needed, with build deduplication.
+
+    Delegates to :class:`ImageBuildCache` so concurrent and repeated
+    calls only trigger a single ``docker build``.
+    """
+    return _image_cache.ensure_image(image)
+
+
+def _ensure_image_uncached(image: str) -> str:
+    """Build the Docker image if it doesn't already exist (no caching).
 
     For executor images the tag is derived from a content hash of the
     executor source directory so that code changes automatically trigger
@@ -800,10 +1108,42 @@ def _build_image(
         raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
 
 
+def collect_required_images(agent_def: AgentDefinition) -> list[str]:
+    """Derive the set of Docker images needed by an agent's tools.
+
+    Uses the same naming convention as :pyattr:`ExecutorConfig.image`:
+    ``executor-{name}:latest`` (underscores → hyphens).
+    ``ToolConfig.image`` overrides the derived name when set.
+    The ``llm-runner:latest`` image is included when tools are present
+    (agent mode requires the containerised LLM runner).
+    """
+
+    images: set[str] = set()
+    for _tool_name, tool_config in agent_def.tools.items():
+        if tool_config.image:
+            images.add(tool_config.image)
+        else:
+            image = f"executor-{tool_config.executor.replace('_', '-')}:latest"
+            images.add(image)
+    if agent_def.tools:
+        images.add("llm-runner:latest")
+    return sorted(images)
+
+
+def prebuild_images(agent_def: AgentDefinition) -> list[threading.Thread]:
+    """Kick off background image builds for all tools in the agent definition.
+
+    Returns the list of spawned threads (callers are not expected to join).
+    """
+    images = collect_required_images(agent_def)
+    logger.info("Pre-building %d Docker image(s): %s", len(images), images)
+    return _image_cache.start_prebuild(images)
+
+
 def _run_executor_container(
     config: ExecutorConfig,
-    tool_config: "ToolConfig | None" = None,
-    bridge_config: BridgeConfig | None = None
+    tool_config: ToolConfig | None = None,
+    bridge_config: BridgeConfig | None = None,
 ) -> str:
     """Run an executor in an isolated Docker container.
 
@@ -843,6 +1183,7 @@ def _run_executor_container(
     # Add bridge configuration if enabled
     if bridge_config and bridge_config.enabled:
         import os
+
         # Rewrite localhost to host.docker.internal for container access
         bridge_url = bridge_config.url
         bridge_url = bridge_url.replace("://localhost", "://host.docker.internal")
@@ -860,6 +1201,7 @@ def _run_executor_container(
     # Handle workspace mount for file_ops (must be before env_file write
     # so WORKSPACE=/workspace ends up in the env file, not the host path)
     import os
+
     _workspace_mount: tuple[str, str] | None = None
     workspace_path = config.args.get("workspace")
     if workspace_path and config.name in ("file_ops",):
@@ -883,14 +1225,18 @@ def _run_executor_container(
 
         # Build docker run command
         docker_cmd = [
-            "docker", "run", "--rm",
+            "docker",
+            "run",
+            "--rm",
             "--read-only",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=16M",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=16M",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--memory=256m",
             "--cpus=0.5",
-            "--env-file", env_file.name,
+            "--env-file",
+            env_file.name,
         ]
 
         # Add mount options from tool config
@@ -923,11 +1269,11 @@ def _run_executor_container(
             if stderr:
                 logger.error(
                     "Executor %s stderr (timeout after %ds):\n%s",
-                    config.name, config.timeout, stderr,
+                    config.name,
+                    config.timeout,
+                    stderr,
                 )
-            raise RuntimeError(
-                f"Executor '{config.name}' timed out after {config.timeout}s"
-            ) from e
+            raise RuntimeError(f"Executor '{config.name}' timed out after {config.timeout}s") from e
 
     # Log stderr regardless of exit code
     stderr = result.stderr.strip() if result.stderr else ""
@@ -935,14 +1281,14 @@ def _run_executor_container(
         if result.returncode == 0:
             logger.debug("Executor %s stderr (success):\n%s", config.name, stderr)
         else:
-            logger.error("Executor %s stderr (exit %d):\n%s", config.name, result.returncode, stderr)
+            logger.error(
+                "Executor %s stderr (exit %d):\n%s", config.name, result.returncode, stderr
+            )
 
     if result.returncode != 0:
         # Include stderr in the error so it propagates to the LLM
         error_detail = stderr[:500] if stderr else f"exit code {result.returncode}"
-        raise RuntimeError(
-            f"Executor '{config.name}' failed: {error_detail}"
-        )
+        raise RuntimeError(f"Executor '{config.name}' failed: {error_detail}")
 
     return result.stdout.strip()
 

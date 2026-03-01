@@ -16,7 +16,7 @@ from googleapiclient.discovery import build
 try:
     from executors.google_creds import get_credentials
 except ModuleNotFoundError:
-    from google_creds import get_credentials
+    from google_creds import get_credentials  # type: ignore[no-redef]
 
 
 def modify_message(
@@ -43,12 +43,7 @@ def modify_message(
     if remove_labels:
         body["removeLabelIds"] = remove_labels
 
-    result = (
-        service.users()
-        .messages()
-        .modify(userId="me", id=message_id, body=body)
-        .execute()
-    )
+    result = service.users().messages().modify(userId="me", id=message_id, body=body).execute()
 
     return {
         "id": result["id"],
@@ -68,12 +63,7 @@ def trash_message(message_id: str) -> dict:
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-    result = (
-        service.users()
-        .messages()
-        .trash(userId="me", id=message_id)
-        .execute()
-    )
+    result = service.users().messages().trash(userId="me", id=message_id).execute()
 
     return {
         "id": result["id"],
@@ -93,12 +83,7 @@ def delete_message(message_id: str) -> dict:
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-    (
-        service.users()
-        .messages()
-        .delete(userId="me", id=message_id)
-        .execute()
-    )
+    (service.users().messages().delete(userId="me", id=message_id).execute())
 
     return {"id": message_id, "deleted": True}
 
@@ -125,10 +110,10 @@ def main() -> None:
         if action == "modify":
             add_raw = os.environ.get("ADD_LABELS", "")
             remove_raw = os.environ.get("REMOVE_LABELS", "")
-            add_labels = [l.strip() for l in add_raw.split(",") if l.strip()] or None
-            remove_labels = (
-                [l.strip() for l in remove_raw.split(",") if l.strip()] or None
-            )
+            add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
+            remove_labels = [
+                label.strip() for label in remove_raw.split(",") if label.strip()
+            ] or None
             result = modify_message(message_id, add_labels, remove_labels)
         elif action == "trash":
             result = trash_message(message_id)

@@ -64,7 +64,9 @@ class TestLLMJudge:
         assert result.confidence == 0.1
 
     @patch("taskrunner.llm._get_client")
-    def test_api_failure_falls_through(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_api_failure_falls_through(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = RuntimeError("API down")
         mock_get_client.return_value = mock_client
@@ -78,7 +80,9 @@ class TestLLMJudge:
         assert "failed" in result.reasoning.lower()
 
     @patch("taskrunner.llm._get_client")
-    def test_json_parse_error_falls_through(self, mock_get_client: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_json_parse_error_falls_through(
+        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+    ) -> None:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_response("not valid json at all")
         mock_get_client.return_value = mock_client

@@ -5,8 +5,9 @@ from __future__ import annotations
 import importlib.metadata
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from taskrunner.channels.base import Channel
 from taskrunner.channels.plugin import ChannelPluginMeta
@@ -62,9 +63,9 @@ class ChannelRegistry:
         eps = importlib.metadata.entry_points()
         # Python 3.12+: entry_points() returns a SelectableGroups or dict-like
         if hasattr(eps, "select"):
-            channel_eps = eps.select(group=ENTRY_POINT_GROUP)
+            channel_eps = list(eps.select(group=ENTRY_POINT_GROUP))
         else:
-            channel_eps = eps.get(ENTRY_POINT_GROUP, [])
+            channel_eps = list(eps.get(ENTRY_POINT_GROUP) or [])
 
         for ep in channel_eps:
             try:
@@ -72,13 +73,11 @@ class ChannelRegistry:
                 meta, factory = register_fn()
                 self.register(meta, factory)
             except Exception:
-                logger.exception(
-                    "Failed to load channel plugin '%s' from entry point", ep.name
-                )
+                logger.exception("Failed to load channel plugin '%s' from entry point", ep.name)
 
-        if not self._entries:
-            logger.info("No entry-point plugins found; falling back to built-in imports")
-            self._discover_builtins()
+        # Always attempt builtin imports for any channels not yet registered
+        # (covers stale egg-info, partial entry-point discovery, PYTHONPATH setups)
+        self._discover_builtins()
 
         if self._entries:
             logger.info(
@@ -89,7 +88,7 @@ class ChannelRegistry:
             logger.warning("Channel discovery found no plugins")
 
     def _discover_builtins(self) -> None:
-        """Import built-in channel modules directly."""
+        """Import built-in channel modules directly to fill any gaps."""
         import importlib
 
         for module_path in self._BUILTIN_CHANNELS:
@@ -99,7 +98,8 @@ class ChannelRegistry:
                 if register_fn is None:
                     continue
                 meta, factory = register_fn()
-                self.register(meta, factory)
+                if meta.id not in self._entries:
+                    self.register(meta, factory)
             except Exception:
                 logger.debug("Could not load built-in channel %s", module_path)
 
@@ -130,8 +130,6 @@ class ChannelRegistry:
         entry = self._entries.get(channel_id)
         if entry is None:
             known = ", ".join(sorted(self._entries.keys())) or "(none)"
-            raise ValueError(
-                f"Unknown channel '{channel_id}'. Registered: {known}"
-            )
+            raise ValueError(f"Unknown channel '{channel_id}'. Registered: {known}")
         logger.info("Creating channel '%s'", channel_id)
         return entry.factory(config)

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
 
-class ActionVerdict(str, enum.Enum):
+class ActionVerdict(enum.StrEnum):
     ALLOW = "allow"
     REVIEW = "review"
     DENY = "deny"
@@ -72,7 +72,7 @@ class LLMJudgeConfig(BaseModel):
     max_tokens: int = 256
     timeout: float = 3.0
     uncertain_only: bool = True  # only run when classifier is uncertain
-    uncertain_low: float = 0.5   # lower bound of uncertain range
+    uncertain_low: float = 0.5  # lower bound of uncertain range
     uncertain_high: float = 0.85  # upper bound of uncertain range
 
 

@@ -71,7 +71,7 @@ def status(short: bool = False) -> dict[str, Any]:
 
 def diff(cached: bool = False, path: str | None = None) -> dict[str, Any]:
     """Get git diff via bridge."""
-    data = {}
+    data: dict[str, Any] = {}
     if cached:
         data["cached"] = True
     if path:
@@ -86,7 +86,7 @@ def log(max_count: int = 10, oneline: bool = True) -> dict[str, Any]:
 
 def commit(message: str, all: bool = False) -> dict[str, Any]:
     """Create a git commit via bridge."""
-    data = {"message": message}
+    data: dict[str, Any] = {"message": message}
     if all:
         data["all"] = True
     return call_bridge("/git/commit", data)
@@ -94,7 +94,7 @@ def commit(message: str, all: bool = False) -> dict[str, Any]:
 
 def branch(name: str | None = None, delete: bool = False, list_all: bool = False) -> dict[str, Any]:
     """List or manage git branches via bridge."""
-    data = {}
+    data: dict[str, Any] = {}
     if name:
         data["name"] = name
     if delete:
@@ -104,9 +104,11 @@ def branch(name: str | None = None, delete: bool = False, list_all: bool = False
     return call_bridge("/git/branch", data)
 
 
-def push(remote: str = "origin", branch_name: str | None = None, set_upstream: bool = False) -> dict[str, Any]:
+def push(
+    remote: str = "origin", branch_name: str | None = None, set_upstream: bool = False
+) -> dict[str, Any]:
     """Push to remote via bridge."""
-    data = {"remote": remote}
+    data: dict[str, Any] = {"remote": remote}
     if branch_name:
         data["branch"] = branch_name
     if set_upstream:

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import sys
 import tempfile
 import time
 from collections.abc import Callable
@@ -91,10 +90,13 @@ def _retry_on_transient(fn, *args, **kwargs):
                 raise
             last_exc = exc
             if attempt < MAX_RETRIES - 1:
-                delay = RETRY_BASE_DELAY * (2 ** attempt)
+                delay = RETRY_BASE_DELAY * (2**attempt)
                 logger.warning(
                     "LLM call failed with %d, retrying in %.1fs (attempt %d/%d)",
-                    exc.status_code, delay, attempt + 1, MAX_RETRIES,
+                    exc.status_code,
+                    delay,
+                    attempt + 1,
+                    MAX_RETRIES,
                 )
                 time.sleep(delay)
     raise last_exc  # type: ignore[misc]
@@ -205,7 +207,9 @@ def summarize_messages(
                     if block.get("type") == "text":
                         parts.append(block.get("text", ""))
                     elif block.get("type") == "tool_use":
-                        parts.append(f"[tool_use: {block.get('name', '?')}({block.get('input', {})})]")
+                        parts.append(
+                            f"[tool_use: {block.get('name', '?')}({block.get('input', {})})]"
+                        )
                     elif block.get("type") == "tool_result":
                         result_text = str(block.get("content", ""))
                         if len(result_text) > 200:
@@ -274,6 +278,7 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
 def _run_llm_container(prompt: str, config: LLMConfig) -> str:
     """Run LLM call inside an isolated Docker container."""
     from taskrunner.orchestrator import _ensure_image
+
     _ensure_image("llm-runner:latest")
 
     from taskrunner.container_agent import _get_llm_env_vars
@@ -290,17 +295,31 @@ def _run_llm_container(prompt: str, config: LLMConfig) -> str:
 
         result = subprocess.run(
             [
-                "docker", "run", "--rm",
+                "docker",
+                "run",
+                "--rm",
                 *_LLM_DOCKER_FLAGS,
-                "--env-file", env_file.name,
+                "--env-file",
+                env_file.name,
                 "llm-runner:latest",
             ],
             input=prompt,
             capture_output=True,
             text=True,
             timeout=120,
-            check=True,
         )
+
+    stderr = result.stderr.strip() if result.stderr else ""
+    if stderr:
+        if result.returncode == 0:
+            logger.debug("LLM runner stderr (success):\n%s", stderr)
+        else:
+            logger.error("LLM runner stderr (exit %d):\n%s", result.returncode, stderr)
+
+    if result.returncode != 0:
+        error_detail = stderr[:500] if stderr else f"exit code {result.returncode}"
+        raise RuntimeError(f"LLM runner failed: {error_detail}")
+
     return result.stdout.strip()
 
 

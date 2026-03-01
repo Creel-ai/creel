@@ -178,6 +178,235 @@ tools:
         type: string
         description: "MIME type (default: text/plain)"
 
+  # Google Docs
+  read_doc:
+    executor: google_docs
+    network: true
+    secrets: secrets/docs_read.env.enc
+    description: "Read the contents of a Google Doc as plain text"
+    parameters:
+      document_id:
+        type: string
+        description: "Google Docs document ID"
+        required: true
+    fixed_args:
+      action: "read"
+
+  create_doc:
+    executor: google_docs
+    network: true
+    secrets: secrets/docs_write.env.enc
+    description: "Create a new Google Doc"
+    parameters:
+      title:
+        type: string
+        description: "Document title"
+        required: true
+      body:
+        type: string
+        description: "Initial document body text"
+    fixed_args:
+      action: "create"
+
+  append_to_doc:
+    executor: google_docs
+    network: true
+    secrets: secrets/docs_write.env.enc
+    description: "Append text to the end of a Google Doc"
+    parameters:
+      document_id:
+        type: string
+        description: "Google Docs document ID"
+        required: true
+      text:
+        type: string
+        description: "Text to append"
+        required: true
+    fixed_args:
+      action: "append"
+
+  replace_in_doc:
+    executor: google_docs
+    network: true
+    secrets: secrets/docs_write.env.enc
+    description: "Find and replace text in a Google Doc"
+    parameters:
+      document_id:
+        type: string
+        description: "Google Docs document ID"
+        required: true
+      find:
+        type: string
+        description: "Text to find"
+        required: true
+      replace_with:
+        type: string
+        description: "Replacement text"
+        required: true
+      match_case:
+        type: string
+        description: "Case-sensitive match (true/false, default: true)"
+    fixed_args:
+      action: "replace"
+
+  # Google Sheets
+  read_sheet:
+    executor: google_sheets
+    network: true
+    secrets: secrets/sheets_read.env.enc
+    description: "Read cell values from a Google Sheet"
+    parameters:
+      spreadsheet_id:
+        type: string
+        description: "Google Sheets spreadsheet ID"
+        required: true
+      range:
+        type: string
+        description: "A1 notation range (e.g. 'Sheet1!A1:B2')"
+        required: true
+    fixed_args:
+      action: "read"
+
+  create_sheet:
+    executor: google_sheets
+    network: true
+    secrets: secrets/sheets_write.env.enc
+    description: "Create a new Google Sheet"
+    parameters:
+      title:
+        type: string
+        description: "Spreadsheet title"
+        required: true
+      sheet_name:
+        type: string
+        description: "Name of the first sheet"
+      data:
+        type: string
+        description: "Initial data as JSON 2D array (e.g. '[[\"Name\",\"Age\"],[\"Alice\",\"30\"]]')"
+    fixed_args:
+      action: "create"
+
+  write_to_sheet:
+    executor: google_sheets
+    network: true
+    secrets: secrets/sheets_write.env.enc
+    description: "Write values to a range in a Google Sheet"
+    parameters:
+      spreadsheet_id:
+        type: string
+        description: "Google Sheets spreadsheet ID"
+        required: true
+      range:
+        type: string
+        description: "A1 notation range (e.g. 'Sheet1!A1:B2')"
+        required: true
+      data:
+        type: string
+        description: "Data as JSON 2D array (e.g. '[[\"Name\",\"Age\"],[\"Alice\",\"30\"]]')"
+        required: true
+      value_input_option:
+        type: string
+        description: "How to interpret input: USER_ENTERED (default) or RAW"
+    fixed_args:
+      action: "write"
+
+  append_to_sheet:
+    executor: google_sheets
+    network: true
+    secrets: secrets/sheets_write.env.enc
+    description: "Append rows to the end of a Google Sheet"
+    parameters:
+      spreadsheet_id:
+        type: string
+        description: "Google Sheets spreadsheet ID"
+        required: true
+      range:
+        type: string
+        description: "A1 notation range to search for data (e.g. 'Sheet1!A:B')"
+        required: true
+      data:
+        type: string
+        description: "Rows as JSON 2D array (e.g. '[[\"Bob\",\"25\"]]')"
+        required: true
+      value_input_option:
+        type: string
+        description: "How to interpret input: USER_ENTERED (default) or RAW"
+    fixed_args:
+      action: "append"
+
+  # Google Slides
+  read_slides:
+    executor: google_slides
+    network: true
+    secrets: secrets/slides_read.env.enc
+    description: "Read presentation metadata and slide text content"
+    parameters:
+      presentation_id:
+        type: string
+        description: "Google Slides presentation ID"
+        required: true
+    fixed_args:
+      action: "read"
+
+  create_slides:
+    executor: google_slides
+    network: true
+    secrets: secrets/slides_write.env.enc
+    description: "Create a new Google Slides presentation"
+    parameters:
+      title:
+        type: string
+        description: "Presentation title"
+        required: true
+    fixed_args:
+      action: "create"
+
+  add_slide:
+    executor: google_slides
+    network: true
+    secrets: secrets/slides_write.env.enc
+    description: "Add a slide to a Google Slides presentation"
+    parameters:
+      presentation_id:
+        type: string
+        description: "Google Slides presentation ID"
+        required: true
+      title:
+        type: string
+        description: "Slide title text"
+      body:
+        type: string
+        description: "Slide body text"
+      layout:
+        type: string
+        description: "Predefined layout (default: BLANK)"
+    fixed_args:
+      action: "add_slide"
+
+  replace_in_slides:
+    executor: google_slides
+    network: true
+    secrets: secrets/slides_write.env.enc
+    description: "Find and replace text across all slides in a presentation"
+    parameters:
+      presentation_id:
+        type: string
+        description: "Google Slides presentation ID"
+        required: true
+      find:
+        type: string
+        description: "Text to find"
+        required: true
+      replace_with:
+        type: string
+        description: "Replacement text"
+        required: true
+      match_case:
+        type: string
+        description: "Case-sensitive match (true/false, default: true)"
+    fixed_args:
+      action: "replace_text"
+
   # BlueBubbles tools (commented out — secrets not configured yet)
   # check_messages:
   #   executor: bluebubbles
@@ -368,7 +597,7 @@ tools:
 
   notion_api:
     executor: notion
-    secrets: secrets/notion.env.enc
+    secrets: secrets/notion_read.env.enc
     network: true
     classify_output: true
     description: "Query Notion in read-only mode (search, retrieve page, query database)"
@@ -399,6 +628,30 @@ tools:
         type: string
         description: "Pagination cursor for search/query_database"
 
+  notion_write:
+    executor: notion_write
+    secrets: secrets/notion_write.env.enc
+    network: true
+    classify_output: true
+    description: "Create, update, or delete pages in Notion"
+    parameters:
+      action:
+        type: string
+        description: "Action: create_page, update_page, append_blocks, delete_page"
+        required: true
+      page_id:
+        type: string
+        description: "Page ID (required for update_page, append_blocks, delete_page)"
+      database_id:
+        type: string
+        description: "Database ID (required for create_page)"
+      properties_json:
+        type: string
+        description: "JSON object of page properties (for create_page, update_page)"
+      children_json:
+        type: string
+        description: "JSON array of block objects to append (for append_blocks, create_page)"
+
   fetch_url:
     executor: fetch_url
     network: true
@@ -411,6 +664,21 @@ tools:
       max_chars:
         type: string
         description: "Max characters to return (default: 10000)"
+
+  # GitHub (gh CLI)
+  github:
+    executor: github
+    network: true
+    secrets: secrets/github.env.enc
+    description: "Manage GitHub repositories — issues, PRs, CI runs, code search"
+    parameters:
+      command:
+        type: string
+        description: "The gh CLI subcommand to run (e.g., 'issue list', 'pr view 42', 'run list')"
+        required: true
+      repo:
+        type: string
+        description: "Repository in owner/repo format. Uses current repo context if not specified."
 
   # Shell exec
   exec:
@@ -428,6 +696,23 @@ tools:
       - path: ~/.creel/workspace
         mode: rw
     network: false
+
+  # Coding / dev environment
+  coding:
+    executor: coding
+    description: "Development environment for building software — run commands, install packages, edit files"
+    parameters:
+      command:
+        type: string
+        description: "Shell command to execute in the dev container (e.g., 'python -m pytest', 'npm install', 'git status')"
+        required: true
+      workdir:
+        type: string
+        description: "Working directory inside the container. Maps to a mounted host path."
+      mount:
+        type: string
+        description: "Host path to mount into the container at /workspace. Allows working on real projects."
+    timeout: 300
 
   # File operations
   read_file:
@@ -849,6 +1134,19 @@ workspace:
   compact_after_days: 7
   max_daily_entries: 50
   max_long_term_lines: 500
+
+# media:
+#   enabled: true
+#   storage_dir: ~/.creel/media
+#   max_file_size_mb: 20
+#   retention_days: 30
+#   transcription:
+#     backend: openai          # "openai" (Whisper API) or "local" (whisper CLI)
+#     model: whisper-1
+#     # api_key: null          # Falls back to OPENAI_API_KEY env var
+#   vision:
+#     max_pixels: 2048
+#     quality: 85
 
 channels:
   # imessage:

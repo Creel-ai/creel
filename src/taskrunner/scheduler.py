@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import threading
+import time
+import traceback
+import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -18,9 +25,9 @@ logger = logging.getLogger(__name__)
 def start_scheduler(
     tasks_dir: str | Path = "tasks",
     use_containers: bool = False,
-    shutdown_event: "threading.Event | None" = None,
+    shutdown_event: threading.Event | None = None,
     on_failure: Callable[[str, Exception], None] | None = None,
-    heartbeat_event: "threading.Event | None" = None,
+    heartbeat_event: threading.Event | None = None,
     heartbeat_interval: int = 30,
 ) -> BlockingScheduler:
     """Load all tasks and start the blocking scheduler.
@@ -36,8 +43,6 @@ def start_scheduler(
     Returns:
         The scheduler instance (useful for external shutdown).
     """
-    import threading
-
     tasks_dir = Path(tasks_dir)
     tasks = load_all_tasks(tasks_dir)
 
@@ -49,9 +54,7 @@ def start_scheduler(
 
     for task in tasks:
         task_file = tasks_dir / f"{task.name}.yaml"
-        logger.info(
-            "Scheduling task '%s' with cron: %s", task.name, task.schedule
-        )
+        logger.info("Scheduling task '%s' with cron: %s", task.name, task.schedule)
         scheduler.add_job(
             _run_task_safe,
             CronTrigger.from_crontab(task.schedule),
@@ -62,6 +65,7 @@ def start_scheduler(
 
     # If a shutdown event is provided, watch it in a background thread
     if shutdown_event is not None:
+
         def _watch_shutdown():
             shutdown_event.wait()
             logger.info("Shutdown event received, stopping scheduler")
@@ -72,6 +76,7 @@ def start_scheduler(
 
     # If a heartbeat event is provided, pulse it periodically in a daemon thread
     if heartbeat_event is not None:
+
         def _heartbeat_loop():
             while True:
                 heartbeat_event.set()
@@ -94,19 +99,67 @@ def start_scheduler(
     return scheduler
 
 
+def _cron_history_path() -> Path:
+    """Return path to the cron history JSONL file."""
+    creel_home = Path(os.environ.get("CREEL_HOME", Path.home() / ".creel"))
+    return creel_home / "cron-history.jsonl"
+
+
+def _append_cron_history(record: dict) -> None:
+    """Append a run record to the cron history JSONL file.
+
+    Creates the file and parent directories if they don't exist.
+    """
+    path = _cron_history_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        logger.warning("Failed to write cron history to %s", path, exc_info=True)
+
+
 def _run_task_safe(
     task_path: str,
     use_containers: bool,
     on_failure: Callable[[str, Exception], None] | None = None,
 ) -> None:
     """Run a task with error handling so the scheduler doesn't crash."""
+    run_id = str(uuid.uuid4())
+    job_name = Path(task_path).stem
+    started_at = datetime.now(UTC).isoformat()
+    start_time = time.monotonic()
+
+    status = "success"
+    error_str: str | None = None
+    summary: str | None = None
+
     try:
         result = run_task(task_path, use_containers=use_containers)
         logger.info("Task %s completed successfully (%d chars)", task_path, len(result))
+        summary = result[:500] if result else None
     except Exception as exc:
+        status = "failed"
+        error_str = traceback.format_exc()
         logger.exception("Task %s failed", task_path)
         if on_failure is not None:
             try:
                 on_failure(task_path, exc)
             except Exception:
                 logger.exception("on_failure callback raised for task %s", task_path)
+
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    finished_at = datetime.now(UTC).isoformat()
+
+    record = {
+        "run_id": run_id,
+        "job_name": job_name,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_ms": duration_ms,
+        "status": status,
+        "token_usage": None,
+        "error": error_str,
+        "summary": summary,
+    }
+    _append_cron_history(record)

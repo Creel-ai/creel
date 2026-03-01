@@ -34,9 +34,15 @@ class TestFastClassifier:
 
     def test_unavailable_raises(self) -> None:
         """When neither optimum nor transformers is installed, raises RuntimeError."""
-        with patch.dict("sys.modules", {"optimum": None, "optimum.onnxruntime": None, "transformers": None}):
-            with pytest.raises(RuntimeError, match="Install the dependencies or run with guardian disabled"):
-                FastClassifier(FastClassifierConfig(enabled=True, threshold=0.85, model_name="test-model"))
+        with patch.dict(
+            "sys.modules", {"optimum": None, "optimum.onnxruntime": None, "transformers": None}
+        ):
+            with pytest.raises(
+                RuntimeError, match="Install the dependencies or run with guardian disabled"
+            ):
+                FastClassifier(
+                    FastClassifierConfig(enabled=True, threshold=0.85, model_name="test-model")
+                )
 
     def test_injection_detected(self, clf: FastClassifier) -> None:
         clf._pipeline = MagicMock(return_value=[{"label": "INJECTION", "score": 0.95}])

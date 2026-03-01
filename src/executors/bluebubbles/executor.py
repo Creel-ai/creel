@@ -19,7 +19,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from typing import Any
 
 import requests
 
@@ -65,9 +65,7 @@ def _check_rate_limit() -> None:
     cutoff = now - 60
     _send_timestamps[:] = [t for t in _send_timestamps if t > cutoff]
     if len(_send_timestamps) >= MAX_SEND_RATE:
-        raise RuntimeError(
-            f"Rate limit exceeded: max {MAX_SEND_RATE} sends per minute"
-        )
+        raise RuntimeError(f"Rate limit exceeded: max {MAX_SEND_RATE} sends per minute")
     _send_timestamps.append(now)
 
 
@@ -131,13 +129,15 @@ def get_recent_messages(
         if handle:
             sender = handle.get("address", "")
 
-        messages.append({
-            "sender": sender,
-            "text": text,
-            "date": msg.get("dateCreated", ""),
-            "chat_id": msg_chat_id,
-            "is_from_me": bool(msg.get("isFromMe", False)),
-        })
+        messages.append(
+            {
+                "sender": sender,
+                "text": text,
+                "date": msg.get("dateCreated", ""),
+                "chat_id": msg_chat_id,
+                "is_from_me": bool(msg.get("isFromMe", False)),
+            }
+        )
 
     return messages
 
@@ -154,11 +154,9 @@ def send_message(
     _check_rate_limit()
 
     if len(text) > MAX_MESSAGE_LENGTH:
-        raise RuntimeError(
-            f"Message too long ({len(text)} chars, max {MAX_MESSAGE_LENGTH})"
-        )
+        raise RuntimeError(f"Message too long ({len(text)} chars, max {MAX_MESSAGE_LENGTH})")
 
-    data = _api(
+    _api(
         "POST",
         "/message/text",
         server_url,
@@ -186,7 +184,7 @@ def send_reaction(
             f"Invalid reaction '{reaction}'. Must be one of: {', '.join(sorted(VALID_REACTIONS))}"
         )
 
-    data = _api(
+    _api(
         "POST",
         "/message/react",
         server_url,
@@ -209,18 +207,24 @@ def get_chats(
     """List recent chats (metadata only)."""
     limit = max(1, min(limit, MAX_CHATS_PER_REQUEST))
 
-    data = _api("GET", "/chat", server_url, password, params={"limit": limit, "sort": "lastmessage"})
+    data = _api(
+        "GET", "/chat", server_url, password, params={"limit": limit, "sort": "lastmessage"}
+    )
 
     chats = []
     for chat in data.get("data", []):
         chat_id = chat.get("chatIdentifier", "")
         if allowed_chats and chat_id not in allowed_chats:
             continue
-        chats.append({
-            "chat_id": chat_id,
-            "display_name": chat.get("displayName", "") or chat_id,
-            "last_message_date": chat.get("lastMessage", {}).get("dateCreated", "") if chat.get("lastMessage") else "",
-        })
+        chats.append(
+            {
+                "chat_id": chat_id,
+                "display_name": chat.get("displayName", "") or chat_id,
+                "last_message_date": chat.get("lastMessage", {}).get("dateCreated", "")
+                if chat.get("lastMessage")
+                else "",
+            }
+        )
 
     return chats
 
@@ -228,6 +232,7 @@ def get_chats(
 # ---------------------------------------------------------------------------
 # CLI entry point (used in container mode)
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     server_url = _env("BLUEBUBBLES_URL")
@@ -237,15 +242,21 @@ def main() -> None:
     allowed_chats = _env_set("ALLOWED_CHATS")
 
     if not server_url or not password:
-        print(json.dumps({"error": "BLUEBUBBLES_URL and BLUEBUBBLES_PASSWORD required"}), file=sys.stderr)
+        print(
+            json.dumps({"error": "BLUEBUBBLES_URL and BLUEBUBBLES_PASSWORD required"}),
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     try:
+        result: list[dict[str, Any]] | dict[str, Any]
         if action == "get_recent_messages":
             chat_id = _env("CHAT_ID") or None
             limit = int(_env("LIMIT") or "20")
             after_date = _env("AFTER_DATE") or None
-            result = get_recent_messages(server_url, password, allowed_chats, chat_id, limit, after_date)
+            result = get_recent_messages(
+                server_url, password, allowed_chats, chat_id, limit, after_date
+            )
         elif action == "send_message":
             chat_id = _env("CHAT_ID")
             text = _env("TEXT")
@@ -258,7 +269,9 @@ def main() -> None:
             reaction = _env("REACTION")
             if not all([chat_id, message_guid, reaction]):
                 raise RuntimeError("CHAT_ID, MESSAGE_GUID, and REACTION required")
-            result = send_reaction(server_url, password, allowed_recipients, chat_id, message_guid, reaction)
+            result = send_reaction(
+                server_url, password, allowed_recipients, chat_id, message_guid, reaction
+            )
         elif action == "get_chats":
             limit = int(_env("LIMIT") or "20")
             result = get_chats(server_url, password, allowed_chats, limit)

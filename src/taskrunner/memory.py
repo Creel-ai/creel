@@ -11,7 +11,7 @@ that the LLM can call to persist information.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -33,10 +33,11 @@ class MemoryManager:
         self._memory_dir.mkdir(parents=True, exist_ok=True)
         self._max_daily_entries = max_daily_entries
         self._max_long_term_lines = max_long_term_lines
+        self._tz: tzinfo
         try:
             self._tz = ZoneInfo(timezone_name)
         except (KeyError, ValueError):
-            self._tz = timezone.utc
+            self._tz = UTC
 
     @property
     def long_term_path(self) -> Path:
@@ -64,10 +65,7 @@ class MemoryManager:
 
         # Rate limit: count existing entries in today's file
         if path.exists():
-            entry_count = sum(
-                1 for line in path.read_text().splitlines()
-                if line.startswith("- [")
-            )
+            entry_count = sum(1 for line in path.read_text().splitlines() if line.startswith("- ["))
             if entry_count >= self._max_daily_entries:
                 logger.warning("Daily memory limit reached (%d entries)", self._max_daily_entries)
                 return f"Daily memory limit reached ({self._max_daily_entries} entries). Try again tomorrow."

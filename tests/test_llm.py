@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import anthropic
 import pytest
 
 from taskrunner.llm import (
-    MAX_RETRIES,
     _CLAUDE_CODE_SYSTEM_PREFIX,
     _OAUTH_HEADERS,
+    MAX_RETRIES,
     _call_llm_streaming,
     _retry_on_transient,
     _run_llm_container,
@@ -48,7 +48,8 @@ def test_direct_uses_auth_token(mock_cls, monkeypatch):
     result = _run_llm_direct("hi", _make_config())
 
     mock_cls.assert_called_once_with(
-        auth_token="sk-ant-oat01-test", default_headers=_OAUTH_HEADERS,
+        auth_token="sk-ant-oat01-test",
+        default_headers=_OAUTH_HEADERS,
     )
     assert result == "Hello"
 
@@ -78,7 +79,8 @@ def test_direct_auth_token_takes_precedence(mock_cls, monkeypatch):
     _run_llm_direct("hi", _make_config())
 
     mock_cls.assert_called_once_with(
-        auth_token="sk-ant-oat01-token", default_headers=_OAUTH_HEADERS,
+        auth_token="sk-ant-oat01-token",
+        default_headers=_OAUTH_HEADERS,
     )
 
 
@@ -93,7 +95,8 @@ def test_direct_non_oauth_auth_token_no_headers(mock_cls, monkeypatch):
     _run_llm_direct("hi", _make_config())
 
     mock_cls.assert_called_once_with(
-        auth_token="sk-ant-other-token", default_headers={},
+        auth_token="sk-ant-other-token",
+        default_headers={},
     )
 
 
@@ -118,10 +121,9 @@ def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_pa
 
     # Use a real temp file in tmp_path so we can read it back
     env_file = tmp_path / "test.env"
-    mock_run.return_value = MagicMock(stdout="response")
+    mock_run.return_value = MagicMock(stdout="response", stderr="", returncode=0)
 
-    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
-               return_value=open(env_file, "w+")):
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
     cmd = mock_run.call_args[0][0]
@@ -138,10 +140,9 @@ def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
 
     env_file = tmp_path / "test.env"
-    mock_run.return_value = MagicMock(stdout="response")
+    mock_run.return_value = MagicMock(stdout="response", stderr="", returncode=0)
 
-    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
-               return_value=open(env_file, "w+")):
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
     contents = env_file.read_text()
@@ -156,10 +157,9 @@ def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch, tmp
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
 
     env_file = tmp_path / "test.env"
-    mock_run.return_value = MagicMock(stdout="response")
+    mock_run.return_value = MagicMock(stdout="response", stderr="", returncode=0)
 
-    with patch("taskrunner.llm.tempfile.NamedTemporaryFile",
-               return_value=open(env_file, "w+")):
+    with patch("taskrunner.llm.tempfile.NamedTemporaryFile", return_value=open(env_file, "w+")):
         _run_llm_container("hi", _make_config())
 
     contents = env_file.read_text()
@@ -206,7 +206,7 @@ class TestRetryOnTransient:
 
     def test_success_on_second_attempt(self) -> None:
         """Function should succeed after a transient error."""
-        exc = anthropic.APIStatusError(
+        anthropic.APIStatusError(
             message="overloaded",
             response=MagicMock(status_code=529),
             body=None,
@@ -360,7 +360,9 @@ class TestCallLlm:
 class TestSummarizeMessages:
     @patch("taskrunner.llm._run_llm_direct")
     @patch("taskrunner.llm._get_client")
-    def test_formats_tool_use_and_tool_result(self, mock_get_client, mock_direct, monkeypatch) -> None:
+    def test_formats_tool_use_and_tool_result(
+        self, mock_get_client, mock_direct, monkeypatch
+    ) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         mock_direct.return_value = "Summary of conversation"
 

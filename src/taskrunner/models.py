@@ -68,7 +68,7 @@ class LLMConfig(BaseModel):
 
 class MountConfig(BaseModel):
     """Configuration for mounting a host path into an executor container."""
-    
+
     path: str
     mode: str = Field(default="ro", pattern="^(ro|rw)$")
 
@@ -191,9 +191,7 @@ class WhatsAppChannelConfig(BaseModel):
     @model_validator(mode="after")
     def check_webhook_verify_token(self) -> WhatsAppChannelConfig:
         if self.mode == "webhook" and not self.webhook_verify_token:
-            raise ValueError(
-                "webhook_verify_token must be set when mode is 'webhook'"
-            )
+            raise ValueError("webhook_verify_token must be set when mode is 'webhook'")
         return self
 
     @field_validator("mode")
@@ -229,6 +227,7 @@ class TelegramChannelConfig(BaseModel):
     allowed_senders: list[str] = Field(default_factory=list)
     allowed_chats: list[str] = Field(default_factory=list)
     send_typing: bool = True
+    api_base_url: str | None = None  # Custom Bot API server (e.g. local test server)
 
     @model_validator(mode="after")
     def check_allowed_senders_required(self) -> TelegramChannelConfig:
@@ -241,9 +240,7 @@ class TelegramChannelConfig(BaseModel):
     @model_validator(mode="after")
     def check_webhook_secret(self) -> TelegramChannelConfig:
         if self.mode == "webhook" and not self.webhook_secret:
-            raise ValueError(
-                "webhook_secret must be set when mode is 'webhook'"
-            )
+            raise ValueError("webhook_secret must be set when mode is 'webhook'")
         return self
 
     @field_validator("mode")
@@ -272,6 +269,37 @@ class TelegramChannelConfig(BaseModel):
         if isinstance(v, str):
             v = [v]
         return [os.path.expandvars(s) for s in v]
+
+
+class TranscriptionConfig(BaseModel):
+    """Transcription backend settings (media.transcription)."""
+
+    backend: str = "openai"  # "openai" or "local"
+    model: str = "whisper-1"
+    api_key: str | None = None  # Falls back to llm.api_key / OPENAI_API_KEY
+
+
+class VisionConfig(BaseModel):
+    """Vision processing settings (media.vision)."""
+
+    max_pixels: int = 2048
+    quality: int = 85
+
+
+class MediaConfig(BaseModel):
+    """Media attachment handling settings.
+
+    Controls image and voice message processing.  When *enabled* is
+    ``False`` (or the section is absent), attachments are silently
+    ignored and only the text portion of messages is processed.
+    """
+
+    enabled: bool = True
+    storage_dir: str = "~/.creel/media"
+    max_file_size_mb: int = 20
+    retention_days: int = 30
+    transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
+    vision: VisionConfig = Field(default_factory=VisionConfig)
 
 
 class BridgeConfig(BaseModel):
@@ -313,7 +341,7 @@ class ChannelsConfig(BaseModel):
     def configured_channels(self) -> list[str]:
         """Return IDs of channels that have configuration present."""
         result = []
-        for name, field_info in self.model_fields.items():
+        for name, _field_info in self.model_fields.items():
             val = getattr(self, name, None)
             if val is not None and isinstance(val, BaseModel):
                 result.append(name)
@@ -351,6 +379,7 @@ class AgentDefinition(BaseModel):
     quiet_hours: QuietHoursConfig = Field(default_factory=QuietHoursConfig)
     bridge: BridgeConfig = Field(default_factory=BridgeConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
+    media: MediaConfig | None = None
     guardian: GuardianConfig | None = None
 
 
@@ -376,9 +405,7 @@ class TaskDefinition(BaseModel):
     def validate_cron(cls, v: str) -> str:
         parts = v.split()
         if len(parts) != 5:
-            raise ValueError(
-                f"schedule must be a 5-part cron expression, got {len(parts)} parts"
-            )
+            raise ValueError(f"schedule must be a 5-part cron expression, got {len(parts)} parts")
         return v
 
     @field_validator("mode")

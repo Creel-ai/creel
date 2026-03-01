@@ -70,12 +70,14 @@ def _serialize_content(content: list) -> list[dict]:
         if block.type == "text":
             serialized.append({"type": "text", "text": block.text})
         elif block.type == "tool_use":
-            serialized.append({
-                "type": "tool_use",
-                "id": block.id,
-                "name": block.name,
-                "input": block.input,
-            })
+            serialized.append(
+                {
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                }
+            )
     return serialized
 
 
@@ -126,16 +128,18 @@ def _run_session(client: anthropic.Anthropic, start: dict) -> None:
             # Final text response
             text = _extract_text(response)
             messages.append({"role": "assistant", "content": _serialize_content(response.content)})
-            _send({
-                "type": "final",
-                "text": text,
-                "turns_used": turns_used,
-                "tool_calls_made": tool_calls_made,
-                "stop_reason": "end_turn",
-                "tool_history": tool_history,
-                "last_input_tokens": last_input_tokens,
-                "messages": messages,
-            })
+            _send(
+                {
+                    "type": "final",
+                    "text": text,
+                    "turns_used": turns_used,
+                    "tool_calls_made": tool_calls_made,
+                    "stop_reason": "end_turn",
+                    "tool_history": tool_history,
+                    "last_input_tokens": last_input_tokens,
+                    "messages": messages,
+                }
+            )
             return
 
         # Tool calls - send request to host
@@ -144,11 +148,13 @@ def _run_session(client: anthropic.Anthropic, start: dict) -> None:
         calls = []
         for block in tool_use_blocks:
             tool_calls_made += 1
-            calls.append({
-                "id": block.id,
-                "name": block.name,
-                "input": block.input,
-            })
+            calls.append(
+                {
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                }
+            )
 
         _send({"type": "tool_request", "calls": calls})
 
@@ -160,24 +166,35 @@ def _run_session(client: anthropic.Anthropic, start: dict) -> None:
             return
 
         if results_msg.get("type") != "tool_results":
-            _send({"type": "error", "message": f"Expected 'tool_results', got '{results_msg.get('type')}'"})
+            _send(
+                {
+                    "type": "error",
+                    "message": f"Expected 'tool_results', got '{results_msg.get('type')}'",
+                }
+            )
             return
 
         # Build tool result message for Anthropic API
         tool_results = []
         for r in results_msg["results"]:
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": r["tool_use_id"],
-                "content": r["content"],
-                "is_error": r.get("is_error", False),
-            })
-            tool_history.append({
-                "tool": next((c["name"] for c in calls if c["id"] == r["tool_use_id"]), "unknown"),
-                "input": next((c["input"] for c in calls if c["id"] == r["tool_use_id"]), {}),
-                "output": r["content"],
-                "is_error": r.get("is_error", False),
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": r["tool_use_id"],
+                    "content": r["content"],
+                    "is_error": r.get("is_error", False),
+                }
+            )
+            tool_history.append(
+                {
+                    "tool": next(
+                        (c["name"] for c in calls if c["id"] == r["tool_use_id"]), "unknown"
+                    ),
+                    "input": next((c["input"] for c in calls if c["id"] == r["tool_use_id"]), {}),
+                    "output": r["content"],
+                    "is_error": r.get("is_error", False),
+                }
+            )
 
         messages.append({"role": "user", "content": tool_results})
 
@@ -200,16 +217,18 @@ def _run_session(client: anthropic.Anthropic, start: dict) -> None:
         text = f"Error on final turn: {e}"
 
     messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
-    _send({
-        "type": "final",
-        "text": text,
-        "turns_used": turns_used,
-        "tool_calls_made": tool_calls_made,
-        "stop_reason": "max_turns",
-        "tool_history": tool_history,
-        "last_input_tokens": last_input_tokens,
-        "messages": messages,
-    })
+    _send(
+        {
+            "type": "final",
+            "text": text,
+            "turns_used": turns_used,
+            "tool_calls_made": tool_calls_made,
+            "stop_reason": "max_turns",
+            "tool_history": tool_history,
+            "last_input_tokens": last_input_tokens,
+            "messages": messages,
+        }
+    )
 
 
 def main() -> None:

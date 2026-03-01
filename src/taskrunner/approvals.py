@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class PendingAction:
             tool_input=tool_input,
             sender_id=sender_id,
             policy_reason=reason,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
 
@@ -69,8 +69,7 @@ class ApprovalQueue:
     def get_pending(self, sender_id: str) -> PendingAction | None:
         """Get the most recent pending action for a sender."""
         pending = [
-            a for a in self._actions.values()
-            if a.sender_id == sender_id and a.status == "pending"
+            a for a in self._actions.values() if a.sender_id == sender_id and a.status == "pending"
         ]
         if not pending:
             return None
@@ -94,7 +93,7 @@ class ApprovalQueue:
 
     def cleanup(self, max_age_hours: int = 24) -> int:
         """Remove old resolved/expired actions. Returns count removed."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         to_remove = []
         for aid, action in self._actions.items():
             created = datetime.fromisoformat(action.created_at)

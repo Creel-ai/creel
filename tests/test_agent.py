@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from taskrunner.agent import AgentResult, run_agent_loop
+from taskrunner.agent import run_agent_loop
 from taskrunner.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
 
 
@@ -41,7 +41,9 @@ def _text_message(text: str, input_tokens: int = 100) -> MagicMock:
     return msg
 
 
-def _tool_use_message(tool_name: str, tool_input: dict, tool_id: str = "toolu_1", input_tokens: int = 100) -> MagicMock:
+def _tool_use_message(
+    tool_name: str, tool_input: dict, tool_id: str = "toolu_1", input_tokens: int = 100
+) -> MagicMock:
     """Create a mock Anthropic Message with a tool_use block."""
     tool_block = MagicMock()
     tool_block.type = "tool_use"
@@ -244,7 +246,9 @@ def test_classify_output_screens_executor_result(mock_call_llm, mock_execute):
         "read_email": ToolConfig(
             executor="gmail_readonly",
             description="Read email",
-            parameters={"message_id": ToolParameter(type="string", description="ID", required=True)},
+            parameters={
+                "message_id": ToolParameter(type="string", description="ID", required=True)
+            },
             classify_output=True,
         ),
     }
@@ -287,7 +291,9 @@ def test_classify_output_passes_clean_result(mock_call_llm, mock_execute):
         "read_email": ToolConfig(
             executor="gmail_readonly",
             description="Read email",
-            parameters={"message_id": ToolParameter(type="string", description="ID", required=True)},
+            parameters={
+                "message_id": ToolParameter(type="string", description="ID", required=True)
+            },
             classify_output=True,
         ),
     }

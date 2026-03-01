@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+CronTarget = Literal["main", "isolated"]
 
 StreamEventType = Literal[
     "start",
@@ -76,3 +77,51 @@ class StreamEvent(BaseModel):
     sender_id: str
     session_id: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+# --- Cron job contracts ---
+
+
+class CreateCronJobRequest(BaseModel):
+    """Request payload for creating a cron job."""
+
+    name: str = Field(min_length=1, max_length=256)
+    schedule: dict[str, Any]
+    target: CronTarget = "isolated"
+    payload: dict[str, Any]
+    delivery: dict[str, Any] | None = None
+    enabled: bool = True
+
+
+class UpdateCronJobRequest(BaseModel):
+    """Request payload for updating a cron job (partial update)."""
+
+    name: str | None = None
+    schedule: dict[str, Any] | None = None
+    payload: dict[str, Any] | None = None
+    delivery: dict[str, Any] | None = None
+    enabled: bool | None = None
+
+
+class CronJobResponse(BaseModel):
+    """Response payload for a single cron job."""
+
+    id: str
+    name: str
+    schedule: dict[str, Any]
+    target: str
+    payload: dict[str, Any]
+    delivery: dict[str, Any]
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
+class RunRecordResponse(BaseModel):
+    """Response payload for a single run record."""
+
+    job_id: str
+    started_at: str
+    ended_at: str | None
+    status: str
+    error: str | None

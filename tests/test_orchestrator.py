@@ -47,9 +47,7 @@ def test_dry_run(tmp_path: Path) -> None:
     """Dry run should render the prompt without calling LLM or output."""
     task_path = _make_task(tmp_path)
 
-    with patch(
-        "taskrunner.orchestrator._run_executor_inline"
-    ) as mock_fetch:
+    with patch("taskrunner.orchestrator._run_executor_inline") as mock_fetch:
         mock_fetch.return_value = '{"temp_f": "72", "condition": "sunny"}'
         result = run_task(task_path, dry_run=True)
 
@@ -105,9 +103,11 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
         patch("taskrunner.orchestrator.run_llm") as mock_llm,
         patch("taskrunner.orchestrator.send_output"),
     ):
-        mock_gmail.return_value = json.dumps([
-            {"subject": "Important", "from": "boss@example.com", "snippet": "Need reply"},
-        ])
+        mock_gmail.return_value = json.dumps(
+            [
+                {"subject": "Important", "from": "boss@example.com", "snippet": "Need reply"},
+            ]
+        )
         mock_llm.return_value = "You have 1 email from your boss."
 
         result = run_task(path)
@@ -167,7 +167,11 @@ class TestRunExecutorInline:
             ("apple_reminders", "taskrunner.orchestrator._exec_apple_reminders_inline"),
             ("brave_search", "taskrunner.orchestrator._exec_brave_search_inline"),
             ("notion", "taskrunner.orchestrator._exec_notion_inline"),
+            ("notion_write", "taskrunner.orchestrator._exec_notion_write_inline"),
             ("fetch_url", "taskrunner.orchestrator._exec_fetch_url_inline"),
+            ("google_docs", "taskrunner.orchestrator._exec_google_docs_inline"),
+            ("google_sheets", "taskrunner.orchestrator._exec_google_sheets_inline"),
+            ("google_slides", "taskrunner.orchestrator._exec_google_slides_inline"),
         ],
     )
     def test_dispatch_executor(self, name, mock_target) -> None:
@@ -199,9 +203,7 @@ class TestRunExecutorInline:
 
     def test_dispatch_exec(self) -> None:
         cfg = self._cfg(command="echo hi")
-        with patch(
-            "taskrunner.orchestrator._exec_exec_inline", return_value="hi"
-        ) as mock_fn:
+        with patch("taskrunner.orchestrator._exec_exec_inline", return_value="hi") as mock_fn:
             result = _run_executor_inline("exec", cfg)
         assert result == "hi"
         mock_fn.assert_called_once_with(cfg)
@@ -439,7 +441,7 @@ class TestAgentMode:
         os.environ["AGE_IDENTITY_FILE"] = str(key_file)
         try:
             with (
-                patch("taskrunner.orchestrator._run_executor_inline", return_value='{}'),
+                patch("taskrunner.orchestrator._run_executor_inline", return_value="{}"),
                 patch("taskrunner.orchestrator.run_llm", return_value="ok"),
                 patch("taskrunner.orchestrator.send_output"),
             ):
@@ -490,3 +492,347 @@ class TestGmailExecutorInline:
         cfg = ExecutorConfig(args={"action": "unknown", "message_id": "msg-3"})
         with pytest.raises(ValueError, match="unknown action"):
             _run_executor_inline("gmail_modify", cfg)
+
+
+# ---------------------------------------------------------------------------
+# Google Docs/Sheets/Slides inline handler tests
+# ---------------------------------------------------------------------------
+
+
+class TestGoogleDocsInline:
+    def test_google_docs_inline_dispatches_read(self) -> None:
+        cfg = ExecutorConfig(args={"action": "read", "document_id": "doc-1"})
+        with patch(
+            "executors.google_docs.executor.read_document",
+            return_value={"documentId": "doc-1", "title": "T", "content": "c"},
+        ) as mock_read:
+            result = _run_executor_inline("google_docs", cfg)
+        assert "doc-1" in result
+        mock_read.assert_called_once_with("doc-1")
+
+    def test_google_docs_inline_dispatches_create(self) -> None:
+        cfg = ExecutorConfig(args={"action": "create", "title": "New Doc", "body": "Hello"})
+        with patch(
+            "executors.google_docs.executor.create_document",
+            return_value={"documentId": "new", "url": "http://x"},
+        ) as mock_create:
+            result = _run_executor_inline("google_docs", cfg)
+        assert "new" in result
+        mock_create.assert_called_once_with("New Doc", "Hello")
+
+    def test_google_docs_inline_dispatches_append(self) -> None:
+        cfg = ExecutorConfig(args={"action": "append", "document_id": "doc-1", "text": "more"})
+        with patch(
+            "executors.google_docs.executor.append_text",
+            return_value={"documentId": "doc-1", "appended": True},
+        ) as mock_append:
+            result = _run_executor_inline("google_docs", cfg)
+        assert "appended" in result
+        mock_append.assert_called_once_with("doc-1", "more")
+
+    def test_google_docs_inline_dispatches_replace(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "replace",
+                "document_id": "doc-1",
+                "find": "old",
+                "replace_with": "new",
+            }
+        )
+        with patch(
+            "executors.google_docs.executor.replace_text",
+            return_value={"documentId": "doc-1", "occurrencesChanged": 2},
+        ) as mock_replace:
+            result = _run_executor_inline("google_docs", cfg)
+        assert "2" in result
+        mock_replace.assert_called_once_with("doc-1", "old", "new", True)
+
+    def test_google_docs_inline_dispatches_insert(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "insert",
+                "document_id": "doc-1",
+                "text": "inserted",
+                "index": "5",
+            }
+        )
+        with patch(
+            "executors.google_docs.executor.insert_text",
+            return_value={"documentId": "doc-1", "inserted": True},
+        ) as mock_insert:
+            result = _run_executor_inline("google_docs", cfg)
+        assert "inserted" in result
+        mock_insert.assert_called_once_with("doc-1", "inserted", 5)
+
+    def test_google_docs_inline_unknown_action_raises(self) -> None:
+        cfg = ExecutorConfig(args={"action": "bad"})
+        with pytest.raises(ValueError, match="unknown action"):
+            _run_executor_inline("google_docs", cfg)
+
+
+class TestGoogleSheetsInline:
+    def test_google_sheets_inline_dispatches_read(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "read",
+                "spreadsheet_id": "sheet-1",
+                "range": "A1:B2",
+            }
+        )
+        with patch(
+            "executors.google_sheets.executor.read_sheet",
+            return_value={"range": "A1:B2", "values": [["a"]]},
+        ) as mock_read:
+            result = _run_executor_inline("google_sheets", cfg)
+        assert "A1:B2" in result
+        mock_read.assert_called_once_with("sheet-1", "A1:B2")
+
+    def test_google_sheets_inline_dispatches_write(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "write",
+                "spreadsheet_id": "sheet-1",
+                "range": "A1",
+                "data": '[["x"]]',
+            }
+        )
+        with patch(
+            "executors.google_sheets.executor.write_to_sheet",
+            return_value={"updatedCells": 1},
+        ) as mock_write:
+            result = _run_executor_inline("google_sheets", cfg)
+        assert "1" in result
+        mock_write.assert_called_once_with("sheet-1", "A1", '[["x"]]', "USER_ENTERED")
+
+    def test_google_sheets_inline_dispatches_create(self) -> None:
+        cfg = ExecutorConfig(args={"action": "create", "title": "New Sheet"})
+        with patch(
+            "executors.google_sheets.executor.create_spreadsheet",
+            return_value={"spreadsheetId": "new", "url": "http://x"},
+        ) as mock_create:
+            result = _run_executor_inline("google_sheets", cfg)
+        assert "new" in result
+        mock_create.assert_called_once_with("New Sheet", "", "")
+
+    def test_google_sheets_inline_dispatches_append(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "append",
+                "spreadsheet_id": "sheet-1",
+                "range": "A:B",
+                "data": '[["y"]]',
+            }
+        )
+        with patch(
+            "executors.google_sheets.executor.append_to_sheet",
+            return_value={"updatedCells": 1},
+        ) as mock_append:
+            result = _run_executor_inline("google_sheets", cfg)
+        assert "1" in result
+        mock_append.assert_called_once_with("sheet-1", "A:B", '[["y"]]', "USER_ENTERED")
+
+    def test_google_sheets_inline_unknown_action_raises(self) -> None:
+        cfg = ExecutorConfig(args={"action": "bad"})
+        with pytest.raises(ValueError, match="unknown action"):
+            _run_executor_inline("google_sheets", cfg)
+
+
+class TestGoogleSlidesInline:
+    def test_google_slides_inline_dispatches_read(self) -> None:
+        cfg = ExecutorConfig(args={"action": "read", "presentation_id": "pres-1"})
+        with patch(
+            "executors.google_slides.executor.read_presentation",
+            return_value={"presentationId": "pres-1", "slideCount": 2, "slides": []},
+        ) as mock_read:
+            result = _run_executor_inline("google_slides", cfg)
+        assert "pres-1" in result
+        mock_read.assert_called_once_with("pres-1")
+
+    def test_google_slides_inline_dispatches_create(self) -> None:
+        cfg = ExecutorConfig(args={"action": "create", "title": "New Pres"})
+        with patch(
+            "executors.google_slides.executor.create_presentation",
+            return_value={"presentationId": "new", "url": "http://x"},
+        ) as mock_create:
+            result = _run_executor_inline("google_slides", cfg)
+        assert "new" in result
+        mock_create.assert_called_once_with("New Pres")
+
+    def test_google_slides_inline_dispatches_add_slide(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "add_slide",
+                "presentation_id": "pres-1",
+                "title": "Slide Title",
+                "body": "Slide body",
+            }
+        )
+        with patch(
+            "executors.google_slides.executor.add_slide",
+            return_value={"presentationId": "pres-1", "slideId": "s1"},
+        ) as mock_add:
+            result = _run_executor_inline("google_slides", cfg)
+        assert "s1" in result
+        mock_add.assert_called_once_with("pres-1", "Slide Title", "Slide body", "BLANK")
+
+    def test_google_slides_inline_dispatches_replace_text(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "replace_text",
+                "presentation_id": "pres-1",
+                "find": "old",
+                "replace_with": "new",
+            }
+        )
+        with patch(
+            "executors.google_slides.executor.replace_text",
+            return_value={"presentationId": "pres-1", "occurrencesChanged": 3},
+        ) as mock_replace:
+            result = _run_executor_inline("google_slides", cfg)
+        assert "3" in result
+        mock_replace.assert_called_once_with("pres-1", "old", "new", True)
+
+    def test_google_slides_inline_unknown_action_raises(self) -> None:
+        cfg = ExecutorConfig(args={"action": "bad"})
+        with pytest.raises(ValueError, match="unknown action"):
+            _run_executor_inline("google_slides", cfg)
+
+
+# ---------------------------------------------------------------------------
+# E2E orchestrator pipeline tests for Google Docs/Sheets/Slides
+# ---------------------------------------------------------------------------
+
+
+class TestGoogleExecutorsE2E:
+    def test_google_sheets_executor_through_orchestrator(self, tmp_path: Path) -> None:
+        """Sheets executor should work through the full task pipeline."""
+        task = {
+            "name": "sheets_test",
+            "schedule": "0 8 * * *",
+            "executors": {
+                "google_sheets": {
+                    "args": {
+                        "action": "read",
+                        "spreadsheet_id": "abc123",
+                        "range": "Sheet1!A1:B2",
+                    },
+                }
+            },
+            "prompt": "Date: {date}\nSheet data: {google_sheets}",
+            "output": {"type": "stdout", "to": ""},
+            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        }
+        path = tmp_path / "sheets_test.yaml"
+        path.write_text(yaml.dump(task))
+
+        with (
+            patch("taskrunner.orchestrator._exec_google_sheets_inline") as mock_sheets,
+            patch("taskrunner.orchestrator.run_llm") as mock_llm,
+            patch("taskrunner.orchestrator.send_output"),
+        ):
+            mock_sheets.return_value = json.dumps({"values": [["Name", "Age"], ["Alice", "30"]]})
+            mock_llm.return_value = "The sheet contains Alice, age 30."
+            result = run_task(path)
+
+        assert result == "The sheet contains Alice, age 30."
+        mock_sheets.assert_called_once()
+        prompt = mock_llm.call_args[0][0]
+        assert "Alice" in prompt
+
+    def test_google_docs_executor_through_orchestrator(self, tmp_path: Path) -> None:
+        """Docs executor should work through the full task pipeline."""
+        task = {
+            "name": "docs_test",
+            "schedule": "0 8 * * *",
+            "executors": {
+                "google_docs": {
+                    "args": {"action": "read", "document_id": "doc-xyz"},
+                }
+            },
+            "prompt": "Date: {date}\nDocument: {google_docs}",
+            "output": {"type": "stdout", "to": ""},
+            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        }
+        path = tmp_path / "docs_test.yaml"
+        path.write_text(yaml.dump(task))
+
+        with (
+            patch("taskrunner.orchestrator._exec_google_docs_inline") as mock_docs,
+            patch("taskrunner.orchestrator.run_llm") as mock_llm,
+            patch("taskrunner.orchestrator.send_output"),
+        ):
+            mock_docs.return_value = json.dumps(
+                {"documentId": "doc-xyz", "title": "Report", "content": "Q1 revenue was $1M."}
+            )
+            mock_llm.return_value = "The document reports Q1 revenue of $1M."
+            result = run_task(path)
+
+        assert result == "The document reports Q1 revenue of $1M."
+        mock_docs.assert_called_once()
+        prompt = mock_llm.call_args[0][0]
+        assert "Q1 revenue" in prompt
+
+    def test_google_slides_executor_through_orchestrator(self, tmp_path: Path) -> None:
+        """Slides executor should work through the full task pipeline."""
+        task = {
+            "name": "slides_test",
+            "schedule": "0 8 * * *",
+            "executors": {
+                "google_slides": {
+                    "args": {"action": "read", "presentation_id": "pres-abc"},
+                }
+            },
+            "prompt": "Date: {date}\nPresentation: {google_slides}",
+            "output": {"type": "stdout", "to": ""},
+            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        }
+        path = tmp_path / "slides_test.yaml"
+        path.write_text(yaml.dump(task))
+
+        with (
+            patch("taskrunner.orchestrator._exec_google_slides_inline") as mock_slides,
+            patch("taskrunner.orchestrator.run_llm") as mock_llm,
+            patch("taskrunner.orchestrator.send_output"),
+        ):
+            mock_slides.return_value = json.dumps(
+                {"presentationId": "pres-abc", "title": "Q1 Review", "slideCount": 3, "slides": []}
+            )
+            mock_llm.return_value = "The presentation has 3 slides about Q1."
+            result = run_task(path)
+
+        assert result == "The presentation has 3 slides about Q1."
+        mock_slides.assert_called_once()
+        prompt = mock_llm.call_args[0][0]
+        assert "Q1 Review" in prompt
+
+    def test_google_docs_executor_failure_continues(self, tmp_path: Path) -> None:
+        """If Docs executor fails, task should continue with error placeholder."""
+        task = {
+            "name": "docs_fail_test",
+            "schedule": "0 8 * * *",
+            "executors": {
+                "google_docs": {
+                    "args": {"action": "read", "document_id": "doc-bad"},
+                }
+            },
+            "prompt": "Date: {date}\nDocument: {google_docs}",
+            "output": {"type": "stdout", "to": ""},
+            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        }
+        path = tmp_path / "docs_fail_test.yaml"
+        path.write_text(yaml.dump(task))
+
+        with (
+            patch(
+                "taskrunner.orchestrator._exec_google_docs_inline",
+                side_effect=RuntimeError("API quota exceeded"),
+            ),
+            patch("taskrunner.orchestrator.run_llm") as mock_llm,
+            patch("taskrunner.orchestrator.send_output"),
+        ):
+            mock_llm.return_value = "Could not read the document."
+            result = run_task(path)
+
+        assert result == "Could not read the document."
+        prompt = mock_llm.call_args[0][0]
+        assert "[Error fetching google_docs" in prompt

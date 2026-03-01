@@ -11,8 +11,6 @@ Run with:
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 import pytest_asyncio
 
@@ -27,9 +25,7 @@ def _docker_available() -> bool:
     import subprocess
 
     try:
-        result = subprocess.run(
-            ["docker", "info"], capture_output=True, timeout=5
-        )
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
         return result.returncode == 0
     except Exception:
         return False
@@ -88,9 +84,7 @@ class TestManagedModeSmoke:
         assert len(result["content"]) > 0
 
         # Verify we got a heading node
-        heading = next(
-            (n for n in result["content"] if n["role"] == "heading"), None
-        )
+        heading = next((n for n in result["content"] if n["role"] == "heading"), None)
         assert heading is not None
         assert "Example Domain" in heading.get("name", "")
 
@@ -215,6 +209,7 @@ def _chrome_available() -> bool:
     """Check if a local Chrome/Chromium is installed."""
     try:
         from bridge.browser import _find_chrome_binary
+
         _find_chrome_binary()
         return True
     except FileNotFoundError:

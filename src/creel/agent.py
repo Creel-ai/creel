@@ -22,6 +22,7 @@ class PendingApproval:
     tool_name: str
     tool_input: dict
     reason: str
+    tool_use_id: str = ""
 
 
 @dataclass
@@ -452,6 +453,7 @@ def run_agent_loop(
                                 tool_name=tool_name,
                                 tool_input=tool_input,
                                 reason=decision.reason,
+                                tool_use_id=block.id,
                             ),
                             last_input_tokens=last_input_tokens,
                         )

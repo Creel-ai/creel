@@ -23,6 +23,7 @@ class PendingAction:
     policy_reason: str
     created_at: str  # ISO format
     status: str = "pending"  # pending | approved | denied | expired
+    tool_use_id: str = ""
 
     @staticmethod
     def create(
@@ -30,6 +31,7 @@ class PendingAction:
         tool_name: str,
         tool_input: dict,
         reason: str,
+        tool_use_id: str = "",
     ) -> PendingAction:
         return PendingAction(
             id=uuid.uuid4().hex[:8],
@@ -38,6 +40,7 @@ class PendingAction:
             sender_id=sender_id,
             policy_reason=reason,
             created_at=datetime.now(UTC).isoformat(),
+            tool_use_id=tool_use_id,
         )
 
 
@@ -59,8 +62,9 @@ class ApprovalQueue:
         tool_name: str,
         tool_input: dict,
         reason: str,
+        tool_use_id: str = "",
     ) -> PendingAction:
-        action = PendingAction.create(sender_id, tool_name, tool_input, reason)
+        action = PendingAction.create(sender_id, tool_name, tool_input, reason, tool_use_id=tool_use_id)
         self._actions[action.id] = action
         self._save()
         logger.info("Queued pending action %s: %s for %s", action.id, tool_name, sender_id)

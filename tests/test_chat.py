@@ -229,16 +229,22 @@ class TestSystemPrompt:
 
 class TestApprovalFlow:
     def test_approval_required_queues_action(self, tmp_path) -> None:
+        from creel.agent import AgentResult, PendingApproval
+
         agent_def = _make_agent_def(tmp_path)
         server = ChatServer(agent_def)
 
-        pending = MagicMock()
-        pending.tool_name = "gmail_send"
-        pending.tool_input = {"to": "user@example.com"}
-        pending.reason = "policy requires review"
+        pending = PendingApproval(
+            tool_name="gmail_send",
+            tool_input={"to": "user@example.com"},
+            reason="policy requires review",
+            tool_use_id="tool_abc",
+        )
 
-        mock_result = _make_agent_result(
-            "waiting",
+        mock_result = AgentResult(
+            text="waiting",
+            turns_used=1,
+            tool_calls_made=0,
             stop_reason="approval_required",
             pending_approval=pending,
         )
@@ -264,6 +270,8 @@ class TestApprovalFlow:
         assert "denied" in result.lower()
 
     def test_approval_path_executes_tool(self, tmp_path) -> None:
+        from creel.agent import AgentResult
+
         agent_def = _make_agent_def(tmp_path)
         server = ChatServer(agent_def)
 
@@ -274,16 +282,24 @@ class TestApprovalFlow:
             reason="review needed",
         )
 
-        with patch(
-            "creel.chat.execute_tool_call",
-            return_value='{"temp": 72}',
+        resume_result = AgentResult(
+            text="The weather in Denver is 72°F.",
+            turns_used=1,
+            tool_calls_made=0,
+            stop_reason="end_turn",
+        )
+
+        with (
+            patch("creel.chat.execute_tool_call", return_value='{"temp": 72}'),
+            patch("creel.chat.run_agent_loop", return_value=resume_result),
         ):
             result = server.handle_message("user1", "y")
 
-        assert "approved" in result.lower()
-        assert "executed" in result.lower()
+        assert result == "The weather in Denver is 72°F."
 
     def test_approval_execution_failure(self, tmp_path) -> None:
+        from creel.agent import AgentResult
+
         agent_def = _make_agent_def(tmp_path)
         server = ChatServer(agent_def)
 
@@ -294,9 +310,16 @@ class TestApprovalFlow:
             reason="review",
         )
 
-        with patch(
-            "creel.chat.execute_tool_call",
-            side_effect=RuntimeError("executor crashed"),
+        resume_result = AgentResult(
+            text="Sorry, I couldn't get the weather. The executor failed.",
+            turns_used=1,
+            tool_calls_made=0,
+            stop_reason="end_turn",
+        )
+
+        with (
+            patch("creel.chat.execute_tool_call", side_effect=RuntimeError("executor crashed")),
+            patch("creel.chat.run_agent_loop", return_value=resume_result),
         ):
             result = server.handle_message("user1", "y")
 

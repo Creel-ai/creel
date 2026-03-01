@@ -560,6 +560,7 @@ def _handle_tool_request(
                             tool_name=tool_name,
                             tool_input=tool_input,
                             reason=decision.reason,
+                            tool_use_id=tool_id,
                         ),
                     )
                     return None, pending_result

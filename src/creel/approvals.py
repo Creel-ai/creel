@@ -64,7 +64,9 @@ class ApprovalQueue:
         reason: str,
         tool_use_id: str = "",
     ) -> PendingAction:
-        action = PendingAction.create(sender_id, tool_name, tool_input, reason, tool_use_id=tool_use_id)
+        action = PendingAction.create(
+            sender_id, tool_name, tool_input, reason, tool_use_id=tool_use_id
+        )
         self._actions[action.id] = action
         self._save()
         logger.info("Queued pending action %s: %s for %s", action.id, tool_name, sender_id)

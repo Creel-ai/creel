@@ -280,15 +280,6 @@ class ChatServer:
         else:
             session = self._session_mgr.add_user_message(sender_id, text)
 
-        # Build system prompt using the prompt builder
-        system_prompt = self._build_system_prompt()
-
-        # Load LLM secrets if configured
-        if self._agent_def.llm.secrets:
-            from creel.orchestrator import _load_secrets_to_env
-
-            _load_secrets_to_env(self._agent_def.llm.secrets)
-
         # Build the confirm_action callback for this request.
         # --auto-approve from `creel send` provides a callback that always
         # approves, so REVIEW-verdict tools execute immediately instead of
@@ -313,40 +304,12 @@ class ChatServer:
         session_state["sender_id"] = sender_id
 
         # Run the agent loop (containerized or direct)
-        if self._use_containers:
-            from creel.container_agent import run_agent_loop_container
-
-            result = run_agent_loop_container(
-                messages=session.messages,
-                llm_config=self._agent_def.llm,
-                tools_config=self._agent_def.tools,
-                agent_config=self._agent_def.agent,
-                system_prompt=system_prompt,
-                use_containers=self._use_containers,
-                guardian=self._guardian,
-                confirm_action=confirm_action,
-                memory_manager=self._memory,
-                bridge_config=self._agent_def.bridge,
-                session_state=session_state,
-                container_pool=self._container_pool,
-            )
-        else:
-            result = run_agent_loop(
-                messages=session.messages,
-                llm_config=self._agent_def.llm,
-                tools_config=self._agent_def.tools,
-                agent_config=self._agent_def.agent,
-                system_prompt=system_prompt,
-                use_containers=self._use_containers,
-                guardian=self._guardian,
-                confirm_action=confirm_action,
-                memory_manager=self._memory,
-                on_text_delta=on_text_delta,
-                bridge_config=self._agent_def.bridge,
-                session_state=session_state,
-                cron_manager=self._cron_manager,
-                subagent_manager=self._subagent_manager,
-            )
+        result = self._invoke_agent_loop(
+            session.messages,
+            session_state,
+            confirm_action=confirm_action,
+            on_text_delta=on_text_delta,
+        )
 
         logger.info(
             "Agent response for %s: %d chars, %d turns, %d tool calls (%s)",
@@ -517,6 +480,63 @@ class ChatServer:
         else:
             logger.info("Approval request (no reply channel): %s", msg)
 
+    def _invoke_agent_loop(
+        self,
+        messages: list[dict],
+        session_state: dict,
+        *,
+        confirm_action: Callable[[str, dict, str], bool] | None = None,
+        on_text_delta: Callable[[str], None] | None = None,
+    ):
+        """Build system prompt, load secrets, and run the agent loop.
+
+        Centralises the "prepare + invoke" sequence so handle_message and
+        _handle_approval_response stay in sync.
+        """
+        from creel.agent import AgentResult  # noqa: F811 — local re-import for type hint
+
+        system_prompt = self._build_system_prompt()
+
+        if self._agent_def.llm.secrets:
+            from creel.orchestrator import _load_secrets_to_env
+
+            _load_secrets_to_env(self._agent_def.llm.secrets)
+
+        if self._use_containers:
+            from creel.container_agent import run_agent_loop_container
+
+            return run_agent_loop_container(
+                messages=messages,
+                llm_config=self._agent_def.llm,
+                tools_config=self._agent_def.tools,
+                agent_config=self._agent_def.agent,
+                system_prompt=system_prompt,
+                use_containers=self._use_containers,
+                guardian=self._guardian,
+                confirm_action=confirm_action,
+                memory_manager=self._memory,
+                bridge_config=self._agent_def.bridge,
+                session_state=session_state,
+                container_pool=self._container_pool,
+            )
+
+        return run_agent_loop(
+            messages=messages,
+            llm_config=self._agent_def.llm,
+            tools_config=self._agent_def.tools,
+            agent_config=self._agent_def.agent,
+            system_prompt=system_prompt,
+            use_containers=self._use_containers,
+            guardian=self._guardian,
+            confirm_action=confirm_action,
+            memory_manager=self._memory,
+            on_text_delta=on_text_delta,
+            bridge_config=self._agent_def.bridge,
+            session_state=session_state,
+            cron_manager=self._cron_manager,
+            subagent_manager=self._subagent_manager,
+        )
+
     def _handle_approval_response(
         self,
         sender_id: str,
@@ -570,44 +590,7 @@ class ChatServer:
             self._patch_tool_result(session.messages, pending.tool_use_id, tool_result, is_error)
 
         # Resume the agent loop so the LLM can process the tool output
-        system_prompt = self._build_system_prompt()
-
-        if self._agent_def.llm.secrets:
-            from creel.orchestrator import _load_secrets_to_env
-
-            _load_secrets_to_env(self._agent_def.llm.secrets)
-
-        if self._use_containers:
-            from creel.container_agent import run_agent_loop_container
-
-            result = run_agent_loop_container(
-                messages=session.messages,
-                llm_config=self._agent_def.llm,
-                tools_config=self._agent_def.tools,
-                agent_config=self._agent_def.agent,
-                system_prompt=system_prompt,
-                use_containers=self._use_containers,
-                guardian=self._guardian,
-                memory_manager=self._memory,
-                bridge_config=self._agent_def.bridge,
-                session_state=session_state,
-                container_pool=self._container_pool,
-            )
-        else:
-            result = run_agent_loop(
-                messages=session.messages,
-                llm_config=self._agent_def.llm,
-                tools_config=self._agent_def.tools,
-                agent_config=self._agent_def.agent,
-                system_prompt=system_prompt,
-                use_containers=self._use_containers,
-                guardian=self._guardian,
-                memory_manager=self._memory,
-                bridge_config=self._agent_def.bridge,
-                session_state=session_state,
-                cron_manager=self._cron_manager,
-                subagent_manager=self._subagent_manager,
-            )
+        result = self._invoke_agent_loop(session.messages, session_state)
 
         # Update token count for session compaction
         last_tokens = getattr(result, "last_input_tokens", 0)

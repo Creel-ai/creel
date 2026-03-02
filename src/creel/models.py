@@ -93,7 +93,7 @@ class ToolConfig(BaseModel):
     mounts: list[MountConfig] = Field(default_factory=list)
     network: bool = False
     image: str | None = None
-    host_auth: bool = False
+    host_auth: bool = Field(default=False, description="Mount host CLI auth into executor container (read-only)")
 
 
 class AgentConfig(BaseModel):

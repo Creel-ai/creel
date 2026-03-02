@@ -1261,13 +1261,13 @@ def _run_executor_container(
                     f"host_auth is not supported for executor '{executor_name}' "
                     f"(supported: {sorted(_HOST_AUTH_REGISTRY)})"
                 )
-            host_path = Path(os.path.expanduser(auth_entry["host_path"]))
-            if not host_path.is_dir():
+            auth_host_path = Path(os.path.expanduser(auth_entry["host_path"]))
+            if not auth_host_path.is_dir():
                 raise RuntimeError(
-                    f"Host auth directory not found: {host_path} — "
+                    f"Host auth directory not found: {auth_host_path} — "
                     f"run `gh auth login` to authenticate first"
                 )
-            docker_cmd.extend(["-v", f"{host_path}:{auth_entry['container_path']}:ro"])
+            docker_cmd.extend(["-v", f"{auth_host_path}:{auth_entry['container_path']}:ro"])
 
         # Mount dynamic workspace for file_ops executor
         if _workspace_mount:

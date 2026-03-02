@@ -13,7 +13,7 @@ import threading
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypedDict
 
 from creel.llm import run_llm
 from creel.models import BridgeConfig, ExecutorConfig, TaskDefinition, ToolConfig, load_task
@@ -178,7 +178,12 @@ _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "git_ops": "GIT",
 }
 
-_HOST_AUTH_REGISTRY: dict[str, dict[str, Any]] = {
+class _HostAuthEntry(TypedDict):
+    host_path: str
+    container_path: str
+
+
+_HOST_AUTH_REGISTRY: dict[str, _HostAuthEntry] = {
     "github": {
         "host_path": "~/.config/gh",
         "container_path": "/home/executor/.config/gh",

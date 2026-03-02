@@ -23,14 +23,11 @@ class TestValidateSecrets:
         agent = _make_agent_def()
         validate_secrets(agent)  # should not raise
 
-    def test_missing_enc_file_warns(self, tmp_path: Path, caplog):
-        """Missing secrets file should warn, not raise."""
-        import logging
-
+    def test_missing_llm_secrets_raises(self, tmp_path: Path):
+        """Missing LLM secrets file should raise — the LLM is required."""
         agent = _make_agent_def(llm_secrets=str(tmp_path / "nonexistent.enc"))
-        with caplog.at_level(logging.WARNING):
-            validate_secrets(agent)  # should not raise
-        assert "secrets file not found" in caplog.text
+        with pytest.raises(SecretsValidationError, match="secrets file not found"):
+            validate_secrets(agent)
 
     def test_missing_identity_file_raises(self, tmp_path: Path, monkeypatch):
         # Create a dummy .enc file

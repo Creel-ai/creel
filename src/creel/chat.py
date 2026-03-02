@@ -609,6 +609,11 @@ class ChatServer:
                 subagent_manager=self._subagent_manager,
             )
 
+        # Update token count for session compaction
+        last_tokens = getattr(result, "last_input_tokens", 0)
+        if isinstance(last_tokens, int) and last_tokens > 0:
+            self._session_mgr.update_token_count(sender_id, last_tokens)
+
         # If the resumed loop itself hits another approval_required, queue it
         if result.stop_reason == "approval_required" and result.pending_approval:
             pa = result.pending_approval

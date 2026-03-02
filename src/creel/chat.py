@@ -553,12 +553,17 @@ class ChatServer:
             # injecting a separate user message (which would create consecutive
             # user-role messages and break the Anthropic API contract).
             if pending.tool_use_id:
-                self._patch_tool_result(
+                if not self._patch_tool_result(
                     session.messages,
                     pending.tool_use_id,
                     f"Action denied by user: {pending.policy_reason}",
                     is_error=True,
-                )
+                ):
+                    logger.warning(
+                        "Could not patch tool_result for %s (tool_use_id=%s)",
+                        pending.tool_name,
+                        pending.tool_use_id,
+                    )
             self._session_mgr.save_session(session)
             return f"❌ Action denied: {pending.tool_name}"
 
@@ -587,7 +592,14 @@ class ChatServer:
         # (matching pending.tool_use_id) with the real execution result so
         # the LLM sees the actual output when we resume the agent loop.
         if pending.tool_use_id:
-            self._patch_tool_result(session.messages, pending.tool_use_id, tool_result, is_error)
+            if not self._patch_tool_result(
+                session.messages, pending.tool_use_id, tool_result, is_error
+            ):
+                logger.warning(
+                    "Could not patch tool_result for %s (tool_use_id=%s)",
+                    pending.tool_name,
+                    pending.tool_use_id,
+                )
 
         # Resume the agent loop so the LLM can process the tool output
         result = self._invoke_agent_loop(session.messages, session_state)

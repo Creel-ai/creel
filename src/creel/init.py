@@ -215,15 +215,17 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
                 bot_token = ""
                 print("  Skipped — no bot token will be saved.")
 
-        senders_raw = _prompt_string(
-            "Allowed sender usernames (comma-separated)",
-            default=existing.channel.telegram.allowed_senders[0]
-            if existing and existing.channel.telegram
-            else "",
-        )
-        allowed_senders = [s.strip() for s in senders_raw.split(",") if s.strip()]
-        if not allowed_senders:
-            print("  Warning: no allowed senders — all messages will be rejected.")
+        allowed_senders: list[str] = []
+        while not allowed_senders:
+            senders_raw = _prompt_string(
+                "Allowed sender usernames (comma-separated)",
+                default=existing.channel.telegram.allowed_senders[0]
+                if existing and existing.channel.telegram
+                else "",
+            )
+            allowed_senders = [s.strip() for s in senders_raw.split(",") if s.strip()]
+            if not allowed_senders:
+                print("  At least one allowed sender is required.")
 
         telegram_cfg = InitTelegramConfig(bot_token=bot_token, allowed_senders=allowed_senders)
 

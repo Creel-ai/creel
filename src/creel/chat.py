@@ -493,8 +493,6 @@ class ChatServer:
         Centralises the "prepare + invoke" sequence so handle_message and
         _handle_approval_response stay in sync.
         """
-        from creel.agent import AgentResult  # noqa: F811 — local re-import for type hint
-
         system_prompt = self._build_system_prompt()
 
         if self._agent_def.llm.secrets:

@@ -1259,7 +1259,9 @@ def _run_executor_container(
 
         # Mount host CLI auth directory (e.g. gh config) when host_auth is enabled
         if tool_config and tool_config.host_auth:
-            executor_name = config.name or ""
+            executor_name = config.name
+            if not executor_name:
+                raise ValueError("host_auth requires the executor to have a name")
             auth_entry = _HOST_AUTH_REGISTRY.get(executor_name)
             if auth_entry is None:
                 raise ValueError(

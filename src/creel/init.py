@@ -338,21 +338,8 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
         "You are a personal assistant running on Creel. Be concise and helpful.\nToday is {date}.\n"
     )
 
-    # Tools — include the weather tool as a starter
-    doc["tools"] = {
-        "check_weather": {
-            "executor": "weather",
-            "network": True,
-            "description": "Get current weather and forecast",
-            "parameters": {
-                "location": {
-                    "type": "string",
-                    "description": "City name or coordinates",
-                    "required": True,
-                },
-            },
-        },
-    }
+    # Tools — empty by default; example shown in post-dump comment
+    doc["tools"] = {}
 
     # LLM
     llm: dict[str, Any] = {
@@ -409,7 +396,24 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
             "audit": {"enabled": True},
         }
 
-    return yaml.dump(doc, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    output = yaml.dump(doc, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    # Insert an example tool comment after the empty tools dict
+    example = (
+        "# Example tool (requires the weather executor):\n"
+        "#   check_weather:\n"
+        "#     executor: weather\n"
+        "#     network: true\n"
+        "#     description: Get current weather and forecast\n"
+        "#     parameters:\n"
+        "#       location:\n"
+        "#         type: string\n"
+        "#         description: City name or coordinates\n"
+        "#         required: true\n"
+    )
+    output = output.replace("tools: {}\n", f"tools: {{}}\n{example}", 1)
+
+    return output
 
 
 # ---------------------------------------------------------------------------

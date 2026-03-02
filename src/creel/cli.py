@@ -261,15 +261,15 @@ def cmd_init(args: argparse.Namespace) -> int:
     else:
         lines = init(
             force=args.force,
-            interactive=not getattr(args, "non_interactive", False),
-            provider=getattr(args, "provider", None),
-            api_key=getattr(args, "api_key", None),
-            model=getattr(args, "model", None),
-            channel=getattr(args, "channel", None),
-            bot_token=getattr(args, "bot_token", None),
-            allowed_senders=getattr(args, "allowed_senders", None),
-            enable_media=getattr(args, "enable_media", False),
-            enable_guardian=not getattr(args, "no_guardian", False),
+            interactive=not args.non_interactive,
+            provider=args.provider,
+            api_key=args.api_key,
+            model=args.model,
+            channel=args.channel,
+            bot_token=args.bot_token,
+            allowed_senders=args.allowed_senders,
+            enable_media=args.enable_media,
+            enable_guardian=not args.no_guardian,
         )
 
     print(f"Creel home: {paths.creel_home()}")

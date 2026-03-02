@@ -18,27 +18,27 @@ from creel.validation import (
 class TestValidateAnthropicKey:
     def test_valid_key(self, monkeypatch):
         resp = MagicMock(status_code=200)
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: resp)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
         result = validate_anthropic_key("sk-ant-valid")
         assert result.ok is True
 
     def test_invalid_key(self, monkeypatch):
         resp = MagicMock(status_code=401)
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: resp)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
         result = validate_anthropic_key("sk-ant-bad")
         assert result.ok is False
         assert "401" in result.message
 
     def test_rate_limited_treated_as_valid(self, monkeypatch):
         resp = MagicMock(status_code=429)
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: resp)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
         result = validate_anthropic_key("sk-ant-ratelimited")
         assert result.ok is True
         assert "429" in result.message
 
     def test_server_error_treated_as_valid(self, monkeypatch):
         resp = MagicMock(status_code=529)
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: resp)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
         result = validate_anthropic_key("sk-ant-overloaded")
         assert result.ok is True
 
@@ -46,14 +46,14 @@ class TestValidateAnthropicKey:
         def raise_err(*a, **kw):
             raise httpx.ConnectError("connection refused")
 
-        monkeypatch.setattr(httpx, "post", raise_err)
+        monkeypatch.setattr(httpx, "get", raise_err)
         result = validate_anthropic_key("sk-ant-test")
         assert result.ok is False
         assert "Network error" in result.message
 
     def test_unexpected_status(self, monkeypatch):
         resp = MagicMock(status_code=403)
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: resp)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
         result = validate_anthropic_key("sk-ant-test")
         assert result.ok is False
         assert "403" in result.message

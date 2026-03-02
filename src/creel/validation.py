@@ -24,19 +24,13 @@ class ValidationResult:
 
 
 def validate_anthropic_key(api_key: str) -> ValidationResult:
-    """Validate an Anthropic API key via a minimal ``/v1/messages`` call."""
+    """Validate an Anthropic API key via a read-only ``GET /v1/models`` call."""
     try:
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages",
+        resp = httpx.get(
+            "https://api.anthropic.com/v1/models",
             headers={
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 1,
-                "messages": [{"role": "user", "content": "hi"}],
             },
             timeout=_TIMEOUT,
         )

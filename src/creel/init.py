@@ -105,12 +105,7 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
 
 def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     """Walk the user through an interactive configuration flow."""
-    from creel.validation import (
-        validate_anthropic_key,
-        validate_ollama_reachable,
-        validate_openai_key,
-        validate_telegram_token,
-    )
+    import creel.validation as _val
 
     print()
     print("Welcome to Creel setup!")
@@ -131,7 +126,9 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
 
     if provider in ("anthropic", "openai"):
         print()
-        validator = validate_anthropic_key if provider == "anthropic" else validate_openai_key
+        validator = (
+            _val.validate_anthropic_key if provider == "anthropic" else _val.validate_openai_key
+        )
         label = "Anthropic" if provider == "anthropic" else "OpenAI"
         for attempt in range(3):
             api_key = _prompt_string(f"{label} API key", secret=True)
@@ -159,7 +156,7 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
         )
         ollama_url = _prompt_string("Ollama URL", default=default_url)
         print(f"  Checking Ollama at {ollama_url}...", end=" ", flush=True)
-        result = validate_ollama_reachable(ollama_url)
+        result = _val.validate_ollama_reachable(ollama_url)
         if result.ok:
             print(result.message)
             if result.detail and result.detail.get("models"):
@@ -203,7 +200,7 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
                 print("  Bot token is required.")
                 continue
             print("  Validating bot token...", end=" ", flush=True)
-            result = validate_telegram_token(bot_token)
+            result = _val.validate_telegram_token(bot_token)
             if result.ok:
                 print(result.message)
                 break

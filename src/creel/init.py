@@ -8,7 +8,7 @@ import logging
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import pyrage
 import yaml
@@ -52,6 +52,12 @@ class InitConfig(BaseModel):
 # ---------------------------------------------------------------------------
 # Prompt helpers (interactive mode)
 # ---------------------------------------------------------------------------
+
+ProviderType = Literal["anthropic", "openai", "ollama"]
+ChannelType = Literal["telegram", "imessage", "none"]
+
+_PROVIDERS: tuple[ProviderType, ...] = ("anthropic", "openai", "ollama")
+_CHANNELS: tuple[ChannelType, ...] = ("telegram", "imessage", "none")
 
 _DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-sonnet-4-20250514",
@@ -114,11 +120,10 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     # --- LLM provider ---
     print()
     print("LLM Provider")
-    providers = ["anthropic", "openai", "ollama"]
     provider_labels = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (local)"]
-    existing_idx = providers.index(existing.llm.provider) if existing else 0
+    existing_idx = _PROVIDERS.index(existing.llm.provider) if existing else 0
     idx = _prompt_choice("Select provider", provider_labels, default=existing_idx)
-    provider = providers[idx]
+    provider = _PROVIDERS[idx]
 
     # --- API key / connection ---
     api_key: str | None = None
@@ -171,7 +176,7 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     model = _prompt_string("Model name", default=default_model)
 
     llm_config = InitLLMConfig(
-        provider=cast(Literal["anthropic", "openai", "ollama"], provider),
+        provider=provider,
         model=model,
         api_key=api_key,
         ollama_url=ollama_url,
@@ -180,15 +185,14 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     # --- Channel ---
     print()
     print("Channel (how you'll talk to Creel)")
-    channel_options = ["telegram", "imessage", "none"]
     channel_labels = ["Telegram", "iMessage (macOS only)", "None (CLI only)"]
     existing_ch_idx = (
-        channel_options.index(existing.channel.type)
-        if existing and existing.channel.type in channel_options
+        _CHANNELS.index(existing.channel.type)
+        if existing and existing.channel.type in _CHANNELS
         else 2
     )
     ch_idx = _prompt_choice("Select channel", channel_labels, default=existing_ch_idx)
-    channel_type = channel_options[ch_idx]
+    channel_type = _CHANNELS[ch_idx]
 
     telegram_cfg: InitTelegramConfig | None = None
     if channel_type == "telegram":
@@ -227,7 +231,7 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
         telegram_cfg = InitTelegramConfig(bot_token=bot_token, allowed_senders=allowed_senders)
 
     channel_config = InitChannelConfig(
-        type=cast(Literal["telegram", "imessage", "none"], channel_type),
+        type=channel_type,
         telegram=telegram_cfg,
     )
 

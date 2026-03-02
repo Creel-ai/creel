@@ -150,7 +150,11 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
             print("  Continuing with unvalidated key.")
     elif provider == "ollama":
         print()
-        default_url = (existing.llm.ollama_url if existing and existing.llm.ollama_url else "http://localhost:11434")
+        default_url = (
+            existing.llm.ollama_url
+            if existing and existing.llm.ollama_url
+            else "http://localhost:11434"
+        )
         ollama_url = _prompt_string("Ollama URL", default=default_url)
         print(f"  Checking Ollama at {ollama_url}...", end=" ", flush=True)
         result = validate_ollama_reachable(ollama_url)
@@ -259,11 +263,7 @@ def _ensure_age_keypair() -> tuple[Path, Path]:
     identity = pyrage.x25519.Identity.generate()
     recipient = identity.to_public()
 
-    key_file.write_text(
-        f"# created by creel init\n"
-        f"# public key: {recipient!s}\n"
-        f"{identity!s}\n"
-    )
+    key_file.write_text(f"# created by creel init\n# public key: {recipient!s}\n{identity!s}\n")
     key_file.chmod(0o600)
 
     pub_file.write_text(f"{recipient!s}\n")
@@ -325,8 +325,7 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
 
     # System prompt
     doc["system_prompt"] = (
-        "You are a personal assistant running on Creel. Be concise and helpful.\n"
-        "Today is {date}.\n"
+        "You are a personal assistant running on Creel. Be concise and helpful.\nToday is {date}.\n"
     )
 
     # Tools — include the weather tool as a starter
@@ -516,9 +515,7 @@ def init(
         # Non-interactive: build from CLI args
         resolved_model = model or _DEFAULT_MODELS.get(provider, "claude-sonnet-4-20250514")  # type: ignore[arg-type]
         parsed_senders = (
-            [s.strip() for s in allowed_senders.split(",") if s.strip()]
-            if allowed_senders
-            else []
+            [s.strip() for s in allowed_senders.split(",") if s.strip()] if allowed_senders else []
         )
 
         telegram_cfg = None

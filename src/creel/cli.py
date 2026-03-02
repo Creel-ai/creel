@@ -1553,9 +1553,7 @@ def main() -> int:
         type=str,
         help="Comma-separated list of allowed sender usernames",
     )
-    init_parser.add_argument(
-        "--enable-media", action="store_true", help="Enable media processing"
-    )
+    init_parser.add_argument("--enable-media", action="store_true", help="Enable media processing")
     init_parser.add_argument(
         "--no-guardian", action="store_true", help="Disable guardian security pipeline"
     )

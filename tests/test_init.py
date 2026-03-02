@@ -112,13 +112,15 @@ class TestWizard:
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
         # Simulate: Anthropic(1) → api key → model default → no channel(3) → no media → yes guardian
-        inputs = self._make_inputs([
-            "1",           # provider: Anthropic
-            "",            # model: default
-            "3",           # channel: none
-            "n",           # media: no
-            "",            # guardian: yes (default)
-        ])
+        inputs = self._make_inputs(
+            [
+                "1",  # provider: Anthropic
+                "",  # model: default
+                "3",  # channel: none
+                "n",  # media: no
+                "",  # guardian: yes (default)
+            ]
+        )
         monkeypatch.setattr("builtins.input", inputs)
         monkeypatch.setattr("getpass.getpass", lambda prompt="": "sk-ant-test-key")
 
@@ -144,14 +146,16 @@ class TestWizard:
     def test_wizard_telegram_flow(self, monkeypatch, tmp_path):
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
-        inputs = self._make_inputs([
-            "2",              # provider: OpenAI
-            "",               # model: default
-            "1",              # channel: telegram
-            "alice,bob",      # allowed senders
-            "n",              # media: no
-            "y",              # guardian: yes
-        ])
+        inputs = self._make_inputs(
+            [
+                "2",  # provider: OpenAI
+                "",  # model: default
+                "1",  # channel: telegram
+                "alice,bob",  # allowed senders
+                "n",  # media: no
+                "y",  # guardian: yes
+            ]
+        )
         monkeypatch.setattr("builtins.input", inputs)
 
         # getpass is called twice: API key then bot token
@@ -164,7 +168,9 @@ class TestWizard:
         )
         monkeypatch.setattr(
             "creel.validation.validate_telegram_token",
-            lambda token: ValidationResult(ok=True, message="Bot valid", detail={"username": "mybot"}),
+            lambda token: ValidationResult(
+                ok=True, message="Bot valid", detail={"username": "mybot"}
+            ),
         )
         monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
 

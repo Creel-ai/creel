@@ -1259,6 +1259,11 @@ def _run_executor_container(
 
         # Mount host CLI auth directory (e.g. gh config) when host_auth is enabled
         if tool_config and tool_config.host_auth:
+            if tool_config.secrets:
+                raise ValueError(
+                    "host_auth and secrets are mutually exclusive — "
+                    "use one or the other, not both"
+                )
             executor_name = config.name
             if not executor_name:
                 raise ValueError("host_auth requires the executor to have a name")

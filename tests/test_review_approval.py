@@ -489,6 +489,80 @@ def test_chat_y_execution_failure_resumes_with_error(mock_exec, mock_run, tmp_pa
 
 
 @patch("creel.chat.run_agent_loop")
+@patch("creel.chat.execute_tool_call", return_value="Email sent!")
+def test_chat_y_cascading_approval(mock_exec, mock_run, tmp_path):
+    """When the resumed agent loop hits another approval_required, it queues a new action."""
+    from creel.agent import AgentResult, PendingApproval
+
+    # The resumed loop itself returns approval_required for a second tool
+    mock_run.return_value = AgentResult(
+        text="Need approval for follow-up.",
+        turns_used=1,
+        tool_calls_made=1,
+        stop_reason="approval_required",
+        pending_approval=PendingApproval(
+            tool_name="gmail_send",
+            tool_input={"to": "boss@example.com", "body": "Done"},
+            reason="outbound email requires review",
+            tool_use_id="tool_followup",
+        ),
+    )
+
+    server = _make_chat_server(tmp_path)
+
+    # Set up session with a pending first action
+    session = server._session_mgr.get_or_create("sender1")
+    session.messages.extend(
+        [
+            {"role": "user", "content": "send email to x@y.com"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool_first",
+                        "name": "send_email",
+                        "input": {"to": "x@y.com"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool_first",
+                        "content": "Action requires approval: flagged",
+                        "is_error": True,
+                    }
+                ],
+            },
+        ]
+    )
+    server._session_mgr.save_session(session)
+    server._approval_queue.add(
+        "sender1", "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_first"
+    )
+
+    response = server.handle_message("sender1", "Y")
+
+    # First tool should have been executed
+    mock_exec.assert_called_once()
+
+    # Resumed loop should have been invoked
+    mock_run.assert_called_once()
+
+    # Response should indicate waiting for the cascading approval
+    assert "⏳" in response or "approval" in response.lower()
+
+    # The new pending action should be queued
+    new_pending = server._approval_queue.get_pending("sender1")
+    assert new_pending is not None
+    assert new_pending.tool_name == "gmail_send"
+    assert new_pending.tool_use_id == "tool_followup"
+
+
+@patch("creel.chat.run_agent_loop")
 def test_chat_no_pending_passes_to_agent(mock_run, tmp_path):
     """'Y' with no pending action goes to normal agent flow."""
     from creel.agent import AgentResult

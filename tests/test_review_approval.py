@@ -346,15 +346,74 @@ def test_chat_y_approves_and_executes(mock_exec, mock_run, tmp_path):
 
 
 def test_chat_n_denies(tmp_path):
-    """Replying 'N' denies the pending action."""
+    """Replying 'N' denies the pending action and patches the tool_result."""
     server = _make_chat_server(tmp_path)
-    action = server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
+
+    # Set up session with synthetic tool_result (as left by agent loop)
+    session = server._session_mgr.get_or_create("sender1")
+    session.messages.extend(
+        [
+            {"role": "user", "content": "send email to x@y.com"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool_deny",
+                        "name": "send_email",
+                        "input": {"to": "x@y.com"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool_deny",
+                        "content": "Action requires approval: flagged",
+                        "is_error": True,
+                    }
+                ],
+            },
+        ]
+    )
+    server._session_mgr.save_session(session)
+
+    action = server._approval_queue.add(
+        "sender1", "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_deny"
+    )
 
     response = server.handle_message("sender1", "n")
 
     assert "❌" in response or "denied" in response.lower()
     resolved = server._approval_queue.get_resolved(action.id)
     assert resolved.status == "denied"
+
+    # Verify the synthetic tool_result was patched with denial (not a separate
+    # user message, which would create consecutive user-role messages).
+    session = server._session_mgr.get_or_create("sender1")
+    patched = False
+    for msg in session.messages:
+        if msg.get("role") != "user" or not isinstance(msg.get("content"), list):
+            continue
+        for block in msg["content"]:
+            if (
+                isinstance(block, dict)
+                and block.get("tool_use_id") == "tool_deny"
+                and block.get("type") == "tool_result"
+            ):
+                assert "denied by user" in block["content"].lower()
+                assert block["is_error"] is True
+                patched = True
+    assert patched, "Synthetic tool_result should have been patched with denial"
+
+    # Verify no consecutive user messages in session
+    roles = [m.get("role") for m in session.messages]
+    for i in range(1, len(roles)):
+        assert not (roles[i] == "user" and roles[i - 1] == "user"), (
+            f"Consecutive user messages at positions {i - 1} and {i}"
+        )
 
 
 @patch("creel.chat.run_agent_loop")

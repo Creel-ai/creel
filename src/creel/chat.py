@@ -529,11 +529,16 @@ class ChatServer:
         session = self._session_mgr.get_or_create(sender_id)
 
         if not approved:
-            # Append a user message so the LLM can acknowledge the denial
-            self._session_mgr.add_user_message(
-                sender_id,
-                f"[SYSTEM] The user denied the action '{pending.tool_name}': {pending.policy_reason}",
-            )
+            # Patch the synthetic tool_result with a denial message instead of
+            # injecting a separate user message (which would create consecutive
+            # user-role messages and break the Anthropic API contract).
+            if pending.tool_use_id:
+                self._patch_tool_result(
+                    session.messages,
+                    pending.tool_use_id,
+                    f"Action denied by user: {pending.policy_reason}",
+                    is_error=True,
+                )
             self._session_mgr.save_session(session)
             return f"❌ Action denied: {pending.tool_name}"
 

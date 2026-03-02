@@ -8,7 +8,7 @@ import logging
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pyrage
 import yaml
@@ -172,7 +172,7 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     model = _prompt_string("Model name", default=default_model)
 
     llm_config = InitLLMConfig(
-        provider=provider,
+        provider=cast(Literal["anthropic", "openai", "ollama"], provider),
         model=model,
         api_key=api_key,
         ollama_url=ollama_url,
@@ -222,7 +222,10 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
 
         telegram_cfg = InitTelegramConfig(bot_token=bot_token, allowed_senders=allowed_senders)
 
-    channel_config = InitChannelConfig(type=channel_type, telegram=telegram_cfg)
+    channel_config = InitChannelConfig(
+        type=cast(Literal["telegram", "imessage", "none"], channel_type),
+        telegram=telegram_cfg,
+    )
 
     # --- Feature toggles ---
     print()

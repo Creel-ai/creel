@@ -147,7 +147,9 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
             if attempt < 2:
                 print("  Try again.")
         else:
-            print("  Continuing with unvalidated key.")
+            if not _prompt_yes_no("  Validation failed. Use this key anyway?", default=False):
+                api_key = None
+                print("  Skipped — no API key will be saved.")
     elif provider == "ollama":
         print()
         default_url = (
@@ -194,6 +196,7 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     telegram_cfg: InitTelegramConfig | None = None
     if channel_type == "telegram":
         print()
+        bot_token = ""
         for attempt in range(3):
             bot_token = _prompt_string("Telegram bot token", secret=True)
             if not bot_token:
@@ -208,7 +211,9 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
             if attempt < 2:
                 print("  Try again.")
         else:
-            print("  Continuing with unvalidated token.")
+            if not _prompt_yes_no("  Validation failed. Use this token anyway?", default=False):
+                bot_token = ""
+                print("  Skipped — no bot token will be saved.")
 
         senders_raw = _prompt_string(
             "Allowed sender usernames (comma-separated)",

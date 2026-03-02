@@ -196,6 +196,42 @@ class TestWizard:
         assert (secrets_dir / "openai.env.enc").exists()
         assert (secrets_dir / "telegram.env.enc").exists()
 
+    def test_wizard_declines_invalid_api_key(self, monkeypatch, tmp_path):
+        """After 3 failed validations, declining should clear the key."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        # provider(1) → decline bad key(n) → model default → no channel(3) → no media → yes guardian
+        inputs = self._make_inputs(
+            [
+                "1",  # provider: Anthropic
+                "n",  # decline invalid key
+                "",  # model: default
+                "3",  # channel: none
+                "n",  # media: no
+                "",  # guardian: yes (default)
+            ]
+        )
+        monkeypatch.setattr("builtins.input", inputs)
+
+        # getpass returns a key 3 times
+        getpass_values = iter(["sk-ant-bad-key"] * 3)
+        monkeypatch.setattr("getpass.getpass", lambda prompt="": next(getpass_values))
+
+        # Mock validator to always fail
+        monkeypatch.setattr(
+            "creel.validation.validate_anthropic_key",
+            lambda key: ValidationResult(ok=False, message="Invalid API key (401 Unauthorized)"),
+        )
+
+        monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
+
+        init(force=True)
+
+        agent_yaml = tmp_path / "home" / "agent.yaml"
+        config = yaml.safe_load(agent_yaml.read_text())
+        # No secrets should be present since the key was declined
+        assert "secrets" not in config["llm"]
+
 
 # ---------------------------------------------------------------------------
 # Non-interactive init tests

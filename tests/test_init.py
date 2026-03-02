@@ -94,6 +94,19 @@ class TestInit:
         assert len(lines) > 0
         assert any("agent.yaml" in line for line in lines)
 
+    def test_already_initialized_decline_reconfigure(self, monkeypatch, tmp_path):
+        """When already initialized and user declines reconfigure, should exit early."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+        init()  # first init
+        assert paths.is_initialized()
+
+        # Simulate user declining reconfigure ("n")
+        monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+        monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
+
+        lines = init()  # second init, no --force
+        assert any("Already initialized" in line for line in lines)
+
 
 # ---------------------------------------------------------------------------
 # Interactive wizard tests

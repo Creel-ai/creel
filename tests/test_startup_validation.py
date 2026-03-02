@@ -50,6 +50,25 @@ class TestValidateSecrets:
         assert "tools.my_tool.secrets" in caplog.text
         assert "secrets file not found" in caplog.text
 
+    def test_missing_llm_secrets_relative_path_raises(self, tmp_path: Path, monkeypatch):
+        """Missing LLM secrets via relative path should also raise."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path))
+        agent = _make_agent_def(llm_secrets="secrets/nonexistent.env.enc")
+        with pytest.raises(SecretsValidationError, match="secrets file not found"):
+            validate_secrets(agent)
+
+    def test_tool_secrets_missing_relative_path_warns(self, tmp_path: Path, monkeypatch, caplog):
+        """Missing tool secrets via relative path should warn, not raise."""
+        import logging
+
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path))
+        tool = MagicMock()
+        tool.secrets = "secrets/tool.env.enc"
+        agent = _make_agent_def(tools={"my_tool": tool})
+        with caplog.at_level(logging.WARNING):
+            validate_secrets(agent)  # should not raise
+        assert "secrets file not found" in caplog.text
+
     @patch("creel.startup.decrypt_env_file")
     def test_valid_secrets_passes(self, mock_decrypt, tmp_path: Path, monkeypatch):
         enc = tmp_path / "secrets.enc"

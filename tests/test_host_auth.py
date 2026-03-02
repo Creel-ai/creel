@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -41,7 +42,7 @@ class TestToolConfigHostAuth:
 class TestHostAuthContainerMount:
     """Verify _run_executor_container handles host_auth correctly."""
 
-    def test_unsupported_executor_raises_value_error(self, tmp_path: Path) -> None:
+    def test_unsupported_executor_raises_value_error(self) -> None:
         """host_auth=True on an executor not in the registry → ValueError."""
         config = ExecutorConfig(name="weather")
         tool_config = ToolConfig(executor="weather", description="test", host_auth=True)
@@ -92,15 +93,11 @@ class TestHostAuthContainerMount:
             patch("creel.orchestrator.decrypt_env_file", return_value={}),
             patch("subprocess.run") as mock_run,
         ):
-            mock_run.return_value = type(
-                "Result",
-                (),
-                {
-                    "returncode": 0,
-                    "stdout": '{"ok": true}',
-                    "stderr": "",
-                },
-            )()
+            mock_run.return_value = SimpleNamespace(
+                returncode=0,
+                stdout='{"ok": true}',
+                stderr="",
+            )
 
             _run_executor_container(config, tool_config=tool_config)
 
@@ -118,7 +115,7 @@ class TestHostAuthContainerMount:
                 f"Expected volume mount '{expected_mount}' not found in docker command: {docker_cmd}"
             )
 
-    def test_host_auth_false_no_mount(self, tmp_path: Path) -> None:
+    def test_host_auth_false_no_mount(self) -> None:
         """host_auth=False (default) should not add any host-auth volume mounts."""
         config = ExecutorConfig(name="github")
         tool_config = ToolConfig(executor="github", description="test")
@@ -128,15 +125,11 @@ class TestHostAuthContainerMount:
             patch("creel.orchestrator.decrypt_env_file", return_value={}),
             patch("subprocess.run") as mock_run,
         ):
-            mock_run.return_value = type(
-                "Result",
-                (),
-                {
-                    "returncode": 0,
-                    "stdout": '{"ok": true}',
-                    "stderr": "",
-                },
-            )()
+            mock_run.return_value = SimpleNamespace(
+                returncode=0,
+                stdout='{"ok": true}',
+                stderr="",
+            )
 
             _run_executor_container(config, tool_config=tool_config)
 
@@ -147,3 +140,16 @@ class TestHostAuthContainerMount:
                     assert ".config/gh" not in docker_cmd[i + 1], (
                         "host_auth=False should not mount gh config"
                     )
+
+    def test_host_auth_with_secrets_raises_value_error(self) -> None:
+        """host_auth=True + secrets set → ValueError (mutually exclusive)."""
+        config = ExecutorConfig(name="github")
+        tool_config = ToolConfig(
+            executor="github",
+            description="test",
+            host_auth=True,
+            secrets="secrets/github.env.enc",
+        )
+
+        with pytest.raises(ValueError, match="host_auth and secrets are mutually exclusive"):
+            _run_executor_container(config, tool_config=tool_config)

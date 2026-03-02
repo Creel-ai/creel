@@ -178,6 +178,7 @@ _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "git_ops": "GIT",
 }
 
+
 class _HostAuthEntry(TypedDict):
     host_path: str
     container_path: str
@@ -1261,8 +1262,7 @@ def _run_executor_container(
         if tool_config and tool_config.host_auth:
             if tool_config.secrets:
                 raise ValueError(
-                    "host_auth and secrets are mutually exclusive — "
-                    "use one or the other, not both"
+                    "host_auth and secrets are mutually exclusive — use one or the other, not both"
                 )
             executor_name = config.name
             if not executor_name:

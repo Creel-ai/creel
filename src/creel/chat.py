@@ -280,15 +280,6 @@ class ChatServer:
         else:
             session = self._session_mgr.add_user_message(sender_id, text)
 
-        # Build system prompt using the prompt builder
-        system_prompt = self._build_system_prompt()
-
-        # Load LLM secrets if configured
-        if self._agent_def.llm.secrets:
-            from creel.orchestrator import _load_secrets_to_env
-
-            _load_secrets_to_env(self._agent_def.llm.secrets)
-
         # Build the confirm_action callback for this request.
         # --auto-approve from `creel send` provides a callback that always
         # approves, so REVIEW-verdict tools execute immediately instead of
@@ -313,40 +304,12 @@ class ChatServer:
         session_state["sender_id"] = sender_id
 
         # Run the agent loop (containerized or direct)
-        if self._use_containers:
-            from creel.container_agent import run_agent_loop_container
-
-            result = run_agent_loop_container(
-                messages=session.messages,
-                llm_config=self._agent_def.llm,
-                tools_config=self._agent_def.tools,
-                agent_config=self._agent_def.agent,
-                system_prompt=system_prompt,
-                use_containers=self._use_containers,
-                guardian=self._guardian,
-                confirm_action=confirm_action,
-                memory_manager=self._memory,
-                bridge_config=self._agent_def.bridge,
-                session_state=session_state,
-                container_pool=self._container_pool,
-            )
-        else:
-            result = run_agent_loop(
-                messages=session.messages,
-                llm_config=self._agent_def.llm,
-                tools_config=self._agent_def.tools,
-                agent_config=self._agent_def.agent,
-                system_prompt=system_prompt,
-                use_containers=self._use_containers,
-                guardian=self._guardian,
-                confirm_action=confirm_action,
-                memory_manager=self._memory,
-                on_text_delta=on_text_delta,
-                bridge_config=self._agent_def.bridge,
-                session_state=session_state,
-                cron_manager=self._cron_manager,
-                subagent_manager=self._subagent_manager,
-            )
+        result = self._invoke_agent_loop(
+            session.messages,
+            session_state,
+            confirm_action=confirm_action,
+            on_text_delta=on_text_delta,
+        )
 
         logger.info(
             "Agent response for %s: %d chars, %d turns, %d tool calls (%s)",
@@ -370,6 +333,7 @@ class ChatServer:
                 tool_name=pa.tool_name,
                 tool_input=pa.tool_input,
                 reason=pa.reason,
+                tool_use_id=pa.tool_use_id,
             )
             self._send_approval_request(sender_id, action)
             # Save session state
@@ -516,20 +480,95 @@ class ChatServer:
         else:
             logger.info("Approval request (no reply channel): %s", msg)
 
+    def _invoke_agent_loop(
+        self,
+        messages: list[dict],
+        session_state: dict,
+        *,
+        confirm_action: Callable[[str, dict, str], bool] | None = None,
+        on_text_delta: Callable[[str], None] | None = None,
+    ):
+        """Build system prompt, load secrets, and run the agent loop.
+
+        Centralises the "prepare + invoke" sequence so handle_message and
+        _handle_approval_response stay in sync.
+        """
+        system_prompt = self._build_system_prompt()
+
+        if self._agent_def.llm.secrets:
+            from creel.orchestrator import _load_secrets_to_env
+
+            _load_secrets_to_env(self._agent_def.llm.secrets)
+
+        if self._use_containers:
+            from creel.container_agent import run_agent_loop_container
+
+            return run_agent_loop_container(
+                messages=messages,
+                llm_config=self._agent_def.llm,
+                tools_config=self._agent_def.tools,
+                agent_config=self._agent_def.agent,
+                system_prompt=system_prompt,
+                use_containers=self._use_containers,
+                guardian=self._guardian,
+                confirm_action=confirm_action,
+                memory_manager=self._memory,
+                bridge_config=self._agent_def.bridge,
+                session_state=session_state,
+                container_pool=self._container_pool,
+            )
+
+        return run_agent_loop(
+            messages=messages,
+            llm_config=self._agent_def.llm,
+            tools_config=self._agent_def.tools,
+            agent_config=self._agent_def.agent,
+            system_prompt=system_prompt,
+            use_containers=self._use_containers,
+            guardian=self._guardian,
+            confirm_action=confirm_action,
+            memory_manager=self._memory,
+            on_text_delta=on_text_delta,
+            bridge_config=self._agent_def.bridge,
+            session_state=session_state,
+            cron_manager=self._cron_manager,
+            subagent_manager=self._subagent_manager,
+        )
+
     def _handle_approval_response(
         self,
         sender_id: str,
         pending,
         approved: bool,
     ) -> str:
-        """Resolve a pending action and execute if approved."""
+        """Resolve a pending action, execute if approved, and resume the agent loop."""
         self._approval_queue.resolve(pending.id, approved)
 
+        session = self._session_mgr.get_or_create(sender_id)
+
         if not approved:
+            # Patch the synthetic tool_result with a denial message instead of
+            # injecting a separate user message (which would create consecutive
+            # user-role messages and break the Anthropic API contract).
+            if pending.tool_use_id:
+                if not self._patch_tool_result(
+                    session.messages,
+                    pending.tool_use_id,
+                    f"Action denied by user: {pending.policy_reason}",
+                    is_error=True,
+                ):
+                    logger.warning(
+                        "Could not patch tool_result for %s (tool_use_id=%s)",
+                        pending.tool_name,
+                        pending.tool_use_id,
+                    )
+            self._session_mgr.save_session(session)
             return f"❌ Action denied: {pending.tool_name}"
 
-        # Execute the tool with full context (session_state, memory)
-        session_state = self._session_states.get(sender_id)
+        # Execute the approved tool
+        session_state = self._session_states.setdefault(sender_id, {})
+        session_state["sender_id"] = sender_id
+        is_error = False
         try:
             tool_result = execute_tool_call(
                 tool_name=pending.tool_name,
@@ -539,13 +578,80 @@ class ChatServer:
                 memory_manager=self._memory,
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
+                cron_manager=self._cron_manager,
+                subagent_manager=self._subagent_manager,
             )
-            result_msg = f"✅ Approved and executed: {pending.tool_name}\n\nResult:\n{tool_result}"
         except Exception as e:
             logger.exception("Tool execution failed after approval")
-            result_msg = f"✅ Approved but execution failed: {e}"
+            tool_result = f"Error: {e}"
+            is_error = True
 
-        return result_msg
+        # Patch the session messages: replace the synthetic error tool_result
+        # (matching pending.tool_use_id) with the real execution result so
+        # the LLM sees the actual output when we resume the agent loop.
+        if pending.tool_use_id:
+            if not self._patch_tool_result(
+                session.messages, pending.tool_use_id, tool_result, is_error
+            ):
+                logger.warning(
+                    "Could not patch tool_result for %s (tool_use_id=%s)",
+                    pending.tool_name,
+                    pending.tool_use_id,
+                )
+
+        # Resume the agent loop so the LLM can process the tool output
+        result = self._invoke_agent_loop(session.messages, session_state)
+
+        # Update token count for session compaction
+        last_tokens = getattr(result, "last_input_tokens", 0)
+        if isinstance(last_tokens, int) and last_tokens > 0:
+            self._session_mgr.update_token_count(sender_id, last_tokens)
+
+        # If the resumed loop itself hits another approval_required, queue it
+        if result.stop_reason == "approval_required" and result.pending_approval:
+            pa = result.pending_approval
+            action = self._approval_queue.add(
+                sender_id=sender_id,
+                tool_name=pa.tool_name,
+                tool_input=pa.tool_input,
+                reason=pa.reason,
+                tool_use_id=pa.tool_use_id,
+            )
+            self._send_approval_request(sender_id, action)
+            self._session_mgr.save_session(session)
+            return "⏳ Waiting for your approval to proceed."
+
+        self._session_mgr.save_session(session)
+        return result.text
+
+    @staticmethod
+    def _patch_tool_result(
+        messages: list[dict],
+        tool_use_id: str,
+        result: str,
+        is_error: bool,
+    ) -> bool:
+        """Replace a synthetic error tool_result with the real execution result.
+
+        Searches backwards through messages for the tool_result matching
+        *tool_use_id* and patches it in place. Returns True if patched.
+        """
+        for msg in reversed(messages):
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "tool_result"
+                    and block.get("tool_use_id") == tool_use_id
+                ):
+                    block["content"] = result
+                    block["is_error"] = is_error
+                    return True
+        return False
 
     def _send_reply(
         self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False

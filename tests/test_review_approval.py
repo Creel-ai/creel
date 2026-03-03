@@ -241,7 +241,7 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
 
 @patch("creel.chat.run_agent_loop")
 def test_chat_approval_required_queues_action(mock_run, tmp_path):
-    """When agent returns approval_required, ChatServer queues it."""
+    """When agent returns approval_required, ChatServer queues it with tool_use_id."""
     from creel.agent import AgentResult, PendingApproval
 
     mock_run.return_value = AgentResult(
@@ -249,7 +249,9 @@ def test_chat_approval_required_queues_action(mock_run, tmp_path):
         turns_used=1,
         tool_calls_made=0,
         stop_reason="approval_required",
-        pending_approval=PendingApproval("send_email", {"to": "x@y.com"}, "flagged"),
+        pending_approval=PendingApproval(
+            "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_abc"
+        ),
     )
 
     server = _make_chat_server(tmp_path)
@@ -259,39 +261,305 @@ def test_chat_approval_required_queues_action(mock_run, tmp_path):
     pending = server._approval_queue.get_pending("sender1")
     assert pending is not None
     assert pending.tool_name == "send_email"
+    assert pending.tool_use_id == "tool_abc"
 
 
+@patch("creel.chat.run_agent_loop")
 @patch("creel.chat.execute_tool_call", return_value="Email sent!")
-def test_chat_y_approves_and_executes(mock_exec, tmp_path):
-    """Replying 'Y' resolves pending action and executes the tool."""
+def test_chat_y_approves_and_executes(mock_exec, mock_run, tmp_path):
+    """Replying 'Y' executes the tool, patches session, and resumes agent loop."""
+    from creel.agent import AgentResult
+
+    mock_run.return_value = AgentResult(
+        text="Email was sent successfully.",
+        turns_used=1,
+        tool_calls_made=0,
+        stop_reason="end_turn",
+    )
+
     server = _make_chat_server(tmp_path)
-    server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
+
+    # Simulate the session state left by the initial agent loop: an assistant
+    # tool_use block followed by a synthetic error tool_result.
+    session = server._session_mgr.get_or_create("sender1")
+    session.messages.extend(
+        [
+            {"role": "user", "content": "send email to x@y.com"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool_xyz",
+                        "name": "send_email",
+                        "input": {"to": "x@y.com"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool_xyz",
+                        "content": "Action requires approval: flagged",
+                        "is_error": True,
+                    }
+                ],
+            },
+        ]
+    )
+    server._session_mgr.save_session(session)
+
+    server._approval_queue.add(
+        "sender1", "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_xyz"
+    )
 
     response = server.handle_message("sender1", "Y")
 
-    assert "✅" in response
-    assert "send_email" in response
-    mock_exec.assert_called_once_with(
-        tool_name="send_email",
-        tool_input={"to": "x@y.com"},
-        tools_config=server._agent_def.tools,
-        use_containers=False,
-        memory_manager=server._memory,
-        bridge_config=server._agent_def.bridge,
-        session_state=server._session_states.get("sender1"),
-    )
+    # Tool should have been executed
+    mock_exec.assert_called_once()
+
+    # Agent loop should have been re-invoked
+    mock_run.assert_called_once()
+
+    # Verify the messages passed to run_agent_loop had the patched tool_result
+    call_kwargs = mock_run.call_args
+    resumed_messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+    patched = False
+    for msg in resumed_messages:
+        if msg.get("role") != "user" or not isinstance(msg.get("content"), list):
+            continue
+        for block in msg["content"]:
+            if (
+                isinstance(block, dict)
+                and block.get("tool_use_id") == "tool_xyz"
+                and block.get("type") == "tool_result"
+            ):
+                assert block["content"] == "Email sent!"
+                assert block["is_error"] is False
+                patched = True
+    assert patched, "Synthetic tool_result should have been patched with real result"
+
+    # Response should be the LLM's text, not a raw result dump
+    assert response == "Email was sent successfully."
 
 
 def test_chat_n_denies(tmp_path):
-    """Replying 'N' denies the pending action."""
+    """Replying 'N' denies the pending action and patches the tool_result."""
     server = _make_chat_server(tmp_path)
-    action = server._approval_queue.add("sender1", "send_email", {"to": "x@y.com"}, "flagged")
+
+    # Set up session with synthetic tool_result (as left by agent loop)
+    session = server._session_mgr.get_or_create("sender1")
+    session.messages.extend(
+        [
+            {"role": "user", "content": "send email to x@y.com"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool_deny",
+                        "name": "send_email",
+                        "input": {"to": "x@y.com"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool_deny",
+                        "content": "Action requires approval: flagged",
+                        "is_error": True,
+                    }
+                ],
+            },
+        ]
+    )
+    server._session_mgr.save_session(session)
+
+    action = server._approval_queue.add(
+        "sender1", "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_deny"
+    )
 
     response = server.handle_message("sender1", "n")
 
     assert "❌" in response or "denied" in response.lower()
     resolved = server._approval_queue.get_resolved(action.id)
     assert resolved.status == "denied"
+
+    # Verify the synthetic tool_result was patched with denial (not a separate
+    # user message, which would create consecutive user-role messages).
+    session = server._session_mgr.get_or_create("sender1")
+    patched = False
+    for msg in session.messages:
+        if msg.get("role") != "user" or not isinstance(msg.get("content"), list):
+            continue
+        for block in msg["content"]:
+            if (
+                isinstance(block, dict)
+                and block.get("tool_use_id") == "tool_deny"
+                and block.get("type") == "tool_result"
+            ):
+                assert "denied by user" in block["content"].lower()
+                assert block["is_error"] is True
+                patched = True
+    assert patched, "Synthetic tool_result should have been patched with denial"
+
+    # Verify no consecutive user messages in session
+    roles = [m.get("role") for m in session.messages]
+    for i in range(1, len(roles)):
+        assert not (roles[i] == "user" and roles[i - 1] == "user"), (
+            f"Consecutive user messages at positions {i - 1} and {i}"
+        )
+
+
+@patch("creel.chat.run_agent_loop")
+@patch("creel.chat.execute_tool_call", side_effect=RuntimeError("connection refused"))
+def test_chat_y_execution_failure_resumes_with_error(mock_exec, mock_run, tmp_path):
+    """When the approved tool raises, the error is patched in and the LLM still resumes."""
+    from creel.agent import AgentResult
+
+    mock_run.return_value = AgentResult(
+        text="Sorry, the email could not be sent.",
+        turns_used=1,
+        tool_calls_made=0,
+        stop_reason="end_turn",
+    )
+
+    server = _make_chat_server(tmp_path)
+    session = server._session_mgr.get_or_create("sender1")
+    session.messages.extend(
+        [
+            {"role": "user", "content": "send email"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool_err",
+                        "name": "send_email",
+                        "input": {"to": "x@y.com"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool_err",
+                        "content": "Action requires approval: flagged",
+                        "is_error": True,
+                    }
+                ],
+            },
+        ]
+    )
+    server._session_mgr.save_session(session)
+    server._approval_queue.add(
+        "sender1", "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_err"
+    )
+
+    response = server.handle_message("sender1", "y")
+
+    # Agent loop should still have been re-invoked
+    mock_run.assert_called_once()
+
+    # Verify the messages passed to run_agent_loop had the error patched in
+    call_kwargs = mock_run.call_args
+    resumed_messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+    patched = False
+    for msg in resumed_messages:
+        if msg.get("role") != "user" or not isinstance(msg.get("content"), list):
+            continue
+        for block in msg["content"]:
+            if (
+                isinstance(block, dict)
+                and block.get("tool_use_id") == "tool_err"
+                and block.get("type") == "tool_result"
+            ):
+                assert "connection refused" in block["content"]
+                assert block["is_error"] is True
+                patched = True
+    assert patched, "Tool_result should have been patched with error"
+    assert response == "Sorry, the email could not be sent."
+
+
+@patch("creel.chat.run_agent_loop")
+@patch("creel.chat.execute_tool_call", return_value="Email sent!")
+def test_chat_y_cascading_approval(mock_exec, mock_run, tmp_path):
+    """When the resumed agent loop hits another approval_required, it queues a new action."""
+    from creel.agent import AgentResult, PendingApproval
+
+    # The resumed loop itself returns approval_required for a second tool
+    mock_run.return_value = AgentResult(
+        text="Need approval for follow-up.",
+        turns_used=1,
+        tool_calls_made=1,
+        stop_reason="approval_required",
+        pending_approval=PendingApproval(
+            tool_name="gmail_send",
+            tool_input={"to": "boss@example.com", "body": "Done"},
+            reason="outbound email requires review",
+            tool_use_id="tool_followup",
+        ),
+    )
+
+    server = _make_chat_server(tmp_path)
+
+    # Set up session with a pending first action
+    session = server._session_mgr.get_or_create("sender1")
+    session.messages.extend(
+        [
+            {"role": "user", "content": "send email to x@y.com"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool_first",
+                        "name": "send_email",
+                        "input": {"to": "x@y.com"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool_first",
+                        "content": "Action requires approval: flagged",
+                        "is_error": True,
+                    }
+                ],
+            },
+        ]
+    )
+    server._session_mgr.save_session(session)
+    server._approval_queue.add(
+        "sender1", "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_first"
+    )
+
+    response = server.handle_message("sender1", "Y")
+
+    # First tool should have been executed
+    mock_exec.assert_called_once()
+
+    # Resumed loop should have been invoked
+    mock_run.assert_called_once()
+
+    # Response should indicate waiting for the cascading approval
+    assert "⏳" in response or "approval" in response.lower()
+
+    # The new pending action should be queued
+    new_pending = server._approval_queue.get_pending("sender1")
+    assert new_pending is not None
+    assert new_pending.tool_name == "gmail_send"
+    assert new_pending.tool_use_id == "tool_followup"
 
 
 @patch("creel.chat.run_agent_loop")

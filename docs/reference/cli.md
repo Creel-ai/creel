@@ -8,6 +8,7 @@ creel <command> [options]
 
 | Command | Description |
 |---------|-------------|
+| `init` | Initialize `~/.creel/` with interactive wizard or CLI flags |
 | `run <task>` | Run a task immediately |
 | `schedule` | Start cron scheduler for all tasks |
 | `list` | List available tasks |
@@ -27,6 +28,29 @@ creel <command> [options]
 | `--agent-config PATH` | Path to agent.yaml (default: `agent.yaml`) |
 | `--json-logs` | Output structured JSON log lines (for production) |
 | `--no-judge` | Disable the LLM judge to save API calls during development |
+
+## Init Options
+
+```bash
+creel init [options]
+```
+
+By default, `creel init` launches an interactive wizard that validates credentials inline and encrypts secrets via age. Use `--non-interactive` with explicit flags for scripted setups.
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Overwrite existing files |
+| `--migrate` | Copy existing repo-based config into `~/.creel/` |
+| `--repo-root PATH` | Repo root to migrate from (default: current directory) |
+| `--non-interactive` | Skip interactive wizard, use CLI flags below |
+| `--provider TYPE` | LLM provider: `anthropic`, `openai`, `ollama` |
+| `--api-key KEY` | LLM API key |
+| `--model NAME` | LLM model name (defaults per provider) |
+| `--channel TYPE` | Channel: `telegram`, `imessage`, `none` |
+| `--bot-token TOKEN` | Telegram bot token |
+| `--allowed-senders LIST` | Comma-separated list of allowed Telegram sender usernames |
+| `--enable-media` | Enable media processing (images, voice) |
+| `--no-guardian` | Disable guardian security pipeline |
 
 ## Daemon Commands
 

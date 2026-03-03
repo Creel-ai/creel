@@ -13,7 +13,7 @@ import threading
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from creel.llm import run_llm
 from creel.models import BridgeConfig, ExecutorConfig, TaskDefinition, ToolConfig, load_task
@@ -176,6 +176,19 @@ _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "imessage_bridge": "IMESSAGE",
     "browser": "BROWSER",
     "git_ops": "GIT",
+}
+
+
+class _HostAuthEntry(TypedDict):
+    host_path: str
+    container_path: str
+
+
+_HOST_AUTH_REGISTRY: dict[str, _HostAuthEntry] = {
+    "github": {
+        "host_path": "~/.config/gh",
+        "container_path": "/home/executor/.config/gh",
+    },
 }
 
 
@@ -1244,6 +1257,29 @@ def _run_executor_container(
                 # Expand ~ to home directory
                 host_path = os.path.expanduser(mount.path)
                 docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
+
+        # Mount host CLI auth directory (e.g. gh config) when host_auth is enabled
+        if tool_config and tool_config.host_auth:
+            if tool_config.secrets:
+                raise ValueError(
+                    "host_auth and secrets are mutually exclusive — use one or the other, not both"
+                )
+            executor_name = config.name
+            if not executor_name:
+                raise ValueError("host_auth requires the executor to have a name")
+            auth_entry = _HOST_AUTH_REGISTRY.get(executor_name)
+            if auth_entry is None:
+                raise ValueError(
+                    f"host_auth is not supported for executor '{executor_name}' "
+                    f"(supported: {sorted(_HOST_AUTH_REGISTRY)})"
+                )
+            auth_host_path = Path(os.path.expanduser(auth_entry["host_path"]))
+            if not auth_host_path.is_dir():
+                raise RuntimeError(
+                    f"Host auth directory not found: {auth_host_path} — "
+                    f"run `gh auth login` to authenticate first"
+                )
+            docker_cmd.extend(["-v", f"{auth_host_path}:{auth_entry['container_path']}:ro"])
 
         # Mount dynamic workspace for file_ops executor
         if _workspace_mount:

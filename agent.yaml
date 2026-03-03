@@ -670,6 +670,7 @@ tools:
     executor: github
     network: true
     secrets: secrets/github.env.enc
+    # host_auth: true  # Alternative: mount ~/.config/gh instead of using a PAT
     description: "Manage GitHub repositories — issues, PRs, CI runs, code search"
     parameters:
       command:

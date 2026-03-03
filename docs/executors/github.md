@@ -20,6 +20,33 @@ EOF
 
 The script produces `secrets/github.env.enc` and deletes the plaintext file.
 
+### Host Authentication
+
+If you already have `gh` authenticated locally, you can skip the PAT setup and mount your host credentials into the container instead:
+
+```yaml
+github:
+  executor: github
+  network: true
+  host_auth: true
+  # no secrets needed
+```
+
+When `host_auth: true` is set, the orchestrator mounts `~/.config/gh` into the container read-only at `/home/executor/.config/gh`. The `gh` CLI inside the container picks up the existing auth state — no token creation or encryption required.
+
+**Inline mode:** When running executors as subprocesses (development mode), `host_auth` has no effect — the executor inherits the host environment automatically.
+
+**Trade-offs vs encrypted PATs:**
+
+| | `host_auth` | `secrets` (PAT) |
+|---|---|---|
+| Setup | Just `gh auth login` | Create PAT, encrypt with age |
+| Scope control | Whatever `gh auth login` granted | Fine-grained PAT scopes |
+| Token rotation | Handled by `gh` | Manual re-encrypt |
+| Isolation | Read-only mount of host config | Fully decoupled from host |
+
+Use `host_auth` for personal/dev setups. Prefer encrypted PATs for shared or production deployments where you want explicit scope control.
+
 ### How the Token Reaches the Container
 
 1. Orchestrator decrypts `secrets/github.env.enc` using the age key at `~/.age/key.txt`

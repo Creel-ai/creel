@@ -259,17 +259,23 @@ def cmd_init(args: argparse.Namespace) -> int:
             return 1
         lines = migrate(repo_root, force=args.force)
     else:
-        lines = init(force=args.force)
+        lines = init(
+            force=args.force,
+            interactive=not args.non_interactive,
+            provider=args.provider,
+            api_key=args.api_key,
+            model=args.model,
+            channel=args.channel,
+            bot_token=args.bot_token,
+            allowed_senders=args.allowed_senders,
+            enable_media=args.enable_media,
+            enable_guardian=not args.no_guardian,
+        )
 
     print(f"Creel home: {paths.creel_home()}")
     for line in lines:
         print(line)
 
-    print()
-    print("Next steps:")
-    print(f"  1. Edit {paths.agent_config()} to configure your LLM and tools")
-    print(f"  2. Add encrypted secrets to {paths.secrets_dir()}/")
-    print("  3. Start the daemon: creel daemon start")
     return 0
 
 
@@ -1523,6 +1529,33 @@ def main() -> int:
         type=str,
         default=None,
         help="Repo root to migrate from (default: current directory)",
+    )
+    init_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Skip interactive wizard, use CLI args",
+    )
+    init_parser.add_argument(
+        "--provider",
+        choices=["anthropic", "openai", "ollama"],
+        help="LLM provider",
+    )
+    init_parser.add_argument("--api-key", type=str, help="LLM API key")
+    init_parser.add_argument("--model", type=str, help="LLM model name")
+    init_parser.add_argument(
+        "--channel",
+        choices=["telegram", "imessage", "none"],
+        help="Communication channel",
+    )
+    init_parser.add_argument("--bot-token", type=str, help="Telegram bot token")
+    init_parser.add_argument(
+        "--allowed-senders",
+        type=str,
+        help="Comma-separated list of allowed sender usernames",
+    )
+    init_parser.add_argument("--enable-media", action="store_true", help="Enable media processing")
+    init_parser.add_argument(
+        "--no-guardian", action="store_true", help="Disable guardian security pipeline"
     )
 
     # run command

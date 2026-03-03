@@ -2,7 +2,26 @@
 
 Secrets are encrypted at rest using [age](https://github.com/FiloSottile/age). The Python side uses [pyrage](https://pypi.org/project/pyrage/) for decryption.
 
-## Setup
+## Automatic Setup via `creel init`
+
+The easiest way to set up secrets is through the init wizard:
+
+```bash
+creel init
+```
+
+This automatically:
+
+1. Creates an age keypair at `~/.age/key.txt` if one doesn't exist
+2. Prompts for your API key (hidden input) and validates it
+3. Encrypts the key into `~/.creel/secrets/<provider>.env.enc`
+4. Wires the encrypted path into `agent.yaml`
+
+You never need to handle plaintext key files manually.
+
+## Manual Setup
+
+If you prefer to manage secrets yourself:
 
 ```bash
 # Generate an age key pair (one-time)
@@ -10,7 +29,7 @@ mkdir -p ~/.age
 age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 ```
 
-## Encrypting Secrets
+### Encrypting Secrets
 
 ```bash
 # Encrypt a .env file

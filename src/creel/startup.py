@@ -27,21 +27,24 @@ def validate_secrets(agent_def) -> None:
     """
     errors: list[str] = []
 
-    # Collect all secret paths
-    secrets_paths: list[tuple[str, str]] = []  # (label, path)
+    # Collect all secret paths, distinguishing required (LLM) from optional
+    required_secrets: list[tuple[str, str]] = []  # (label, path)
+    optional_secrets: list[tuple[str, str]] = []  # (label, path)
 
     if agent_def.llm.secrets:
-        secrets_paths.append(("llm.secrets", agent_def.llm.secrets))
+        required_secrets.append(("llm.secrets", agent_def.llm.secrets))
 
     for tool_name, tool_cfg in agent_def.tools.items():
         if tool_cfg.secrets:
-            secrets_paths.append((f"tools.{tool_name}.secrets", tool_cfg.secrets))
+            optional_secrets.append((f"tools.{tool_name}.secrets", tool_cfg.secrets))
 
     # Check channel secrets (e.g. telegram)
     for channel_id in agent_def.channels.configured_channels():
         channel_cfg = agent_def.channels.get_channel_config(channel_id)
         if channel_cfg and channel_cfg.get("secrets"):
-            secrets_paths.append((f"channels.{channel_id}.secrets", channel_cfg["secrets"]))
+            optional_secrets.append((f"channels.{channel_id}.secrets", channel_cfg["secrets"]))
+
+    secrets_paths = required_secrets + optional_secrets
 
     if not secrets_paths:
         logger.debug("No secrets files referenced, skipping validation")
@@ -55,13 +58,20 @@ def validate_secrets(agent_def) -> None:
     if not Path(identity_path).exists():
         errors.append(f"Age identity file not found: {identity_path}")
 
+    required_labels = {label for label, _ in required_secrets}
+
     # Check each secrets file — resolve relative paths against creel_home()
     for label, path in secrets_paths:
         p = Path(path)
         if not p.is_absolute():
             p = paths.creel_home() / p
         if not p.exists():
-            errors.append(f"{label}: file not found: {path}")
+            if label in required_labels:
+                errors.append(f"{label}: secrets file not found: {path}")
+            else:
+                logger.warning(
+                    "%s: secrets file not found: %s (tool will be unavailable)", label, path
+                )
             continue
 
         # Try to decrypt

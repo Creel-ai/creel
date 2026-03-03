@@ -23,37 +23,40 @@ source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-## 2. Set up Anthropic credentials
+## 2. Initialize Creel
 
-You need an Anthropic API key or Claude Code auth token:
-
-=== "API Key (simplest)"
-
-    ```bash
-    export ANTHROPIC_API_KEY=sk-ant-...
-    ```
-
-    Get one at [console.anthropic.com](https://console.anthropic.com/).
-
-=== "Claude Code Token"
-
-    ```bash
-    claude setup-token
-    export ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-...
-    ```
-
-For persistent storage, encrypt it:
+The `creel init` wizard creates your `~/.creel/` directory, validates your API key, encrypts secrets, and generates `agent.yaml`:
 
 ```bash
-# Set up age encryption (one-time)
-mkdir -p ~/.age
-age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
-
-# Encrypt your credentials
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > secrets/anthropic.env
-./scripts/encrypt-secret.sh secrets/anthropic.env
-rm secrets/anthropic.env   # delete plaintext
+creel init
 ```
+
+The wizard will walk you through:
+
+1. **LLM provider** — Anthropic, OpenAI, or Ollama (local)
+2. **API key** — entered securely via hidden prompt, validated inline
+3. **Model** — defaults to the provider's recommended model
+4. **Channel** — Telegram, iMessage, or CLI-only
+5. **Features** — media processing, guardian security pipeline
+
+Your API key is encrypted with [age](https://github.com/FiloSottile/age) and stored in `~/.creel/secrets/` — plaintext never touches disk.
+
+!!! tip "Non-interactive mode"
+    For scripted setups (CI, dotfiles, etc.):
+    ```bash
+    creel init --non-interactive \
+      --provider anthropic \
+      --api-key sk-ant-... \
+      --channel telegram \
+      --bot-token 123:ABC \
+      --allowed-senders alice,bob
+    ```
+
+!!! tip "Already have a repo-based config?"
+    Migrate an existing repo layout into `~/.creel/`:
+    ```bash
+    creel init --migrate --repo-root /path/to/repo
+    ```
 
 ## 3. Run your first task
 

@@ -132,6 +132,8 @@ class TestDiscover:
         assert entry.meta.id == "discovered"
 
     def test_discover_handles_bad_plugin(self, caplog):
+        import logging
+
         mock_ep = MagicMock()
         mock_ep.name = "broken"
         mock_ep.load.side_effect = ImportError("no such module")
@@ -139,9 +141,10 @@ class TestDiscover:
         mock_eps = MagicMock()
         mock_eps.select.return_value = [mock_ep]
 
-        with patch("importlib.metadata.entry_points", return_value=mock_eps):
-            reg = ChannelRegistry()
-            reg.discover()
+        with caplog.at_level(logging.DEBUG, logger="creel.channels.registry"):
+            with patch("importlib.metadata.entry_points", return_value=mock_eps):
+                reg = ChannelRegistry()
+                reg.discover()
 
         assert reg.get("broken") is None
         assert "Failed to load" in caplog.text

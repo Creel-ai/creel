@@ -105,6 +105,128 @@ def _extract_user_request_for_coherence(messages: list[dict]) -> str:
     return latest
 
 
+_MEMORY_WRITE_TOOLS = frozenset({"remember", "update_long_term_memory", "edit_memory"})
+
+
+@dataclass
+class _GuardianDecision:
+    """Result of pre-execution Guardian checks."""
+
+    action: str  # "allow" | "deny" | "needs_approval"
+    error_message: str = ""
+
+
+def _check_guardian_pre_execution(
+    guardian: Any,
+    tool_name: str,
+    tool_input: dict,
+    messages: list[dict],
+    tools_config: dict[str, ToolConfig],
+    confirm_action: Callable[[str, dict, str], bool] | None,
+) -> _GuardianDecision:
+    """Run all Guardian pre-execution checks for a single tool call.
+
+    Checks (in order): policy validation, user confirmation for REVIEW
+    verdicts, coherence verification, and memory write screening.
+
+    Returns a _GuardianDecision indicating whether to proceed, deny, or
+    request async approval.
+    """
+    from guardian.types import ActionVerdict
+
+    # Stage 1: Policy validation
+    decision = guardian.validate_action(tool_name, tool_input)
+    if decision.verdict == ActionVerdict.DENY:
+        logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
+        guardian.log_action_outcome(tool_name, "deny", "denied_by_policy")
+        return _GuardianDecision(
+            action="deny",
+            error_message=f"Action denied by security policy: {decision.reason}",
+        )
+
+    if decision.verdict == ActionVerdict.REVIEW:
+        logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
+        if confirm_action is not None:
+            if not confirm_action(tool_name, tool_input, decision.reason):
+                logger.info("User denied tool %s during review", tool_name)
+                guardian.log_action_outcome(tool_name, "review", "denied_by_user")
+                return _GuardianDecision(
+                    action="deny",
+                    error_message=f"Action denied by user: {decision.reason}",
+                )
+            guardian.log_action_outcome(tool_name, "review", "approved_by_user")
+        else:
+            # No synchronous callback — signal that async approval is needed.
+            # The caller handles injecting synthetic results and returning.
+            return _GuardianDecision(
+                action="needs_approval",
+                error_message=decision.reason,
+            )
+
+    # Stage 2: Coherence check
+    user_request = _extract_last_user_text(messages)
+    if user_request:
+        prior_tools = _extract_prior_tools(messages)
+        available_tool_names = list(tools_config.keys()) if tools_config else None
+        coherence = guardian.check_coherence(
+            user_request,
+            tool_name,
+            tool_input,
+            prior_tools=prior_tools,
+            available_tools=available_tool_names,
+        )
+        if not coherence.coherent:
+            logger.warning(
+                "Guardian coherence check failed for %s: %s",
+                tool_name,
+                coherence.reasoning,
+            )
+            return _GuardianDecision(
+                action="deny",
+                error_message=f"Action blocked — not coherent with user request: {coherence.reasoning}",
+            )
+
+    # Stage 3: Memory write screening
+    if tool_name in _MEMORY_WRITE_TOOLS:
+        write_text = tool_input.get("text") or tool_input.get("new_text") or ""
+        if write_text:
+            screen_result = guardian.screen_input(write_text)
+            if screen_result.blocked:
+                logger.warning(
+                    "Guardian blocked memory write for %s (confidence=%.3f)",
+                    tool_name,
+                    screen_result.classifier_result.confidence
+                    if screen_result.classifier_result
+                    else 0.0,
+                )
+                return _GuardianDecision(
+                    action="deny",
+                    error_message=(
+                        "[Guardian] Memory write blocked — content may contain "
+                        "prompt injection."
+                    ),
+                )
+
+    return _GuardianDecision(action="allow")
+
+
+def _extract_last_user_text(messages: list[dict]) -> str:
+    """Extract the text from the last user message in the conversation."""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            content = message.get("content", "")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                return " ".join(
+                    str(block_item.get("text", ""))
+                    for block_item in content
+                    if isinstance(block_item, dict) and block_item.get("type") == "text"
+                )
+            break
+    return ""
+
+
 def _record_tool_error(
     tool_use_id: str,
     tool_name: str,
@@ -381,148 +503,51 @@ def run_agent_loop(
                 )
                 continue
 
-            # Guardian action validation (stage 3)
+            # Guardian pre-execution checks (policy, coherence, memory screening)
             if guardian is not None:
-                from guardian.types import ActionVerdict
-
-                decision = guardian.validate_action(tool_name, tool_input)
-                if decision.verdict == ActionVerdict.DENY:
-                    logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
-                    guardian.log_action_outcome(tool_name, "deny", "denied_by_policy")
+                gd = _check_guardian_pre_execution(
+                    guardian, tool_name, tool_input, messages, tools_config, confirm_action,
+                )
+                if gd.action == "deny":
                     _record_tool_error(
-                        block.id,
-                        tool_name,
-                        tool_input,
-                        f"Action denied by security policy: {decision.reason}",
-                        tool_history,
-                        tool_results,
+                        block.id, tool_name, tool_input,
+                        gd.error_message, tool_history, tool_results,
                     )
                     continue
-
-                if decision.verdict == ActionVerdict.REVIEW:
-                    logger.warning("Guardian review for tool %s: %s", tool_name, decision.reason)
-
-                    # If a synchronous confirm callback is provided (TUI/CLI),
-                    # use it directly instead of the async approval queue.
-                    if confirm_action is not None:
-                        if not confirm_action(tool_name, tool_input, decision.reason):
-                            logger.info("User denied tool %s during review", tool_name)
-                            guardian.log_action_outcome(tool_name, "review", "denied_by_user")
-                            _record_tool_error(
-                                block.id,
-                                tool_name,
-                                tool_input,
-                                f"Action denied by user: {decision.reason}",
-                                tool_history,
-                                tool_results,
+                if gd.action == "needs_approval":
+                    # No synchronous callback — inject synthetic tool_results
+                    # for ALL tool_use blocks and return for async approval.
+                    synthetic_results = []
+                    for b in tool_use_blocks:
+                        if b.id == block.id:
+                            approval_msg = f"Action requires approval: {gd.error_message}"
+                        else:
+                            approval_msg = (
+                                "Action skipped — another tool in this batch requires approval."
                             )
-                            continue
-                        # User approved — fall through to execute
-                        guardian.log_action_outcome(tool_name, "review", "approved_by_user")
-                    else:
-                        # No callback — inject synthetic tool_results for ALL
-                        # tool_use blocks so the session history stays valid,
-                        # then return for async approval queue.
-                        synthetic_results = []
-                        for b in tool_use_blocks:
-                            if b.id == block.id:
-                                approval_msg = f"Action requires approval: {decision.reason}"
-                            else:
-                                approval_msg = (
-                                    "Action skipped — another tool in this batch requires approval."
-                                )
-                            synthetic_results.append(
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": b.id,
-                                    "content": approval_msg,
-                                    "is_error": True,
-                                }
-                            )
-                        messages.append({"role": "user", "content": synthetic_results})
-
-                        return AgentResult(
-                            text="This action requires approval before proceeding.",
-                            turns_used=turns_used,
-                            tool_calls_made=tool_calls_made,
-                            stop_reason="approval_required",
-                            tool_history=tool_history,
-                            pending_approval=PendingApproval(
-                                tool_name=tool_name,
-                                tool_input=tool_input,
-                                reason=decision.reason,
-                                tool_use_id=block.id,
-                            ),
-                            last_input_tokens=last_input_tokens,
+                        synthetic_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": b.id,
+                                "content": approval_msg,
+                                "is_error": True,
+                            }
                         )
-
-            # Guardian coherence check — verify tool call matches user intent
-            if guardian is not None:
-                # Extract the user's last message for coherence comparison
-                user_request = ""
-                for message in reversed(messages):
-                    if message.get("role") == "user":
-                        content = message.get("content", "")
-                        if isinstance(content, str):
-                            user_request = content
-                        elif isinstance(content, list):
-                            user_request = " ".join(
-                                str(block_item.get("text", ""))
-                                for block_item in content
-                                if isinstance(block_item, dict) and block_item.get("type") == "text"
-                            )
-                        break
-
-                if user_request:
-                    prior_tools = _extract_prior_tools(messages)
-                    available_tool_names = list(tools_config.keys()) if tools_config else None
-                    coherence = guardian.check_coherence(
-                        user_request,
-                        tool_name,
-                        tool_input,
-                        prior_tools=prior_tools,
-                        available_tools=available_tool_names,
+                    messages.append({"role": "user", "content": synthetic_results})
+                    return AgentResult(
+                        text="This action requires approval before proceeding.",
+                        turns_used=turns_used,
+                        tool_calls_made=tool_calls_made,
+                        stop_reason="approval_required",
+                        tool_history=tool_history,
+                        pending_approval=PendingApproval(
+                            tool_name=tool_name,
+                            tool_input=tool_input,
+                            reason=gd.error_message,
+                            tool_use_id=block.id,
+                        ),
+                        last_input_tokens=last_input_tokens,
                     )
-                    if not coherence.coherent:
-                        logger.warning(
-                            "Guardian coherence check failed for %s: %s",
-                            tool_name,
-                            coherence.reasoning,
-                        )
-                        _record_tool_error(
-                            block.id,
-                            tool_name,
-                            tool_input,
-                            f"Action blocked — not coherent with user request: {coherence.reasoning}",
-                            tool_history,
-                            tool_results,
-                        )
-                        continue
-
-            # Screen memory write content through Guardian before execution
-            _MEMORY_WRITE_TOOLS = {"remember", "update_long_term_memory", "edit_memory"}
-            if guardian is not None and tool_name in _MEMORY_WRITE_TOOLS:
-                write_text = tool_input.get("text") or tool_input.get("new_text") or ""
-                if write_text:
-                    screen_result = guardian.screen_input(write_text)
-                    if screen_result.blocked:
-                        logger.warning(
-                            "Guardian blocked memory write for %s (confidence=%.3f)",
-                            tool_name,
-                            screen_result.classifier_result.confidence
-                            if screen_result.classifier_result
-                            else 0.0,
-                        )
-                        _record_tool_error(
-                            block.id,
-                            tool_name,
-                            tool_input,
-                            "[Guardian] Memory write blocked — content may contain "
-                            "prompt injection.",
-                            tool_history,
-                            tool_results,
-                        )
-                        continue
 
             t0 = time.perf_counter()
             try:

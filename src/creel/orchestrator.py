@@ -123,7 +123,9 @@ class ImageBuildCache:
         try:
             self.ensure_image(image)
         except Exception:
-            logger.warning("Pre-build failed for %s (will retry on demand)", image)
+            logger.warning(
+                "Pre-build failed for %s (will retry on demand)", image, exc_info=True
+            )
 
     def clear(self) -> None:
         """Reset the cache (primarily for testing)."""

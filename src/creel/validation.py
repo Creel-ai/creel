@@ -6,10 +6,13 @@ Network errors produce ``ok=False`` with a descriptive message — they never ra
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _TIMEOUT = 15.0
 
@@ -94,6 +97,7 @@ def validate_ollama_reachable(base_url: str) -> ValidationResult:
             data = resp.json()
             models = [m.get("name", "?") for m in data.get("models", [])]
         except Exception:
+            logger.debug("Failed to parse Ollama model list", exc_info=True)
             models = []
         return ValidationResult(
             ok=True,
@@ -122,6 +126,7 @@ def validate_telegram_token(bot_token: str) -> ValidationResult:
             data = resp.json()
             username = data.get("result", {}).get("username", "unknown")
         except Exception:
+            logger.debug("Failed to parse Telegram bot username", exc_info=True)
             username = "unknown"
         return ValidationResult(
             ok=True,

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from creel.containers import (
     ImageBuildCache,
+    _compute_executor_hash,
     _ensure_image,
     _image_cache,
     _run_executor_container,
@@ -44,6 +45,7 @@ _ENV_LOCK = threading.Lock()
 # Re-export container symbols for backward compatibility
 __all__ = [
     "ImageBuildCache",
+    "_compute_executor_hash",
     "_ensure_image",
     "_image_cache",
     "_run_executor_container",

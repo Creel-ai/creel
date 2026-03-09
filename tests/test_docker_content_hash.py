@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from creel.orchestrator import _compute_executor_hash, _ensure_image, _image_cache
+from creel.containers import _compute_executor_hash, _ensure_image, _image_cache
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +103,7 @@ class TestEnsureImageContentHash:
         (executor_dir / "requirements.txt").write_text("requests")
         return executor_dir
 
-    @patch("creel.orchestrator.subprocess.run")
+    @patch("creel.containers.subprocess.run")
     def test_builds_with_hash_tag_when_missing(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """When no hashed image exists, build with hash + latest tags."""
         executor_dir = self._setup_executor_dir(tmp_path)
@@ -116,7 +116,7 @@ class TestEnsureImageContentHash:
             MagicMock(returncode=0, stderr="", stdout=""),  # docker build
         ]
 
-        with patch("creel.orchestrator.Path", side_effect=lambda x: tmp_path / x):
+        with patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
             result = _ensure_image("executor-weather:latest")
 
         assert result == expected_image
@@ -130,7 +130,7 @@ class TestEnsureImageContentHash:
         assert expected_image in tags
         assert "executor-weather:latest" in tags
 
-    @patch("creel.orchestrator.subprocess.run")
+    @patch("creel.containers.subprocess.run")
     def test_skips_build_when_hash_exists(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """When the hashed image already exists, skip build."""
         self._setup_executor_dir(tmp_path)
@@ -138,7 +138,7 @@ class TestEnsureImageContentHash:
         # inspect -> found
         mock_run.return_value = MagicMock(returncode=0)
 
-        with patch("creel.orchestrator.Path", side_effect=lambda x: tmp_path / x):
+        with patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
             result = _ensure_image("executor-weather:latest")
 
         assert result.startswith("executor-weather:")
@@ -146,7 +146,7 @@ class TestEnsureImageContentHash:
         # Only one subprocess call (inspect), no build
         assert mock_run.call_count == 1
 
-    @patch("creel.orchestrator.subprocess.run")
+    @patch("creel.containers.subprocess.run")
     def test_non_executor_image_unchanged(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """Non-executor images (e.g. llm-runner) pass through unchanged."""
         llm_dir = tmp_path / "src" / "llm"
@@ -156,12 +156,12 @@ class TestEnsureImageContentHash:
         # inspect -> found
         mock_run.return_value = MagicMock(returncode=0)
 
-        with patch("creel.orchestrator.Path", side_effect=lambda x: tmp_path / x):
+        with patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
             result = _ensure_image("llm-runner:latest")
 
         assert result == "llm-runner:latest"
 
-    @patch("creel.orchestrator.subprocess.run")
+    @patch("creel.containers.subprocess.run")
     def test_missing_dockerfile_raises(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """Missing Dockerfile should raise FileNotFoundError."""
         # Create dir but no Dockerfile
@@ -169,6 +169,6 @@ class TestEnsureImageContentHash:
 
         mock_run.return_value = MagicMock(returncode=1)
 
-        with patch("creel.orchestrator.Path", side_effect=lambda x: tmp_path / x):
+        with patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
             with pytest.raises(FileNotFoundError):
                 _ensure_image("executor-weather:latest")

@@ -25,7 +25,7 @@ from creel.agent import (
     _extract_prior_tools,
     _extract_user_request_for_coherence,
 )
-from creel.models import AgentConfig, BridgeConfig, LLMConfig, ToolConfig
+from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
 from creel.orchestrator import _ensure_image
 from creel.tools import build_tool_definitions, execute_tool_call
 from guardian.types import ActionVerdict
@@ -76,7 +76,7 @@ def run_agent_loop_container(
     confirm_action: Callable[[str, dict, str], bool] | None = None,
     memory_manager: Any | None = None,
     bridge_config: BridgeConfig | None = None,
-    session_state: dict | None = None,
+    session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
 ) -> AgentResult:
     """Run the agent loop inside an isolated Docker container.
@@ -160,7 +160,7 @@ def _run_with_pool(
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
     bridge_config: BridgeConfig | None,
-    session_state: dict | None,
+    session_state: SessionState | None,
     env_vars: dict[str, str],
 ) -> AgentResult:
     """Run the agent loop using a warm container from the pool."""
@@ -211,7 +211,7 @@ def _run_cold_start(
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
     bridge_config: BridgeConfig | None,
-    session_state: dict | None,
+    session_state: SessionState | None,
     env_vars: dict[str, str],
 ) -> AgentResult:
     """Run the agent loop with a fresh ephemeral container (original path)."""
@@ -297,7 +297,7 @@ def _run_protocol(
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: Any | None,
     bridge_config: BridgeConfig | None = None,
-    session_state: dict | None = None,
+    session_state: SessionState | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
     _send_to_container(proc, start_msg)
@@ -388,7 +388,7 @@ def _run_protocol_pooled(
     confirm_action: Callable[[str, dict, str], bool] | None,
     memory_manager: object | None,
     bridge_config: BridgeConfig | None = None,
-    session_state: dict | None = None,
+    session_state: SessionState | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol using a pooled ManagedContainer.
 
@@ -470,7 +470,7 @@ def _handle_tool_request(
     memory_manager: Any | None,
     messages: list[dict],
     bridge_config: BridgeConfig | None = None,
-    session_state: dict | None = None,
+    session_state: SessionState | None = None,
 ) -> tuple[list[dict] | None, AgentResult | None]:
     """Process tool calls from the container, applying Guardian checks.
 

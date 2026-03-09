@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from creel.models import SessionState
 from creel.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
 
 logger = logging.getLogger(__name__)
@@ -204,7 +205,7 @@ class SubAgentManager:
                 use_containers=self._use_containers,
                 guardian=self._guardian,
                 bridge_config=self._bridge_config,
-                session_state={},
+                session_state=SessionState(),
             )
 
             # Process any steer messages that arrived while the loop ran
@@ -225,7 +226,7 @@ class SubAgentManager:
                     use_containers=self._use_containers,
                     guardian=self._guardian,
                     bridge_config=self._bridge_config,
-                    session_state={},
+                    session_state=SessionState(),
                 )
 
             if cancel.is_set():

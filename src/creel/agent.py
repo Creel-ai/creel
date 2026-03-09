@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from creel.llm import call_llm, extract_text
-from creel.models import AgentConfig, BridgeConfig, LLMConfig, ToolConfig
+from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
 from creel.tools import build_tool_definitions, execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -387,7 +387,7 @@ def run_agent_loop(
     on_text_delta: Callable[[str], None] | None = None,
     allowed_tools: list[str] | None = None,
     bridge_config: BridgeConfig | None = None,
-    session_state: dict | None = None,
+    session_state: SessionState | None = None,
     cron_manager: object | None = None,
     subagent_manager: object | None = None,
 ) -> AgentResult:

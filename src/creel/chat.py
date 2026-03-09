@@ -14,7 +14,7 @@ from creel.approvals import ApprovalQueue
 from creel.channels.message import Attachment, AttachmentType
 from creel.log import generate_request_id, request_id_var
 from creel.memory import MemoryManager
-from creel.models import AgentDefinition
+from creel.models import AgentDefinition, SessionState
 from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
 from creel.services.media_store import MediaStore
@@ -120,7 +120,7 @@ class ChatServer:
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
         # Per-sender session state (e.g. workspace path for file_ops)
-        self._session_states: dict[str, dict] = {}
+        self._session_states: dict[str, SessionState] = {}
 
         # Rate limiter for inject_system_event: per-sender list of timestamps.
         # Note: stale sender entries are never pruned from this dict. This is
@@ -300,8 +300,9 @@ class ChatServer:
             confirm_action = _auto_confirm
 
         # Look up per-sender session state (workspace path, etc.)
-        session_state = self._session_states.setdefault(sender_id, {})
-        session_state["sender_id"] = sender_id
+        session_state = self._session_states.setdefault(
+            sender_id, SessionState(sender_id=sender_id),
+        )
 
         # Run the agent loop (containerized or direct)
         result = self._invoke_agent_loop(
@@ -483,7 +484,7 @@ class ChatServer:
     def _invoke_agent_loop(
         self,
         messages: list[dict],
-        session_state: dict,
+        session_state: SessionState,
         *,
         confirm_action: Callable[[str, dict, str], bool] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
@@ -566,8 +567,9 @@ class ChatServer:
             return f"❌ Action denied: {pending.tool_name}"
 
         # Execute the approved tool
-        session_state = self._session_states.setdefault(sender_id, {})
-        session_state["sender_id"] = sender_id
+        session_state = self._session_states.setdefault(
+            sender_id, SessionState(sender_id=sender_id),
+        )
         is_error = False
         try:
             tool_result = execute_tool_call(

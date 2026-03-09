@@ -7,7 +7,7 @@ import logging
 import os
 from typing import Any
 
-from creel.models import BridgeConfig, ExecutorConfig, ToolConfig
+from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
 from creel.orchestrator import _run_executor_container, _run_executor_inline
 
 logger = logging.getLogger(__name__)
@@ -333,7 +333,7 @@ def execute_tool_call(
     use_containers: bool = False,
     memory_manager: Any | None = None,
     bridge_config: BridgeConfig | None = None,
-    session_state: dict | None = None,
+    session_state: SessionState | None = None,
     cron_manager: Any | None = None,
     subagent_manager: Any | None = None,
 ) -> str:
@@ -350,7 +350,7 @@ def execute_tool_call(
         use_containers: If True, run in Docker container.
         memory_manager: Optional memory manager for memory tools.
         bridge_config: Optional bridge configuration.
-        session_state: Optional per-session state dict. Used to store/read
+        session_state: Optional per-session state. Used to store/read
             workspace path for file_ops tools.
         cron_manager: Optional CronManager for cron tool.
         subagent_manager: Optional SubAgentManager for sub-agent tool.
@@ -373,7 +373,7 @@ def execute_tool_call(
         if error:
             return json.dumps({"error": error})
         resolved = os.path.realpath(path)
-        session_state["workspace"] = resolved
+        session_state.workspace = resolved
         return json.dumps({"workspace": resolved, "status": "ok"})
 
     # Handle built-in tools
@@ -413,7 +413,7 @@ def execute_tool_call(
     if tool_name == "subagent" and subagent_manager is not None:
         from creel.subagents.executor import handle_subagent_tool
 
-        sender_id = (session_state or {}).get("sender_id", "")
+        sender_id = session_state.sender_id if session_state else ""
         return handle_subagent_tool(tool_input, manager=subagent_manager, sender_id=sender_id)
 
     if tool_name not in tools_config:
@@ -430,8 +430,8 @@ def execute_tool_call(
     merged_args = {**tool_input, **cfg.fixed_args}
 
     # Inject workspace from session_state for file_ops tools
-    if cfg.executor == "file_ops" and session_state and "workspace" in session_state:
-        workspace = session_state["workspace"]
+    if cfg.executor == "file_ops" and session_state and session_state.workspace:
+        workspace = session_state.workspace
         # Re-validate: workspace may have been removed since set_workspace
         if not os.path.isdir(workspace):
             return json.dumps(

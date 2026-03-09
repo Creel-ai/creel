@@ -9,11 +9,13 @@ import contextlib
 import json
 import logging
 import os
+import sys
 import threading
+from collections.abc import Callable, Generator
 from datetime import UTC, datetime
 from hashlib import sha256
+from io import StringIO
 from pathlib import Path
-from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING
 
 from creel.containers import (
@@ -524,8 +526,6 @@ def _exec_google_slides_inline(config: ExecutorConfig) -> str:
 
 def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
     """Run BlueBubbles executor inline."""
-    import os
-
     from executors.bluebubbles.executor import (
         get_chats,
         get_recent_messages,
@@ -582,9 +582,6 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
 
 def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
     """Run Apple Notes executor inline via bridge."""
-    import sys
-    from io import StringIO
-
     from executors.apple_notes.executor import main as apple_notes_main
 
     env_vars = {
@@ -611,9 +608,6 @@ def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
 
 def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
     """Run Apple Reminders executor inline via bridge."""
-    import sys
-    from io import StringIO
-
     from executors.apple_reminders.executor import main as apple_reminders_main
 
     env_vars = {
@@ -841,8 +835,6 @@ def _exec_coding_inline(config: ExecutorConfig) -> str:
 
 def _load_secrets_to_env(secrets_path: str) -> None:
     """Decrypt a secrets file and load values into the environment."""
-    import os
-
     secrets = decrypt_env_file(secrets_path)
     for key, value in secrets.items():
         os.environ[key] = value

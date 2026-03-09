@@ -26,7 +26,7 @@ from creel.agent import (
     _extract_user_request_for_coherence,
 )
 from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
-from creel.orchestrator import _ensure_image
+from creel.containers import _ensure_image
 from creel.tools import build_tool_definitions, execute_tool_call
 from guardian.types import ActionVerdict
 

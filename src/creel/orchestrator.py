@@ -13,6 +13,7 @@ import threading
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from collections.abc import Callable
 from typing import TYPE_CHECKING, TypedDict
 
 from creel.llm import run_llm
@@ -368,60 +369,48 @@ def _run_executor_inline_locked(
             os.environ["BRIDGE_TOKEN"] = scoped_token
 
     try:
-        if name == "weather":
-            return _exec_weather_inline(config)
-        elif name == "calendar":
-            return _exec_gcal_inline(config)
-        elif name == "gcal_write":
-            return _exec_gcal_write_inline(config)
-        elif name == "gmail_readonly":
-            return _exec_gmail_readonly_inline(config)
-        elif name == "gmail_send":
-            return _exec_gmail_send_inline(config)
-        elif name == "gmail_modify":
-            return _exec_gmail_modify_inline(config)
-        elif name == "drive":
-            return _exec_drive_inline(config)
-        elif name == "drive_write":
-            return _exec_drive_write_inline(config)
-        elif name == "google_docs":
-            return _exec_google_docs_inline(config)
-        elif name == "google_sheets":
-            return _exec_google_sheets_inline(config)
-        elif name == "google_slides":
-            return _exec_google_slides_inline(config)
-        elif name == "bluebubbles":
-            return _exec_bluebubbles_inline(config, "get_recent_messages")
-        elif name == "bluebubbles_send":
-            return _exec_bluebubbles_inline(config, "send_message")
-        elif name == "bluebubbles_react":
-            return _exec_bluebubbles_inline(config, "send_reaction")
-        elif name == "bluebubbles_chats":
-            return _exec_bluebubbles_inline(config, "get_chats")
-        elif name == "apple_notes":
-            return _exec_apple_notes_inline(config)
-        elif name == "apple_reminders":
-            return _exec_apple_reminders_inline(config)
-        elif name == "brave_search":
-            return _exec_brave_search_inline(config)
-        elif name == "notion":
-            return _exec_notion_inline(config)
-        elif name == "notion_write":
-            return _exec_notion_write_inline(config)
-        elif name == "fetch_url":
-            return _exec_fetch_url_inline(config)
-        elif name == "browser":
-            return _exec_browser_inline(config)
-        elif name == "exec":
-            return _exec_exec_inline(config)
-        elif name == "file_ops":
-            return _exec_file_ops_inline(config)
-        elif name == "github":
-            return _exec_github_inline(config)
-        elif name == "coding":
-            return _exec_coding_inline(config)
-        else:
+        # Dict-based dispatch — built at call time so unittest.mock patches
+        # on module-level functions are picked up correctly.
+        dispatch: dict[str, Callable[[ExecutorConfig], str]] = {
+            "weather": _exec_weather_inline,
+            "calendar": _exec_gcal_inline,
+            "gcal_write": _exec_gcal_write_inline,
+            "gmail_readonly": _exec_gmail_readonly_inline,
+            "gmail_send": _exec_gmail_send_inline,
+            "gmail_modify": _exec_gmail_modify_inline,
+            "drive": _exec_drive_inline,
+            "drive_write": _exec_drive_write_inline,
+            "google_docs": _exec_google_docs_inline,
+            "google_sheets": _exec_google_sheets_inline,
+            "google_slides": _exec_google_slides_inline,
+            "apple_notes": _exec_apple_notes_inline,
+            "apple_reminders": _exec_apple_reminders_inline,
+            "brave_search": _exec_brave_search_inline,
+            "notion": _exec_notion_inline,
+            "notion_write": _exec_notion_write_inline,
+            "fetch_url": _exec_fetch_url_inline,
+            "browser": _exec_browser_inline,
+            "exec": _exec_exec_inline,
+            "file_ops": _exec_file_ops_inline,
+            "github": _exec_github_inline,
+            "coding": _exec_coding_inline,
+        }
+
+        # BlueBubbles variants share one handler with different actions.
+        bluebubbles_dispatch: dict[str, str] = {
+            "bluebubbles": "get_recent_messages",
+            "bluebubbles_send": "send_message",
+            "bluebubbles_react": "send_reaction",
+            "bluebubbles_chats": "get_chats",
+        }
+
+        if name in bluebubbles_dispatch:
+            return _exec_bluebubbles_inline(config, bluebubbles_dispatch[name])
+
+        handler = dispatch.get(name)
+        if handler is None:
             raise ValueError(f"Unknown inline executor: {name}")
+        return handler(config)
     finally:
         # Restore original env
         for k, old_value in old_env.items():

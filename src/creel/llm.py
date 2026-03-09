@@ -278,7 +278,7 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
 
 def _run_llm_container(prompt: str, config: LLMConfig) -> str:
     """Run LLM call inside an isolated Docker container."""
-    from creel.orchestrator import _ensure_image
+    from creel.containers import _ensure_image
 
     _ensure_image("llm-runner:latest")
 
@@ -327,7 +327,7 @@ def _run_llm_container(prompt: str, config: LLMConfig) -> str:
 
 def _run_llm_pooled(prompt: str, config: LLMConfig, pool: ContainerPool) -> str:
     """Run LLM call using a warm container from the pool."""
-    from creel.orchestrator import _ensure_image
+    from creel.containers import _ensure_image
 
     _ensure_image("llm-runner:latest")
 

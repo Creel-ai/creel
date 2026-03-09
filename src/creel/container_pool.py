@@ -368,7 +368,7 @@ class ContainerPool:
 
             os.unlink(container.env_file_path)
         except Exception:
-            pass
+            logger.debug("Could not remove env file %s", container.env_file_path, exc_info=True)
 
     def _start_idle_reaper(self) -> None:
         """Periodically evict containers that have been idle too long."""

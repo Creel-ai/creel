@@ -63,9 +63,10 @@ class TestMediaServicesInit:
 
     def test_media_services_created(self, tmp_path) -> None:
         server = ChatServer(_make_agent_def(tmp_path))
-        assert server._media_store is not None
-        assert server._transcription is not None
-        assert server._vision is not None
+        assert server._media is not None
+        assert server._media._store is not None
+        assert server._media._transcription is not None
+        assert server._media._vision is not None
 
 
 class TestProcessAttachments:
@@ -97,7 +98,7 @@ class TestProcessAttachments:
             mime_type="audio/ogg",
         )
 
-        with patch.object(server._transcription, "transcribe", return_value="Hello world"):
+        with patch.object(server._media._transcription, "transcribe", return_value="Hello world"):
             text, blocks = server._process_attachments("some text", [attachment], "user1")
 
         assert "[Voice message]: Hello world" in text
@@ -115,7 +116,7 @@ class TestProcessAttachments:
             mime_type="audio/ogg",
         )
 
-        with patch.object(server._transcription, "transcribe", return_value=""):
+        with patch.object(server._media._transcription, "transcribe", return_value=""):
             text, blocks = server._process_attachments("", [attachment], "user1")
 
         assert "[Voice message: transcription failed]" in text
@@ -132,7 +133,7 @@ class TestProcessAttachments:
         )
 
         mock_block = {"type": "image", "source": {"type": "base64", "data": "abc"}}
-        with patch.object(server._vision, "prepare_image", return_value=mock_block):
+        with patch.object(server._media._vision, "prepare_image", return_value=mock_block):
             text, blocks = server._process_attachments("what is this?", [attachment], "user1")
 
         assert text == "what is this?"
@@ -150,7 +151,7 @@ class TestProcessAttachments:
             mime_type="image/png",
         )
 
-        with patch.object(server._vision, "prepare_image", return_value=None):
+        with patch.object(server._media._vision, "prepare_image", return_value=None):
             text, blocks = server._process_attachments("look at this", [attachment], "user1")
 
         assert text == "look at this"
@@ -177,8 +178,8 @@ class TestProcessAttachments:
 
         mock_block = {"type": "image", "source": {"type": "base64", "data": "abc"}}
         with (
-            patch.object(server._transcription, "transcribe", return_value="describe this"),
-            patch.object(server._vision, "prepare_image", return_value=mock_block),
+            patch.object(server._media._transcription, "transcribe", return_value="describe this"),
+            patch.object(server._media._vision, "prepare_image", return_value=mock_block),
         ):
             text, blocks = server._process_attachments("", [voice_att, image_att], "user1")
 
@@ -202,7 +203,7 @@ class TestProcessAttachments:
             )
 
         mock_block = {"type": "image", "source": {"type": "base64", "data": "abc"}}
-        with patch.object(server._vision, "prepare_image", return_value=mock_block):
+        with patch.object(server._media._vision, "prepare_image", return_value=mock_block):
             text, blocks = server._process_attachments("compare these", attachments, "user1")
 
         assert text == "compare these"
@@ -220,7 +221,7 @@ class TestProcessAttachments:
             mime_type="audio/ogg",
         )
 
-        with patch.object(server._transcription, "transcribe", return_value="Hello world"):
+        with patch.object(server._media._transcription, "transcribe", return_value="Hello world"):
             text, blocks = server._process_attachments("", [attachment], "user1")
 
         assert text == "[Voice message]: Hello world"
@@ -238,7 +239,7 @@ class TestProcessAttachments:
             mime_type="audio/mpeg",
         )
 
-        with patch.object(server._transcription, "transcribe", return_value="Audio content"):
+        with patch.object(server._media._transcription, "transcribe", return_value="Audio content"):
             text, blocks = server._process_attachments("", [attachment], "user1")
 
         assert "[Voice message]: Audio content" in text
@@ -253,7 +254,7 @@ class TestProcessAttachments:
         )
 
         with patch.object(
-            server._media_store,
+            server._media._store,
             "save_media",
             side_effect=ValueError("save failed"),
         ):
@@ -287,7 +288,7 @@ class TestHandleMessageWithAttachments:
         mock_result = _make_agent_result("I see a red pixel!")
 
         with (
-            patch.object(server._vision, "prepare_image", return_value=mock_block),
+            patch.object(server._media._vision, "prepare_image", return_value=mock_block),
             patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "What is this?", attachments=[attachment])
@@ -324,7 +325,7 @@ class TestHandleMessageWithAttachments:
         mock_result = _make_agent_result("Got it!")
 
         with (
-            patch.object(server._transcription, "transcribe", return_value="Turn off the lights"),
+            patch.object(server._media._transcription, "transcribe", return_value="Turn off the lights"),
             patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "", attachments=[attachment])
@@ -384,8 +385,8 @@ class TestHandleMessageWithAttachments:
         mock_result = _make_agent_result("Got voice and image!")
 
         with (
-            patch.object(server._transcription, "transcribe", return_value="What is this?"),
-            patch.object(server._vision, "prepare_image", return_value=mock_block),
+            patch.object(server._media._transcription, "transcribe", return_value="What is this?"),
+            patch.object(server._media._vision, "prepare_image", return_value=mock_block),
             patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "", attachments=[voice_att, image_att])

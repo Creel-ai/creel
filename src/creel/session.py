@@ -110,6 +110,7 @@ class SessionManager:
                 else:
                     self._encryption_passphrase = encryption_key
             except Exception:
+                logger.debug("Encryption key is not valid base64, treating as passphrase")
                 self._encryption_passphrase = encryption_key
             logger.info("Session encryption enabled")
 
@@ -158,6 +159,7 @@ class SessionManager:
             try:
                 data = self._read_session_file(path)
             except Exception:
+                logger.debug("Could not read session file %s, skipping", path.name, exc_info=True)
                 continue
             if data is None or data.get("sender_id") != sender_id:
                 continue
@@ -192,6 +194,7 @@ class SessionManager:
             try:
                 data = self._read_session_file(path)
             except Exception:
+                logger.debug("Could not read session file %s, skipping", path.name, exc_info=True)
                 continue
             if data is None or data.get("sender_id") != sender_id:
                 continue
@@ -501,6 +504,7 @@ class SessionManager:
                 decrypted = _decrypt_data(raw_bytes, self._encryption_key)
                 return json.loads(decrypted)
             except Exception:
+                logger.debug("Decryption failed, falling back to plaintext", exc_info=True)
                 return json.loads(raw_bytes)
         if self._encryption_passphrase:
             try:
@@ -509,7 +513,9 @@ class SessionManager:
                 decrypted = _decrypt_data(raw_bytes[_SALT_LENGTH:], key)
                 return json.loads(decrypted)
             except Exception:
-                # Fall back to plaintext (backward compat with unencrypted files)
+                logger.debug(
+                    "Passphrase decryption failed, falling back to plaintext", exc_info=True
+                )
                 return json.loads(raw_bytes)
         return json.loads(raw_bytes)
 

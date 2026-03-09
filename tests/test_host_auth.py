@@ -64,9 +64,9 @@ class TestHostAuthContainerMount:
         }
 
         with (
-            patch.dict("creel.orchestrator._HOST_AUTH_REGISTRY", patched_registry, clear=True),
-            patch("creel.orchestrator._ensure_image", return_value="executor-github:latest"),
-            patch("creel.orchestrator.decrypt_env_file", return_value={}),
+            patch.dict("creel.containers._HOST_AUTH_REGISTRY", patched_registry, clear=True),
+            patch("creel.containers._ensure_image", return_value="executor-github:latest"),
+            patch("creel.containers.decrypt_env_file", return_value={}),
             pytest.raises(RuntimeError, match="Host auth directory not found"),
         ):
             _run_executor_container(config, tool_config=tool_config)
@@ -88,9 +88,9 @@ class TestHostAuthContainerMount:
         }
 
         with (
-            patch.dict("creel.orchestrator._HOST_AUTH_REGISTRY", patched_registry, clear=True),
-            patch("creel.orchestrator._ensure_image", return_value="executor-github:latest"),
-            patch("creel.orchestrator.decrypt_env_file", return_value={}),
+            patch.dict("creel.containers._HOST_AUTH_REGISTRY", patched_registry, clear=True),
+            patch("creel.containers._ensure_image", return_value="executor-github:latest"),
+            patch("creel.containers.decrypt_env_file", return_value={}),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = SimpleNamespace(
@@ -121,8 +121,8 @@ class TestHostAuthContainerMount:
         tool_config = ToolConfig(executor="github", description="test")
 
         with (
-            patch("creel.orchestrator._ensure_image", return_value="executor-github:latest"),
-            patch("creel.orchestrator.decrypt_env_file", return_value={}),
+            patch("creel.containers._ensure_image", return_value="executor-github:latest"),
+            patch("creel.containers.decrypt_env_file", return_value={}),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = SimpleNamespace(

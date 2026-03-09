@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,17 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from guardian.types import GuardianConfig
+
+
+@dataclass
+class SessionState:
+    """Per-sender state carried across the agent loop and tool execution.
+
+    Replaces the untyped ``dict`` previously threaded through the system.
+    """
+
+    sender_id: str = ""
+    workspace: str | None = None
 
 
 class ExecutorConfig(BaseModel):

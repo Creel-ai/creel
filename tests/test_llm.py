@@ -112,7 +112,7 @@ def test_direct_no_credentials_raises(monkeypatch):
 # -- _run_llm_container auth tests --
 
 
-@patch("creel.orchestrator._ensure_image")
+@patch("creel.containers._ensure_image")
 @patch("creel.llm.subprocess.run")
 def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_path):
     """ANTHROPIC_AUTH_TOKEN should be written to the env file."""
@@ -132,7 +132,7 @@ def test_container_passes_auth_token(mock_run, _mock_ensure, monkeypatch, tmp_pa
     assert "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-token" in contents
 
 
-@patch("creel.orchestrator._ensure_image")
+@patch("creel.containers._ensure_image")
 @patch("creel.llm.subprocess.run")
 def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path):
     """ANTHROPIC_API_KEY should be written to the env file."""
@@ -149,7 +149,7 @@ def test_container_passes_api_key(mock_run, _mock_ensure, monkeypatch, tmp_path)
     assert "ANTHROPIC_API_KEY=sk-ant-key" in contents
 
 
-@patch("creel.orchestrator._ensure_image")
+@patch("creel.containers._ensure_image")
 @patch("creel.llm.subprocess.run")
 def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch, tmp_path):
     """Both env vars should be written to the env file."""

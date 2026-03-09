@@ -17,9 +17,9 @@ class TestRunExecutorContainer:
     def config(self) -> ExecutorConfig:
         return ExecutorConfig(name="test_executor", args={"key": "value"}, timeout=30)
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
-    @patch("creel.orchestrator.decrypt_env_file", return_value={})
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
+    @patch("creel.containers.decrypt_env_file", return_value={})
     def test_success_with_stderr_logs_debug(
         self, mock_decrypt, mock_run, mock_ensure, config, caplog
     ):
@@ -40,9 +40,9 @@ class TestRunExecutorContainer:
         assert result == "result data"
         assert "some debug output" in caplog.text
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
-    @patch("creel.orchestrator.decrypt_env_file", return_value={})
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
+    @patch("creel.containers.decrypt_env_file", return_value={})
     def test_failure_stderr_in_exception(self, mock_decrypt, mock_run, mock_ensure, config):
         """Non-zero exit should raise RuntimeError with stderr content."""
         from creel.orchestrator import _run_executor_container
@@ -56,9 +56,9 @@ class TestRunExecutorContainer:
         with pytest.raises(RuntimeError, match="No module named"):
             _run_executor_container(config)
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
-    @patch("creel.orchestrator.decrypt_env_file", return_value={})
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
+    @patch("creel.containers.decrypt_env_file", return_value={})
     def test_failure_no_stderr(self, mock_decrypt, mock_run, mock_ensure, config):
         """Non-zero exit with empty stderr should still include exit code."""
         from creel.orchestrator import _run_executor_container
@@ -72,9 +72,9 @@ class TestRunExecutorContainer:
         with pytest.raises(RuntimeError, match="exit code 137"):
             _run_executor_container(config)
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
-    @patch("creel.orchestrator.decrypt_env_file", return_value={})
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
+    @patch("creel.containers.decrypt_env_file", return_value={})
     def test_timeout_raises_runtime_error(self, mock_decrypt, mock_run, mock_ensure, config):
         """Timeout should raise RuntimeError with executor name and timeout."""
         from creel.orchestrator import _run_executor_container
@@ -86,9 +86,9 @@ class TestRunExecutorContainer:
         with pytest.raises(RuntimeError, match="timed out after 30s"):
             _run_executor_container(config)
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
-    @patch("creel.orchestrator.decrypt_env_file", return_value={})
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
+    @patch("creel.containers.decrypt_env_file", return_value={})
     def test_configurable_timeout(self, mock_decrypt, mock_run, mock_ensure):
         """Timeout should use config.timeout, not hardcoded 60."""
         from creel.orchestrator import _run_executor_container
@@ -102,9 +102,9 @@ class TestRunExecutorContainer:
         call_kwargs = mock_run.call_args
         assert call_kwargs.kwargs.get("timeout") == 120
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
-    @patch("creel.orchestrator.decrypt_env_file", return_value={})
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
+    @patch("creel.containers.decrypt_env_file", return_value={})
     def test_request_id_passed_to_container(
         self, mock_decrypt, mock_run, mock_ensure, config, tmp_path
     ):
@@ -124,9 +124,9 @@ class TestRunExecutorContainer:
         # We can verify by checking subprocess was called (env file is temp)
         mock_run.assert_called_once()
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
-    @patch("creel.orchestrator.decrypt_env_file", return_value={})
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
+    @patch("creel.containers.decrypt_env_file", return_value={})
     def test_stderr_truncated_in_error(self, mock_decrypt, mock_run, mock_ensure, config):
         """Very long stderr should be truncated in the error message."""
         from creel.orchestrator import _run_executor_container
@@ -143,10 +143,10 @@ class TestRunExecutorContainer:
         # Error detail truncated to 500 chars
         assert len(str(exc_info.value)) < 600
 
-    @patch("creel.orchestrator._ensure_image")
-    @patch("creel.orchestrator.subprocess.run")
+    @patch("creel.containers._ensure_image")
+    @patch("creel.containers.subprocess.run")
     @patch(
-        "creel.orchestrator.decrypt_env_file",
+        "creel.containers.decrypt_env_file",
         return_value={
             "GOOGLE_CREDENTIALS_JSON": (
                 '{"refresh_token":"rt","client_id":"cid","client_secret":"cs"}'
@@ -154,7 +154,7 @@ class TestRunExecutorContainer:
         },
     )
     @patch("creel.oauth.get_google_access_token_from_json", return_value="ya29.container-token")
-    @patch("creel.orchestrator.tempfile.NamedTemporaryFile")
+    @patch("creel.containers.tempfile.NamedTemporaryFile")
     def test_google_credentials_json_replaced_with_access_token(
         self,
         mock_tmpfile,
@@ -207,7 +207,7 @@ class TestEnsureImage:
         yield
         _image_cache.clear()
 
-    @patch("creel.orchestrator.subprocess.run")
+    @patch("creel.containers.subprocess.run")
     def test_build_failure_includes_stderr(self, mock_run, tmp_path):
         """Docker build failure should log and raise with stderr."""
         from creel.orchestrator import _ensure_image
@@ -226,7 +226,7 @@ class TestEnsureImage:
         dockerfile.write_text("FROM python:3.11")
 
         with patch(
-            "creel.orchestrator.Path",
+            "creel.containers.Path",
             side_effect=lambda x: tmp_path / x if not str(x).startswith("/") else x,
         ):
             with pytest.raises(RuntimeError, match="Could not find"):

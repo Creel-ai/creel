@@ -11,15 +11,13 @@ from typing import Any
 
 from creel.agent import run_agent_loop
 from creel.approvals import ApprovalQueue
-from creel.channels.message import Attachment, AttachmentType
+from creel.channels.message import Attachment
 from creel.log import generate_request_id, request_id_var
+from creel.media import MediaProcessor
 from creel.memory import MemoryManager
-from creel.models import AgentDefinition
+from creel.models import AgentDefinition, SessionState
 from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
-from creel.services.media_store import MediaStore
-from creel.services.transcription import TranscriptionService
-from creel.services.vision import VisionProcessor
 from creel.session import SessionManager
 from creel.subagents import SubAgentManager
 from creel.tools import execute_tool_call
@@ -120,7 +118,7 @@ class ChatServer:
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
         # Per-sender session state (e.g. workspace path for file_ops)
-        self._session_states: dict[str, dict] = {}
+        self._session_states: dict[str, SessionState] = {}
 
         # Rate limiter for inject_system_event: per-sender list of timestamps.
         # Note: stale sender entries are never pruned from this dict. This is
@@ -152,30 +150,11 @@ class ChatServer:
             self._guardian.warm_up()
             logger.info("Guardian enabled")
 
-        # Initialize media services for attachment processing
+        # Initialize media processor for attachment handling
         media_cfg = agent_def.media
+        self._media: MediaProcessor | None = None
         if media_cfg is not None and media_cfg.enabled:
-            storage_dir = Path(media_cfg.storage_dir).expanduser()
-            self._media_store: MediaStore | None = MediaStore(
-                base_dir=storage_dir,
-                max_file_size=media_cfg.max_file_size_mb * 1024 * 1024,
-                retention_days=media_cfg.retention_days,
-            )
-            self._transcription: TranscriptionService | None = TranscriptionService(
-                backend=media_cfg.transcription.backend,
-                model=media_cfg.transcription.model,
-                api_key=media_cfg.transcription.api_key,
-            )
-            self._vision: VisionProcessor | None = VisionProcessor(
-                provider="anthropic",
-                max_pixels=media_cfg.vision.max_pixels,
-                quality=media_cfg.vision.quality,
-            )
-            logger.info("Media services enabled (storage: %s)", storage_dir)
-        else:
-            self._media_store = None
-            self._transcription = None
-            self._vision = None
+            self._media = MediaProcessor(media_cfg)
 
         # Initialize sub-agent manager
         self._subagent_manager = SubAgentManager(
@@ -300,8 +279,9 @@ class ChatServer:
             confirm_action = _auto_confirm
 
         # Look up per-sender session state (workspace path, etc.)
-        session_state = self._session_states.setdefault(sender_id, {})
-        session_state["sender_id"] = sender_id
+        session_state = self._session_states.setdefault(
+            sender_id, SessionState(sender_id=sender_id),
+        )
 
         # Run the agent loop (containerized or direct)
         result = self._invoke_agent_loop(
@@ -352,82 +332,17 @@ class ChatServer:
         sender_id: str,
         channel: str = "unknown",
     ) -> tuple[str, list[dict]]:
-        """Process media attachments, returning updated text and image content blocks.
-
-        Voice/audio attachments are transcribed and their text is prepended to the
-        user message. Image attachments are converted to LLM content blocks.
+        """Process media attachments via the MediaProcessor.
 
         Returns:
-            (updated_text, image_content_blocks) — text with transcriptions prepended
-            and a list of image content block dicts for the LLM.
+            (updated_text, image_content_blocks)
         """
         if not attachments:
             return text, []
-
-        if self._media_store is None:
+        if self._media is None:
             logger.info("Media disabled — ignoring %d attachment(s)", len(attachments))
             return text, []
-
-        voice_parts: list[str] = []
-        image_blocks: list[dict] = []
-
-        for attachment in attachments:
-            if attachment.type in (AttachmentType.VOICE, AttachmentType.AUDIO):
-                self._process_voice_attachment(attachment, sender_id, voice_parts, channel)
-            elif attachment.type == AttachmentType.IMAGE:
-                self._process_image_attachment(attachment, sender_id, image_blocks, channel)
-
-        # Prepend transcribed voice text to the user message
-        if voice_parts:
-            voice_text = "\n".join(voice_parts)
-            text = f"{voice_text}\n{text}" if text else voice_text
-
-        return text, image_blocks
-
-    def _process_voice_attachment(
-        self,
-        attachment: Attachment,
-        sender_id: str,
-        voice_parts: list[str],
-        channel: str = "unknown",
-    ) -> None:
-        """Save, transcribe a voice attachment and append to voice_parts."""
-        assert self._media_store is not None  # guarded by _process_attachments
-        assert self._transcription is not None
-        try:
-            saved_path = self._media_store.save_media(attachment, channel=channel)
-        except Exception:
-            logger.warning("Failed to save voice attachment", exc_info=True)
-            voice_parts.append("[Voice message: could not save audio file]")
-            return
-
-        transcribed = self._transcription.transcribe(saved_path)
-        if transcribed:
-            voice_parts.append(f"[Voice message]: {transcribed}")
-        else:
-            voice_parts.append(f"[Voice message: transcription failed] (file: {saved_path.name})")
-
-    def _process_image_attachment(
-        self,
-        attachment: Attachment,
-        sender_id: str,
-        image_blocks: list[dict],
-        channel: str = "unknown",
-    ) -> None:
-        """Save an image attachment and prepare it as an LLM content block."""
-        assert self._media_store is not None  # guarded by _process_attachments
-        assert self._vision is not None
-        try:
-            saved_path = self._media_store.save_media(attachment, channel=channel)
-        except Exception:
-            logger.warning("Failed to save image attachment", exc_info=True)
-            return
-
-        content_block = self._vision.prepare_image(saved_path)
-        if content_block is not None:
-            image_blocks.append(content_block)
-        else:
-            logger.warning("Image could not be processed: %s", saved_path)
+        return self._media.process_attachments(text, attachments, sender_id, channel)
 
     def _on_subagent_result(self, agent_id: str, result_text: str) -> None:
         """Callback fired when a sub-agent completes, fails, or times out.
@@ -483,7 +398,7 @@ class ChatServer:
     def _invoke_agent_loop(
         self,
         messages: list[dict],
-        session_state: dict,
+        session_state: SessionState,
         *,
         confirm_action: Callable[[str, dict, str], bool] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
@@ -566,8 +481,9 @@ class ChatServer:
             return f"❌ Action denied: {pending.tool_name}"
 
         # Execute the approved tool
-        session_state = self._session_states.setdefault(sender_id, {})
-        session_state["sender_id"] = sender_id
+        session_state = self._session_states.setdefault(
+            sender_id, SessionState(sender_id=sender_id),
+        )
         is_error = False
         try:
             tool_result = execute_tool_call(

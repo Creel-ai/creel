@@ -5,15 +5,17 @@ Reads task definitions, runs executors, calls LLM, routes output.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 import subprocess
 import tempfile
 import threading
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, TypedDict
 
 from creel.llm import run_llm
@@ -325,99 +327,98 @@ def _run_agent_mode(
     return agent_result.text
 
 
+@contextlib.contextmanager
+def _env_override(overrides: dict[str, str]) -> Generator[None, None, None]:
+    """Temporarily set environment variables, restoring originals on exit.
+
+    Acquires _ENV_LOCK to prevent concurrent env mutations from interleaving.
+    Use this instead of manually saving/restoring os.environ entries.
+    """
+    saved: dict[str, str | None] = {}
+    with _ENV_LOCK:
+        for key, value in overrides.items():
+            saved[key] = os.environ.get(key)
+            os.environ[key] = value
+        try:
+            yield
+        finally:
+            for key, prev in saved.items():
+                if prev is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = prev
+
+
 def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
     """Run an executor by importing and calling it directly (no container).
 
-    Uses _ENV_LOCK to serialize env-var mutations since os.environ is
-    process-global and concurrent calls could interleave.
+    Uses _env_override to temporarily set secrets and bridge env vars,
+    restoring the original values when done.
     """
     # Load secrets if configured
-    env_overrides = {}
+    env_overrides: dict[str, str] = {}
     if config.secrets:
         env_overrides = decrypt_env_file(config.secrets)
         _replace_google_credentials_with_access_token(env_overrides)
 
-    with _ENV_LOCK:
-        return _run_executor_inline_locked(name, config, env_overrides)
-
-
-def _run_executor_inline_locked(
-    name: str,
-    config: ExecutorConfig,
-    env_overrides: dict[str, str],
-) -> str:
-    """Inner executor dispatch, called under _ENV_LOCK."""
-    import os
-
-    old_env: dict[str, str | None] = {}
-    for k, v in env_overrides.items():
-        old_env[k] = os.environ.get(k)
-        os.environ[k] = v
-
     # Inject BRIDGE_URL and scoped BRIDGE_TOKEN for bridge-calling executors
-    # in inline mode (container mode handles this in _build_container_env).
-    if not os.environ.get("BRIDGE_URL"):
-        # Bridge URL defaults to localhost:8099 for inline execution
-        bridge_url = os.environ.get("CREEL_BRIDGE_URL", "http://localhost:8099")
-        old_env.setdefault("BRIDGE_URL", os.environ.get("BRIDGE_URL"))
-        os.environ["BRIDGE_URL"] = bridge_url
-    if not os.environ.get("BRIDGE_TOKEN"):
+    if "BRIDGE_URL" not in env_overrides and not os.environ.get("BRIDGE_URL"):
+        env_overrides["BRIDGE_URL"] = os.environ.get(
+            "CREEL_BRIDGE_URL", "http://localhost:8099"
+        )
+    if "BRIDGE_TOKEN" not in env_overrides and not os.environ.get("BRIDGE_TOKEN"):
         scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(name, name.upper())
         scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
         if scoped_token:
-            old_env.setdefault("BRIDGE_TOKEN", os.environ.get("BRIDGE_TOKEN"))
-            os.environ["BRIDGE_TOKEN"] = scoped_token
+            env_overrides["BRIDGE_TOKEN"] = scoped_token
 
-    try:
-        # Dict-based dispatch — built at call time so unittest.mock patches
-        # on module-level functions are picked up correctly.
-        dispatch: dict[str, Callable[[ExecutorConfig], str]] = {
-            "weather": _exec_weather_inline,
-            "calendar": _exec_gcal_inline,
-            "gcal_write": _exec_gcal_write_inline,
-            "gmail_readonly": _exec_gmail_readonly_inline,
-            "gmail_send": _exec_gmail_send_inline,
-            "gmail_modify": _exec_gmail_modify_inline,
-            "drive": _exec_drive_inline,
-            "drive_write": _exec_drive_write_inline,
-            "google_docs": _exec_google_docs_inline,
-            "google_sheets": _exec_google_sheets_inline,
-            "google_slides": _exec_google_slides_inline,
-            "apple_notes": _exec_apple_notes_inline,
-            "apple_reminders": _exec_apple_reminders_inline,
-            "brave_search": _exec_brave_search_inline,
-            "notion": _exec_notion_inline,
-            "notion_write": _exec_notion_write_inline,
-            "fetch_url": _exec_fetch_url_inline,
-            "browser": _exec_browser_inline,
-            "exec": _exec_exec_inline,
-            "file_ops": _exec_file_ops_inline,
-            "github": _exec_github_inline,
-            "coding": _exec_coding_inline,
-        }
+    with _env_override(env_overrides):
+        return _dispatch_executor(name, config)
 
-        # BlueBubbles variants share one handler with different actions.
-        bluebubbles_dispatch: dict[str, str] = {
-            "bluebubbles": "get_recent_messages",
-            "bluebubbles_send": "send_message",
-            "bluebubbles_react": "send_reaction",
-            "bluebubbles_chats": "get_chats",
-        }
 
-        if name in bluebubbles_dispatch:
-            return _exec_bluebubbles_inline(config, bluebubbles_dispatch[name])
+def _dispatch_executor(name: str, config: ExecutorConfig) -> str:
+    """Dispatch to the correct inline executor handler."""
+    # Dict built at call time so unittest.mock patches are picked up.
+    dispatch: dict[str, Callable[[ExecutorConfig], str]] = {
+        "weather": _exec_weather_inline,
+        "calendar": _exec_gcal_inline,
+        "gcal_write": _exec_gcal_write_inline,
+        "gmail_readonly": _exec_gmail_readonly_inline,
+        "gmail_send": _exec_gmail_send_inline,
+        "gmail_modify": _exec_gmail_modify_inline,
+        "drive": _exec_drive_inline,
+        "drive_write": _exec_drive_write_inline,
+        "google_docs": _exec_google_docs_inline,
+        "google_sheets": _exec_google_sheets_inline,
+        "google_slides": _exec_google_slides_inline,
+        "apple_notes": _exec_apple_notes_inline,
+        "apple_reminders": _exec_apple_reminders_inline,
+        "brave_search": _exec_brave_search_inline,
+        "notion": _exec_notion_inline,
+        "notion_write": _exec_notion_write_inline,
+        "fetch_url": _exec_fetch_url_inline,
+        "browser": _exec_browser_inline,
+        "exec": _exec_exec_inline,
+        "file_ops": _exec_file_ops_inline,
+        "github": _exec_github_inline,
+        "coding": _exec_coding_inline,
+    }
 
-        handler = dispatch.get(name)
-        if handler is None:
-            raise ValueError(f"Unknown inline executor: {name}")
-        return handler(config)
-    finally:
-        # Restore original env
-        for k, old_value in old_env.items():
-            if old_value is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = old_value
+    # BlueBubbles variants share one handler with different actions.
+    bluebubbles_dispatch: dict[str, str] = {
+        "bluebubbles": "get_recent_messages",
+        "bluebubbles_send": "send_message",
+        "bluebubbles_react": "send_reaction",
+        "bluebubbles_chats": "get_chats",
+    }
+
+    if name in bluebubbles_dispatch:
+        return _exec_bluebubbles_inline(config, bluebubbles_dispatch[name])
+
+    handler = dispatch.get(name)
+    if handler is None:
+        raise ValueError(f"Unknown inline executor: {name}")
+    return handler(config)
 
 
 def _exec_weather_inline(config: ExecutorConfig) -> str:
@@ -714,93 +715,61 @@ def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
 
 def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
     """Run Apple Notes executor inline via bridge."""
-    import os
+    import sys
+    from io import StringIO
 
     from executors.apple_notes.executor import main as apple_notes_main
 
-    # Set environment variables for the bridge-calling executor
-    old_env: dict[str, str | None] = {}
     env_vars = {
-        "ACTION": config.args.get("action", "list"),
-        "FOLDER": config.args.get("folder", ""),
-        "QUERY": config.args.get("query", ""),
-        "TITLE": config.args.get("title", ""),
-        "BODY": config.args.get("body", ""),
+        k: v
+        for k, v in {
+            "ACTION": config.args.get("action", "list"),
+            "FOLDER": config.args.get("folder", ""),
+            "QUERY": config.args.get("query", ""),
+            "TITLE": config.args.get("title", ""),
+            "BODY": config.args.get("body", ""),
+        }.items()
+        if v  # Only set non-empty values
     }
 
-    for key, value in env_vars.items():
-        if value:  # Only set non-empty values
-            old_env[key] = os.environ.get(key)
-            os.environ[key] = str(value)
-
+    old_stdout = sys.stdout
     try:
-        # Capture stdout from the bridge executor
-        import sys
-        from io import StringIO
-
-        old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
-
-        apple_notes_main()
-
-        result = captured_output.getvalue()
-        return result.strip() or "{}"
-
+        with _env_override(env_vars):
+            apple_notes_main()
+        return captured_output.getvalue().strip() or "{}"
     finally:
-        # Restore environment
         sys.stdout = old_stdout
-        for key in env_vars:
-            old_value = old_env.get(key)
-            if old_value is not None:
-                os.environ[key] = old_value
-            else:
-                os.environ.pop(key, None)
 
 
 def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
     """Run Apple Reminders executor inline via bridge."""
-    import os
+    import sys
+    from io import StringIO
 
     from executors.apple_reminders.executor import main as apple_reminders_main
 
-    # Set environment variables for the bridge-calling executor
-    old_env: dict[str, str | None] = {}
     env_vars = {
-        "ACTION": config.args.get("action", "list"),
-        "FILTER": config.args.get("filter", "all"),
-        "TITLE": config.args.get("title", ""),
-        "LIST": config.args.get("list_name", ""),
-        "DUE": config.args.get("due_date", ""),
-        "ID": config.args.get("id", ""),
+        k: v
+        for k, v in {
+            "ACTION": config.args.get("action", "list"),
+            "FILTER": config.args.get("filter", "all"),
+            "TITLE": config.args.get("title", ""),
+            "LIST": config.args.get("list_name", ""),
+            "DUE": config.args.get("due_date", ""),
+            "ID": config.args.get("id", ""),
+        }.items()
+        if v
     }
 
-    for key, value in env_vars.items():
-        if value:  # Only set non-empty values
-            old_env[key] = os.environ.get(key)
-            os.environ[key] = str(value)
-
+    old_stdout = sys.stdout
     try:
-        # Capture stdout from the bridge executor
-        import sys
-        from io import StringIO
-
-        old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
-
-        apple_reminders_main()
-
-        result = captured_output.getvalue()
-        return result.strip() or "{}"
-
+        with _env_override(env_vars):
+            apple_reminders_main()
+        return captured_output.getvalue().strip() or "{}"
     finally:
-        # Restore environment
         sys.stdout = old_stdout
-        for key in env_vars:
-            old_value = old_env.get(key)
-            if old_value is not None:
-                os.environ[key] = old_value
-            else:
-                os.environ.pop(key, None)
 
 
 def _exec_brave_search_inline(config: ExecutorConfig) -> str:
@@ -934,8 +903,6 @@ def _exec_exec_inline(config: ExecutorConfig) -> str:
 
 def _exec_file_ops_inline(config: ExecutorConfig) -> str:
     """Run file_ops executor inline."""
-    import os
-
     from executors.file_ops.executor import ACTIONS
 
     action = config.args.get("action", "")
@@ -957,24 +924,15 @@ def _exec_file_ops_inline(config: ExecutorConfig) -> str:
         "recursive": "RECURSIVE",
     }
 
-    old_env: dict[str, str | None] = {}
-    for arg_key, env_key in env_map.items():
-        value = config.args.get(arg_key, "")
-        if value:
-            old_env[env_key] = os.environ.get(env_key)
-            os.environ[env_key] = str(value)
+    env_vars = {
+        env_key: str(config.args[arg_key])
+        for arg_key, env_key in env_map.items()
+        if config.args.get(arg_key, "")
+    }
 
-    try:
+    with _env_override(env_vars):
         result = ACTIONS[action]()
-        return json.dumps(result, indent=2)
-    finally:
-        for env_key in old_env:
-            if old_env[env_key] is None:
-                os.environ.pop(env_key, None)
-            else:
-                old_value = old_env[env_key]
-                assert old_value is not None
-                os.environ[env_key] = old_value
+    return json.dumps(result, indent=2)
 
 
 def _exec_github_inline(config: ExecutorConfig) -> str:

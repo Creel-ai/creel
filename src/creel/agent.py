@@ -105,6 +105,37 @@ def _extract_user_request_for_coherence(messages: list[dict]) -> str:
     return latest
 
 
+def _record_tool_error(
+    tool_use_id: str,
+    tool_name: str,
+    tool_input: dict,
+    message: str,
+    tool_history: list[dict],
+    tool_results: list[dict],
+) -> None:
+    """Record a tool-call error into both tracking lists.
+
+    Used when a tool call is blocked before execution (e.g. by policy,
+    coherence check, or Guardian screening).
+    """
+    tool_history.append(
+        {
+            "tool": tool_name,
+            "input": tool_input,
+            "output": message,
+            "is_error": True,
+        }
+    )
+    tool_results.append(
+        {
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": message,
+            "is_error": True,
+        }
+    )
+
+
 def _ensure_tool_call_integrity(messages: list[dict]) -> int:
     """Repair orphaned tool_use/tool_result sequences in-place.
 
@@ -339,26 +370,14 @@ def run_agent_loop(
                     tool_name,
                     allowed_tools,
                 )
-                result = (
+                _record_tool_error(
+                    block.id,
+                    tool_name,
+                    tool_input,
                     f"Tool '{tool_name}' is not permitted for this task. "
-                    f"Allowed tools: {', '.join(allowed_tools)}"
-                )
-                is_error = True
-                tool_history.append(
-                    {
-                        "tool": tool_name,
-                        "input": tool_input,
-                        "output": result,
-                        "is_error": is_error,
-                    }
-                )
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                        "is_error": is_error,
-                    }
+                    f"Allowed tools: {', '.join(allowed_tools)}",
+                    tool_history,
+                    tool_results,
                 )
                 continue
 
@@ -370,24 +389,13 @@ def run_agent_loop(
                 if decision.verdict == ActionVerdict.DENY:
                     logger.warning("Guardian denied tool %s: %s", tool_name, decision.reason)
                     guardian.log_action_outcome(tool_name, "deny", "denied_by_policy")
-                    result = f"Action denied by security policy: {decision.reason}"
-                    is_error = True
-
-                    tool_history.append(
-                        {
-                            "tool": tool_name,
-                            "input": tool_input,
-                            "output": result,
-                            "is_error": is_error,
-                        }
-                    )
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                            "is_error": is_error,
-                        }
+                    _record_tool_error(
+                        block.id,
+                        tool_name,
+                        tool_input,
+                        f"Action denied by security policy: {decision.reason}",
+                        tool_history,
+                        tool_results,
                     )
                     continue
 
@@ -400,23 +408,13 @@ def run_agent_loop(
                         if not confirm_action(tool_name, tool_input, decision.reason):
                             logger.info("User denied tool %s during review", tool_name)
                             guardian.log_action_outcome(tool_name, "review", "denied_by_user")
-                            result = f"Action denied by user: {decision.reason}"
-                            is_error = True
-                            tool_history.append(
-                                {
-                                    "tool": tool_name,
-                                    "input": tool_input,
-                                    "output": result,
-                                    "is_error": is_error,
-                                }
-                            )
-                            tool_results.append(
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": block.id,
-                                    "content": result,
-                                    "is_error": is_error,
-                                }
+                            _record_tool_error(
+                                block.id,
+                                tool_name,
+                                tool_input,
+                                f"Action denied by user: {decision.reason}",
+                                tool_history,
+                                tool_results,
                             )
                             continue
                         # User approved — fall through to execute
@@ -491,23 +489,13 @@ def run_agent_loop(
                             tool_name,
                             coherence.reasoning,
                         )
-                        result = f"Action blocked — not coherent with user request: {coherence.reasoning}"
-                        is_error = True
-                        tool_history.append(
-                            {
-                                "tool": tool_name,
-                                "input": tool_input,
-                                "output": result,
-                                "is_error": is_error,
-                            }
-                        )
-                        tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": result,
-                                "is_error": is_error,
-                            }
+                        _record_tool_error(
+                            block.id,
+                            tool_name,
+                            tool_input,
+                            f"Action blocked — not coherent with user request: {coherence.reasoning}",
+                            tool_history,
+                            tool_results,
                         )
                         continue
 
@@ -525,26 +513,14 @@ def run_agent_loop(
                             if screen_result.classifier_result
                             else 0.0,
                         )
-                        result = (
+                        _record_tool_error(
+                            block.id,
+                            tool_name,
+                            tool_input,
                             "[Guardian] Memory write blocked — content may contain "
-                            "prompt injection."
-                        )
-                        is_error = True
-                        tool_history.append(
-                            {
-                                "tool": tool_name,
-                                "input": tool_input,
-                                "output": result,
-                                "is_error": is_error,
-                            }
-                        )
-                        tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": result,
-                                "is_error": is_error,
-                            }
+                            "prompt injection.",
+                            tool_history,
+                            tool_results,
                         )
                         continue
 

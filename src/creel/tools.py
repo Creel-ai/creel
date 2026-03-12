@@ -7,8 +7,8 @@ import logging
 import os
 from typing import Any
 
-from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
 from creel.containers import _run_executor_container
+from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
 from creel.orchestrator import _run_executor_inline
 
 logger = logging.getLogger(__name__)
@@ -337,6 +337,7 @@ def execute_tool_call(
     session_state: SessionState | None = None,
     cron_manager: Any | None = None,
     subagent_manager: Any | None = None,
+    container_pool: Any | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -355,6 +356,7 @@ def execute_tool_call(
             workspace path for file_ops tools.
         cron_manager: Optional CronManager for cron tool.
         subagent_manager: Optional SubAgentManager for sub-agent tool.
+        container_pool: Optional ContainerPool for persistent coding containers.
 
     Returns:
         The executor output as a string.
@@ -448,10 +450,87 @@ def execute_tool_call(
         name=cfg.executor,
         secrets=cfg.secrets,
         args=string_args,
+        timeout=cfg.timeout,
     )
 
     logger.info("Executing tool %s (executor: %s)", tool_name, cfg.executor)
 
     if use_containers:
+        # Route coding executor through warm container pool when available
+        if cfg.executor == "coding" and container_pool is not None and container_pool.enabled:
+            return _run_coding_via_pool(container_pool, executor_config, cfg)
         return _run_executor_container(executor_config, cfg, bridge_config)
     return _run_executor_inline(cfg.executor, executor_config)
+
+
+def _run_coding_via_pool(
+    pool: Any,
+    executor_config: ExecutorConfig,
+    tool_config: ToolConfig,
+) -> str:
+    """Execute a coding command using a persistent pooled container.
+
+    Acquires a warm container running dev_runner.py, sends the execute
+    command, and releases the container back to the pool for reuse.
+    """
+    from creel.containers import _ensure_image
+
+    image = tool_config.image if tool_config.image else executor_config.image
+    image = _ensure_image(image)
+
+    # Docker flags matching the tool config overrides
+    docker_flags = []
+    if not tool_config.writable:
+        docker_flags.append("--read-only")
+    docker_flags.extend(
+        [
+            "--tmpfs",
+            f"/tmp:rw,noexec,nosuid,size={tool_config.tmpfs_size}",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            f"--memory={tool_config.memory}",
+            f"--cpus={tool_config.cpus}",
+        ]
+    )
+    if not tool_config.network:
+        docker_flags.append("--network=none")
+
+    container = pool.acquire(
+        image=image,
+        entrypoint="python /app/dev_runner.py",
+        docker_flags=docker_flags,
+        env_vars={},
+    )
+
+    try:
+        command = executor_config.args.get("COMMAND", executor_config.args.get("command", ""))
+        workdir = executor_config.args.get("WORKDIR", executor_config.args.get("workdir"))
+        timeout = executor_config.timeout
+
+        container.send(
+            {
+                "type": "execute",
+                "command": command,
+                "workdir": workdir,
+                "timeout": timeout,
+            }
+        )
+
+        msg = container.recv(timeout=float(timeout + 10))
+        pool.release(container)
+
+        if msg.get("type") == "error":
+            raise RuntimeError(msg.get("message", "Unknown error from dev container"))
+
+        if msg.get("type") == "result":
+            import json as _json
+
+            return _json.dumps(msg, indent=2)
+
+        raise RuntimeError(f"Unexpected message type from dev container: {msg.get('type')}")
+
+    except Exception:
+        container.force_kill()
+        with pool._lock:
+            pool._remove_container(container)
+        raise

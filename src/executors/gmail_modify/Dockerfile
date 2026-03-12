@@ -1,12 +1,7 @@
-FROM python:3.12-slim
+FROM creel-executor-base:latest
 
-RUN useradd -m -u 1000 executor
-
-USER executor
-WORKDIR /app
-
-COPY --chown=executor:executor gmail_modify/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir --user -r requirements.txt
+COPY --chown=executor:executor gmail_modify/requirements.lock ./requirements.lock
+RUN uv pip install --system --no-cache -r requirements.lock
 
 COPY --chown=executor:executor google_creds.py .
 COPY --chown=executor:executor gmail_modify/executor.py ./executor.py

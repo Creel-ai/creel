@@ -403,6 +403,7 @@ class TestRunAgentLoopContainer:
             memory_manager=None,
             bridge_config=None,
             session_state=None,
+            container_pool=None,
         )
 
     @patch("creel.container_agent._ensure_image")

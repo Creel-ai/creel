@@ -1,25 +1,13 @@
-FROM python:3.12-alpine
+FROM creel-executor-base:latest
 
-# Install basic shell tools
-RUN apk add --no-cache \
-    bash \
-    grep \
-    sed \
-    gawk \
-    coreutils \
-    findutils \
-    curl \
-    jq \
-    tar \
-    gzip
-
-# Create executor user
-RUN adduser -D -u 1000 executor
-
+# Switch to root to install system packages
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        jq \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 USER executor
-WORKDIR /app
 
-# Copy executor script
 COPY --chown=executor:executor exec/executor.py ./executor.py
-
 ENTRYPOINT ["python", "executor.py"]

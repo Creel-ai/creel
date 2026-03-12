@@ -249,5 +249,5 @@ class TestCodingPoolRouting:
         ):
             _run_coding_via_pool(mock_pool, executor_config, tool_config)
 
-        mock_container.force_kill.assert_called_once()
+        mock_pool.discard.assert_called_once_with(mock_container)
         mock_pool.release.assert_not_called()

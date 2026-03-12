@@ -346,6 +346,16 @@ class ContainerPool:
 
         return container
 
+    def discard(self, container: ManagedContainer) -> None:
+        """Force-kill and remove a container without returning it to the pool.
+
+        Use this when a container is in a bad state (e.g. protocol error)
+        and should not be reused.
+        """
+        container.force_kill()
+        with self._lock:
+            self._remove_container(container)
+
     def _cleanup_container(self, container: ManagedContainer) -> None:
         """Shut down and remove a container from tracking."""
         container.shutdown()

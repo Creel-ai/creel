@@ -530,7 +530,5 @@ def _run_coding_via_pool(
         raise RuntimeError(f"Unexpected message type from dev container: {msg.get('type')}")
 
     except Exception:
-        container.force_kill()
-        with pool._lock:
-            pool._remove_container(container)
+        pool.discard(container)
         raise

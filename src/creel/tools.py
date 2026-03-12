@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from creel.containers import _run_executor_container
 from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
 from creel.orchestrator import _run_executor_inline
+
+if TYPE_CHECKING:
+    from creel.container_pool import ContainerPool
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +340,7 @@ def execute_tool_call(
     session_state: SessionState | None = None,
     cron_manager: Any | None = None,
     subagent_manager: Any | None = None,
-    container_pool: Any | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -464,7 +467,7 @@ def execute_tool_call(
 
 
 def _run_coding_via_pool(
-    pool: Any,
+    pool: ContainerPool,
     executor_config: ExecutorConfig,
     tool_config: ToolConfig,
 ) -> str:

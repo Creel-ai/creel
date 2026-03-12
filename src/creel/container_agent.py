@@ -299,7 +299,7 @@ def _run_protocol(
     memory_manager: Any | None,
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
-    container_pool: Any | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
     _send_to_container(proc, start_msg)
@@ -392,7 +392,7 @@ def _run_protocol_pooled(
     memory_manager: object | None,
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
-    container_pool: Any | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol using a pooled ManagedContainer.
 
@@ -476,7 +476,7 @@ def _handle_tool_request(
     messages: list[dict],
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
-    container_pool: Any | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> tuple[list[dict] | None, AgentResult | None]:
     """Process tool calls from the container, applying Guardian checks.
 

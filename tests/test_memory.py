@@ -773,6 +773,21 @@ class TestCompactLLMSummarize:
             # Should NOT contain raw prefix
             assert not any(e.startswith("- [") for e in entries)
 
+    def test_compact_llm_returns_whitespace_falls_back(self):
+        """Whitespace-only LLM response should fall back to extractive."""
+        with tempfile.TemporaryDirectory() as td:
+
+            def whitespace_summarize(entries: list[str]) -> str:
+                return "   \n"
+
+            mm = self._make_manager(td, compact_summarize_fn=whitespace_summarize)
+            old_date = self._create_old_file(mm)
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+
+            lt_content = mm.long_term_path.read_text()
+            assert f"### Compacted: {old_date.isoformat()}" in lt_content
+            assert "- Alpha fact" in lt_content
+
 
 class TestWorkspaceConfigValidation:
     def test_recency_half_life_rejects_zero(self):

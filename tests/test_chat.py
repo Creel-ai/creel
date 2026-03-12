@@ -155,7 +155,8 @@ class TestChatServerInit:
             ),
         )
 
-        # Mock run_llm to return a known summary
+        # Patch at creel.llm (not creel.chat) because _summarize_memory
+        # uses a deferred `from creel.llm import run_llm` inside the closure.
         with patch("creel.llm.run_llm", return_value="- LLM summary bullet\n") as mock_llm:
             ChatServer(agent_def)
 

@@ -102,7 +102,11 @@ class ChatServer:
             max_context_tokens=agent_def.session.max_context_tokens,
         )
 
-        # Build memory compaction summarize callback
+        # Build memory compaction summarize callback.
+        # NOTE: runs synchronously during __init__ via compact_daily_files(),
+        # making N sequential Haiku calls for N old daily files. Acceptable
+        # given Haiku latency (~200ms/call) but startup scales linearly with
+        # compaction backlog.
         compact_summarize_fn = None
         if agent_def.workspace.compact_summarize:
 
@@ -126,6 +130,7 @@ class ChatServer:
                 config = LLMConfig(
                     model=agent_def.workspace.compact_model,
                     max_tokens=agent_def.workspace.compact_max_tokens,
+                    secrets=agent_def.llm.secrets,
                 )
                 return run_llm(prompt, config, use_container=use_containers)
 

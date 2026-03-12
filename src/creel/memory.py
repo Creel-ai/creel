@@ -280,6 +280,12 @@ class MemoryManager:
             d = datetime.now(self._tz).date()
         return self._memory_dir / f"{d.isoformat()}.md"
 
+    def close(self) -> None:
+        """Close the FTS index database connection."""
+        if self._index is not None:
+            self._index.close()
+            self._index = None
+
     def rebuild_index(self) -> int:
         """Rebuild the FTS index from memory files on disk. Returns count of files re-indexed."""
         if self._index is None or not self._index.available:
@@ -641,13 +647,19 @@ class MemoryManager:
                                         exc_info=True,
                                     )
 
-                            if summary_text:
+                            if summary_text and summary_text.strip():
                                 f.write(
                                     f"\n### Summarized: {file_date.isoformat()}"
                                     f" ({len(entries)} entries)\n"
                                 )
                                 f.write(summary_text.rstrip("\n") + "\n")
                             else:
+                                if self._compact_summarize_fn and summary_text is not None:
+                                    logger.warning(
+                                        "LLM returned empty summary for %s, "
+                                        "falling back to extractive",
+                                        file_date.isoformat(),
+                                    )
                                 f.write(
                                     f"\n### Compacted: {file_date.isoformat()}"
                                     f" ({len(entries)} entries)\n"

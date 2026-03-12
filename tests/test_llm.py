@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from creel.llm import (
-    _CLAUDE_CODE_SYSTEM_PREFIX,
     MAX_RETRIES,
     _run_llm_container,
     _run_llm_direct,
@@ -16,6 +15,7 @@ from creel.llm import (
 )
 from creel.models import LLMConfig
 from creel.providers import LLMMessage, LLMRateLimitError, LLMTransientError, TextBlock, Usage
+from creel.providers.anthropic import _CLAUDE_CODE_SYSTEM_PREFIX
 
 
 def _make_config(**overrides) -> LLMConfig:

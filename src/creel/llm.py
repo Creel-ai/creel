@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
 import tempfile
 import time
@@ -25,7 +24,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Retry configuration
-RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0  # seconds
 
@@ -41,40 +39,6 @@ _LLM_DOCKER_FLAGS = [
     "--memory=256m",
     "--cpus=0.5",
 ]
-
-# Re-export for backward compatibility (guardian imports _get_client)
-# TODO: Remove once guardian is decoupled (Phase 3).
-_OAUTH_HEADERS = {
-    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-    "user-agent": "claude-cli/2.1.2 (external, cli)",
-    "x-app": "cli",
-}
-_CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
-
-
-def _get_client():
-    """Create an Anthropic client using available credentials.
-
-    This is a backward-compatibility shim used by guardian modules
-    (llm_judge.py, coherence.py) that directly call the Anthropic SDK.
-    Will be removed once guardian is decoupled in Phase 3.
-    """
-    import anthropic
-
-    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-
-    if auth_token:
-        headers = _OAUTH_HEADERS if "sk-ant-oat" in auth_token else {}
-        return anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
-    elif api_key:
-        return anthropic.Anthropic(api_key=api_key)
-    else:
-        raise RuntimeError(
-            "No Anthropic credentials found. Set ANTHROPIC_AUTH_TOKEN "
-            "(from `claude setup-token`) or ANTHROPIC_API_KEY in your "
-            "environment, or configure secrets in the task definition."
-        )
 
 
 def extract_text(message: LLMMessage) -> str:

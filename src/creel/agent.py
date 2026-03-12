@@ -477,7 +477,7 @@ def run_agent_loop(
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         # Execute each tool call and collect results
-        tool_results = []
+        tool_results: list[dict] = []
         for block in tool_use_blocks:
             tool_calls_made += 1
             tool_name = block.name

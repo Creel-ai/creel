@@ -67,6 +67,94 @@ class TestChatServerInit:
         server = ChatServer(agent_def)
         assert server._memory is not None
 
+    def test_fts_config_flows_through(self, tmp_path) -> None:
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                fts_enabled=True,
+                recency_half_life_days=15.0,
+            ),
+        )
+        server = ChatServer(agent_def)
+        assert server._memory is not None
+        # FTS index should be initialized
+        assert server._memory._index is not None
+        assert server._memory._index.available
+
+    def test_fts_disabled_no_index(self, tmp_path) -> None:
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(path=str(ws), fts_enabled=False),
+        )
+        server = ChatServer(agent_def)
+        assert server._memory is not None
+        assert server._memory._index is None
+
+    def test_compact_summarize_config(self, tmp_path) -> None:
+        """Verify compact_summarize=True triggers extractive summarization."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        mm_dir = ws / "memory"
+        mm_dir.mkdir()
+
+        # Create an old daily file that will be compacted
+        from datetime import UTC, datetime, timedelta
+
+        old_date = datetime.now(UTC).date() - timedelta(days=10)
+        old_file = mm_dir / f"{old_date.isoformat()}.md"
+        old_file.write_text(
+            f"# Memory — {old_date.isoformat()}\n\n"
+            f"- [10:00] **general**: Alpha fact\n"
+            f"- [11:00] **general**: Beta fact\n"
+        )
+
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                compact_after_days=7,
+                compact_summarize=True,
+            ),
+        )
+        # ChatServer constructor calls rebuild_index() + compact_daily_files()
+        ChatServer(agent_def)
+
+        lt_content = (ws / "MEMORY.md").read_text()
+        assert "### Compacted:" in lt_content
+        assert "- Alpha fact" in lt_content
+        assert "- Beta fact" in lt_content
+
+    def test_rebuild_index_on_startup(self, tmp_path) -> None:
+        """Verify that pre-existing memory files are indexed on ChatServer init."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        mm_dir = ws / "memory"
+        mm_dir.mkdir()
+
+        # Write a daily file before ChatServer starts
+        from datetime import UTC, datetime
+
+        today = datetime.now(UTC).date()
+        daily = mm_dir / f"{today.isoformat()}.md"
+        daily.write_text(
+            f"# Memory — {today.isoformat()}\n\n- [09:00] **general**: Pre-existing startup entry\n"
+        )
+
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(path=str(ws), fts_enabled=True),
+        )
+        server = ChatServer(agent_def)
+
+        # The pre-existing entry should be findable via FTS
+        result = server._memory.search_memory("startup entry")
+        assert "1 result" in result
+
 
 # ---------------------------------------------------------------------------
 # Command parsing tests

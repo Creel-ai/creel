@@ -202,8 +202,7 @@ def _check_guardian_pre_execution(
                 return _GuardianDecision(
                     action="deny",
                     error_message=(
-                        "[Guardian] Memory write blocked — content may contain "
-                        "prompt injection."
+                        "[Guardian] Memory write blocked — content may contain prompt injection."
                     ),
                 )
 
@@ -478,7 +477,7 @@ def run_agent_loop(
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         # Execute each tool call and collect results
-        tool_results = []
+        tool_results: list[dict] = []
         for block in tool_use_blocks:
             tool_calls_made += 1
             tool_name = block.name
@@ -506,12 +505,21 @@ def run_agent_loop(
             # Guardian pre-execution checks (policy, coherence, memory screening)
             if guardian is not None:
                 gd = _check_guardian_pre_execution(
-                    guardian, tool_name, tool_input, messages, tools_config, confirm_action,
+                    guardian,
+                    tool_name,
+                    tool_input,
+                    messages,
+                    tools_config,
+                    confirm_action,
                 )
                 if gd.action == "deny":
                     _record_tool_error(
-                        block.id, tool_name, tool_input,
-                        gd.error_message, tool_history, tool_results,
+                        block.id,
+                        tool_name,
+                        tool_input,
+                        gd.error_message,
+                        tool_history,
+                        tool_results,
                     )
                     continue
                 if gd.action == "needs_approval":

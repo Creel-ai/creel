@@ -111,9 +111,13 @@ class ChatServer:
                 timezone_name=agent_def.workspace.timezone,
                 max_daily_entries=agent_def.workspace.max_daily_entries,
                 max_long_term_lines=agent_def.workspace.max_long_term_lines,
+                fts_enabled=agent_def.workspace.fts_enabled,
+                recency_half_life_days=agent_def.workspace.recency_half_life_days,
             )
+            self._memory.rebuild_index()
             self._memory.compact_daily_files(
                 days_to_keep=agent_def.workspace.compact_after_days,
+                summarize=agent_def.workspace.compact_summarize,
             )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
@@ -280,7 +284,8 @@ class ChatServer:
 
         # Look up per-sender session state (workspace path, etc.)
         session_state = self._session_states.setdefault(
-            sender_id, SessionState(sender_id=sender_id),
+            sender_id,
+            SessionState(sender_id=sender_id),
         )
 
         # Run the agent loop (containerized or direct)
@@ -482,7 +487,8 @@ class ChatServer:
 
         # Execute the approved tool
         session_state = self._session_states.setdefault(
-            sender_id, SessionState(sender_id=sender_id),
+            sender_id,
+            SessionState(sender_id=sender_id),
         )
         is_error = False
         try:

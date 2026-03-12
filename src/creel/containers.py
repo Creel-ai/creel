@@ -396,7 +396,7 @@ def _run_executor_container(
     )
 
     # Validate host_auth early — before image build — so misconfigurations fail fast
-    _host_auth_entry: dict | None = None
+    _host_auth_entry: _HostAuthEntry | None = None
     if tool_config and tool_config.host_auth:
         if tool_config.secrets:
             raise ValueError(

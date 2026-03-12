@@ -169,8 +169,8 @@ def detect_and_setup(workdir: str) -> dict:
         ("go.mod", "go mod download 2>&1"),
     ]
 
-    detected_file = None
-    install_cmd = None
+    detected_file: str | None = None
+    install_cmd: str | None = None
     for manifest, cmd in detectors:
         if os.path.exists(os.path.join(workdir, manifest)):
             detected_file = manifest
@@ -183,6 +183,7 @@ def detect_and_setup(workdir: str) -> dict:
         return result
 
     result["detected"] = detected_file
+    assert install_cmd is not None  # guaranteed by the loop above
 
     try:
         proc = subprocess.run(

@@ -15,7 +15,7 @@ from creel.channels.message import Attachment
 from creel.log import generate_request_id, request_id_var
 from creel.media import MediaProcessor
 from creel.memory import MemoryManager
-from creel.models import AgentDefinition, SessionState
+from creel.models import AgentDefinition, LLMConfig, SessionState
 from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
 from creel.session import SessionManager
@@ -102,6 +102,46 @@ class ChatServer:
             max_context_tokens=agent_def.session.max_context_tokens,
         )
 
+        # Build memory compaction summarize callback.
+        # NOTE: This callback fires only during __init__ (via compact_daily_files),
+        # making N sequential Haiku calls for N old daily files. Acceptable
+        # given Haiku latency (~200ms/call) but startup scales linearly with
+        # compaction backlog.
+        compact_summarize_fn = None
+        if agent_def.workspace.compact_summarize:
+            # Pre-load secrets once rather than on every callback invocation.
+            if agent_def.llm.secrets:
+                from creel.orchestrator import _load_secrets_to_env
+
+                _load_secrets_to_env(agent_def.llm.secrets)
+
+            # Capture only the values the closure needs, not the full agent_def.
+            _compact_model = agent_def.workspace.compact_model
+            _compact_max_tokens = agent_def.workspace.compact_max_tokens
+            _llm_secrets = agent_def.llm.secrets
+            _use_containers = use_containers
+
+            def _summarize_memory(entries: list[str]) -> str:
+                from creel.llm import run_llm
+
+                entries_text = "\n".join(f"- {e}" for e in entries)
+                prompt = (
+                    "You are summarizing a day's memory entries for a personal AI assistant. "
+                    "Extract the key facts, decisions, and context into 3-7 concise bullet "
+                    "points. Preserve specific names, dates, numbers, and action items. "
+                    "Drop routine/trivial entries. Output only markdown bullets (- item)."
+                    f"\n\nEntries:\n{entries_text}"
+                )
+
+                config = LLMConfig(
+                    model=_compact_model,
+                    max_tokens=_compact_max_tokens,
+                    secrets=_llm_secrets,
+                )
+                return run_llm(prompt, config, use_container=_use_containers)
+
+            compact_summarize_fn = _summarize_memory
+
         # Initialize memory manager if workspace is configured
         self._memory: MemoryManager | None = None
         ws_path = Path(agent_def.workspace.path)
@@ -113,6 +153,7 @@ class ChatServer:
                 max_long_term_lines=agent_def.workspace.max_long_term_lines,
                 fts_enabled=agent_def.workspace.fts_enabled,
                 recency_half_life_days=agent_def.workspace.recency_half_life_days,
+                compact_summarize_fn=compact_summarize_fn,
             )
             self._memory.rebuild_index()
             self._memory.compact_daily_files(

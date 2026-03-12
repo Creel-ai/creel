@@ -129,6 +129,51 @@ class TestChatServerInit:
         assert "- Alpha fact" in lt_content
         assert "- Beta fact" in lt_content
 
+    def test_compact_summarize_fn_wired(self, tmp_path) -> None:
+        """When compact_summarize=True, LLM callback is wired and used during compaction."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        mm_dir = ws / "memory"
+        mm_dir.mkdir()
+
+        from datetime import UTC, datetime, timedelta
+
+        old_date = datetime.now(UTC).date() - timedelta(days=10)
+        old_file = mm_dir / f"{old_date.isoformat()}.md"
+        old_file.write_text(
+            f"# Memory — {old_date.isoformat()}\n\n"
+            f"- [10:00] **general**: Alpha fact\n"
+            f"- [11:00] **general**: Beta fact\n"
+        )
+
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                compact_after_days=7,
+                compact_summarize=True,
+            ),
+        )
+
+        # Patch at creel.llm (not creel.chat) because _summarize_memory
+        # uses a deferred `from creel.llm import run_llm` inside the closure.
+        with patch("creel.llm.run_llm", return_value="- LLM summary bullet\n") as mock_llm:
+            ChatServer(agent_def)
+
+        # run_llm should have been called once for the compaction
+        mock_llm.assert_called_once()
+        call_args = mock_llm.call_args
+        prompt = call_args[0][0]
+        assert "Alpha fact" in prompt
+        assert "Beta fact" in prompt
+        # Verify config flows through (model matches compact_model default)
+        config_arg = call_args[0][1]
+        assert config_arg.model == "claude-haiku-4-5-20251001"
+
+        lt_content = (ws / "MEMORY.md").read_text()
+        assert "### Summarized:" in lt_content
+        assert "- LLM summary bullet" in lt_content
+
     def test_rebuild_index_on_startup(self, tmp_path) -> None:
         """Verify that pre-existing memory files are indexed on ChatServer init."""
         ws = tmp_path / "workspace"

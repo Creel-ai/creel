@@ -153,6 +153,8 @@ class WorkspaceConfig(BaseModel):
     fts_enabled: bool = True
     recency_half_life_days: float = Field(default=30.0, gt=0)
     compact_summarize: bool = True
+    compact_model: str = "claude-haiku-4-5-20251001"
+    compact_max_tokens: int = Field(default=512, gt=0)
 
 
 class IMessageChannelConfig(BaseModel):

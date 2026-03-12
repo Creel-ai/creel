@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -244,12 +245,14 @@ class MemoryManager:
         max_long_term_lines: int = 500,
         fts_enabled: bool = True,
         recency_half_life_days: float = 30.0,
+        compact_summarize_fn: Callable[[list[str]], str] | None = None,
     ):
         self._workspace = Path(workspace_dir)
         self._memory_dir = self._workspace / "memory"
         self._memory_dir.mkdir(parents=True, exist_ok=True)
         self._max_daily_entries = max_daily_entries
         self._max_long_term_lines = max_long_term_lines
+        self._compact_summarize_fn = compact_summarize_fn
         self._tz: tzinfo
         try:
             self._tz = ZoneInfo(timezone_name)
@@ -276,6 +279,12 @@ class MemoryManager:
         if d is None:
             d = datetime.now(self._tz).date()
         return self._memory_dir / f"{d.isoformat()}.md"
+
+    def close(self) -> None:
+        """Close the FTS index database connection."""
+        if self._index is not None:
+            self._index.close()
+            self._index = None
 
     def rebuild_index(self) -> int:
         """Rebuild the FTS index from memory files on disk. Returns count of files re-indexed."""
@@ -628,12 +637,39 @@ class MemoryManager:
                             # (different timestamps but same content collapse to one)
                             entries = [_strip_entry_prefix(line) for line in entry_lines]
                             entries = list(dict.fromkeys(entries))
-                            f.write(
-                                f"\n### Compacted: {file_date.isoformat()}"
-                                f" ({len(entries)} entries)\n"
-                            )
-                            for e in entries:
-                                f.write(f"- {e}\n")
+
+                            # Three-tier: LLM summary → extractive fallback
+                            summary_text = None
+                            if self._compact_summarize_fn:
+                                try:
+                                    summary_text = self._compact_summarize_fn(entries)
+                                except (OSError, RuntimeError, ValueError):
+                                    logger.warning(
+                                        "LLM summarization failed for %s, "
+                                        "falling back to extractive",
+                                        file_date.isoformat(),
+                                        exc_info=True,
+                                    )
+
+                            if summary_text and summary_text.strip():
+                                f.write(
+                                    f"\n### Summarized: {file_date.isoformat()}"
+                                    f" ({len(entries)} entries)\n"
+                                )
+                                f.write(summary_text.rstrip("\n") + "\n")
+                            else:
+                                if summary_text is not None and not summary_text.strip():
+                                    logger.warning(
+                                        "LLM returned empty summary for %s, "
+                                        "falling back to extractive",
+                                        file_date.isoformat(),
+                                    )
+                                f.write(
+                                    f"\n### Compacted: {file_date.isoformat()}"
+                                    f" ({len(entries)} entries)\n"
+                                )
+                                for e in entries:
+                                    f.write(f"- {e}\n")
                         else:
                             f.write(
                                 f"- [{file_date.isoformat()}] {entry_count} entries (compacted)\n"

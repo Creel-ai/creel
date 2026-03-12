@@ -109,14 +109,14 @@ class ChatServer:
         # compaction backlog.
         compact_summarize_fn = None
         if agent_def.workspace.compact_summarize:
+            # Load secrets once upfront (not per-file inside the closure)
+            if agent_def.llm.secrets:
+                from creel.orchestrator import _load_secrets_to_env
+
+                _load_secrets_to_env(agent_def.llm.secrets)
 
             def _summarize_memory(entries: list[str]) -> str:
                 from creel.llm import run_llm
-
-                if agent_def.llm.secrets:
-                    from creel.orchestrator import _load_secrets_to_env
-
-                    _load_secrets_to_env(agent_def.llm.secrets)
 
                 entries_text = "\n".join(f"- {e}" for e in entries)
                 prompt = (

@@ -212,6 +212,7 @@ class MemoryIndex:
                 ).fetchall()
                 break
             except sqlite3.OperationalError:
+                logger.debug("FTS5 MATCH failed for query %r", attempt_query)
                 rows = []
                 continue
 
@@ -620,6 +621,10 @@ class MemoryManager:
         compacted = 0
         skipped_summaries = 0
 
+        # Read MEMORY.md line count once; track incrementally as we append.
+        lt_path = self.long_term_path
+        lt_lines = len(lt_path.read_text().splitlines()) if lt_path.exists() else 0
+
         daily_files = sorted(self._memory_dir.glob("*.md"))
         for path in daily_files:
             try:
@@ -639,12 +644,11 @@ class MemoryManager:
 
             if entry_count > 0:
                 # Append to MEMORY.md
-                lt_path = self.long_term_path
                 if not lt_path.exists():
                     lt_path.write_text("# Long-Term Memory\n\n")
+                    lt_lines = 2
 
                 # Safety: skip writing if MEMORY.md is over 2x max_long_term_lines
-                lt_lines = len(lt_path.read_text().splitlines())
                 if lt_lines < self._max_long_term_lines * 2:
                     with open(lt_path, "a") as f:
                         if summarize:
@@ -672,6 +676,8 @@ class MemoryManager:
                                     f" ({len(entries)} entries)\n"
                                 )
                                 f.write(summary_text.rstrip("\n") + "\n")
+                                # header blank + section header + summary lines
+                                lt_lines += 2 + summary_text.rstrip("\n").count("\n") + 1
                             else:
                                 if self._compact_summarize_fn and summary_text is not None:
                                     logger.warning(
@@ -685,10 +691,13 @@ class MemoryManager:
                                 )
                                 for e in entries:
                                     f.write(f"- {e}\n")
+                                # header blank + section header + entry lines
+                                lt_lines += 2 + len(entries)
                         else:
                             f.write(
                                 f"- [{file_date.isoformat()}] {entry_count} entries (compacted)\n"
                             )
+                            lt_lines += 1
                 else:
                     skipped_summaries += 1
                     logger.warning(

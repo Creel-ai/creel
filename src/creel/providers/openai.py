@@ -239,6 +239,13 @@ class OpenAIProvider(LLMProvider):
 
     def __init__(self, api_base: str | None = None) -> None:
         self._api_base = api_base
+        self._client = None
+
+    def _get_client(self):
+        """Return a cached OpenAI client, creating one on first use."""
+        if self._client is None:
+            self._client = _get_openai_client(self._api_base)
+        return self._client
 
     def create(
         self,
@@ -252,7 +259,7 @@ class OpenAIProvider(LLMProvider):
     ) -> LLMMessage:
         import openai
 
-        client = _get_openai_client(self._api_base)
+        client = self._get_client()
 
         openai_messages = self.format_messages(messages)
         if system:
@@ -287,7 +294,7 @@ class OpenAIProvider(LLMProvider):
     ) -> LLMMessage:
         import openai
 
-        client = _get_openai_client(self._api_base)
+        client = self._get_client()
 
         openai_messages = self.format_messages(messages)
         if system:

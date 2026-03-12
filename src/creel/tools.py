@@ -508,7 +508,7 @@ def _run_coding_via_pool(
     try:
         command = executor_config.args.get("COMMAND", executor_config.args.get("command", ""))
         workdir = executor_config.args.get("WORKDIR", executor_config.args.get("workdir"))
-        timeout = executor_config.timeout
+        timeout = executor_config.timeout or 60
 
         container.send(
             {

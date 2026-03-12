@@ -22,6 +22,16 @@ from creel.providers.base import (
 
 logger = logging.getLogger(__name__)
 
+try:
+    import botocore.exceptions
+
+    _BEDROCK_ERRORS: tuple = (
+        botocore.exceptions.BotoCoreError,
+        botocore.exceptions.ClientError,
+    )
+except ImportError:
+    _BEDROCK_ERRORS = (Exception,)
+
 
 def _get_bedrock_client(region: str | None = None):
     """Create a Bedrock Runtime client."""
@@ -141,7 +151,7 @@ class BedrockProvider(LLMProvider):
                 accept="application/json",
                 body=json.dumps(body),
             )
-        except Exception as exc:
+        except _BEDROCK_ERRORS as exc:
             raise _wrap_bedrock_error(exc) from exc
 
         response_body = json.loads(response["body"].read())
@@ -176,7 +186,7 @@ class BedrockProvider(LLMProvider):
                 accept="application/json",
                 body=json.dumps(body),
             )
-        except Exception as exc:
+        except _BEDROCK_ERRORS as exc:
             raise _wrap_bedrock_error(exc) from exc
 
         # Accumulate streamed chunks
@@ -249,7 +259,7 @@ class BedrockProvider(LLMProvider):
                     msg_usage = msg.get("usage", {})
                     usage_input = msg_usage.get("input_tokens", 0)
 
-        except Exception as exc:
+        except _BEDROCK_ERRORS as exc:
             raise _wrap_bedrock_error(exc) from exc
 
         # Flush any remaining text

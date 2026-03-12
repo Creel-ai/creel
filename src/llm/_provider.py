@@ -410,12 +410,16 @@ def _parse_openai_response(resp: Any) -> ContainerLLMResponse:
 
     if choice.message.tool_calls:
         for tc in choice.message.tool_calls:
+            try:
+                args = json.loads(tc.function.arguments)
+            except (json.JSONDecodeError, TypeError):
+                args = {}
             content.append(
                 {
                     "type": "tool_use",
                     "id": tc.id,
                     "name": tc.function.name,
-                    "input": json.loads(tc.function.arguments),
+                    "input": args,
                 }
             )
 

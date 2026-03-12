@@ -102,6 +102,15 @@ def _wrap_api_error(exc: anthropic.APIStatusError) -> LLMProviderError:
 class AnthropicProvider(LLMProvider):
     """LLM provider backed by the Anthropic Messages API."""
 
+    def __init__(self) -> None:
+        self._client: anthropic.Anthropic | None = None
+
+    def _get_client(self) -> anthropic.Anthropic:
+        """Return a cached Anthropic client, creating one on first use."""
+        if self._client is None:
+            self._client = _get_client()
+        return self._client
+
     def create(
         self,
         *,
@@ -112,7 +121,7 @@ class AnthropicProvider(LLMProvider):
         tools: list[dict] | None = None,
         timeout: float | None = None,
     ) -> LLMMessage:
-        client = _get_client()
+        client = self._get_client()
 
         create_kwargs: dict = {
             "model": model,
@@ -145,7 +154,7 @@ class AnthropicProvider(LLMProvider):
         tools: list[dict] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
     ) -> LLMMessage:
-        client = _get_client()
+        client = self._get_client()
 
         create_kwargs: dict = {
             "model": model,

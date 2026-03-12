@@ -253,6 +253,7 @@ class MemoryManager:
         self._max_daily_entries = max_daily_entries
         self._max_long_term_lines = max_long_term_lines
         self._compact_summarize_fn = compact_summarize_fn
+        self._half_life = recency_half_life_days
         self._tz: tzinfo
         try:
             self._tz = ZoneInfo(timezone_name)
@@ -447,43 +448,61 @@ class MemoryManager:
         return f"Found {len(results)} result(s):\n" + "\n".join(results)
 
     def _search_substring(self, query: str, max_results: int) -> str:
-        """Case-insensitive substring search (fallback when FTS5 unavailable)."""
+        """Case-insensitive substring search with recency weighting.
+
+        Fallback when FTS5 is unavailable.  Collects up to max_results * 3
+        candidates, scores them with temporal decay, then returns the top
+        max_results sorted by descending weight.
+        """
         query_lower = query.lower()
-        results: list[str] = []
+        today = datetime.now(self._tz).date()
+        collect_limit = max_results * 3
+        candidates: list[tuple[str, int, str, float]] = []
 
         # Search daily files, newest first
         daily_files = sorted(self._memory_dir.glob("*.md"), reverse=True)
         for path in daily_files:
+            # Skip non-date files (consistent with FTS indexing)
+            try:
+                date.fromisoformat(path.stem)
+            except ValueError:
+                continue
             try:
                 lines = path.read_text().splitlines()
             except OSError:
                 continue
             date_str = path.stem
             for i, line in enumerate(lines, start=1):
-                if len(results) >= max_results:
-                    break
                 if not line.startswith("- ["):
                     continue
                 if query_lower in line.lower():
-                    results.append(f"[{date_str} L{i}] {line}")
-            if len(results) >= max_results:
+                    weight = _recency_weight(date_str, today, self._half_life)
+                    candidates.append((date_str, i, line, weight))
+                    if len(candidates) >= collect_limit:
+                        break
+            if len(candidates) >= collect_limit:
                 break
 
         # Search long-term memory
         lt_path = self.long_term_path
-        if lt_path.exists() and len(results) < max_results:
+        if lt_path.exists() and len(candidates) < collect_limit:
             try:
                 lines = lt_path.read_text().splitlines()
                 for i, line in enumerate(lines, start=1):
-                    if len(results) >= max_results:
-                        break
                     if query_lower in line.lower():
-                        results.append(f"[long_term L{i}] {line}")
+                        weight = _recency_weight("long_term", today, self._half_life)
+                        candidates.append(("long_term", i, line, weight))
+                        if len(candidates) >= collect_limit:
+                            break
             except OSError:
                 pass
 
-        if not results:
+        if not candidates:
             return f"No memories found matching '{query}'."
+
+        candidates.sort(key=lambda x: x[3], reverse=True)
+        top = candidates[:max_results]
+        results = [f"[{ds} L{ln}] {line}" for ds, ln, line, _w in top]
         return f"Found {len(results)} result(s):\n" + "\n".join(results)
 
     def delete_memory(self, date_str: str, line_number: int) -> str:

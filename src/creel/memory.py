@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
-_ENTRY_PREFIX_RE = re.compile(r"^- \[\d{2}:\d{2}\] \*\*\w+\*\*:\s*")
+_ENTRY_PREFIX_RE = re.compile(r"^- \[\d{2}:\d{2}\] \*\*[\w-]+\*\*:\s*")
 
 
 def _strip_entry_prefix(line: str) -> str:
@@ -202,6 +202,7 @@ class MemoryIndex:
         # Try FTS5 MATCH first; fall back to phrase search on syntax error.
         # Escape double quotes in the fallback to prevent invalid FTS5 syntax.
         escaped = query.replace('"', '""')
+        rows: list[tuple] = []
         for attempt_query in (query, f'"{escaped}"'):
             try:
                 rows = self._conn.execute(
@@ -212,7 +213,6 @@ class MemoryIndex:
                 ).fetchall()
                 break
             except sqlite3.OperationalError:
-                rows = []
                 continue
 
         if not rows:
@@ -267,7 +267,7 @@ class MemoryManager:
                 self._index = MemoryIndex(db_path, recency_half_life_days=recency_half_life_days)
                 if not self._index.available:
                     self._index = None
-            except Exception:
+            except (sqlite3.Error, OSError):
                 logger.warning("Failed to initialize FTS index", exc_info=True)
                 self._index = None
 
@@ -322,8 +322,9 @@ class MemoryManager:
 
         # Create file with header if new
         if not path.exists():
-            path.write_text(f"# Memory — {today.date().isoformat()}\n\n")
-            existing_lines = 2  # header + blank line
+            header = f"# Memory — {today.date().isoformat()}\n\n"
+            path.write_text(header)
+            existing_lines = len(header.splitlines())
 
         with open(path, "a") as f:
             f.write(entry)
@@ -359,10 +360,11 @@ class MemoryManager:
         with open(path, "a") as f:
             f.write(f"\n{text}\n")
 
-        # Update FTS index
+        # Update FTS index (line_count was read before the write; the write adds
+        # "\n{text}\n" so the new entry lands on line_count + 1 + text's line count,
+        # but since index_entry only needs an approximate line ref, use line_count + 2).
         if self._index and self._index.available:
-            new_line_count = len(path.read_text().splitlines())
-            self._index.index_entry("long_term", "long_term", new_line_count, text)
+            self._index.index_entry("long_term", "long_term", line_count + 2, text)
 
         logger.info("Updated long-term memory: %s", text[:80])
         return "Long-term memory updated."
@@ -624,7 +626,9 @@ class MemoryManager:
                 if not lt_path.exists():
                     lt_path.write_text("# Long-Term Memory\n\n")
 
-                # Safety: skip writing if MEMORY.md is over 2x max_long_term_lines
+                # Safety: skip writing if MEMORY.md is over 2x max_long_term_lines.
+                # Note: read-then-append is not atomic, but compaction only runs at
+                # startup so concurrent access is not expected.
                 lt_lines = len(lt_path.read_text().splitlines())
                 if lt_lines < self._max_long_term_lines * 2:
                     with open(lt_path, "a") as f:

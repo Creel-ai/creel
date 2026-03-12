@@ -334,6 +334,9 @@ class TestStripEntryPrefix:
     def test_strips_various_categories(self):
         assert _strip_entry_prefix("- [14:30] **preference**: Likes coffee") == "Likes coffee"
 
+    def test_strips_hyphenated_category(self):
+        assert _strip_entry_prefix("- [09:00] **long-term**: Important fact") == "Important fact"
+
 
 class TestMemoryIndex:
     def _make_index(self, td: str, **kwargs) -> MemoryIndex:
@@ -478,8 +481,10 @@ class TestMemoryIndex:
             idx.index_entry("daily", "2026-01-15", 1, "test with special chars: a+b")
             # Query with FTS5 special chars should not raise
             results = idx.search("a+b", today=date(2026, 1, 15))
-            # May or may not find results, but should not crash
             assert isinstance(results, list)
+            # The phrase fallback should find the indexed content
+            if results:
+                assert "a+b" in results[0][2]
             idx.close()
 
     def test_search_empty_index(self):

@@ -22,6 +22,7 @@ from creel.providers.base import (
 logger = logging.getLogger(__name__)
 
 _DEFAULT_OLLAMA_BASE = "http://localhost:11434"
+_DEFAULT_TIMEOUT = 120.0
 
 
 class OllamaProvider(LLMProvider):
@@ -128,7 +129,7 @@ class OllamaProvider(LLMProvider):
             resp = httpx.post(
                 self._chat_url(),
                 json=payload,
-                timeout=timeout or 120.0,
+                timeout=timeout or _DEFAULT_TIMEOUT,
             )
             resp.raise_for_status()
         except httpx.ConnectError as exc:
@@ -169,7 +170,7 @@ class OllamaProvider(LLMProvider):
                 "POST",
                 self._chat_url(),
                 json=payload,
-                timeout=120.0,
+                timeout=_DEFAULT_TIMEOUT,
             ) as resp:
                 resp.raise_for_status()
 

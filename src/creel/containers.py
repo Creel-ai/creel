@@ -395,6 +395,29 @@ def _run_executor_container(
         _replace_google_credentials_with_access_token,
     )
 
+    # Validate host_auth early — before image build — so misconfigurations fail fast
+    _host_auth_entry: dict | None = None
+    if tool_config and tool_config.host_auth:
+        if tool_config.secrets:
+            raise ValueError(
+                "host_auth and secrets are mutually exclusive — use one or the other, not both"
+            )
+        executor_name = config.name
+        if not executor_name:
+            raise ValueError("host_auth requires the executor to have a name")
+        _host_auth_entry = _HOST_AUTH_REGISTRY.get(executor_name)
+        if _host_auth_entry is None:
+            raise ValueError(
+                f"host_auth is not supported for executor '{executor_name}' "
+                f"(supported: {sorted(_HOST_AUTH_REGISTRY)})"
+            )
+        auth_host_path = Path(os.path.expanduser(_host_auth_entry["host_path"]))
+        if not auth_host_path.is_dir():
+            raise RuntimeError(
+                f"Host auth directory not found: {auth_host_path} — "
+                f"run `gh auth login` to authenticate first"
+            )
+
     # Determine image to use - tool config overrides executor config
     image = tool_config.image if (tool_config and tool_config.image) else config.image
     image = _ensure_image(image)
@@ -488,28 +511,10 @@ def _run_executor_container(
                 host_path = os.path.expanduser(mount.path)
                 docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
 
-        # Mount host CLI auth directory (e.g. gh config) when host_auth is enabled
-        if tool_config and tool_config.host_auth:
-            if tool_config.secrets:
-                raise ValueError(
-                    "host_auth and secrets are mutually exclusive — use one or the other, not both"
-                )
-            executor_name = config.name
-            if not executor_name:
-                raise ValueError("host_auth requires the executor to have a name")
-            auth_entry = _HOST_AUTH_REGISTRY.get(executor_name)
-            if auth_entry is None:
-                raise ValueError(
-                    f"host_auth is not supported for executor '{executor_name}' "
-                    f"(supported: {sorted(_HOST_AUTH_REGISTRY)})"
-                )
-            auth_host_path = Path(os.path.expanduser(auth_entry["host_path"]))
-            if not auth_host_path.is_dir():
-                raise RuntimeError(
-                    f"Host auth directory not found: {auth_host_path} — "
-                    f"run `gh auth login` to authenticate first"
-                )
-            docker_cmd.extend(["-v", f"{auth_host_path}:{auth_entry['container_path']}:ro"])
+        # Mount host CLI auth directory (validated above, before image build)
+        if _host_auth_entry is not None:
+            auth_host_path = Path(os.path.expanduser(_host_auth_entry["host_path"]))
+            docker_cmd.extend(["-v", f"{auth_host_path}:{_host_auth_entry['container_path']}:ro"])
 
         # Mount dynamic workspace for file_ops executor
         if _workspace_mount:

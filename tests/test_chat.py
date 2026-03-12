@@ -166,6 +166,9 @@ class TestChatServerInit:
         prompt = call_args[0][0]
         assert "Alpha fact" in prompt
         assert "Beta fact" in prompt
+        # Verify config flows through (model matches compact_model default)
+        config_arg = call_args[0][1]
+        assert config_arg.model == "claude-haiku-4-5-20251001"
 
         lt_content = (ws / "MEMORY.md").read_text()
         assert "### Summarized:" in lt_content

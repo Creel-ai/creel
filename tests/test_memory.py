@@ -788,6 +788,21 @@ class TestCompactLLMSummarize:
             assert f"### Compacted: {old_date.isoformat()}" in lt_content
             assert "- Alpha fact" in lt_content
 
+    def test_compact_llm_returns_none_falls_back(self):
+        """Callback returning None should fall back to extractive."""
+        with tempfile.TemporaryDirectory() as td:
+
+            def none_summarize(entries: list[str]) -> str:
+                return None  # type: ignore[return-value]
+
+            mm = self._make_manager(td, compact_summarize_fn=none_summarize)
+            old_date = self._create_old_file(mm)
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+
+            lt_content = mm.long_term_path.read_text()
+            assert f"### Compacted: {old_date.isoformat()}" in lt_content
+            assert "- Alpha fact" in lt_content
+
 
 class TestWorkspaceConfigValidation:
     def test_recency_half_life_rejects_zero(self):
@@ -801,3 +816,11 @@ class TestWorkspaceConfigValidation:
     def test_recency_half_life_accepts_positive(self):
         cfg = WorkspaceConfig(recency_half_life_days=7.0)
         assert cfg.recency_half_life_days == 7.0
+
+    def test_compact_max_tokens_rejects_zero(self):
+        with pytest.raises(ValidationError, match="compact_max_tokens"):
+            WorkspaceConfig(compact_max_tokens=0)
+
+    def test_compact_max_tokens_rejects_negative(self):
+        with pytest.raises(ValidationError, match="compact_max_tokens"):
+            WorkspaceConfig(compact_max_tokens=-1)

@@ -639,7 +639,7 @@ class MemoryManager:
                             if self._compact_summarize_fn:
                                 try:
                                     summary_text = self._compact_summarize_fn(entries)
-                                except Exception:
+                                except (OSError, RuntimeError, ValueError):
                                     logger.warning(
                                         "LLM summarization failed for %s, "
                                         "falling back to extractive",
@@ -654,7 +654,7 @@ class MemoryManager:
                                 )
                                 f.write(summary_text.rstrip("\n") + "\n")
                             else:
-                                if self._compact_summarize_fn and summary_text is not None:
+                                if summary_text is not None and not summary_text.strip():
                                     logger.warning(
                                         "LLM returned empty summary for %s, "
                                         "falling back to extractive",

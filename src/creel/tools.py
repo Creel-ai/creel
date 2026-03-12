@@ -7,8 +7,8 @@ import logging
 import os
 from typing import Any
 
-from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
 from creel.containers import _run_executor_container
+from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
 from creel.orchestrator import _run_executor_inline
 
 logger = logging.getLogger(__name__)

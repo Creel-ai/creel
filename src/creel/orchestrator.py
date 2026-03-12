@@ -33,7 +33,7 @@ from creel.outputs import send_output
 from creel.secrets import decrypt_env_file
 
 if TYPE_CHECKING:
-    from creel.models import AgentDefinition
+    pass
 
 logger = logging.getLogger(__name__)
 

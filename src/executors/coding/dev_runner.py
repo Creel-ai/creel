@@ -106,21 +106,13 @@ def main() -> None:
                 _send({"type": "error", "message": "No command provided"})
                 continue
 
-            # Auto-detect and install project dependencies on first execute
+            # Auto-detect and install project dependencies on first execute.
+            # Setup failures are non-fatal — always proceed to the user's command.
             if workdir:
                 try:
-                    setup_result = detect_and_setup(workdir)
-                    if setup_result.get("error"):
-                        _send(
-                            {
-                                "type": "error",
-                                "message": f"Auto-setup failed ({setup_result['detected']}): "
-                                f"{setup_result['error']}",
-                            }
-                        )
-                        continue
+                    detect_and_setup(workdir)
                 except Exception:
-                    pass  # Non-fatal — proceed with the command
+                    pass
 
             try:
                 result = run_command(

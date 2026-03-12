@@ -103,6 +103,13 @@ class BedrockProvider(LLMProvider):
 
     def __init__(self, region: str | None = None) -> None:
         self._region = region
+        self._client = None
+
+    def _get_client(self):
+        """Return a cached Bedrock Runtime client, creating one on first use."""
+        if self._client is None:
+            self._client = _get_bedrock_client(self._region)
+        return self._client
 
     def create(
         self,
@@ -114,7 +121,7 @@ class BedrockProvider(LLMProvider):
         tools: list[dict] | None = None,
         timeout: float | None = None,
     ) -> LLMMessage:
-        client = _get_bedrock_client(self._region)
+        client = self._get_client()
 
         # Build Anthropic Messages API payload for Bedrock
         body: dict = {
@@ -150,7 +157,7 @@ class BedrockProvider(LLMProvider):
         tools: list[dict] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
     ) -> LLMMessage:
-        client = _get_bedrock_client(self._region)
+        client = self._get_client()
 
         body: dict = {
             "anthropic_version": "bedrock-2023-05-31",

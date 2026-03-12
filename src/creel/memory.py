@@ -82,9 +82,14 @@ class MemoryIndex:
         reindexed = 0
         current_paths: set[str] = set()
 
-        # Gather all files to check
+        # Gather all files to check (only date-named daily files)
         files_to_check: list[tuple[Path, str]] = []
         for md_path in memory_dir.glob("*.md"):
+            try:
+                date.fromisoformat(md_path.stem)
+            except ValueError:
+                logger.debug("Skipping non-date file in memory dir: %s", md_path.name)
+                continue
             files_to_check.append((md_path, md_path.stem))
             current_paths.add(str(md_path))
         if long_term_path.exists():
@@ -106,7 +111,7 @@ class MemoryIndex:
             if row and row[0] == mtime_ns and row[1] == size:
                 continue
 
-            self.reindex_file(file_path, date_str)
+            self.reindex_file(file_path, date_str, _commit=False)
             self._conn.execute(
                 "INSERT OR REPLACE INTO file_meta (path, mtime_ns, size) VALUES (?, ?, ?)",
                 (str(file_path), mtime_ns, size),
@@ -126,8 +131,13 @@ class MemoryIndex:
         self._conn.commit()
         return reindexed
 
-    def reindex_file(self, path: Path, date_str: str) -> None:
-        """Delete all rows for date_str and re-parse the file."""
+    def reindex_file(self, path: Path, date_str: str, *, _commit: bool = True) -> None:
+        """Delete all rows for date_str and re-parse the file.
+
+        Args:
+            _commit: If False, skip the commit (caller is responsible). Used by
+                     reindex_if_needed to batch commits.
+        """
         if not self._available or self._conn is None:
             return
         source = "long_term" if date_str == "long_term" else "daily"
@@ -145,7 +155,8 @@ class MemoryIndex:
                 "VALUES (?, ?, ?, ?)",
                 (source, date_str, str(i), stripped),
             )
-        self._conn.commit()
+        if _commit:
+            self._conn.commit()
 
     def index_entry(self, source: str, date_str: str, line_number: int, content: str) -> None:
         """Insert a single entry into the FTS index."""
@@ -176,16 +187,21 @@ class MemoryIndex:
     ) -> list[tuple[str, int, str, float]]:
         """FTS5 MATCH search with BM25 ranking and temporal decay.
 
+        Args:
+            today: Reference date for recency weighting. Defaults to UTC today.
+
         Returns list of (date_str, line_number, content, combined_score),
         sorted by descending score.
         """
         if not self._available or self._conn is None:
             return []
         if today is None:
-            today = date.today()
+            today = datetime.now(UTC).date()
 
-        # Try FTS5 MATCH first; fall back to phrase search on syntax error
-        for attempt_query in (query, f'"{query}"'):
+        # Try FTS5 MATCH first; fall back to phrase search on syntax error.
+        # Escape double quotes in the fallback to prevent invalid FTS5 syntax.
+        escaped = query.replace('"', '""')
+        for attempt_query in (query, f'"{escaped}"'):
             try:
                 rows = self._conn.execute(
                     "SELECT date_str, line_number, content, bm25(memory_fts) "
@@ -282,9 +298,12 @@ class MemoryManager:
         today = datetime.now(self._tz)
         path = self.daily_path(today.date())
 
-        # Rate limit: count existing entries in today's file
+        # Rate limit: count existing entries and total lines in today's file
+        existing_lines = 0
         if path.exists():
-            entry_count = sum(1 for line in path.read_text().splitlines() if line.startswith("- ["))
+            file_lines = path.read_text().splitlines()
+            existing_lines = len(file_lines)
+            entry_count = sum(1 for line in file_lines if line.startswith("- ["))
             if entry_count >= self._max_daily_entries:
                 logger.warning("Daily memory limit reached (%d entries)", self._max_daily_entries)
                 return f"Daily memory limit reached ({self._max_daily_entries} entries). Try again tomorrow."
@@ -295,15 +314,15 @@ class MemoryManager:
         # Create file with header if new
         if not path.exists():
             path.write_text(f"# Memory — {today.date().isoformat()}\n\n")
+            existing_lines = 2  # header + blank line
 
         with open(path, "a") as f:
             f.write(entry)
 
-        # Update FTS index
+        # Update FTS index (line number = existing lines + 1 for the new entry)
         if self._index and self._index.available:
-            line_count = len(path.read_text().splitlines())
             self._index.index_entry(
-                "daily", today.date().isoformat(), line_count, entry.rstrip("\n")
+                "daily", today.date().isoformat(), existing_lines + 1, entry.rstrip("\n")
             )
 
         logger.info("Saved memory to %s: %s", path.name, text[:80])
@@ -409,7 +428,8 @@ class MemoryManager:
 
     def _search_fts(self, query: str, max_results: int) -> str:
         """FTS5-based search with BM25 ranking and recency weighting."""
-        assert self._index is not None
+        if self._index is None:  # pragma: no cover — guarded by caller
+            return self._search_substring(query, max_results)
         today = datetime.now(self._tz).date()
         hits = self._index.search(query, max_results=max_results, today=today)
         if not hits:
@@ -570,6 +590,7 @@ class MemoryManager:
         today = datetime.now(self._tz).date()
         cutoff = today - timedelta(days=days_to_keep)
         compacted = 0
+        skipped_summaries = 0
 
         daily_files = sorted(self._memory_dir.glob("*.md"))
         for path in daily_files:
@@ -599,8 +620,10 @@ class MemoryManager:
                 if lt_lines < self._max_long_term_lines * 2:
                     with open(lt_path, "a") as f:
                         if summarize:
+                            # Dedupe entries with identical text after prefix stripping
+                            # (different timestamps but same content collapse to one)
                             entries = [_strip_entry_prefix(line) for line in entry_lines]
-                            entries = list(dict.fromkeys(entries))  # dedupe
+                            entries = list(dict.fromkeys(entries))
                             f.write(
                                 f"\n### Compacted: {file_date.isoformat()}"
                                 f" ({len(entries)} entries)\n"
@@ -611,6 +634,16 @@ class MemoryManager:
                             f.write(
                                 f"- [{file_date.isoformat()}] {entry_count} entries (compacted)\n"
                             )
+                else:
+                    skipped_summaries += 1
+                    logger.warning(
+                        "MEMORY.md exceeds safety limit (%d lines, max %d); "
+                        "skipping compaction summary for %s (%d entries lost)",
+                        lt_lines,
+                        self._max_long_term_lines * 2,
+                        file_date.isoformat(),
+                        entry_count,
+                    )
 
             path.unlink()
             compacted += 1
@@ -622,7 +655,13 @@ class MemoryManager:
 
         if compacted == 0:
             return "No files to compact."
-        return f"Compacted {compacted} file(s) older than {days_to_keep} days."
+        msg = f"Compacted {compacted} file(s) older than {days_to_keep} days."
+        if skipped_summaries:
+            msg += (
+                f" Warning: {skipped_summaries} file(s) had summaries dropped"
+                f" because MEMORY.md exceeds size limit."
+            )
+        return msg
 
     def _resolve_memory_path(self, date_str: str) -> Path | None:
         """Resolve a date string to a memory file path.

@@ -4,7 +4,11 @@ import tempfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from creel.memory import MemoryIndex, MemoryManager, _strip_entry_prefix
+from creel.models import WorkspaceConfig
 
 
 class TestMemoryManager:
@@ -632,3 +636,60 @@ class TestMemoryManagerFTS:
             path.write_text("# Memory — 2026-01-15\n\n- [10:00] **general**: Rebuild test entry\n")
             count = mm.rebuild_index()
             assert count == 1
+
+    def test_search_with_embedded_quotes(self):
+        """Queries containing unbalanced quotes should not crash FTS."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            mm.remember('He said "hello there', "quote")
+            result = mm.search_memory('he said "hello')
+            # Should not crash; may or may not find results
+            assert isinstance(result, str)
+
+    def test_compact_skips_summary_when_memory_full(self):
+        """When MEMORY.md exceeds 2x limit, compaction warns and drops summaries."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, max_long_term_lines=5)
+            # Fill MEMORY.md past 2x limit (10 lines)
+            lt_path = mm.long_term_path
+            lt_path.write_text("# Long-Term Memory\n\n" + "- line\n" * 10)
+
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
+            old_path = mm.daily_path(old_date)
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Should be dropped\n"
+            )
+            result = mm.compact_daily_files(days_to_keep=7)
+            assert "Warning" in result
+            assert "dropped" in result
+            # The daily file should still be deleted
+            assert not old_path.exists()
+            # But the entry should NOT appear in MEMORY.md
+            assert "Should be dropped" not in lt_path.read_text()
+
+    def test_reindex_skips_non_date_files(self):
+        """Non-date .md files in memory dir should not pollute the index."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            # Create a non-date file
+            readme = mm._memory_dir / "README.md"
+            readme.write_text("# Not a daily file\n\nSome content\n")
+            # Create a valid daily file
+            mm.remember("Valid entry")
+            count = mm.rebuild_index()
+            # Only the daily file should be indexed, not README.md
+            assert count == 1
+
+
+class TestWorkspaceConfigValidation:
+    def test_recency_half_life_rejects_zero(self):
+        with pytest.raises(ValidationError, match="recency_half_life_days"):
+            WorkspaceConfig(recency_half_life_days=0.0)
+
+    def test_recency_half_life_rejects_negative(self):
+        with pytest.raises(ValidationError, match="recency_half_life_days"):
+            WorkspaceConfig(recency_half_life_days=-5.0)
+
+    def test_recency_half_life_accepts_positive(self):
+        cfg = WorkspaceConfig(recency_half_life_days=7.0)
+        assert cfg.recency_half_life_days == 7.0

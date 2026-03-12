@@ -151,7 +151,7 @@ class WorkspaceConfig(BaseModel):
     max_daily_entries: int = 50
     max_long_term_lines: int = 500
     fts_enabled: bool = True
-    recency_half_life_days: float = 30.0
+    recency_half_life_days: float = Field(default=30.0, gt=0)
     compact_summarize: bool = True
 
 

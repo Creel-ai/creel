@@ -83,6 +83,61 @@ class TestMemoryManager:
             path = mm.daily_path(date(2026, 1, 15))
             assert path.name == "2026-01-15.md"
 
+    # --- get_relevant_context ---
+
+    def test_get_relevant_context_includes_today(self):
+        """Today's entries should always be included regardless of query."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            mm.remember("Meeting with Alice about project X")
+            result = mm.get_relevant_context("unrelated query")
+            assert result is not None
+            # Today's entries are always included for continuity
+            assert "Meeting with Alice" in result
+
+    def test_get_relevant_context_finds_matching_entries(self):
+        """Search results from older days should be included when they match."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            # Write an older daily file with matching content
+            mem_dir = Path(td) / "memory"
+            old_file = mem_dir / "2026-01-15.md"
+            old_file.write_text(
+                "# Memory — 2026-01-15\n\n"
+                "- [10:00] **general**: Budget review for Q1\n"
+                "- [11:00] **general**: Lunch at noon\n"
+            )
+            mm.rebuild_index()
+            result = mm.get_relevant_context("budget review")
+            assert result is not None
+            assert "Budget review" in result
+
+    def test_get_relevant_context_empty_when_nothing_matches(self):
+        """Returns None when no entries match and no today file exists."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            result = mm.get_relevant_context("completely nonexistent topic")
+            assert result is None
+
+    def test_get_relevant_context_respects_max_chars(self):
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            mm.remember("x" * 500)
+            result = mm.get_relevant_context("anything", max_chars=200)
+            assert result is not None
+            assert len(result) <= 300  # some overhead for headers
+
+    def test_get_relevant_context_excludes_today_from_search(self):
+        """Today's entries from search results should not be duplicated."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            mm.remember("Deploy to production at 3pm")
+            mm.rebuild_index()
+            result = mm.get_relevant_context("deploy production")
+            assert result is not None
+            # "Deploy" should appear once (from today section), not duplicated
+            assert result.count("Deploy to production") == 1
+
     # --- search_memory ---
 
     def test_search_finds_entries(self):

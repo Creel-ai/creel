@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -155,6 +155,8 @@ class WorkspaceConfig(BaseModel):
     compact_summarize: bool = True
     compact_model: str = "claude-haiku-4-5-20251001"
     compact_max_tokens: int = 512
+    memory_context_mode: Literal["recent", "relevant"] = "recent"
+    memory_context_max_results: int = 20
 
 
 class IMessageChannelConfig(BaseModel):

@@ -328,6 +328,50 @@ class TestSystemPrompt:
         prompt = server._build_system_prompt()
         assert "test assistant" in prompt
 
+    def test_relevant_mode_uses_search(self, tmp_path) -> None:
+        """When memory_context_mode='relevant', search-based context is used."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                memory_context_mode="relevant",
+            ),
+        )
+        server = ChatServer(agent_def)
+
+        mock_memory = MagicMock()
+        mock_memory.get_relevant_context.return_value = "Relevant: budget Q1"
+        server._memory = mock_memory
+
+        prompt = server._build_system_prompt(user_message="budget review")
+        assert "Relevant: budget Q1" in prompt
+        mock_memory.get_relevant_context.assert_called_once()
+        mock_memory.get_recent_context.assert_not_called()
+
+    def test_relevant_mode_falls_back_to_recent_without_message(self, tmp_path) -> None:
+        """When mode='relevant' but no user_message, fall back to recent."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                memory_context_mode="relevant",
+            ),
+        )
+        server = ChatServer(agent_def)
+
+        mock_memory = MagicMock()
+        mock_memory.get_recent_context.return_value = "Recent context"
+        server._memory = mock_memory
+
+        prompt = server._build_system_prompt()  # no user_message
+        assert "Recent context" in prompt
+        mock_memory.get_recent_context.assert_called_once()
+        mock_memory.get_relevant_context.assert_not_called()
+
     def test_memory_context_screened_by_guardian(self, tmp_path) -> None:
         ws = tmp_path / "workspace"
         ws.mkdir()

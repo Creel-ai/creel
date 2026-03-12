@@ -459,27 +459,29 @@ class MemoryManager:
         Returns results formatted as [YYYY-MM-DD L{n}] entry text so the
         LLM can reference them in edit/delete calls.
         """
-        if self._index and self._index.available:
-            return self._search_fts(query, max_results)
-        return self._search_substring(query, max_results)
-
-    def _search_fts(self, query: str, max_results: int) -> str:
-        """FTS5-based search with BM25 ranking and recency weighting."""
-        if self._index is None:  # pragma: no cover — guarded by caller
-            return self._search_substring(query, max_results)
-        today = datetime.now(self._tz).date()
-        hits = self._index.search(query, max_results=max_results, today=today)
+        hits = self._search_raw(query, max_results)
         if not hits:
             return f"No memories found matching '{query}'."
         results = [f"[{ds} L{ln}] {content}" for ds, ln, content, _score in hits]
         return f"Found {len(results)} result(s):\n" + "\n".join(results)
 
-    def _search_substring(self, query: str, max_results: int) -> str:
+    def _search_raw(self, query: str, max_results: int) -> list[tuple[str, int, str, float]]:
+        """Return raw search results as (date_str, line_number, content, score) tuples.
+
+        Uses FTS5 when available, otherwise falls back to substring search.
+        """
+        if self._index and self._index.available:
+            today = datetime.now(self._tz).date()
+            return self._index.search(query, max_results=max_results, today=today)
+        return self._collect_substring_hits(query, max_results)
+
+    def _collect_substring_hits(
+        self, query: str, max_results: int
+    ) -> list[tuple[str, int, str, float]]:
         """Case-insensitive substring search with recency weighting.
 
-        Fallback when FTS5 is unavailable.  Collects up to max_results * 3
-        candidates, scores them with temporal decay, then returns the top
-        max_results sorted by descending weight.
+        Collects up to max_results * 3 candidates, scores them with temporal
+        decay, then returns the top max_results sorted by descending weight.
         """
         query_lower = query.lower()
         today = datetime.now(self._tz).date()
@@ -525,12 +527,63 @@ class MemoryManager:
                 pass
 
         if not candidates:
-            return f"No memories found matching '{query}'."
+            return []
 
         candidates.sort(key=lambda x: x[3], reverse=True)
-        top = candidates[:max_results]
-        results = [f"[{ds} L{ln}] {line}" for ds, ln, line, _w in top]
-        return f"Found {len(results)} result(s):\n" + "\n".join(results)
+        return candidates[:max_results]
+
+    def get_relevant_context(
+        self, query: str, max_results: int = 20, max_chars: int = 5000
+    ) -> str | None:
+        """Load memory context relevant to the query.
+
+        Always includes today's entries for continuity, plus the top
+        search results from older entries and long-term memory.
+
+        Args:
+            query: The user's message to search for relevant memories.
+            max_results: Maximum number of search results to include.
+            max_chars: Maximum total characters to return.
+
+        Returns:
+            Formatted memory context string, or None if nothing relevant.
+        """
+        today = datetime.now(self._tz).date()
+        today_str = today.isoformat()
+        parts: list[str] = []
+        total_chars = 0
+
+        # Always include today's entries for continuity
+        today_path = self.daily_path(today)
+        if today_path.exists():
+            try:
+                content = today_path.read_text().strip()
+                if content:
+                    if len(content) > max_chars // 2:
+                        content = content[: max_chars // 2] + "\n[... truncated]"
+                    parts.append(content)
+                    total_chars += len(content)
+            except OSError:
+                pass
+
+        # Search for relevant entries (excluding today's, already included)
+        hits = self._search_raw(query, max_results)
+        filtered = [(ds, ln, content, sc) for ds, ln, content, sc in hits if ds != today_str]
+
+        if filtered:
+            lines = [f"[{ds}] {content}" for ds, ln, content, _sc in filtered]
+            relevant_text = "\n".join(lines)
+
+            remaining = max_chars - total_chars
+            if remaining > 100:
+                if len(relevant_text) > remaining:
+                    relevant_text = relevant_text[:remaining] + "\n[... truncated]"
+                parts.append(f"### Related memories\n{relevant_text}")
+
+        if not parts:
+            return None
+
+        return "\n\n---\n\n".join(parts)
 
     def delete_memory(self, date_str: str, line_number: int) -> str:
         """Delete a specific memory entry by date and line number.

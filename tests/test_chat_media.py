@@ -325,7 +325,9 @@ class TestHandleMessageWithAttachments:
         mock_result = _make_agent_result("Got it!")
 
         with (
-            patch.object(server._media._transcription, "transcribe", return_value="Turn off the lights"),
+            patch.object(
+                server._media._transcription, "transcribe", return_value="Turn off the lights"
+            ),
             patch("creel.chat.run_agent_loop", return_value=mock_result) as mock_loop,
         ):
             result = server.handle_message("user1", "", attachments=[attachment])

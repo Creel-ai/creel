@@ -680,6 +680,100 @@ class TestMemoryManagerFTS:
             assert count == 1
 
 
+class TestCompactLLMSummarize:
+    """Tests for the LLM summarization path in compact_daily_files."""
+
+    def _make_manager(self, td: str, **kwargs) -> MemoryManager:
+        return MemoryManager(workspace_dir=td, timezone_name="UTC", **kwargs)
+
+    def _create_old_file(self, mm: MemoryManager, days_ago: int = 10) -> date:
+        old_date = datetime.now(UTC).date() - timedelta(days=days_ago)
+        path = mm.daily_path(old_date)
+        path.write_text(
+            f"# Memory — {old_date.isoformat()}\n\n"
+            f"- [10:00] **general**: Alpha fact\n"
+            f"- [11:00] **preference**: Beta detail\n"
+            f"- [14:30] **general**: Gamma note\n"
+        )
+        return old_date
+
+    def test_compact_uses_llm_summarize_fn(self):
+        """When callback is provided and succeeds, MEMORY.md gets LLM output."""
+        with tempfile.TemporaryDirectory() as td:
+
+            def mock_summarize(entries: list[str]) -> str:
+                return "- Key fact A\n- Key fact B\n"
+
+            mm = self._make_manager(td, compact_summarize_fn=mock_summarize)
+            old_date = self._create_old_file(mm)
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+
+            lt_content = mm.long_term_path.read_text()
+            assert f"### Summarized: {old_date.isoformat()}" in lt_content
+            assert "- Key fact A" in lt_content
+            assert "- Key fact B" in lt_content
+            # Should NOT contain raw extractive bullets
+            assert "- Alpha fact" not in lt_content
+
+    def test_compact_llm_fallback_on_error(self):
+        """When callback raises, falls back to extractive summarization."""
+        with tempfile.TemporaryDirectory() as td:
+
+            def failing_summarize(entries: list[str]) -> str:
+                raise RuntimeError("LLM API unavailable")
+
+            mm = self._make_manager(td, compact_summarize_fn=failing_summarize)
+            old_date = self._create_old_file(mm)
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+
+            lt_content = mm.long_term_path.read_text()
+            # Fallback: extractive with "Compacted" header
+            assert f"### Compacted: {old_date.isoformat()}" in lt_content
+            assert "- Alpha fact" in lt_content
+            assert "- Beta detail" in lt_content
+
+    def test_compact_no_callback_uses_extractive(self):
+        """compact_summarize_fn=None with summarize=True uses extractive."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, compact_summarize_fn=None)
+            old_date = self._create_old_file(mm)
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+
+            lt_content = mm.long_term_path.read_text()
+            assert f"### Compacted: {old_date.isoformat()}" in lt_content
+            assert "- Alpha fact" in lt_content
+
+    def test_compact_callback_receives_stripped_entries(self):
+        """Callback should receive prefix-stripped, deduped entries."""
+        with tempfile.TemporaryDirectory() as td:
+            received_entries: list[list[str]] = []
+
+            def capture_summarize(entries: list[str]) -> str:
+                received_entries.append(list(entries))
+                return "- summary\n"
+
+            mm = self._make_manager(td, compact_summarize_fn=capture_summarize)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
+            path = mm.daily_path(old_date)
+            path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Fact one\n"
+                f"- [11:00] **general**: Fact one\n"  # duplicate
+                f"- [12:00] **preference**: Fact two\n"
+            )
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+
+            assert len(received_entries) == 1
+            entries = received_entries[0]
+            # Should be stripped of prefix
+            assert "Fact one" in entries
+            assert "Fact two" in entries
+            # Should be deduped
+            assert entries.count("Fact one") == 1
+            # Should NOT contain raw prefix
+            assert not any(e.startswith("- [") for e in entries)
+
+
 class TestWorkspaceConfigValidation:
     def test_recency_half_life_rejects_zero(self):
         with pytest.raises(ValidationError, match="recency_half_life_days"):

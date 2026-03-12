@@ -646,8 +646,8 @@ class TestMemoryManagerFTS:
             # Should not crash; may or may not find results
             assert isinstance(result, str)
 
-    def test_compact_skips_summary_when_memory_full(self):
-        """When MEMORY.md exceeds 2x limit, compaction warns and drops summaries."""
+    def test_compact_keeps_file_when_memory_full(self):
+        """When MEMORY.md exceeds 2x limit, daily file is kept to avoid data loss."""
         with tempfile.TemporaryDirectory() as td:
             mm = self._make_manager(td, max_long_term_lines=5)
             # Fill MEMORY.md past 2x limit (10 lines)
@@ -657,15 +657,14 @@ class TestMemoryManagerFTS:
             old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
             old_path.write_text(
-                f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Should be dropped\n"
+                f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Preserved entry\n"
             )
             result = mm.compact_daily_files(days_to_keep=7)
             assert "Warning" in result
-            assert "dropped" in result
-            # The daily file should still be deleted
-            assert not old_path.exists()
-            # But the entry should NOT appear in MEMORY.md
-            assert "Should be dropped" not in lt_path.read_text()
+            assert "kept" in result
+            # The daily file should be preserved — not deleted
+            assert old_path.exists()
+            assert "Preserved entry" in old_path.read_text()
 
     def test_reindex_skips_non_date_files(self):
         """Non-date .md files in memory dir should not pollute the index."""

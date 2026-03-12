@@ -638,12 +638,13 @@ class MemoryManager:
                     skipped_summaries += 1
                     logger.warning(
                         "MEMORY.md exceeds safety limit (%d lines, max %d); "
-                        "skipping compaction summary for %s (%d entries lost)",
+                        "keeping daily file %s to avoid data loss (%d entries)",
                         lt_lines,
                         self._max_long_term_lines * 2,
                         file_date.isoformat(),
                         entry_count,
                     )
+                    continue  # keep the daily file — don't delete what we can't preserve
 
             path.unlink()
             compacted += 1
@@ -653,15 +654,17 @@ class MemoryManager:
             if self._index and self._index.available:
                 self._index.remove_file(file_date.isoformat())
 
-        if compacted == 0:
+        if compacted == 0 and skipped_summaries == 0:
             return "No files to compact."
-        msg = f"Compacted {compacted} file(s) older than {days_to_keep} days."
+        parts: list[str] = []
+        if compacted:
+            parts.append(f"Compacted {compacted} file(s) older than {days_to_keep} days.")
         if skipped_summaries:
-            msg += (
-                f" Warning: {skipped_summaries} file(s) had summaries dropped"
+            parts.append(
+                f"Warning: {skipped_summaries} file(s) kept (not compacted)"
                 f" because MEMORY.md exceeds size limit."
             )
-        return msg
+        return " ".join(parts)
 
     def _resolve_memory_path(self, date_str: str) -> Path | None:
         """Resolve a date string to a memory file path.

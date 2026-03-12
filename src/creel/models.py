@@ -158,6 +158,7 @@ class WorkspaceConfig(BaseModel):
     memory_context_mode: Literal["recent", "relevant"] = "recent"
     memory_context_max_results: int = 20
     extra_paths: list[str] = Field(default_factory=list)
+    index_session_transcripts: bool = False
 
 
 class IMessageChannelConfig(BaseModel):

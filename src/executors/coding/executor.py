@@ -177,7 +177,7 @@ def detect_and_setup(workdir: str) -> dict:
             install_cmd = cmd
             break
 
-    if not detected_file:
+    if not detected_file or not install_cmd:
         # No known project type — mark as done to avoid re-scanning
         _setup_cache.add(workdir)
         return result

@@ -33,7 +33,7 @@ from creel.outputs import send_output
 from creel.secrets import decrypt_env_file
 
 if TYPE_CHECKING:
-    from creel.models import AgentDefinition
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,6 @@ __all__ = [
 ]
 
 
-
 _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "apple_notes": "NOTES",
     "apple_reminders": "REMINDERS",
@@ -63,7 +62,6 @@ _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "browser": "BROWSER",
     "git_ops": "GIT",
 }
-
 
 
 def _replace_google_credentials_with_access_token(env_vars: dict[str, str]) -> None:
@@ -234,9 +232,7 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
 
     # Inject BRIDGE_URL and scoped BRIDGE_TOKEN for bridge-calling executors
     if "BRIDGE_URL" not in env_overrides and not os.environ.get("BRIDGE_URL"):
-        env_overrides["BRIDGE_URL"] = os.environ.get(
-            "CREEL_BRIDGE_URL", "http://localhost:8099"
-        )
+        env_overrides["BRIDGE_URL"] = os.environ.get("CREEL_BRIDGE_URL", "http://localhost:8099")
     if "BRIDGE_TOKEN" not in env_overrides and not os.environ.get("BRIDGE_TOKEN"):
         scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(name, name.upper())
         scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")

@@ -113,9 +113,7 @@ class ImageBuildCache:
         try:
             self.ensure_image(image)
         except Exception:
-            logger.warning(
-                "Pre-build failed for %s (will retry on demand)", image, exc_info=True
-            )
+            logger.warning("Pre-build failed for %s (will retry on demand)", image, exc_info=True)
 
     def clear(self) -> None:
         """Reset the cache (primarily for testing)."""
@@ -322,7 +320,10 @@ def _run_executor_container(
         bridge_config: Optional bridge configuration for macOS host tools
     """
     from creel.log import request_id_var
-    from creel.orchestrator import _EXECUTOR_TO_BRIDGE_SCOPE, _replace_google_credentials_with_access_token
+    from creel.orchestrator import (
+        _EXECUTOR_TO_BRIDGE_SCOPE,
+        _replace_google_credentials_with_access_token,
+    )
 
     # Determine image to use - tool config overrides executor config
     image = tool_config.image if (tool_config and tool_config.image) else config.image

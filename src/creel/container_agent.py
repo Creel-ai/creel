@@ -25,8 +25,8 @@ from creel.agent import (
     _extract_prior_tools,
     _extract_user_request_for_coherence,
 )
-from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
 from creel.containers import _ensure_image
+from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
 from creel.tools import build_tool_definitions, execute_tool_call
 from guardian.types import ActionVerdict
 
@@ -53,15 +53,38 @@ _AGENT_DOCKER_FLAGS = [
 ]
 
 
-def _get_llm_env_vars() -> dict[str, str]:
-    """Collect LLM credential env vars from the current environment."""
+def _get_llm_env_vars(llm_config: LLMConfig | None = None) -> dict[str, str]:
+    """Collect LLM credential env vars for the container runner.
+
+    When *llm_config* is provided, uses the provider abstraction to extract
+    the correct env vars for the configured provider.  Falls back to
+    Anthropic credentials for backward compatibility.
+    """
+    from creel.providers import get_provider
+    from creel.providers.base import _resolve_provider_name
+
     env_vars: dict[str, str] = {}
-    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-    if auth_token:
-        env_vars["ANTHROPIC_AUTH_TOKEN"] = auth_token
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key:
-        env_vars["ANTHROPIC_API_KEY"] = api_key
+
+    if llm_config is not None:
+        provider_name = _resolve_provider_name(llm_config.model, llm_config.provider)
+        env_vars["PROVIDER"] = provider_name
+
+        provider = get_provider(
+            provider=llm_config.provider,
+            model=llm_config.model,
+            api_base=llm_config.api_base,
+            region=llm_config.region,
+        )
+        env_vars.update(provider.extract_env_vars())
+    else:
+        # Backward-compatible fallback: Anthropic credentials only
+        auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+        if auth_token:
+            env_vars["ANTHROPIC_AUTH_TOKEN"] = auth_token
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if api_key:
+            env_vars["ANTHROPIC_API_KEY"] = api_key
+
     return env_vars
 
 
@@ -117,7 +140,7 @@ def run_agent_loop_container(
         "max_turns": agent_config.max_turns,
     }
 
-    env_vars = _get_llm_env_vars()
+    env_vars = _get_llm_env_vars(llm_config)
 
     # Use warm container pool if available and enabled
     if container_pool is not None and container_pool.enabled:

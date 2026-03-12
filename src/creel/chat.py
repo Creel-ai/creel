@@ -280,7 +280,8 @@ class ChatServer:
 
         # Look up per-sender session state (workspace path, etc.)
         session_state = self._session_states.setdefault(
-            sender_id, SessionState(sender_id=sender_id),
+            sender_id,
+            SessionState(sender_id=sender_id),
         )
 
         # Run the agent loop (containerized or direct)
@@ -482,7 +483,8 @@ class ChatServer:
 
         # Execute the approved tool
         session_state = self._session_states.setdefault(
-            sender_id, SessionState(sender_id=sender_id),
+            sender_id,
+            SessionState(sender_id=sender_id),
         )
         is_error = False
         try:

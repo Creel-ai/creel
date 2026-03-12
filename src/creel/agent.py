@@ -202,8 +202,7 @@ def _check_guardian_pre_execution(
                 return _GuardianDecision(
                     action="deny",
                     error_message=(
-                        "[Guardian] Memory write blocked — content may contain "
-                        "prompt injection."
+                        "[Guardian] Memory write blocked — content may contain prompt injection."
                     ),
                 )
 
@@ -478,7 +477,7 @@ def run_agent_loop(
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         # Execute each tool call and collect results
-        tool_results = []
+        tool_results: list[dict] = []
         for block in tool_use_blocks:
             tool_calls_made += 1
             tool_name = block.name
@@ -506,12 +505,21 @@ def run_agent_loop(
             # Guardian pre-execution checks (policy, coherence, memory screening)
             if guardian is not None:
                 gd = _check_guardian_pre_execution(
-                    guardian, tool_name, tool_input, messages, tools_config, confirm_action,
+                    guardian,
+                    tool_name,
+                    tool_input,
+                    messages,
+                    tools_config,
+                    confirm_action,
                 )
                 if gd.action == "deny":
                     _record_tool_error(
-                        block.id, tool_name, tool_input,
-                        gd.error_message, tool_history, tool_results,
+                        block.id,
+                        tool_name,
+                        tool_input,
+                        gd.error_message,
+                        tool_history,
+                        tool_results,
                     )
                     continue
                 if gd.action == "needs_approval":
@@ -709,18 +717,28 @@ def run_agent_loop(
 
 
 def _serialize_content(content: list) -> list[dict]:
-    """Serialize Anthropic content blocks to dicts for message history."""
+    """Serialize LLM content blocks to dicts for message history.
+
+    Handles both provider-agnostic dataclass blocks (TextBlock, ToolUseBlock)
+    and dict blocks. The attribute access pattern is the same for both since
+    our dataclasses use the same field names as the Anthropic SDK objects.
+    """
     serialized = []
     for block in content:
-        if block.type == "text":
-            serialized.append({"type": "text", "text": block.text})
-        elif block.type == "tool_use":
+        block_type = block.type if hasattr(block, "type") else block.get("type")
+        if block_type == "text":
+            text = block.text if hasattr(block, "text") else block.get("text", "")
+            serialized.append({"type": "text", "text": text})
+        elif block_type == "tool_use":
+            block_id = block.id if hasattr(block, "id") else block.get("id", "")
+            name = block.name if hasattr(block, "name") else block.get("name", "")
+            inp = block.input if hasattr(block, "input") else block.get("input", {})
             serialized.append(
                 {
                     "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
+                    "id": block_id,
+                    "name": name,
+                    "input": inp,
                 }
             )
     return serialized

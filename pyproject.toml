@@ -41,6 +41,12 @@ guardian = [
     "onnxruntime>=1.16.0",
     "optimum[onnxruntime]>=1.14.0",
 ]
+openai = [
+    "openai>=1.0.0",
+]
+bedrock = [
+    "boto3>=1.28.0",
+]
 whatsapp = [
     "neonize>=0.3.9",
 ]

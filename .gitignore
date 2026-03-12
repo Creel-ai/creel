@@ -53,7 +53,7 @@ approvals/
 workspace/memory/
 
 # Memory FTS5 search index (rebuildable cache)
-.memory_index.sqlite
+.memory_index.sqlite*
 
 # Coverage
 .coverage

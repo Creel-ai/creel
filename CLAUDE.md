@@ -158,6 +158,13 @@ git config core.hooksPath scripts/hooks
 
 The pre-commit hook runs `ruff check` and `ruff format --check` on staged `.py` files only.
 
+**Important:** CI checks lint/format across **all** files (`src tests`), not just staged ones. Before pushing, run a full check to catch pre-existing violations in files you didn't modify:
+
+```bash
+.venv/bin/python -m ruff check src tests
+.venv/bin/python -m ruff format --check src tests
+```
+
 ## Git Workflow
 
 - **Never commit or push directly to `main`.** Always create a feature branch and open a PR.

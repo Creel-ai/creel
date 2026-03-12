@@ -4,12 +4,12 @@ import tempfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from creel.memory import MemoryManager
+from creel.memory import MemoryIndex, MemoryManager, _strip_entry_prefix
 
 
 class TestMemoryManager:
-    def _make_manager(self, td: str) -> MemoryManager:
-        return MemoryManager(workspace_dir=td, timezone_name="UTC")
+    def _make_manager(self, td: str, **kwargs) -> MemoryManager:
+        return MemoryManager(workspace_dir=td, timezone_name="UTC", **kwargs)
 
     def test_remember_creates_daily_file(self):
         with tempfile.TemporaryDirectory() as td:
@@ -246,9 +246,27 @@ class TestMemoryManager:
             old_date = datetime.now(UTC).date() - timedelta(days=10)
             old_path = mm.daily_path(old_date)
             old_path.write_text(
-                f"# Memory — {old_date.isoformat()}\n\n- [10:00] **general**: Note 1\n- [11:00] **general**: Note 2\n"
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Note 1\n- [11:00] **general**: Note 2\n"
             )
+            # Default summarize=True: should write entry text bullets
             mm.compact_daily_files(days_to_keep=7)
+            lt_content = mm.long_term_path.read_text()
+            assert f"### Compacted: {old_date.isoformat()}" in lt_content
+            assert "- Note 1" in lt_content
+            assert "- Note 2" in lt_content
+
+    def test_compact_summarize_false(self):
+        """When summarize=False, use legacy count-only format."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
+            old_path = mm.daily_path(old_date)
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Note 1\n- [11:00] **general**: Note 2\n"
+            )
+            mm.compact_daily_files(days_to_keep=7, summarize=False)
             lt_content = mm.long_term_path.read_text()
             assert "2 entries (compacted)" in lt_content
 
@@ -300,3 +318,317 @@ class TestMemoryManager:
             mm = MemoryManager(workspace_dir=td, timezone_name="UTC", max_long_term_lines=200)
             result = mm.update_long_term("Some fact")
             assert "updated" in result.lower()
+
+
+class TestStripEntryPrefix:
+    def test_strips_standard_prefix(self):
+        assert _strip_entry_prefix("- [10:00] **general**: Hello world") == "Hello world"
+
+    def test_preserves_non_entry_lines(self):
+        assert _strip_entry_prefix("Just a plain line") == "Just a plain line"
+
+    def test_strips_various_categories(self):
+        assert _strip_entry_prefix("- [14:30] **preference**: Likes coffee") == "Likes coffee"
+
+
+class TestMemoryIndex:
+    def _make_index(self, td: str, **kwargs) -> MemoryIndex:
+        db_path = Path(td) / ".memory_index.sqlite"
+        return MemoryIndex(db_path, **kwargs)
+
+    def test_index_creation(self):
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            assert idx.available
+            idx.close()
+
+    def test_index_entry_and_search(self):
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            idx.index_entry("daily", "2026-01-15", 3, "User likes coffee in the morning")
+            results = idx.search("coffee", today=date(2026, 1, 15))
+            assert len(results) == 1
+            assert results[0][0] == "2026-01-15"
+            assert results[0][1] == 3
+            assert "coffee" in results[0][2]
+            idx.close()
+
+    def test_search_bm25_ranking(self):
+        """More relevant entries should rank higher."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            idx.index_entry("daily", "2026-01-15", 1, "coffee coffee coffee is great")
+            idx.index_entry("daily", "2026-01-15", 2, "I had coffee once")
+            results = idx.search("coffee", today=date(2026, 1, 15))
+            assert len(results) == 2
+            # Entry with more "coffee" mentions should score higher
+            assert "coffee coffee coffee" in results[0][2]
+            idx.close()
+
+    def test_search_recency_weighting(self):
+        """Recent entries should rank higher than old ones for same relevance."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td, recency_half_life_days=7.0)
+            idx.index_entry("daily", "2026-01-01", 1, "Meeting about project alpha")
+            idx.index_entry("daily", "2026-03-10", 1, "Meeting about project alpha")
+            results = idx.search("project alpha", today=date(2026, 3, 12))
+            assert len(results) == 2
+            # Recent entry should be first
+            assert results[0][0] == "2026-03-10"
+            assert results[0][3] > results[1][3]
+            idx.close()
+
+    def test_search_evergreen_no_decay(self):
+        """long_term entries should not be affected by temporal decay."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td, recency_half_life_days=1.0)
+            idx.index_entry("long_term", "long_term", 1, "Evergreen important fact")
+            results = idx.search("evergreen", today=date(2026, 3, 12))
+            assert len(results) == 1
+            assert results[0][3] > 0
+            idx.close()
+
+    def test_reindex_if_needed(self):
+        """Only changed files should be re-indexed."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            mem_dir = Path(td) / "memory"
+            mem_dir.mkdir()
+            lt_path = Path(td) / "MEMORY.md"
+
+            # Create a daily file
+            daily = mem_dir / "2026-01-15.md"
+            daily.write_text("# Memory\n\n- [10:00] **general**: Hello world\n")
+
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 1
+
+            # Re-index without changes — should return 0
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 0
+
+            idx.close()
+
+    def test_reindex_removes_deleted_files(self):
+        """Stale entries should be cleaned up when files are deleted."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            mem_dir = Path(td) / "memory"
+            mem_dir.mkdir()
+            lt_path = Path(td) / "MEMORY.md"
+
+            daily = mem_dir / "2026-01-15.md"
+            daily.write_text("# Memory\n\n- [10:00] **general**: Test entry\n")
+            idx.reindex_if_needed(mem_dir, lt_path)
+
+            # Verify searchable
+            results = idx.search("Test entry", today=date(2026, 1, 15))
+            assert len(results) == 1
+
+            # Delete file and re-index
+            daily.unlink()
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 1  # one stale file removed
+
+            results = idx.search("Test entry", today=date(2026, 1, 15))
+            assert len(results) == 0
+            idx.close()
+
+    def test_remove_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            idx.index_entry("daily", "2026-01-15", 1, "Entry to remove")
+            idx.remove_file("2026-01-15")
+            results = idx.search("remove", today=date(2026, 1, 15))
+            assert len(results) == 0
+            idx.close()
+
+    def test_reindex_file(self):
+        """Re-parsing a single file should replace all its entries."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            mem_dir = Path(td) / "memory"
+            mem_dir.mkdir()
+
+            daily = mem_dir / "2026-01-15.md"
+            daily.write_text("# Memory\n\n- [10:00] **general**: Original entry\n")
+            idx.reindex_file(daily, "2026-01-15")
+
+            results = idx.search("Original", today=date(2026, 1, 15))
+            assert len(results) == 1
+
+            # Overwrite file and re-index
+            daily.write_text("# Memory\n\n- [10:00] **general**: Replaced entry\n")
+            idx.reindex_file(daily, "2026-01-15")
+
+            results = idx.search("Original", today=date(2026, 1, 15))
+            assert len(results) == 0
+            results = idx.search("Replaced", today=date(2026, 1, 15))
+            assert len(results) == 1
+            idx.close()
+
+    def test_search_fts_syntax_fallback(self):
+        """Special characters shouldn't crash — should fall back to phrase search."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            idx.index_entry("daily", "2026-01-15", 1, "test with special chars: a+b")
+            # Query with FTS5 special chars should not raise
+            results = idx.search("a+b", today=date(2026, 1, 15))
+            # May or may not find results, but should not crash
+            assert isinstance(results, list)
+            idx.close()
+
+    def test_search_empty_index(self):
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            results = idx.search("anything", today=date(2026, 1, 15))
+            assert results == []
+            idx.close()
+
+    def test_close_and_reopen(self):
+        """Data should persist across close/reopen."""
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / ".memory_index.sqlite"
+            idx = MemoryIndex(db_path)
+            idx.index_entry("daily", "2026-01-15", 1, "Persistent data")
+            idx.close()
+
+            idx2 = MemoryIndex(db_path)
+            results = idx2.search("Persistent", today=date(2026, 1, 15))
+            assert len(results) == 1
+            idx2.close()
+
+    def test_unavailable_graceful(self):
+        """If FTS5 init fails, available should return False and methods should be safe."""
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / ".memory_index.sqlite"
+            # Create a corrupt database file
+            db_path.write_text("not a database")
+            idx = MemoryIndex(db_path)
+            assert not idx.available
+            # Methods should be no-ops
+            idx.index_entry("daily", "2026-01-15", 1, "test")
+            assert idx.search("test") == []
+            idx.close()
+
+
+class TestMemoryManagerFTS:
+    """Integration tests for MemoryManager with FTS index."""
+
+    def _make_manager(self, td: str, **kwargs) -> MemoryManager:
+        return MemoryManager(workspace_dir=td, timezone_name="UTC", **kwargs)
+
+    def test_search_uses_fts(self):
+        """remember + FTS search finds entries."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            mm.remember("User loves espresso drinks", "preference")
+            # FTS should find this even with stemming
+            result = mm.search_memory("espresso")
+            assert "1 result" in result
+            assert "espresso" in result
+
+    def test_search_falls_back_without_fts(self):
+        """fts_enabled=False uses substring search."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=False)
+            mm.remember("User likes coffee")
+            result = mm.search_memory("coffee")
+            assert "1 result" in result
+
+    def test_remember_updates_index(self):
+        """Entry should be immediately searchable via FTS after remember()."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            mm.remember("Quarterly planning meeting", "schedule")
+            result = mm.search_memory("quarterly planning")
+            assert "1 result" in result
+
+    def test_delete_updates_index(self):
+        """Deleted entry should not be found in FTS."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            mm.remember("Delete this entry")
+            path = mm.daily_path()
+            lines = path.read_text().splitlines()
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Delete this" in line)
+            today_str = datetime.now(UTC).date().isoformat()
+            mm.delete_memory(today_str, entry_line)
+            result = mm.search_memory("Delete this entry")
+            assert "No memories found" in result
+
+    def test_edit_updates_index(self):
+        """After edit, old text gone and new text found."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            mm.remember("Original unique phrase")
+            path = mm.daily_path()
+            lines = path.read_text().splitlines()
+            entry_line = next(i for i, line in enumerate(lines, 1) if "Original unique" in line)
+            today_str = datetime.now(UTC).date().isoformat()
+            mm.edit_memory(
+                today_str, entry_line, "- [10:00] **general**: Replacement unique phrase"
+            )
+            result = mm.search_memory("Original unique")
+            assert "No memories found" in result
+            result = mm.search_memory("Replacement unique")
+            assert "1 result" in result
+
+    def test_compact_removes_from_index(self):
+        """Compacted entries should be removed from FTS."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
+            old_path = mm.daily_path(old_date)
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Unique compaction test entry\n"
+            )
+            # Index the old file
+            mm.rebuild_index()
+            result = mm.search_memory("Unique compaction test")
+            assert "1 result" in result
+
+            mm.compact_daily_files(days_to_keep=7)
+            result = mm.search_memory("Unique compaction test")
+            assert "No memories found" in result
+
+    def test_compact_summarize_true(self):
+        """MEMORY.md should have entry text bullets when summarize=True."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
+            old_path = mm.daily_path(old_date)
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Alpha note\n- [11:00] **general**: Beta note\n"
+            )
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+            lt_content = mm.long_term_path.read_text()
+            assert "### Compacted:" in lt_content
+            assert "- Alpha note" in lt_content
+            assert "- Beta note" in lt_content
+
+    def test_compact_summarize_false_legacy(self):
+        """MEMORY.md should have count-only line when summarize=False."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            old_date = datetime.now(UTC).date() - timedelta(days=10)
+            old_path = mm.daily_path(old_date)
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Note 1\n- [11:00] **general**: Note 2\n"
+            )
+            mm.compact_daily_files(days_to_keep=7, summarize=False)
+            lt_content = mm.long_term_path.read_text()
+            assert "2 entries (compacted)" in lt_content
+
+    def test_rebuild_index(self):
+        """rebuild_index should index existing files."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, fts_enabled=True)
+            # Write a file directly (bypassing remember)
+            path = mm.daily_path(date(2026, 1, 15))
+            path.write_text("# Memory — 2026-01-15\n\n- [10:00] **general**: Rebuild test entry\n")
+            count = mm.rebuild_index()
+            assert count == 1

@@ -157,6 +157,7 @@ class WorkspaceConfig(BaseModel):
     compact_max_tokens: int = Field(default=512, gt=0)
     memory_context_mode: Literal["recent", "relevant"] = "recent"
     memory_context_max_results: int = 20
+    extra_paths: list[str] = Field(default_factory=list)
 
 
 class IMessageChannelConfig(BaseModel):

@@ -667,6 +667,78 @@ class TestMemoryIndex:
             idx.close()
 
 
+class TestExtraPaths:
+    """Tests for shared knowledge from extra directories."""
+
+    def _make_manager(self, td: str, **kwargs) -> MemoryManager:
+        return MemoryManager(workspace_dir=td, timezone_name="UTC", **kwargs)
+
+    def test_extra_paths_indexed_and_searchable(self):
+        """Markdown files in extra_paths should be indexed and searchable."""
+        with tempfile.TemporaryDirectory() as td:
+            # Create a shared docs directory outside workspace
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            (shared_dir / "runbook.md").write_text(
+                "# Runbook\n\nRestart the API server with `systemctl restart api`.\n"
+            )
+
+            mm = self._make_manager(td, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+
+            result = mm.search_memory("restart API server")
+            assert "systemctl restart api" in result
+
+    def test_extra_paths_in_substring_fallback(self):
+        """Extra paths should be searched even without FTS."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            (shared_dir / "faq.md").write_text("# FAQ\n\nThe deploy key is stored in 1Password.\n")
+
+            mm = self._make_manager(td, fts_enabled=False, extra_paths=[str(shared_dir)])
+            result = mm.search_memory("deploy key")
+            assert "1Password" in result
+
+    def test_extra_paths_recursive(self):
+        """Nested subdirectories in extra_paths should be searched."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "docs"
+            (shared_dir / "ops").mkdir(parents=True)
+            (shared_dir / "ops" / "alerts.md").write_text(
+                "# Alerts\n\nPage oncall if error rate exceeds 5%.\n"
+            )
+
+            mm = self._make_manager(td, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+
+            result = mm.search_memory("error rate")
+            assert "oncall" in result
+
+    def test_extra_paths_missing_dir_ignored(self):
+        """Non-existent extra_paths should be silently skipped."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, extra_paths=["/nonexistent/path"])
+            count = mm.rebuild_index()
+            assert count == 0
+
+    def test_extra_paths_in_relevant_context(self):
+        """Extra path content should appear in relevant context results."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "team_docs"
+            shared_dir.mkdir()
+            (shared_dir / "processes.md").write_text(
+                "# Processes\n\nCode review requires two approvals before merge.\n"
+            )
+
+            mm = self._make_manager(td, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+
+            result = mm.get_relevant_context("code review approvals")
+            assert result is not None
+            assert "two approvals" in result
+
+
 class TestMemoryManagerFTS:
     """Integration tests for MemoryManager with FTS index."""
 

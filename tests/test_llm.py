@@ -14,7 +14,14 @@ from creel.llm import (
     summarize_messages,
 )
 from creel.models import LLMConfig
-from creel.providers import LLMMessage, LLMRateLimitError, LLMTransientError, TextBlock, Usage
+from creel.providers import (
+    LLMAuthError,
+    LLMMessage,
+    LLMRateLimitError,
+    LLMTransientError,
+    TextBlock,
+    Usage,
+)
 from creel.providers.anthropic import _CLAUDE_CODE_SYSTEM_PREFIX
 
 
@@ -88,7 +95,7 @@ def test_direct_no_credentials_raises(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    with pytest.raises(Exception):
+    with pytest.raises(LLMAuthError):
         _run_llm_direct("hi", _make_config())
 
 
@@ -281,7 +288,7 @@ class TestCallLlm:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         messages = [{"role": "user", "content": "hi"}]
-        with pytest.raises(Exception):
+        with pytest.raises(LLMAuthError):
             call_llm(messages, _make_config())
 
     @patch("creel.providers.anthropic._get_client")

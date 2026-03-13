@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pyrage
+import pytest
 import yaml
 
 from creel import paths
@@ -20,10 +20,20 @@ from creel.init import (
     _ensure_age_keypair,
     _generate_agent_yaml,
     _prompt_multi_select,
+    _send_test_message,
     init,
     migrate,
 )
 from creel.validation import ValidationResult
+
+
+@pytest.fixture()
+def mock_age(monkeypatch, age_keypair):
+    """Monkeypatch ``_ensure_age_keypair`` to use the session-scoped test keypair."""
+    key_file, pub_file = age_keypair
+    monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+    return key_file, pub_file
+
 
 # ---------------------------------------------------------------------------
 # Existing tests (static scaffold / backward compat)
@@ -163,7 +173,7 @@ class TestWizard:
         assert "channels" not in config
         assert any("wrote" in line and "agent.yaml" in line for line in lines)
 
-    def test_wizard_telegram_flow(self, monkeypatch, tmp_path):
+    def test_wizard_telegram_flow(self, monkeypatch, tmp_path, mock_age):
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
         inputs = self._make_inputs(
@@ -197,15 +207,6 @@ class TestWizard:
             ),
         )
         monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
-
-        # Mock age keypair to avoid touching real ~/.age
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
 
         init(force=True)
 
@@ -260,7 +261,7 @@ class TestWizard:
         # No secrets should be present since the key was declined
         assert "secrets" not in config["llm"]
 
-    def test_wizard_google_provider(self, monkeypatch, tmp_path):
+    def test_wizard_google_provider(self, monkeypatch, tmp_path, mock_age):
         """Google (Gemini) provider should use correct default model."""
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
@@ -285,22 +286,13 @@ class TestWizard:
         )
         monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
 
-        # Mock age keypair
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
-
         init(force=True)
 
         config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
         assert config["llm"]["model"] == "gemini-2.0-flash"
         assert config["llm"]["secrets"] == "secrets/google.env.enc"
 
-    def test_wizard_with_tools_selection(self, monkeypatch, tmp_path):
+    def test_wizard_with_tools_selection(self, monkeypatch, tmp_path, mock_age):
         """Selecting tools should generate tool definitions in agent.yaml."""
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
@@ -325,15 +317,6 @@ class TestWizard:
         )
         monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
 
-        # Mock age keypair
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
-
         lines = init(force=True)
 
         config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
@@ -342,7 +325,7 @@ class TestWizard:
         assert "github" in config["tools"]
         assert any("tools:" in line for line in lines)
 
-    def test_wizard_whatsapp_channel(self, monkeypatch, tmp_path):
+    def test_wizard_whatsapp_channel(self, monkeypatch, tmp_path, mock_age):
         """Selecting WhatsApp channel should generate whatsapp config."""
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
@@ -367,22 +350,13 @@ class TestWizard:
         )
         monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
 
-        # Mock age keypair
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
-
         lines = init(force=True)
 
         config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
         assert "whatsapp" in config["channels"]
         assert any("WHATSAPP_API_URL" in line for line in lines)
 
-    def test_wizard_guardian_disabled(self, monkeypatch, tmp_path):
+    def test_wizard_guardian_disabled(self, monkeypatch, tmp_path, mock_age):
         """Disabling guardian should omit guardian section."""
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
@@ -405,15 +379,6 @@ class TestWizard:
         )
         monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
 
-        # Mock age keypair
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
-
         init(force=True)
 
         config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
@@ -426,17 +391,8 @@ class TestWizard:
 
 
 class TestNonInteractiveInit:
-    def test_anthropic_minimal(self, monkeypatch, tmp_path):
+    def test_anthropic_minimal(self, monkeypatch, tmp_path, mock_age):
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
-
-        # Mock age keypair
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
 
         lines = init(
             interactive=False,
@@ -466,16 +422,8 @@ class TestNonInteractiveInit:
         assert config["llm"]["model"] == "llama3"
         assert "secrets" not in config["llm"]
 
-    def test_with_telegram_channel(self, monkeypatch, tmp_path):
+    def test_with_telegram_channel(self, monkeypatch, tmp_path, mock_age):
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
-
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
 
         init(
             interactive=False,
@@ -514,17 +462,10 @@ class TestNonInteractiveInit:
         config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
         assert config["media"]["enabled"] is True
 
-    def test_google_provider(self, monkeypatch, tmp_path):
+    def test_google_provider(self, monkeypatch, tmp_path, mock_age):
         """Google provider should use gemini default model and GOOGLE_API_KEY env var."""
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
-
-        mock_identity = pyrage.x25519.Identity.generate()
-        mock_recipient = mock_identity.to_public()
-        key_file = tmp_path / "key.txt"
-        key_file.write_text(f"# test\n{mock_identity!s}\n")
-        pub_file = tmp_path / "key.pub"
-        pub_file.write_text(f"{mock_recipient!s}\n")
-        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+        key_file, _pub_file = mock_age
 
         init(interactive=False, provider="google", api_key="AIza-test")
 
@@ -648,7 +589,7 @@ class TestGenerateAgentYaml:
 
     def test_guardian_with_policy_and_audit(self):
         config = self._make_config(
-            guardian=InitGuardianConfig(enabled=True, policy=True, audit=False),
+            guardian=InitGuardianConfig(policy=True, audit=False),
         )
         content = _generate_agent_yaml(config, {})
         doc = yaml.safe_load(content)
@@ -759,6 +700,46 @@ class TestPromptMultiSelect:
         monkeypatch.setattr("builtins.input", lambda prompt="": "1,99,abc")
         result = _prompt_multi_select("Pick", ["A", "B"], ["a", "b"])
         assert result == ["a"]
+
+
+# ---------------------------------------------------------------------------
+# Test message tests
+# ---------------------------------------------------------------------------
+
+
+class TestSendTestMessage:
+    def test_telegram_success(self, monkeypatch):
+        import httpx as _httpx
+
+        resp = MagicMock(status_code=200)
+        monkeypatch.setattr(_httpx, "post", lambda *a, **kw: resp)
+        cfg = InitChannelConfig(
+            type="telegram",
+            telegram=InitTelegramConfig(bot_token="123:TOK", allowed_senders=["alice"]),
+        )
+        assert _send_test_message("telegram", cfg) is True
+
+    def test_telegram_failure(self, monkeypatch):
+        import httpx as _httpx
+
+        resp = MagicMock(status_code=401)
+        monkeypatch.setattr(_httpx, "post", lambda *a, **kw: resp)
+        cfg = InitChannelConfig(
+            type="telegram",
+            telegram=InitTelegramConfig(bot_token="bad", allowed_senders=["alice"]),
+        )
+        assert _send_test_message("telegram", cfg) is False
+
+    def test_no_telegram_config(self):
+        cfg = InitChannelConfig(type="none")
+        assert _send_test_message("telegram", cfg) is False
+
+    def test_empty_allowed_senders(self):
+        cfg = InitChannelConfig(
+            type="telegram",
+            telegram=InitTelegramConfig(bot_token="123:TOK", allowed_senders=[]),
+        )
+        assert _send_test_message("telegram", cfg) is False
 
 
 # ---------------------------------------------------------------------------

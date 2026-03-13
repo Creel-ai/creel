@@ -115,6 +115,13 @@ class TestValidateGoogleKey:
         result = validate_google_key("AIza-ratelimited")
         assert result.ok is True
 
+    def test_server_error(self, monkeypatch):
+        resp = MagicMock(status_code=500)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
+        result = validate_google_key("AIza-test")
+        assert result.ok is False
+        assert "500" in result.message
+
     def test_network_error(self, monkeypatch):
         def raise_err(*a, **kw):
             raise httpx.ConnectError("connection refused")

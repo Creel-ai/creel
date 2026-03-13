@@ -43,7 +43,6 @@ class InitChannelConfig(BaseModel):
 
 
 class InitGuardianConfig(BaseModel):
-    enabled: bool = True
     policy: bool = True
     audit: bool = True
 
@@ -346,7 +345,7 @@ def _send_test_message(channel_type: str, config: InitChannelConfig) -> bool:
     """
     import httpx
 
-    if channel_type == "telegram" and config.telegram:
+    if channel_type == "telegram" and config.telegram and config.telegram.allowed_senders:
         try:
             resp = httpx.post(
                 f"https://api.telegram.org/bot{config.telegram.bot_token}/sendMessage",
@@ -465,16 +464,15 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     print()
     print("Step 3/4: Channel (how you'll talk to Creel)")
     print("-" * 30)
-    channel_labels = [
-        "Terminal (CLI only)",
-        "Telegram bot",
-        "iMessage (macOS only)",
-        "WhatsApp",
+    _CHANNEL_MENU: list[tuple[str, ChannelType]] = [
+        ("Terminal (CLI only)", "none"),
+        ("Telegram bot", "telegram"),
+        ("iMessage (macOS only)", "imessage"),
+        ("WhatsApp", "whatsapp"),
     ]
-    # Map channel labels back: Terminal=none(3), Telegram=0, iMessage=1, WhatsApp=2
-    label_to_channel = [3, 0, 1, 2]  # label index -> _CHANNELS index
+    channel_labels = [label for label, _ in _CHANNEL_MENU]
     ch_label_idx = _prompt_choice("Select channel", channel_labels, default=0)
-    channel_type = _CHANNELS[label_to_channel[ch_label_idx]]
+    channel_type = _CHANNEL_MENU[ch_label_idx][1]
 
     telegram_cfg: InitTelegramConfig | None = None
     if channel_type == "telegram":
@@ -531,7 +529,7 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     print("Step 4/4: Security")
     print("-" * 30)
     enable_guardian = _prompt_yes_no("Enable Guardian security pipeline?", default=True)
-    guardian_cfg = InitGuardianConfig(enabled=enable_guardian)
+    guardian_cfg = InitGuardianConfig()
     if enable_guardian:
         guardian_cfg.policy = _prompt_yes_no("  Enable policy engine (tool access control)?")
         guardian_cfg.audit = _prompt_yes_no("  Enable audit logging?")

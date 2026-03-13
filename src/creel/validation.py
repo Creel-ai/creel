@@ -89,7 +89,7 @@ def validate_google_key(api_key: str) -> ValidationResult:
     try:
         resp = httpx.get(
             "https://generativelanguage.googleapis.com/v1beta/models",
-            params={"key": api_key},
+            headers={"x-goog-api-key": api_key},
             timeout=_TIMEOUT,
         )
     except httpx.HTTPError as exc:
@@ -99,7 +99,7 @@ def validate_google_key(api_key: str) -> ValidationResult:
         return ValidationResult(ok=True, message="API key is valid")
     if resp.status_code in (401, 403):
         return ValidationResult(ok=False, message="Invalid API key (authentication failed)")
-    if resp.status_code in (429, 500, 502, 503):
+    if resp.status_code == 429:
         return ValidationResult(
             ok=True,
             message=f"Key accepted (server returned {resp.status_code}, likely rate-limited)",

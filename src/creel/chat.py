@@ -20,6 +20,7 @@ from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
 from creel.session import SessionManager
 from creel.subagents import SubAgentManager
+from creel.tool_cache import ToolResultCache
 from creel.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,24 @@ class ChatServer:
             max_context_tokens=agent_def.session.max_context_tokens,
             on_session_archived=on_session_archived,
         )
+        self._summarize_fn = summarize_fn
+
+        # Initialize tool result cache from config.
+        cache_cfg = agent_def.session.tool_cache
+        # Build per-tool TTL overrides from both config sources:
+        # 1. session.tool_cache.tool_ttls (explicit mapping)
+        # 2. Individual tool cache_ttl fields
+        merged_ttls = dict(cache_cfg.tool_ttls)
+        for tool_name, tool_cfg in agent_def.tools.items():
+            if tool_cfg.cache_ttl > 0 and tool_name not in merged_ttls:
+                merged_ttls[tool_name] = tool_cfg.cache_ttl
+        self._tool_cache: ToolResultCache | None = None
+        if cache_cfg.enabled:
+            self._tool_cache = ToolResultCache(
+                tool_ttls=merged_ttls,
+                default_ttl=cache_cfg.default_ttl,
+                max_entries=cache_cfg.max_entries,
+            )
 
         # Build memory compaction summarize callback.
         # NOTE: This callback fires only during __init__ (via compact_daily_files),
@@ -510,6 +529,10 @@ class ChatServer:
             session_state=session_state,
             cron_manager=self._cron_manager,
             subagent_manager=self._subagent_manager,
+            tool_cache=self._tool_cache,
+            context_pruning=self._agent_def.session.context_pruning,
+            max_context_tokens=self._agent_def.session.max_context_tokens,
+            summarize_fn=self._summarize_fn,
         )
 
     def _handle_approval_response(

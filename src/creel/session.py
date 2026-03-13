@@ -182,8 +182,8 @@ class SessionManager:
                 # Archive transcript before starting fresh
                 if self._on_session_archived and existing.messages:
                     try:
-                        self._on_session_archived(existing.session_id, existing.messages)
-                    except Exception:
+                        self._on_session_archived(existing.session_id, list(existing.messages))
+                    except (OSError, RuntimeError, ValueError):
                         logger.warning("on_session_archived failed", exc_info=True)
                 self._save(existing)
 
@@ -290,8 +290,8 @@ class SessionManager:
                 # Archive transcript before clearing
                 if self._on_session_archived and session.messages:
                     try:
-                        self._on_session_archived(session.session_id, session.messages)
-                    except Exception:
+                        self._on_session_archived(session.session_id, list(session.messages))
+                    except (OSError, RuntimeError, ValueError):
                         logger.warning("on_session_archived failed", exc_info=True)
                 session.messages = []
                 session.title = ""
@@ -341,8 +341,8 @@ class SessionManager:
         # Archive older messages before they're discarded
         if self._on_session_archived:
             try:
-                self._on_session_archived(session.session_id, older)
-            except Exception:
+                self._on_session_archived(session.session_id, list(older))
+            except (OSError, RuntimeError, ValueError):
                 logger.warning("on_session_archived failed during compaction", exc_info=True)
 
         try:

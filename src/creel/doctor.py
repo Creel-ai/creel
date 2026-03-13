@@ -15,8 +15,12 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from creel import paths
+
+if TYPE_CHECKING:
+    from creel.models import AgentDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -104,11 +108,18 @@ def _icon(status: str, no_color: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
-def check_config(agent_config_path: Path | None = None) -> list[CheckResult]:
-    """Validate agent.yaml configuration."""
+def _load_config(
+    agent_config_path: Path | None,
+) -> tuple[Path, AgentDefinition | None, list[CheckResult]]:
+    """Load and validate agent config once. Returns (path, config_or_None, results).
+
+    On success the results list contains a "pass" entry; on failure it contains
+    an "error" entry and config is None.  Callers that need a config can
+    short-circuit when config is None.
+    """
+    config_path = agent_config_path or paths.agent_config()
     results: list[CheckResult] = []
 
-    config_path = agent_config_path or paths.agent_config()
     if not config_path.exists():
         results.append(
             CheckResult(
@@ -119,38 +130,12 @@ def check_config(agent_config_path: Path | None = None) -> list[CheckResult]:
                 fix_label="Run 'creel init' to create default config",
             )
         )
-        return results
+        return config_path, None, results
 
     try:
         from creel.models import load_agent_config
 
         config = load_agent_config(config_path)
-        results.append(
-            CheckResult(
-                status="pass",
-                label="Agent config",
-                message=f"Valid ({config_path})",
-            )
-        )
-
-        # Check sub-configs
-        if config.tools:
-            results.append(
-                CheckResult(
-                    status="pass",
-                    label="Tools defined",
-                    message=f"{len(config.tools)} tool(s) configured",
-                )
-            )
-        else:
-            results.append(
-                CheckResult(
-                    status="warn",
-                    label="Tools defined",
-                    message="No tools configured in agent.yaml",
-                )
-            )
-
     except Exception as exc:
         results.append(
             CheckResult(
@@ -159,30 +144,53 @@ def check_config(agent_config_path: Path | None = None) -> list[CheckResult]:
                 message=f"Parse error: {exc}",
             )
         )
-    return results
+        return config_path, None, results
+
+    results.append(
+        CheckResult(
+            status="pass",
+            label="Agent config",
+            message=f"Valid ({config_path})",
+        )
+    )
+
+    # Check sub-configs
+    if config.tools:
+        results.append(
+            CheckResult(
+                status="pass",
+                label="Tools defined",
+                message=f"{len(config.tools)} tool(s) configured",
+            )
+        )
+    else:
+        results.append(
+            CheckResult(
+                status="warn",
+                label="Tools defined",
+                message="No tools configured in agent.yaml",
+            )
+        )
+
+    return config_path, config, results
 
 
-def check_llm_provider(agent_config_path: Path | None = None) -> list[CheckResult]:
+def check_llm_provider(config: AgentDefinition | None) -> list[CheckResult]:
     """Test LLM provider connectivity."""
     results: list[CheckResult] = []
 
     # Check for API key
     api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    if not api_key:
+    if not api_key and config is not None:
         # Try loading from encrypted secrets
         try:
-            config_path = agent_config_path or paths.agent_config()
-            if config_path.exists():
-                from creel.models import load_agent_config
+            if config.llm.secrets:
+                secrets_path = paths.secrets_dir() / config.llm.secrets
+                if secrets_path.exists():
+                    from creel.secrets import decrypt_env_file
 
-                config = load_agent_config(config_path)
-                if config.llm.secrets:
-                    secrets_path = paths.secrets_dir() / config.llm.secrets
-                    if secrets_path.exists():
-                        from creel.secrets import decrypt_env_file
-
-                        env = decrypt_env_file(secrets_path)
-                        api_key = env.get("ANTHROPIC_API_KEY") or env.get("ANTHROPIC_AUTH_TOKEN")
+                    env = decrypt_env_file(secrets_path)
+                    api_key = env.get("ANTHROPIC_API_KEY") or env.get("ANTHROPIC_AUTH_TOKEN")
         except Exception:
             pass
 
@@ -222,31 +230,16 @@ def check_llm_provider(agent_config_path: Path | None = None) -> list[CheckResul
     return results
 
 
-def check_executors(agent_config_path: Path | None = None) -> list[CheckResult]:
+def check_executors(config: AgentDefinition | None) -> list[CheckResult]:
     """Check executor health — verify executor packages are importable."""
     results: list[CheckResult] = []
 
-    config_path = agent_config_path or paths.agent_config()
-    if not config_path.exists():
+    if config is None:
         results.append(
             CheckResult(
                 status="warn",
                 label="Executors",
-                message="Skipped (no agent config)",
-            )
-        )
-        return results
-
-    try:
-        from creel.models import load_agent_config
-
-        config = load_agent_config(config_path)
-    except Exception as exc:
-        results.append(
-            CheckResult(
-                status="warn",
-                label="Executors",
-                message=f"Skipped (config error: {exc})",
+                message="Skipped (no valid config)",
             )
         )
         return results
@@ -337,31 +330,16 @@ def check_executors(agent_config_path: Path | None = None) -> list[CheckResult]:
     return results
 
 
-def check_channels(agent_config_path: Path | None = None) -> list[CheckResult]:
+def check_channels(config: AgentDefinition | None) -> list[CheckResult]:
     """Check channel connectivity."""
     results: list[CheckResult] = []
 
-    config_path = agent_config_path or paths.agent_config()
-    if not config_path.exists():
+    if config is None:
         results.append(
             CheckResult(
                 status="warn",
                 label="Channels",
-                message="Skipped (no agent config)",
-            )
-        )
-        return results
-
-    try:
-        from creel.models import load_agent_config
-
-        config = load_agent_config(config_path)
-    except Exception as exc:
-        results.append(
-            CheckResult(
-                status="warn",
-                label="Channels",
-                message=f"Skipped (config error: {exc})",
+                message="Skipped (no valid config)",
             )
         )
         return results
@@ -455,31 +433,16 @@ def check_channels(agent_config_path: Path | None = None) -> list[CheckResult]:
     return results
 
 
-def check_guardian(agent_config_path: Path | None = None) -> list[CheckResult]:
+def check_guardian(config: AgentDefinition | None) -> list[CheckResult]:
     """Validate Guardian security pipeline."""
     results: list[CheckResult] = []
 
-    config_path = agent_config_path or paths.agent_config()
-    if not config_path.exists():
+    if config is None:
         results.append(
             CheckResult(
                 status="warn",
                 label="Guardian",
-                message="Skipped (no agent config)",
-            )
-        )
-        return results
-
-    try:
-        from creel.models import load_agent_config
-
-        config = load_agent_config(config_path)
-    except Exception as exc:
-        results.append(
-            CheckResult(
-                status="warn",
-                label="Guardian",
-                message=f"Skipped (config error: {exc})",
+                message="Skipped (no valid config)",
             )
         )
         return results
@@ -862,13 +825,15 @@ def run_doctor(
     """Run all health checks and optionally apply fixes."""
     report = DoctorReport()
 
+    _config_path, config, config_results = _load_config(agent_config_path)
+
     config_sections: list[tuple[str, list[CheckResult]]] = [
-        ("Configuration", check_config(agent_config_path)),
-        ("LLM Provider", check_llm_provider(agent_config_path)),
-        ("Executors", check_executors(agent_config_path)),
-        ("Channels", check_channels(agent_config_path)),
-        ("Guardian Pipeline", check_guardian(agent_config_path)),
-        ("Security Posture", check_security_posture(agent_config_path)),
+        ("Configuration", config_results),
+        ("LLM Provider", check_llm_provider(config)),
+        ("Executors", check_executors(config)),
+        ("Channels", check_channels(config)),
+        ("Guardian Pipeline", check_guardian(config)),
+        ("Security Posture", check_security_posture()),
         ("Session Store", check_sessions()),
     ]
 

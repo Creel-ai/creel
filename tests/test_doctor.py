@@ -17,9 +17,9 @@ from creel.doctor import (
     FIX_STALE_SESSIONS,
     CheckResult,
     DoctorReport,
+    _load_config,
     apply_fixes,
     check_channels,
-    check_config,
     check_executors,
     check_guardian,
     check_llm_provider,
@@ -79,6 +79,14 @@ def agent_config_path(creel_home):
     return creel_home / "agent.yaml"
 
 
+@pytest.fixture()
+def loaded_config(agent_config_path):
+    """Load the agent config from the creel_home fixture."""
+    _path, config, _results = _load_config(agent_config_path)
+    assert config is not None
+    return config
+
+
 # ---------------------------------------------------------------------------
 # CheckResult / DoctorReport
 # ---------------------------------------------------------------------------
@@ -119,13 +127,14 @@ class TestDoctorReport:
 
 
 # ---------------------------------------------------------------------------
-# check_config
+# _load_config
 # ---------------------------------------------------------------------------
 
 
-class TestCheckConfig:
+class TestLoadConfig:
     def test_valid_config(self, agent_config_path):
-        results = check_config(agent_config_path)
+        _path, config, results = _load_config(agent_config_path)
+        assert config is not None
         statuses = [r.status for r in results]
         assert "pass" in statuses
         labels = [r.label for r in results]
@@ -133,21 +142,23 @@ class TestCheckConfig:
 
     def test_missing_config(self, tmp_path):
         missing = tmp_path / "nonexistent.yaml"
-        results = check_config(missing)
+        _path, config, results = _load_config(missing)
+        assert config is None
         assert results[0].status == "error"
         assert "Not found" in results[0].message
 
     def test_invalid_config(self, tmp_path):
         bad = tmp_path / "bad.yaml"
         bad.write_text("not: valid: yaml: [[[")
-        results = check_config(bad)
+        _path, config, results = _load_config(bad)
+        assert config is None
         # Should get an error result from parse failure
         assert any(r.status == "error" for r in results)
 
     def test_no_tools_warning(self, tmp_path):
         cfg = tmp_path / "agent.yaml"
         cfg.write_text('system_prompt: "test"\ntools: {}\nllm:\n  model: test\n')
-        results = check_config(cfg)
+        _path, config, results = _load_config(cfg)
         assert any(r.label == "Tools defined" and r.status == "warn" for r in results)
 
 
@@ -162,11 +173,12 @@ class TestCheckLLMProvider:
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
         # Remove secrets config so fallback doesn't find a key
         agent_config_path.write_text('system_prompt: "test"\nllm:\n  model: test\n')
-        results = check_llm_provider(agent_config_path)
+        _path, config, _results = _load_config(agent_config_path)
+        results = check_llm_provider(config)
         assert results[0].status == "error"
         assert "No ANTHROPIC_API_KEY" in results[0].message
 
-    def test_valid_key(self, monkeypatch, agent_config_path):
+    def test_valid_key(self, monkeypatch, loaded_config):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test123")
         mock_result = MagicMock()
         mock_result.ok = True
@@ -175,10 +187,10 @@ class TestCheckLLMProvider:
             "creel.validation.validate_anthropic_key",
             lambda key: mock_result,
         )
-        results = check_llm_provider(agent_config_path)
+        results = check_llm_provider(loaded_config)
         assert results[0].status == "pass"
 
-    def test_invalid_key(self, monkeypatch, agent_config_path):
+    def test_invalid_key(self, monkeypatch, loaded_config):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-bad")
         mock_result = MagicMock()
         mock_result.ok = False
@@ -187,7 +199,7 @@ class TestCheckLLMProvider:
             "creel.validation.validate_anthropic_key",
             lambda key: mock_result,
         )
-        results = check_llm_provider(agent_config_path)
+        results = check_llm_provider(loaded_config)
         assert results[0].status == "error"
 
 
@@ -197,17 +209,17 @@ class TestCheckLLMProvider:
 
 
 class TestCheckExecutors:
-    def test_importable_executor(self, agent_config_path, monkeypatch):
+    def test_importable_executor(self, loaded_config, monkeypatch):
         # Patch importlib to succeed
         monkeypatch.setattr(
             "creel.doctor.importlib.import_module",
             lambda name: MagicMock(),
         )
-        results = check_executors(agent_config_path)
+        results = check_executors(loaded_config)
         executor_results = [r for r in results if r.label.startswith("Executor:")]
         assert any(r.status == "pass" for r in executor_results)
 
-    def test_missing_executor(self, agent_config_path, monkeypatch):
+    def test_missing_executor(self, loaded_config, monkeypatch):
         def import_fail(name):
             raise ImportError(f"No module named '{name}'")
 
@@ -215,16 +227,16 @@ class TestCheckExecutors:
             "creel.doctor.importlib.import_module",
             import_fail,
         )
-        results = check_executors(agent_config_path)
+        results = check_executors(loaded_config)
         executor_results = [r for r in results if r.label.startswith("Executor:")]
         assert any(r.status == "warn" for r in executor_results)
 
-    def test_no_config(self, tmp_path):
-        results = check_executors(tmp_path / "missing.yaml")
+    def test_no_config(self):
+        results = check_executors(None)
         assert results[0].status == "warn"
         assert "Skipped" in results[0].message
 
-    def test_docker_available(self, agent_config_path, monkeypatch):
+    def test_docker_available(self, loaded_config, monkeypatch):
         monkeypatch.setattr(
             "creel.doctor.importlib.import_module",
             lambda name: MagicMock(),
@@ -232,17 +244,17 @@ class TestCheckExecutors:
         monkeypatch.setattr("creel.doctor.shutil.which", lambda cmd: "/usr/bin/docker")
         mock_proc = MagicMock(returncode=0)
         monkeypatch.setattr("creel.doctor.subprocess.run", lambda *a, **kw: mock_proc)
-        results = check_executors(agent_config_path)
+        results = check_executors(loaded_config)
         docker_results = [r for r in results if r.label == "Docker"]
         assert any(r.status == "pass" for r in docker_results)
 
-    def test_docker_not_installed(self, agent_config_path, monkeypatch):
+    def test_docker_not_installed(self, loaded_config, monkeypatch):
         monkeypatch.setattr(
             "creel.doctor.importlib.import_module",
             lambda name: MagicMock(),
         )
         monkeypatch.setattr("creel.doctor.shutil.which", lambda cmd: None)
-        results = check_executors(agent_config_path)
+        results = check_executors(loaded_config)
         docker_results = [r for r in results if r.label == "Docker"]
         assert any(r.status == "warn" for r in docker_results)
 
@@ -253,8 +265,8 @@ class TestCheckExecutors:
 
 
 class TestCheckChannels:
-    def test_no_channels(self, agent_config_path):
-        results = check_channels(agent_config_path)
+    def test_no_channels(self, loaded_config):
+        results = check_channels(loaded_config)
         assert any(r.label == "Channels" and r.status == "warn" for r in results)
 
     def test_imessage_channel(self, creel_home):
@@ -267,11 +279,12 @@ channels:
     listen_to: "+1234567890"
 """
         )
-        results = check_channels(cfg)
+        _path, config, _results = _load_config(cfg)
+        results = check_channels(config)
         assert any(r.label == "Channel: imessage" and r.status == "pass" for r in results)
 
-    def test_no_config(self, tmp_path):
-        results = check_channels(tmp_path / "missing.yaml")
+    def test_no_config(self):
+        results = check_channels(None)
         assert results[0].status == "warn"
 
 
@@ -290,7 +303,8 @@ guardian:
   enabled: false
 """
         )
-        results = check_guardian(cfg)
+        _path, config, _results = _load_config(cfg)
+        results = check_guardian(config)
         assert any(r.status == "warn" and "Disabled" in r.message for r in results)
 
     def test_guardian_enabled_with_policy(self, creel_home):
@@ -314,7 +328,8 @@ guardian:
     enabled: true
 """
         )
-        results = check_guardian(cfg)
+        _path, config, _results = _load_config(cfg)
+        results = check_guardian(config)
         policy_results = [r for r in results if r.label == "Guardian: policy engine"]
         assert any(r.status == "pass" for r in policy_results)
 
@@ -338,12 +353,13 @@ guardian:
     enabled: false
 """
         )
-        results = check_guardian(cfg)
+        _path, config, _results = _load_config(cfg)
+        results = check_guardian(config)
         policy_results = [r for r in results if r.label == "Guardian: policy engine"]
         assert any(r.status == "error" for r in policy_results)
 
-    def test_no_config(self, tmp_path):
-        results = check_guardian(tmp_path / "missing.yaml")
+    def test_no_config(self):
+        results = check_guardian(None)
         assert results[0].status == "warn"
 
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from creel.providers.base import LLMMessage, TextBlock, ToolUseBlock
 from creel.providers.openai import (
     OpenAIProvider,
@@ -241,6 +243,14 @@ class TestConvertResponse:
 # -- Provider integration --
 
 
+_openai_missing = False
+try:
+    import openai  # noqa: F401
+except ImportError:
+    _openai_missing = True
+
+
+@pytest.mark.skipif(_openai_missing, reason="openai package not installed")
 class TestOpenAIProvider:
     @patch("creel.providers.openai._get_openai_client")
     def test_create_basic(self, mock_get_client):

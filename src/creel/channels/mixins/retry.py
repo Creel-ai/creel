@@ -25,7 +25,7 @@ class RetryMixin:
     _max_retries: int = 3
     _retry_base_delay: float = 1.0
     _retry_max_delay: float = 60.0
-    _retryable_exceptions: tuple[type[BaseException], ...] = (Exception,)
+    _retryable_exceptions: tuple[type[Exception], ...] = (Exception,)
 
     def _retry_with_backoff(
         self,

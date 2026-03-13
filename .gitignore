@@ -52,6 +52,12 @@ approvals/
 # Workspace memory (runtime data, but workspace/ root stays for SOUL.md etc.)
 workspace/memory/
 
+# Memory FTS5 search index (rebuildable cache)
+.memory_index.sqlite*
+
+# Pytest temp directories
+.pytest_tmp/
+
 # Coverage
 .coverage
 

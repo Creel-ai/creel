@@ -206,6 +206,7 @@ def _run_with_pool(
             memory_manager,
             bridge_config,
             session_state,
+            container_pool=pool,
         )
         # Return container to pool for reuse
         pool.release(container)
@@ -321,6 +322,7 @@ def _run_protocol(
     memory_manager: Any | None,
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
     _send_to_container(proc, start_msg)
@@ -377,6 +379,7 @@ def _run_protocol(
                 messages,
                 bridge_config=bridge_config,
                 session_state=session_state,
+                container_pool=container_pool,
             )
 
             # Check if any result requires async approval
@@ -412,6 +415,7 @@ def _run_protocol_pooled(
     memory_manager: object | None,
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol using a pooled ManagedContainer.
 
@@ -465,6 +469,7 @@ def _run_protocol_pooled(
                 messages,
                 bridge_config=bridge_config,
                 session_state=session_state,
+                container_pool=container_pool,
             )
 
             if results is None:
@@ -494,6 +499,7 @@ def _handle_tool_request(
     messages: list[dict],
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> tuple[list[dict] | None, AgentResult | None]:
     """Process tool calls from the container, applying Guardian checks.
 
@@ -651,6 +657,7 @@ def _handle_tool_request(
                 memory_manager=memory_manager,
                 bridge_config=bridge_config,
                 session_state=session_state,
+                container_pool=container_pool,
             )
             is_error = False
             elapsed_ms = (time.perf_counter() - t0) * 1000

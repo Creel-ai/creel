@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -111,6 +111,44 @@ class ToolConfig(BaseModel):
     host_auth: bool = Field(
         default=False, description="Mount host CLI auth into executor container (read-only)"
     )
+    # Per-executor container resource overrides
+    writable: bool = Field(default=False, description="Skip --read-only when True")
+    tmpfs_size: str = Field(default="16M", description="Size of /tmp tmpfs mount")
+    memory: str = Field(default="256m", description="Docker --memory limit")
+    cpus: str = Field(default="0.5", description="Docker --cpus limit")
+    timeout: int = Field(default=60, ge=1, description="Executor timeout in seconds")
+
+    @field_validator("tmpfs_size")
+    @classmethod
+    def validate_tmpfs_size(cls, v: str) -> str:
+        """Validate Docker size format (e.g. '16M', '256M', '1G')."""
+        import re
+
+        if not re.fullmatch(r"\d+[kKmMgG]", v):
+            raise ValueError(f"tmpfs_size must be a Docker size like '16M' or '1G', got '{v}'")
+        return v
+
+    @field_validator("memory")
+    @classmethod
+    def validate_memory(cls, v: str) -> str:
+        """Validate Docker memory format (e.g. '256m', '1g')."""
+        import re
+
+        if not re.fullmatch(r"\d+[kKmMgG]", v):
+            raise ValueError(f"memory must be a Docker size like '256m' or '1g', got '{v}'")
+        return v
+
+    @field_validator("cpus")
+    @classmethod
+    def validate_cpus(cls, v: str) -> str:
+        """Validate cpus is a positive float string."""
+        try:
+            val = float(v)
+        except ValueError as e:
+            raise ValueError(f"cpus must be a positive number string, got '{v}'") from e
+        if val <= 0:
+            raise ValueError(f"cpus must be positive, got '{v}'")
+        return v
 
 
 class AgentConfig(BaseModel):
@@ -153,6 +191,15 @@ class WorkspaceConfig(BaseModel):
     compact_after_days: int = 7
     max_daily_entries: int = 50
     max_long_term_lines: int = 500
+    fts_enabled: bool = True
+    recency_half_life_days: float = Field(default=30.0, gt=0)
+    compact_summarize: bool = True
+    compact_model: str = "claude-haiku-4-5-20251001"
+    compact_max_tokens: int = Field(default=512, gt=0)
+    memory_context_mode: Literal["recent", "relevant"] = "recent"
+    memory_context_max_results: int = 20
+    extra_paths: list[str] = Field(default_factory=list)
+    index_session_transcripts: bool = False
 
 
 class IMessageChannelConfig(BaseModel):

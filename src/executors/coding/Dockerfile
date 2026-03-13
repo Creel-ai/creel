@@ -1,6 +1,7 @@
-FROM python:3.12-slim
+FROM creel-executor-base:latest
 
-# Install system packages: Node.js 20, git, build tools, common dev utilities
+# Switch to root to install system packages: Node.js 20, git, build tools, common dev utilities
+USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         wget \
@@ -31,19 +32,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (fast Python package manager)
-RUN pip install --no-cache-dir uv
-
-# Create executor user
-RUN useradd -m -u 1000 executor
-
 # Default workspace directory
 RUN mkdir -p /workspace && chown executor:executor /workspace
 
 USER executor
 WORKDIR /workspace
 
-# Copy executor script
+# Copy executor scripts
 COPY --chown=executor:executor coding/executor.py /app/executor.py
+COPY --chown=executor:executor coding/dev_runner.py /app/dev_runner.py
 
 ENTRYPOINT ["python", "/app/executor.py"]

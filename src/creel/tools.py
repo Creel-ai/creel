@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from creel.containers import _run_executor_container
 from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
 from creel.orchestrator import _run_executor_inline
+
+if TYPE_CHECKING:
+    from creel.container_pool import ContainerPool
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +340,7 @@ def execute_tool_call(
     session_state: SessionState | None = None,
     cron_manager: Any | None = None,
     subagent_manager: Any | None = None,
+    container_pool: ContainerPool | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -355,6 +359,7 @@ def execute_tool_call(
             workspace path for file_ops tools.
         cron_manager: Optional CronManager for cron tool.
         subagent_manager: Optional SubAgentManager for sub-agent tool.
+        container_pool: Optional ContainerPool for persistent coding containers.
 
     Returns:
         The executor output as a string.
@@ -374,7 +379,10 @@ def execute_tool_call(
         if error:
             return json.dumps({"error": error})
         resolved = os.path.realpath(path)
-        session_state.workspace = resolved
+        if isinstance(session_state, dict):
+            session_state["workspace"] = resolved
+        else:
+            session_state.workspace = resolved
         return json.dumps({"workspace": resolved, "status": "ok"})
 
     # Handle built-in tools
@@ -414,7 +422,15 @@ def execute_tool_call(
     if tool_name == "subagent" and subagent_manager is not None:
         from creel.subagents.executor import handle_subagent_tool
 
-        sender_id = session_state.sender_id if session_state else ""
+        sender_id = (
+            (
+                session_state.get("sender_id", "")
+                if isinstance(session_state, dict)
+                else getattr(session_state, "sender_id", "")
+            )
+            if session_state
+            else ""
+        )
         return handle_subagent_tool(tool_input, manager=subagent_manager, sender_id=sender_id)
 
     if tool_name not in tools_config:
@@ -431,8 +447,17 @@ def execute_tool_call(
     merged_args = {**tool_input, **cfg.fixed_args}
 
     # Inject workspace from session_state for file_ops tools
-    if cfg.executor == "file_ops" and session_state and session_state.workspace:
-        workspace = session_state.workspace
+    _ws = (
+        (
+            session_state.get("workspace")
+            if isinstance(session_state, dict)
+            else getattr(session_state, "workspace", None)
+        )
+        if session_state
+        else None
+    )
+    if cfg.executor == "file_ops" and _ws:
+        workspace = _ws
         # Re-validate: workspace may have been removed since set_workspace
         if not os.path.isdir(workspace):
             return json.dumps(
@@ -448,10 +473,85 @@ def execute_tool_call(
         name=cfg.executor,
         secrets=cfg.secrets,
         args=string_args,
+        timeout=cfg.timeout,
     )
 
     logger.info("Executing tool %s (executor: %s)", tool_name, cfg.executor)
 
     if use_containers:
+        # Route coding executor through warm container pool when available
+        if cfg.executor == "coding" and container_pool is not None and container_pool.enabled:
+            return _run_coding_via_pool(container_pool, executor_config, cfg)
         return _run_executor_container(executor_config, cfg, bridge_config)
     return _run_executor_inline(cfg.executor, executor_config)
+
+
+def _run_coding_via_pool(
+    pool: ContainerPool,
+    executor_config: ExecutorConfig,
+    tool_config: ToolConfig,
+) -> str:
+    """Execute a coding command using a persistent pooled container.
+
+    Acquires a warm container running dev_runner.py, sends the execute
+    command, and releases the container back to the pool for reuse.
+    """
+    from creel.containers import _ensure_image
+
+    image = tool_config.image if tool_config.image else executor_config.image
+    image = _ensure_image(image)
+
+    # Docker flags matching the tool config overrides
+    docker_flags = []
+    if not tool_config.writable:
+        docker_flags.append("--read-only")
+    docker_flags.extend(
+        [
+            "--tmpfs",
+            f"/tmp:rw,noexec,nosuid,size={tool_config.tmpfs_size}",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            f"--memory={tool_config.memory}",
+            f"--cpus={tool_config.cpus}",
+        ]
+    )
+    if not tool_config.network:
+        docker_flags.append("--network=none")
+
+    container = pool.acquire(
+        image=image,
+        entrypoint="python /app/dev_runner.py",
+        docker_flags=docker_flags,
+        env_vars={},
+    )
+
+    try:
+        command = executor_config.args.get("COMMAND", executor_config.args.get("command", ""))
+        workdir = executor_config.args.get("WORKDIR", executor_config.args.get("workdir"))
+        timeout = executor_config.timeout or 60
+
+        container.send(
+            {
+                "type": "execute",
+                "command": command,
+                "workdir": workdir,
+                "timeout": timeout,
+            }
+        )
+
+        msg = container.recv(timeout=float(timeout + 10))
+        pool.release(container)
+
+        if msg.get("type") == "error":
+            raise RuntimeError(msg.get("message", "Unknown error from dev container"))
+
+        if msg.get("type") == "result":
+            import json as _json
+
+            return _json.dumps(msg, indent=2)
+
+        raise RuntimeError(f"Unexpected message type from dev container: {msg.get('type')}")
+
+    except Exception:
+        pool.discard(container)
+        raise

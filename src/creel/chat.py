@@ -15,7 +15,7 @@ from creel.channels.message import Attachment
 from creel.log import generate_request_id, request_id_var
 from creel.media import MediaProcessor
 from creel.memory import MemoryManager
-from creel.models import AgentDefinition, SessionState
+from creel.models import AgentDefinition, LLMConfig, SessionState
 from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
 from creel.session import SessionManager
@@ -93,6 +93,18 @@ class ChatServer:
 
             summarize_fn = _do_summarize
 
+        # Build session transcript archival callback.
+        # Uses a closure over self so it works even though MemoryManager
+        # is constructed after SessionManager.
+        on_session_archived = None
+        if agent_def.workspace.index_session_transcripts:
+
+            def _archive_transcript(session_id: str, messages: list[dict]) -> None:
+                if self._memory is not None:
+                    self._memory.index_transcript(session_id, messages)
+
+            on_session_archived = _archive_transcript
+
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
@@ -100,7 +112,48 @@ class ChatServer:
             summarize_on_trim=agent_def.session.summarize_on_trim,
             summarize_fn=summarize_fn,
             max_context_tokens=agent_def.session.max_context_tokens,
+            on_session_archived=on_session_archived,
         )
+
+        # Build memory compaction summarize callback.
+        # NOTE: This callback fires only during __init__ (via compact_daily_files),
+        # making N sequential Haiku calls for N old daily files. Acceptable
+        # given Haiku latency (~200ms/call) but startup scales linearly with
+        # compaction backlog.
+        compact_summarize_fn = None
+        if agent_def.workspace.compact_summarize:
+            # Pre-load secrets once rather than on every callback invocation.
+            if agent_def.llm.secrets:
+                from creel.orchestrator import _load_secrets_to_env
+
+                _load_secrets_to_env(agent_def.llm.secrets)
+
+            # Capture only the values the closure needs, not the full agent_def.
+            _compact_model = agent_def.workspace.compact_model
+            _compact_max_tokens = agent_def.workspace.compact_max_tokens
+            _llm_secrets = agent_def.llm.secrets
+            _use_containers = use_containers
+
+            def _summarize_memory(entries: list[str]) -> str:
+                from creel.llm import run_llm
+
+                entries_text = "\n".join(f"- {e}" for e in entries)
+                prompt = (
+                    "You are summarizing a day's memory entries for a personal AI assistant. "
+                    "Extract the key facts, decisions, and context into 3-7 concise bullet "
+                    "points. Preserve specific names, dates, numbers, and action items. "
+                    "Drop routine/trivial entries. Output only markdown bullets (- item)."
+                    f"\n\nEntries:\n{entries_text}"
+                )
+
+                config = LLMConfig(
+                    model=_compact_model,
+                    max_tokens=_compact_max_tokens,
+                    secrets=_llm_secrets,
+                )
+                return run_llm(prompt, config, use_container=_use_containers)
+
+            compact_summarize_fn = _summarize_memory
 
         # Initialize memory manager if workspace is configured
         self._memory: MemoryManager | None = None
@@ -111,9 +164,15 @@ class ChatServer:
                 timezone_name=agent_def.workspace.timezone,
                 max_daily_entries=agent_def.workspace.max_daily_entries,
                 max_long_term_lines=agent_def.workspace.max_long_term_lines,
+                fts_enabled=agent_def.workspace.fts_enabled,
+                recency_half_life_days=agent_def.workspace.recency_half_life_days,
+                compact_summarize_fn=compact_summarize_fn,
+                extra_paths=agent_def.workspace.extra_paths,
             )
+            self._memory.rebuild_index()
             self._memory.compact_daily_files(
                 days_to_keep=agent_def.workspace.compact_after_days,
+                summarize=agent_def.workspace.compact_summarize,
             )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
@@ -155,6 +214,11 @@ class ChatServer:
         self._media: MediaProcessor | None = None
         if media_cfg is not None and media_cfg.enabled:
             self._media = MediaProcessor(media_cfg)
+
+        # Expose individual media services for direct access
+        self._media_store = self._media._store if self._media else None
+        self._transcription = self._media._transcription if self._media else None
+        self._vision = self._media._vision if self._media else None
 
         # Initialize sub-agent manager
         self._subagent_manager = SubAgentManager(
@@ -288,6 +352,7 @@ class ChatServer:
         result = self._invoke_agent_loop(
             session.messages,
             session_state,
+            user_message=text,
             confirm_action=confirm_action,
             on_text_delta=on_text_delta,
         )
@@ -401,6 +466,7 @@ class ChatServer:
         messages: list[dict],
         session_state: SessionState,
         *,
+        user_message: str | None = None,
         confirm_action: Callable[[str, dict, str], bool] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
     ):
@@ -409,7 +475,7 @@ class ChatServer:
         Centralises the "prepare + invoke" sequence so handle_message and
         _handle_approval_response stay in sync.
         """
-        system_prompt = self._build_system_prompt()
+        system_prompt = self._build_system_prompt(user_message=user_message)
 
         if self._agent_def.llm.secrets:
             from creel.orchestrator import _load_secrets_to_env
@@ -706,11 +772,15 @@ class ChatServer:
             self._container_pool.shutdown()
             self._container_pool = None
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, *, user_message: str | None = None) -> str:
         """Build the system prompt from workspace files, memory, and config.
 
         This mirrors OpenClaw's pattern of assembling the system prompt from
         multiple sources each run, rather than using a static string.
+
+        Args:
+            user_message: Latest user message, used for relevant-mode context
+                injection to select only memories that match the query.
         """
         ws_cfg = self._agent_def.workspace
 
@@ -721,13 +791,20 @@ class ChatServer:
             if prompt_path.exists():
                 base_prompt = prompt_path.read_text().strip()
 
-        # Get memory context
+        # Get memory context — "recent" dumps last N days, "relevant" uses search
         memory_context = None
         if self._memory:
-            memory_context = self._memory.get_recent_context(
-                days=ws_cfg.memory_days,
-                max_chars=ws_cfg.memory_max_chars,
-            )
+            if ws_cfg.memory_context_mode == "relevant" and user_message:
+                memory_context = self._memory.get_relevant_context(
+                    query=user_message,
+                    max_results=ws_cfg.memory_context_max_results,
+                    max_chars=ws_cfg.memory_max_chars,
+                )
+            else:
+                memory_context = self._memory.get_recent_context(
+                    days=ws_cfg.memory_days,
+                    max_chars=ws_cfg.memory_max_chars,
+                )
             # Screen memory context for stored injection payloads
             if memory_context and self._guardian:
                 screen_result = self._guardian.screen_input(memory_context)

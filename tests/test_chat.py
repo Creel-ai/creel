@@ -67,6 +67,139 @@ class TestChatServerInit:
         server = ChatServer(agent_def)
         assert server._memory is not None
 
+    def test_fts_config_flows_through(self, tmp_path) -> None:
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                fts_enabled=True,
+                recency_half_life_days=15.0,
+            ),
+        )
+        server = ChatServer(agent_def)
+        assert server._memory is not None
+        # FTS index should be initialized
+        assert server._memory._index is not None
+        assert server._memory._index.available
+
+    def test_fts_disabled_no_index(self, tmp_path) -> None:
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(path=str(ws), fts_enabled=False),
+        )
+        server = ChatServer(agent_def)
+        assert server._memory is not None
+        assert server._memory._index is None
+
+    def test_compact_summarize_config(self, tmp_path) -> None:
+        """Verify compact_summarize=True triggers extractive summarization."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        mm_dir = ws / "memory"
+        mm_dir.mkdir()
+
+        # Create an old daily file that will be compacted
+        from datetime import UTC, datetime, timedelta
+
+        old_date = datetime.now(UTC).date() - timedelta(days=10)
+        old_file = mm_dir / f"{old_date.isoformat()}.md"
+        old_file.write_text(
+            f"# Memory — {old_date.isoformat()}\n\n"
+            f"- [10:00] **general**: Alpha fact\n"
+            f"- [11:00] **general**: Beta fact\n"
+        )
+
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                compact_after_days=7,
+                compact_summarize=True,
+            ),
+        )
+        # ChatServer constructor calls rebuild_index() + compact_daily_files()
+        ChatServer(agent_def)
+
+        lt_content = (ws / "MEMORY.md").read_text()
+        assert "### Compacted:" in lt_content
+        assert "- Alpha fact" in lt_content
+        assert "- Beta fact" in lt_content
+
+    def test_compact_summarize_fn_wired(self, tmp_path) -> None:
+        """When compact_summarize=True, LLM callback is wired and used during compaction."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        mm_dir = ws / "memory"
+        mm_dir.mkdir()
+
+        from datetime import UTC, datetime, timedelta
+
+        old_date = datetime.now(UTC).date() - timedelta(days=10)
+        old_file = mm_dir / f"{old_date.isoformat()}.md"
+        old_file.write_text(
+            f"# Memory — {old_date.isoformat()}\n\n"
+            f"- [10:00] **general**: Alpha fact\n"
+            f"- [11:00] **general**: Beta fact\n"
+        )
+
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                compact_after_days=7,
+                compact_summarize=True,
+            ),
+        )
+
+        # Patch at creel.llm (not creel.chat) because _summarize_memory
+        # uses a deferred `from creel.llm import run_llm` inside the closure.
+        with patch("creel.llm.run_llm", return_value="- LLM summary bullet\n") as mock_llm:
+            ChatServer(agent_def)
+
+        # run_llm should have been called once for the compaction
+        mock_llm.assert_called_once()
+        call_args = mock_llm.call_args
+        prompt = call_args[0][0]
+        assert "Alpha fact" in prompt
+        assert "Beta fact" in prompt
+        # Verify config flows through (model matches compact_model default)
+        config_arg = call_args[0][1]
+        assert config_arg.model == "claude-haiku-4-5-20251001"
+
+        lt_content = (ws / "MEMORY.md").read_text()
+        assert "### Summarized:" in lt_content
+        assert "- LLM summary bullet" in lt_content
+
+    def test_rebuild_index_on_startup(self, tmp_path) -> None:
+        """Verify that pre-existing memory files are indexed on ChatServer init."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        mm_dir = ws / "memory"
+        mm_dir.mkdir()
+
+        # Write a daily file before ChatServer starts
+        from datetime import UTC, datetime
+
+        today = datetime.now(UTC).date()
+        daily = mm_dir / f"{today.isoformat()}.md"
+        daily.write_text(
+            f"# Memory — {today.isoformat()}\n\n- [09:00] **general**: Pre-existing startup entry\n"
+        )
+
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(path=str(ws), fts_enabled=True),
+        )
+        server = ChatServer(agent_def)
+
+        # The pre-existing entry should be findable via FTS
+        result = server._memory.search_memory("startup entry")
+        assert "1 result" in result
+
 
 # ---------------------------------------------------------------------------
 # Command parsing tests
@@ -197,6 +330,50 @@ class TestSystemPrompt:
         server = ChatServer(agent_def)
         prompt = server._build_system_prompt()
         assert "test assistant" in prompt
+
+    def test_relevant_mode_uses_search(self, tmp_path) -> None:
+        """When memory_context_mode='relevant', search-based context is used."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                memory_context_mode="relevant",
+            ),
+        )
+        server = ChatServer(agent_def)
+
+        mock_memory = MagicMock()
+        mock_memory.get_relevant_context.return_value = "Relevant: budget Q1"
+        server._memory = mock_memory
+
+        prompt = server._build_system_prompt(user_message="budget review")
+        assert "Relevant: budget Q1" in prompt
+        mock_memory.get_relevant_context.assert_called_once()
+        mock_memory.get_recent_context.assert_not_called()
+
+    def test_relevant_mode_falls_back_to_recent_without_message(self, tmp_path) -> None:
+        """When mode='relevant' but no user_message, fall back to recent."""
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        agent_def = _make_agent_def(
+            tmp_path,
+            workspace=WorkspaceConfig(
+                path=str(ws),
+                memory_context_mode="relevant",
+            ),
+        )
+        server = ChatServer(agent_def)
+
+        mock_memory = MagicMock()
+        mock_memory.get_recent_context.return_value = "Recent context"
+        server._memory = mock_memory
+
+        prompt = server._build_system_prompt()  # no user_message
+        assert "Recent context" in prompt
+        mock_memory.get_recent_context.assert_called_once()
+        mock_memory.get_relevant_context.assert_not_called()
 
     def test_memory_context_screened_by_guardian(self, tmp_path) -> None:
         ws = tmp_path / "workspace"

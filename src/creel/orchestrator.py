@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from creel.containers import (
     ImageBuildCache,
@@ -32,15 +31,12 @@ from creel.models import ExecutorConfig, TaskDefinition, load_task
 from creel.outputs import send_output
 from creel.secrets import decrypt_env_file
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 _GOOGLE_TOKEN_MAX_AGE_SECONDS = 3600
 
 # Lock for inline executor env-var mutations (os.environ is process-global)
-_ENV_LOCK = threading.Lock()
+_ENV_LOCK = threading.RLock()
 
 # Re-export container symbols for backward compatibility
 __all__ = [

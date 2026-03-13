@@ -292,3 +292,190 @@ class TestPathExpansion:
             expanded_path = os.path.expanduser(mount.path)
             assert expanded_path == "/home/testuser/workspace"
             mock_expand.assert_called_once_with("~/workspace")
+
+
+class TestToolConfigContainerOverrides:
+    """Tests for per-executor container resource override fields on ToolConfig."""
+
+    def test_defaults(self) -> None:
+        """Test that new container fields have sensible defaults."""
+        config = ToolConfig(executor="exec", description="Test tool")
+        assert config.writable is False
+        assert config.tmpfs_size == "16M"
+        assert config.memory == "256m"
+        assert config.cpus == "0.5"
+        assert config.timeout == 60
+
+    def test_custom_values(self) -> None:
+        """Test setting custom container resource values."""
+        config = ToolConfig(
+            executor="coding",
+            description="Dev env",
+            writable=True,
+            tmpfs_size="256M",
+            memory="512m",
+            cpus="1.0",
+            timeout=300,
+        )
+        assert config.writable is True
+        assert config.tmpfs_size == "256M"
+        assert config.memory == "512m"
+        assert config.cpus == "1.0"
+        assert config.timeout == 300
+
+    def test_tmpfs_size_validates_docker_format(self) -> None:
+        """Test that tmpfs_size rejects invalid formats."""
+        with pytest.raises(ValueError, match="tmpfs_size must be a Docker size"):
+            ToolConfig(executor="exec", description="t", tmpfs_size="invalid")
+
+    def test_tmpfs_size_allows_valid_formats(self) -> None:
+        """Test valid Docker size formats for tmpfs_size."""
+        for size in ("16M", "256M", "1G", "512k"):
+            config = ToolConfig(executor="exec", description="t", tmpfs_size=size)
+            assert config.tmpfs_size == size
+
+    def test_memory_validates_docker_format(self) -> None:
+        """Test that memory rejects invalid formats."""
+        with pytest.raises(ValueError, match="memory must be a Docker size"):
+            ToolConfig(executor="exec", description="t", memory="oops")
+
+    def test_cpus_validates_positive_float(self) -> None:
+        """Test that cpus rejects non-numeric and non-positive values."""
+        with pytest.raises(ValueError, match="cpus must be a positive number"):
+            ToolConfig(executor="exec", description="t", cpus="abc")
+        with pytest.raises(ValueError, match="cpus must be positive"):
+            ToolConfig(executor="exec", description="t", cpus="0")
+        with pytest.raises(ValueError, match="cpus must be positive"):
+            ToolConfig(executor="exec", description="t", cpus="-1")
+
+    def test_timeout_must_be_positive(self) -> None:
+        """Test that timeout must be >= 1."""
+        with pytest.raises(ValueError):
+            ToolConfig(executor="exec", description="t", timeout=0)
+
+
+class TestContainerResourceOverrides:
+    """Tests for per-executor resource overrides in _run_executor_container."""
+
+    @patch("creel.containers._ensure_image")
+    @patch("subprocess.run")
+    @patch("tempfile.NamedTemporaryFile")
+    def test_writable_omits_read_only(self, mock_tempfile, mock_subprocess, mock_ensure_image):
+        """Test that writable=True omits --read-only from docker command."""
+        mock_env_file = MagicMock()
+        mock_env_file.name = "/tmp/test.env"
+        mock_tempfile.return_value.__enter__.return_value = mock_env_file
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+
+        executor_config = ExecutorConfig(name="coding")
+        tool_config = ToolConfig(
+            executor="coding",
+            description="Dev",
+            writable=True,
+            network=True,
+        )
+
+        _run_executor_container(executor_config, tool_config)
+
+        docker_cmd = mock_subprocess.call_args[0][0]
+        assert "--read-only" not in docker_cmd
+
+    @patch("creel.containers._ensure_image")
+    @patch("subprocess.run")
+    @patch("tempfile.NamedTemporaryFile")
+    def test_readonly_default(self, mock_tempfile, mock_subprocess, mock_ensure_image):
+        """Test that writable=False (default) includes --read-only."""
+        mock_env_file = MagicMock()
+        mock_env_file.name = "/tmp/test.env"
+        mock_tempfile.return_value.__enter__.return_value = mock_env_file
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+
+        executor_config = ExecutorConfig(name="weather")
+        tool_config = ToolConfig(executor="weather", description="Weather")
+
+        _run_executor_container(executor_config, tool_config)
+
+        docker_cmd = mock_subprocess.call_args[0][0]
+        assert "--read-only" in docker_cmd
+
+    @patch("creel.containers._ensure_image")
+    @patch("subprocess.run")
+    @patch("tempfile.NamedTemporaryFile")
+    def test_custom_memory_cpus_tmpfs(self, mock_tempfile, mock_subprocess, mock_ensure_image):
+        """Test custom memory, cpus, and tmpfs_size are passed to docker."""
+        mock_env_file = MagicMock()
+        mock_env_file.name = "/tmp/test.env"
+        mock_tempfile.return_value.__enter__.return_value = mock_env_file
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+
+        executor_config = ExecutorConfig(name="coding")
+        tool_config = ToolConfig(
+            executor="coding",
+            description="Dev",
+            memory="512m",
+            cpus="2.0",
+            tmpfs_size="256M",
+            network=True,
+        )
+
+        _run_executor_container(executor_config, tool_config)
+
+        docker_cmd = mock_subprocess.call_args[0][0]
+        assert "--memory=512m" in docker_cmd
+        assert "--cpus=2.0" in docker_cmd
+        # Check tmpfs contains the custom size
+        tmpfs_idx = docker_cmd.index("--tmpfs")
+        assert "size=256M" in docker_cmd[tmpfs_idx + 1]
+
+    @patch("creel.containers._ensure_image")
+    @patch("subprocess.run")
+    @patch("tempfile.NamedTemporaryFile")
+    def test_cap_drop_always_present(self, mock_tempfile, mock_subprocess, mock_ensure_image):
+        """Test that --cap-drop=ALL is always present regardless of writable."""
+        mock_env_file = MagicMock()
+        mock_env_file.name = "/tmp/test.env"
+        mock_tempfile.return_value.__enter__.return_value = mock_env_file
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
+
+        executor_config = ExecutorConfig(name="coding")
+        tool_config = ToolConfig(
+            executor="coding",
+            description="Dev",
+            writable=True,
+            network=True,
+        )
+
+        _run_executor_container(executor_config, tool_config)
+
+        docker_cmd = mock_subprocess.call_args[0][0]
+        assert "--cap-drop=ALL" in docker_cmd
+        assert "--security-opt=no-new-privileges" in docker_cmd
+
+    @patch("creel.containers._ensure_image")
+    @patch("subprocess.run")
+    @patch("tempfile.NamedTemporaryFile")
+    def test_timeout_threaded_from_tool_config(
+        self, mock_tempfile, mock_subprocess, mock_ensure_image
+    ):
+        """Test that timeout from ToolConfig flows through to ExecutorConfig."""
+        from creel.tools import execute_tool_call
+
+        mock_env_file = MagicMock()
+        mock_env_file.name = "/tmp/test.env"
+        mock_tempfile.return_value.__enter__.return_value = mock_env_file
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout='{"ok": true}', stderr="")
+
+        tools_config = {
+            "coding": ToolConfig(
+                executor="coding",
+                description="Dev",
+                timeout=300,
+                network=True,
+            ),
+        }
+
+        with patch("creel.tools._run_executor_container") as mock_container:
+            mock_container.return_value = '{"ok": true}'
+            execute_tool_call("coding", {"command": "echo hi"}, tools_config, use_containers=True)
+            exec_config = mock_container.call_args[0][0]
+            assert exec_config.timeout == 300

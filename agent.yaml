@@ -701,6 +701,12 @@ tools:
   # Coding / dev environment
   coding:
     executor: coding
+    writable: true
+    memory: "512m"
+    cpus: "1.0"
+    tmpfs_size: "256M"
+    network: true
+    timeout: 300
     description: "Development environment for building software — run commands, install packages, edit files"
     parameters:
       command:
@@ -713,7 +719,6 @@ tools:
       mount:
         type: string
         description: "Host path to mount into the container at /workspace. Allows working on real projects."
-    timeout: 300
 
   # File operations
   read_file:

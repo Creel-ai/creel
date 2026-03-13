@@ -206,6 +206,69 @@ BUILTIN_SUBAGENT_TOOL = {
 }
 
 
+BUILTIN_KB_TOOLS = [
+    {
+        "name": "kb_search",
+        "description": (
+            "Search the knowledge base for relevant documents. The knowledge base "
+            "contains indexed personal documents (notes, docs, code files). Returns "
+            "matching text chunks with source file attribution."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query — use natural language or keywords.",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "Maximum results to return (default: 5).",
+                },
+                "filter": {
+                    "type": "string",
+                    "description": "Optional path prefix to filter results by source file.",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "kb_add",
+        "description": (
+            "Add a file or directory to the knowledge base for indexing. "
+            "Supports markdown, text, PDF, and code files."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to a file or directory to index.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "kb_list",
+        "description": "List all documents currently indexed in the knowledge base.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "kb_stats",
+        "description": "Get knowledge base statistics (document count, chunk count, size).",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+]
+
+
 BUILTIN_WORKSPACE_TOOLS = [
     {
         "name": "set_workspace",
@@ -235,6 +298,7 @@ def build_tool_definitions(
     include_workspace_tools: bool = False,
     include_cron_tools: bool = False,
     include_subagent_tool: bool = False,
+    include_kb_tools: bool = False,
 ) -> list[dict]:
     """Convert YAML tool configs to Anthropic API tool definitions.
 
@@ -245,6 +309,7 @@ def build_tool_definitions(
             (set_workspace).
         include_cron_tools: If True, include built-in cron scheduling tool.
         include_subagent_tool: If True, include built-in sub-agent tool.
+        include_kb_tools: If True, include built-in knowledge base tools.
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
@@ -261,6 +326,8 @@ def build_tool_definitions(
         tool_defs.append(CRON_TOOL_DEFINITION)
     if include_subagent_tool:
         tool_defs.append(BUILTIN_SUBAGENT_TOOL)
+    if include_kb_tools:
+        tool_defs.extend(BUILTIN_KB_TOOLS)
     for name, cfg in tools_config.items():
         properties: dict[str, dict] = {}
         required: list[str] = []
@@ -341,6 +408,7 @@ def execute_tool_call(
     cron_manager: Any | None = None,
     subagent_manager: Any | None = None,
     container_pool: ContainerPool | None = None,
+    kb_manager: Any | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
 
@@ -360,6 +428,7 @@ def execute_tool_call(
         cron_manager: Optional CronManager for cron tool.
         subagent_manager: Optional SubAgentManager for sub-agent tool.
         container_pool: Optional ContainerPool for persistent coding containers.
+        kb_manager: Optional KnowledgeBase for knowledge base tools.
 
     Returns:
         The executor output as a string.
@@ -422,6 +491,10 @@ def execute_tool_call(
         sender_id = session_state.sender_id if session_state else ""
         return handle_subagent_tool(tool_input, manager=subagent_manager, sender_id=sender_id)
 
+    # Handle knowledge base built-in tools
+    if tool_name in ("kb_search", "kb_add", "kb_list", "kb_stats") and kb_manager is not None:
+        return _handle_kb_tool(tool_name, tool_input, kb_manager)
+
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")
 
@@ -464,6 +537,39 @@ def execute_tool_call(
             return _run_coding_via_pool(container_pool, executor_config, cfg)
         return _run_executor_container(executor_config, cfg, bridge_config)
     return _run_executor_inline(cfg.executor, executor_config)
+
+
+def _handle_kb_tool(tool_name: str, tool_input: dict, kb_manager: Any) -> str:
+    """Handle knowledge base built-in tool calls."""
+    if tool_name == "kb_search":
+        query = tool_input.get("query", "")
+        top_k = int(tool_input.get("top_k", 5))
+        filter_path = tool_input.get("filter") or None
+        results = kb_manager.search(query, top_k=top_k, filter_path=filter_path)
+        if not results:
+            return json.dumps({"results": [], "message": f"No results found for '{query}'."})
+        return json.dumps({"results": results, "count": len(results)}, indent=2)
+
+    if tool_name == "kb_add":
+        path = tool_input.get("path", "")
+        if not path:
+            return json.dumps({"error": "path is required"})
+        result = kb_manager.add(path)
+        # Remove non-serializable file list detail for cleaner output
+        summary = {k: v for k, v in result.items() if k != "files"}
+        summary["files_indexed"] = result.get("files", [])
+        return json.dumps(summary, indent=2)
+
+    if tool_name == "kb_list":
+        docs = kb_manager.list_documents()
+        if not docs:
+            return json.dumps({"documents": [], "message": "Knowledge base is empty."})
+        return json.dumps({"documents": docs, "count": len(docs)}, indent=2)
+
+    if tool_name == "kb_stats":
+        return json.dumps(kb_manager.stats(), indent=2)
+
+    return json.dumps({"error": f"Unknown KB tool: {tool_name}"})
 
 
 def _run_coding_via_pool(

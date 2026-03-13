@@ -176,6 +176,27 @@ class ChatServer:
             )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
 
+        # Initialize knowledge base if configured and enabled
+        self._kb: Any = None
+        kb_config = agent_def.knowledge_base
+        if kb_config.enabled:
+            from creel.knowledge_base import KnowledgeBase
+
+            kb_db_path = kb_config.db_path or str(ws_path / ".kb_index.sqlite")
+            try:
+                self._kb = KnowledgeBase(
+                    db_path=kb_db_path,
+                    chunk_size=kb_config.chunk_size,
+                    chunk_overlap=kb_config.chunk_overlap,
+                    embedding_model=kb_config.embedding_model,
+                )
+                # Auto-index configured directories
+                if kb_config.auto_index:
+                    self._kb.reindex_auto_paths(kb_config.auto_index)
+                logger.info("Knowledge base enabled (db: %s)", kb_db_path)
+            except Exception:
+                logger.warning("Failed to initialize knowledge base", exc_info=True)
+
         # Per-sender session state (e.g. workspace path for file_ops)
         self._session_states: dict[str, SessionState] = {}
 
@@ -510,6 +531,7 @@ class ChatServer:
             session_state=session_state,
             cron_manager=self._cron_manager,
             subagent_manager=self._subagent_manager,
+            kb_manager=self._kb,
         )
 
     def _handle_approval_response(

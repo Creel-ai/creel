@@ -177,6 +177,32 @@ class QuietHoursConfig(BaseModel):
     allow_urgent: bool = True  # still allow messages marked urgent
 
 
+class KnowledgeBaseConfig(BaseModel):
+    """Knowledge base (RAG) configuration for document search."""
+
+    enabled: bool = False
+    store: str = "sqlite"
+    db_path: str = ""  # default: workspace/.kb_index.sqlite
+    embedding_model: str = "all-MiniLM-L6-v2"
+    chunk_size: int = Field(default=512, gt=0)
+    chunk_overlap: int = Field(default=50, ge=0)
+    auto_index: list[str] = Field(default_factory=list)
+
+    @field_validator("store")
+    @classmethod
+    def validate_store(cls, v: str) -> str:
+        if v != "sqlite":
+            raise ValueError(f"Only 'sqlite' store is supported, got '{v}'")
+        return v
+
+    @field_validator("auto_index", mode="before")
+    @classmethod
+    def expand_auto_index(cls, v: list[str] | str) -> list[str]:
+        if isinstance(v, str):
+            v = [v]
+        return [os.path.expandvars(os.path.expanduser(s)) for s in v]
+
+
 class WorkspaceConfig(BaseModel):
     """Workspace directory settings for personality/memory files."""
 
@@ -443,6 +469,7 @@ class AgentDefinition(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     media: MediaConfig | None = None
     guardian: GuardianConfig | None = None
+    knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
 
 
 # --- Task definition ---

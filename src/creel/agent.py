@@ -389,6 +389,7 @@ def run_agent_loop(
     session_state: SessionState | None = None,
     cron_manager: object | None = None,
     subagent_manager: object | None = None,
+    kb_manager: object | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -420,6 +421,7 @@ def run_agent_loop(
             include_workspace_tools=include_workspace,
             include_cron_tools=cron_manager is not None,
             include_subagent_tool=subagent_manager is not None,
+            include_kb_tools=kb_manager is not None,
         )
         if tools_config
         else []
@@ -569,6 +571,7 @@ def run_agent_loop(
                     session_state=session_state,
                     cron_manager=cron_manager,
                     subagent_manager=subagent_manager,
+                    kb_manager=kb_manager,
                 )
                 is_error = False
                 elapsed_ms = (time.perf_counter() - t0) * 1000

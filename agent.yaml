@@ -1141,6 +1141,17 @@ workspace:
   max_daily_entries: 50
   max_long_term_lines: 500
 
+knowledge_base:
+  enabled: true
+  store: sqlite
+  embedding_model: all-MiniLM-L6-v2
+  chunk_size: 512
+  chunk_overlap: 50
+  auto_index: []
+  # auto_index:
+  #   - ~/Documents/notes/
+  #   - ~/projects/docs/
+
 media:
   enabled: true
   storage_dir: ~/.creel/media

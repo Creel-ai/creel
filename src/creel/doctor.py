@@ -383,6 +383,7 @@ def check_channels(agent_config_path: Path | None = None) -> list[CheckResult]:
         if ch_name == "telegram":
             bot_token = ch_config.get("bot_token", "")
             expanded = os.path.expandvars(bot_token)
+            # Catches both $VAR and ${VAR} forms when the env var is unset
             if expanded.startswith("$") or not expanded:
                 results.append(
                     CheckResult(

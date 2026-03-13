@@ -896,6 +896,33 @@ class TestCompactLLMSummarize:
             assert f"### Compacted: {old_date.isoformat()}" in lt_content
             assert "- Alpha fact" in lt_content
 
+    def test_compact_multiple_files_hits_safety_limit(self):
+        """Incremental lt_lines tracking should trigger safety limit mid-compaction."""
+        with tempfile.TemporaryDirectory() as td:
+            # max_long_term_lines=3 → safety limit at 2x = 6 lines.
+            # File 1 compacts: creates MEMORY.md header (2 lines) then appends
+            # blank+section_header+5 entries (7 lines) → 9 total. 9 >= 6, so
+            # file 2 should be kept.
+            mm = self._make_manager(td, max_long_term_lines=3)
+
+            dates = []
+            for days_ago in [12, 11]:
+                old_date = datetime.now(UTC).date() - timedelta(days=days_ago)
+                path = mm.daily_path(old_date)
+                path.write_text(
+                    f"# Memory — {old_date.isoformat()}\n\n"
+                    + "".join(f"- [10:0{i}] **general**: Entry {i}\n" for i in range(5))
+                )
+                dates.append((old_date, path))
+
+            result = mm.compact_daily_files(days_to_keep=7, summarize=True)
+            # First file should compact; second should be kept (safety limit)
+            assert "Compacted 1 file(s)" in result
+            assert "Warning" in result
+            assert "kept" in result
+            # The second file should still exist on disk
+            assert dates[1][1].exists()
+
 
 class TestWorkspaceConfigValidation:
     def test_recency_half_life_rejects_zero(self):

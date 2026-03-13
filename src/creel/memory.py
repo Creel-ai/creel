@@ -484,12 +484,15 @@ class MemoryManager:
             if len(candidates) >= collect_limit:
                 break
 
-        # Search long-term memory
+        # Search long-term memory (skip headers and blank lines)
         lt_path = self.long_term_path
         if lt_path.exists() and len(candidates) < collect_limit:
             try:
                 lines = lt_path.read_text().splitlines()
                 for i, line in enumerate(lines, start=1):
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
                     if query_lower in line.lower():
                         weight = _recency_weight("long_term", today, self._half_life)
                         candidates.append(("long_term", i, line, weight))

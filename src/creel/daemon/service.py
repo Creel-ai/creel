@@ -47,6 +47,7 @@ class DaemonService:
         self._now_fn = now_fn
         self._started_at = self._now_fn()
         self._lock = threading.RLock()
+        self._reload_lock = threading.Lock()
 
         # Scheduler lifecycle state.
         self._scheduler_thread: threading.Thread | None = None
@@ -499,8 +500,24 @@ class DaemonService:
     def reload_config(self, config_path: str | Path | None = None) -> ReloadResult:
         """Reload agent config from disk and apply reloadable changes atomically.
 
+        Uses a dedicated reload lock to serialize concurrent reload attempts
+        (e.g. SIGHUP + file watcher + API all firing at once). The diff and
+        apply are performed together so the diffed config always matches what
+        gets applied.
+
         Returns a ReloadResult describing what changed.
         """
+        if not self._reload_lock.acquire(blocking=False):
+            logger.info("Config reload already in progress, skipping")
+            return ReloadResult(success=True)
+
+        try:
+            return self._do_reload(config_path)
+        finally:
+            self._reload_lock.release()
+
+    def _do_reload(self, config_path: str | Path | None = None) -> ReloadResult:
+        """Internal reload implementation (caller must hold _reload_lock)."""
         path = Path(config_path) if config_path else self._config_path
         if path is None:
             return ReloadResult(success=False, error="No config path configured")

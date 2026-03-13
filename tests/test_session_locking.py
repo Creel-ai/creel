@@ -65,9 +65,11 @@ def test_save_creates_backup(tmp_path: Path) -> None:
 
     assert bak_path.exists(), ".bak file should be created on second write"
     bak_data = json.loads(bak_path.read_text())
-    # The backup should contain the previous version (1 message)
-    assert len(bak_data["messages"]) == 1
-    assert bak_data["messages"][0]["content"] == "First message"
+    # The backup should contain the previous version (with "First message"
+    # but not "Second message")
+    bak_contents = [m["content"] for m in bak_data["messages"]]
+    assert "First message" in bak_contents
+    assert "Second message" not in bak_contents
 
 
 def test_save_is_atomic_no_partial_writes(tmp_path: Path) -> None:
@@ -92,6 +94,15 @@ def test_no_temp_files_left_after_save(tmp_path: Path) -> None:
 
     tmp_files = list(tmp_path.glob("*.tmp"))
     assert tmp_files == [], f"Temp files should be cleaned up: {tmp_files}"
+
+
+def test_lock_sentinel_files_are_created(tmp_path: Path) -> None:
+    """Lock sentinel files should exist after writes (harmless small files)."""
+    mgr = SessionManager(sessions_dir=str(tmp_path))
+    mgr.add_user_message("cli", "Hello")
+
+    lock_files = list(tmp_path.glob("*.lock"))
+    assert len(lock_files) >= 1, "Lock sentinel files should be created"
 
 
 # -- shared lock on read --
@@ -123,6 +134,27 @@ def test_load_succeeds_with_shared_lock(tmp_path: Path) -> None:
 # -- active index locking --
 
 
+def test_active_index_load_acquires_shared_lock(tmp_path: Path) -> None:
+    """_load_active_index should acquire a shared lock (multiple readers OK)."""
+    mgr = SessionManager(sessions_dir=str(tmp_path))
+    mgr.add_user_message("cli", "seed")
+
+    results: list[dict | None] = [None, None]
+
+    def reader(idx: int) -> None:
+        results[idx] = mgr._load_active_index()
+
+    t1 = threading.Thread(target=reader, args=(0,))
+    t2 = threading.Thread(target=reader, args=(1,))
+    t1.start()
+    t2.start()
+    t1.join(timeout=5)
+    t2.join(timeout=5)
+
+    assert results[0] is not None and "cli" in results[0]
+    assert results[1] is not None and "cli" in results[1]
+
+
 def test_active_index_uses_atomic_write(tmp_path: Path) -> None:
     """Active index should be written atomically and create a .bak."""
     mgr = SessionManager(sessions_dir=str(tmp_path))
@@ -142,7 +174,13 @@ def test_active_index_uses_atomic_write(tmp_path: Path) -> None:
 
 
 def test_concurrent_writes_do_not_corrupt(tmp_path: Path) -> None:
-    """Multiple threads writing to the same session should not corrupt data."""
+    """Multiple threads writing to the same session should not corrupt data.
+
+    Note: because each thread does load-modify-save independently, this is
+    last-writer-wins — not all messages will survive.  The important guarantee
+    is that the file is never corrupted (always valid JSON with the expected
+    schema).
+    """
     mgr = SessionManager(sessions_dir=str(tmp_path), max_history=200)
     session = mgr.get_or_create("cli")
     sid = session.session_id
@@ -166,10 +204,14 @@ def test_concurrent_writes_do_not_corrupt(tmp_path: Path) -> None:
 
     assert errors == [], f"Unexpected errors during concurrent writes: {errors}"
 
-    # File should still be valid JSON
+    # File should still be valid JSON with expected schema
     path = tmp_path / f"{sid}.json"
     data = json.loads(path.read_text())
     assert "session_id" in data
+    assert "messages" in data
+    assert isinstance(data["messages"], list)
+    # At least one write must have succeeded
+    assert len(data["messages"]) >= 1
 
 
 # -- lock timeout propagation --

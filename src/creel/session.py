@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import tempfile
 import time
 from collections.abc import Callable
@@ -73,7 +74,7 @@ def _flock_with_timeout(fd: int, operation: int, timeout: float = _LOCK_TIMEOUT)
         try:
             fcntl.flock(fd, operation | fcntl.LOCK_NB)
             return
-        except OSError:
+        except BlockingIOError:
             if time.monotonic() >= deadline:
                 raise SessionLockError(
                     f"Could not acquire file lock within {timeout}s. "
@@ -518,36 +519,43 @@ class SessionManager:
         """Write *payload* to *path* atomically with advisory locking.
 
         1. Write to a temp file in the same directory (same filesystem).
-        2. Acquire an exclusive advisory lock on the temp file.
-        3. Back up the existing file as ``<path>.bak`` (if present).
+        2. Acquire an exclusive advisory lock on a ``.lock`` sentinel file
+           shared by all writers to the same *path* (serializes writers).
+        3. Copy the existing file to ``<path>.bak`` (if present).
         4. ``os.replace`` (atomic rename) temp → final path.
         """
-        fd = None
-        tmp_path: str | None = None
+        tmp_name: str | None = None
         try:
-            fd_int, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-            fd = fd_int
-            os.write(fd, payload)
-            os.fsync(fd)
+            fd_tmp, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+            try:
+                os.write(fd_tmp, payload)
+                os.fsync(fd_tmp)
+            finally:
+                os.close(fd_tmp)
 
-            _flock_with_timeout(fd, fcntl.LOCK_EX)
+            lock_path = path.with_suffix(path.suffix + ".lock")
+            lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+            try:
+                _flock_with_timeout(lock_fd, fcntl.LOCK_EX)
 
-            # Backup previous version
-            if path.exists():
-                bak = path.with_suffix(".json.bak")
-                try:
-                    os.replace(str(path), str(bak))
-                except OSError:
-                    logger.debug("Could not create backup for %s", path.name)
+                # Backup previous version (copy, not rename, so the original
+                # stays in place until the final atomic replace below)
+                if path.exists():
+                    bak = path.with_suffix(".json.bak")
+                    try:
+                        shutil.copy2(str(path), str(bak))
+                    except OSError:
+                        logger.debug("Could not create backup for %s", path.name)
 
-            os.replace(tmp_path, str(path))
-            tmp_path = None  # rename succeeded, don't clean up
+                os.replace(tmp_name, str(path))
+                tmp_name = None  # rename succeeded, don't clean up
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
         finally:
-            if fd is not None:
-                os.close(fd)
-            if tmp_path is not None:
+            if tmp_name is not None:
                 try:
-                    os.unlink(tmp_path)
+                    os.unlink(tmp_name)
                 except OSError:
                     pass
 

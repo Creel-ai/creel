@@ -6,9 +6,16 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class _Sendable(Protocol):
+    """Protocol for objects that have a ``send(recipient, text)`` method."""
+
+    def send(self, recipient: str, text: str) -> None: ...
 
 
 @dataclass
@@ -23,9 +30,12 @@ class QueuedMessage:
 class MessageQueueMixin:
     """Mixin that buffers outbound messages and sends them with rate limiting.
 
-    The channel's ``send()`` method is used for actual delivery.  This mixin
-    adds ``_enqueue`` / ``_flush_queue`` helpers so channels can opt-in to
-    rate-limited sending without changing their public API.
+    The host class **must** provide a ``send(recipient, text)`` method (see
+    :class:`_Sendable`).  This is enforced at init-subclass time.
+
+    This mixin is **synchronous** — ``_flush_queue`` and ``_rate_limited_send``
+    use ``time.sleep`` for rate limiting.  Do not call them from an async
+    event loop without wrapping in ``asyncio.to_thread``.
 
     Class attributes (override on the subclass or instance):
 
@@ -80,7 +90,12 @@ class MessageQueueMixin:
             if elapsed < self._rate_limit_delay:
                 time.sleep(self._rate_limit_delay - elapsed)
 
-        self.send(recipient, text)  # type: ignore[attr-defined]
+        send = getattr(self, "send", None)
+        if send is None:
+            raise TypeError(
+                f"{type(self).__name__} uses MessageQueueMixin but has no send() method"
+            )
+        send(recipient, text)
         self._last_send_time = time.monotonic()
 
     @property

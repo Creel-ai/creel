@@ -38,15 +38,19 @@ class HealthCheckMixin:
 
         Expects ``self._bridge`` to have a ``health()`` method.  Falls back
         gracefully if the bridge is missing or has no such method.
+
+        The returned dict matches the shape produced by the legacy
+        ``BridgeClientMixin._bridge_health_check()``::
+
+            {"healthy": bool, "mode": str, "bridge": dict}
+
+        Exceptions from the bridge's ``health()`` are **not** caught — callers
+        that need resilience should catch at the call site.
         """
         bridge = getattr(self, "_bridge", None)
-        bridge_health: dict[str, Any] = {}
-        if bridge and hasattr(bridge, "health"):
-            try:
-                bridge_health = bridge.health()
-            except Exception:
-                logger.warning("Bridge health check failed", exc_info=True)
-                bridge_health = {"healthy": False, "error": "health check failed"}
+        bridge_health: dict[str, Any] = (
+            bridge.health() if bridge and hasattr(bridge, "health") else {}
+        )
 
         healthy = not self._stop_requested and bridge_health.get("healthy", False)
         if healthy:
@@ -57,7 +61,6 @@ class HealthCheckMixin:
 
         mode = getattr(self, "_mode", "unknown")
         return {
-            "channel": type(self).__name__,
             "healthy": healthy,
             "mode": mode,
             "bridge": bridge_health,

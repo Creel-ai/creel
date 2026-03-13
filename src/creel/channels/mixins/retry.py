@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class RetryMixin:
     _max_retries: int = 3
     _retry_base_delay: float = 1.0
     _retry_max_delay: float = 60.0
+    _retryable_exceptions: tuple[type[BaseException], ...] = (Exception,)
 
     def _retry_with_backoff(
         self,
@@ -33,6 +35,10 @@ class RetryMixin:
     ) -> T:
         """Execute *fn* with exponential backoff on transient failures.
 
+        Only exceptions matching ``_retryable_exceptions`` trigger a retry.
+        Override that attribute to narrow the set (e.g. ``(ConnectionError,
+        TimeoutError)``).
+
         Returns the result of *fn* on success.  Raises the last exception
         if all attempts are exhausted.
         """
@@ -40,7 +46,7 @@ class RetryMixin:
         for attempt in range(self._max_retries):
             try:
                 return fn(*args, **kwargs)
-            except Exception as exc:
+            except self._retryable_exceptions as exc:
                 last_exc = exc
                 if attempt < self._max_retries - 1:
                     delay = min(

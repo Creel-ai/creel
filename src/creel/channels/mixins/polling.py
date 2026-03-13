@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 from abc import abstractmethod
-from typing import Any
 
 from creel.channels.base import IncomingMessage, LegacyCallback
 from creel.channels.mixins.retry import RetryMixin
@@ -13,7 +12,7 @@ from creel.channels.mixins.retry import RetryMixin
 logger = logging.getLogger(__name__)
 
 
-class PollingChannelMixin(RetryMixin):
+class PollingChannelMixin:
     """Mixin that provides a standard polling loop with backoff.
 
     Subclasses implement ``_poll_once()`` to fetch new messages.  The mixin
@@ -73,7 +72,7 @@ class PollingChannelMixin(RetryMixin):
 
             except Exception:
                 consecutive_errors += 1
-                backoff = self._calculate_backoff(
+                backoff = RetryMixin._calculate_backoff(
                     self._poll_interval, consecutive_errors, self._max_backoff
                 )
                 logger.exception(

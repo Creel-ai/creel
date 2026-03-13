@@ -64,6 +64,10 @@ class TelegramChannel(
         "video": AttachmentType.VIDEO,
         "document": AttachmentType.FILE,
     }
+    # Telegram voice messages use audio/ogg in addition to the defaults.
+    _voice_mime_types: frozenset[str] = frozenset(
+        {"audio/x-caf", "audio/caf", "audio/amr", "audio/ogg"}
+    )
 
     def __init__(
         self,

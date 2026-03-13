@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Callable
 
 from creel.channels.message import Attachment, AttachmentType
 
@@ -17,9 +17,10 @@ DEFAULT_MIME_PREFIX_MAP: dict[str, AttachmentType] = {
 }
 
 # Audio MIME types that indicate a voice memo rather than a regular audio file.
-DEFAULT_VOICE_MIME_TYPES: frozenset[str] = frozenset(
-    {"audio/x-caf", "audio/caf", "audio/amr", "audio/ogg"}
-)
+# NOTE: Keep in sync with channel-specific overrides.  Channels that need
+# additional types (e.g. audio/ogg for Telegram) should override
+# ``_voice_mime_types`` on the subclass.
+DEFAULT_VOICE_MIME_TYPES: frozenset[str] = frozenset({"audio/x-caf", "audio/caf", "audio/amr"})
 
 
 class MediaHandlerMixin:
@@ -63,7 +64,7 @@ class MediaHandlerMixin:
 
     def _download_and_classify(
         self,
-        download_fn: Any,
+        download_fn: Callable[[str], bytes],
         file_id: str,
         *,
         platform_type: str | None = None,

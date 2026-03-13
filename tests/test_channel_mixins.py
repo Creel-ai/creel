@@ -173,7 +173,8 @@ class TestBridgeClientMixin:
         assert health["healthy"] is True
         assert health["mode"] == "polling"
         assert health["bridge"]["healthy"] is True
-        assert health["channel"] == "_StubBridgeChannel"
+        # Legacy dict shape: no "channel" key
+        assert "channel" not in health
 
     def test_unhealthy_bridge(self):
         channel = _StubBridgeChannel(bridge=_UnhealthyBridge())
@@ -231,13 +232,35 @@ class TestRetryMixin:
 
         import pytest
 
+        def always_fail():
+            raise ValueError("always fails")
+
         with pytest.raises(ValueError, match="always fails"):
-            user._retry_with_backoff(lambda: (_ for _ in ()).throw(ValueError("always fails")))
+            user._retry_with_backoff(always_fail)
 
     def test_passes_args_and_kwargs(self):
         user = _RetryUser()
         result = user._retry_with_backoff(lambda x, y=0: x + y, 3, y=7)
         assert result == 10
+
+    def test_non_retryable_exception_not_caught(self):
+        """Exceptions not in _retryable_exceptions should propagate immediately."""
+        import pytest
+
+        user = _RetryUser()
+        user._retryable_exceptions = (ConnectionError,)
+        user._retry_base_delay = 0.01
+
+        call_count = 0
+
+        def raises_value_error():
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("not retryable")
+
+        with pytest.raises(ValueError, match="not retryable"):
+            user._retry_with_backoff(raises_value_error)
+        assert call_count == 1  # no retries
 
     def test_calculate_backoff_formula(self):
         assert RetryMixin._calculate_backoff(5, 0) == 5
@@ -347,7 +370,8 @@ class TestMediaHandlerMixin:
         assert ch._classify_mime_type("audio/x-caf") == AttachmentType.VOICE
         assert ch._classify_mime_type("audio/caf") == AttachmentType.VOICE
         assert ch._classify_mime_type("audio/amr") == AttachmentType.VOICE
-        assert ch._classify_mime_type("audio/ogg") == AttachmentType.VOICE
+        # audio/ogg is NOT in the default set — it's a Telegram-specific override
+        assert ch._classify_mime_type("audio/ogg") == AttachmentType.AUDIO
 
     def test_classify_unknown_defaults_to_file(self):
         ch = _MediaChannel()
@@ -446,6 +470,14 @@ class TestFormattingMixin:
         chunks = ch._chunk_text("abcdefgh")
         assert len(chunks) > 1
 
+    def test_chunk_text_leading_newline(self):
+        ch = _FormattedChannel()
+        # Only newline within limit is at position 0
+        text = "\nabcdefghijklmn"
+        chunks = ch._chunk_text(text, limit=10)
+        # Should split at the newline (not hard-cut mid-word) and skip empty chunk
+        assert chunks == ["abcdefghij", "klmn"]
+
     def test_chunk_text_limit_zero_means_no_split(self):
         ch = _FormattedChannel()
         long_text = "a" * 10000
@@ -506,22 +538,27 @@ class TestHealthCheckMixin:
         assert health["healthy"] is True
         assert health["mode"] == "polling"
         assert health["bridge"]["healthy"] is True
+        # Dict shape must match legacy BridgeClientMixin (no "channel" key)
+        assert "channel" not in health
 
     def test_bridge_health_no_bridge(self):
         ch = _HealthChannel()
         health = ch._bridge_health()
         assert health["healthy"] is False  # no bridge means unhealthy
 
-    def test_bridge_health_exception(self):
+    def test_bridge_health_exception_propagates(self):
+        """Bridge health exceptions are not swallowed — they propagate."""
+
         class _BrokenBridge:
             def health(self):
                 raise RuntimeError("broken")
 
+        import pytest
+
         ch = _HealthChannel()
         ch._bridge = _BrokenBridge()
-        health = ch._bridge_health()
-        assert health["healthy"] is False
-        assert "error" in health["bridge"]
+        with pytest.raises(RuntimeError, match="broken"):
+            ch._bridge_health()
 
     def test_should_reconnect_initially_false(self):
         ch = _HealthChannel()
@@ -622,18 +659,18 @@ class TestAttachment:
 
 
 # ---------------------------------------------------------------------------
-# Integration: PollingChannelMixin inherits RetryMixin
+# Integration: PollingChannelMixin uses RetryMixin._calculate_backoff
 # ---------------------------------------------------------------------------
 
 
-class TestPollingInheritsRetry:
-    def test_polling_channel_has_calculate_backoff(self):
-        """PollingChannelMixin should have _calculate_backoff from RetryMixin."""
-        channel = _StubPollingChannel()
-        assert hasattr(channel, "_calculate_backoff")
-        assert channel._calculate_backoff(5, 2) == 20
+class TestPollingUsesRetryBackoff:
+    def test_polling_uses_calculate_backoff_via_static(self):
+        """PollingChannelMixin uses RetryMixin._calculate_backoff as a static call."""
+        from creel.channels.mixins.retry import RetryMixin
 
-    def test_polling_channel_has_retry_with_backoff(self):
+        assert RetryMixin._calculate_backoff(5, 2) == 20
+
+    def test_polling_channel_does_not_inherit_retry(self):
+        """PollingChannelMixin should not expose retry methods directly."""
         channel = _StubPollingChannel()
-        result = channel._retry_with_backoff(lambda: 99)
-        assert result == 99
+        assert not hasattr(channel, "_retry_with_backoff")

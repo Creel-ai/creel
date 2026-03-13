@@ -38,9 +38,11 @@ class FormattingMixin:
                 break
             # Try to break at a newline within the limit
             break_at = text.rfind("\n", 0, effective_limit)
-            if break_at <= 0:
+            if break_at < 0:
                 break_at = effective_limit
-            chunks.append(text[:break_at])
+            chunk = text[:break_at]
+            if chunk:  # skip empty chunks from leading newlines
+                chunks.append(chunk)
             text = text[break_at:].lstrip("\n")
         return chunks
 

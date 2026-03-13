@@ -54,6 +54,7 @@ class DaemonService:
         self._scheduler_shutdown_event: threading.Event | None = None
 
         self._shutdown_done = False
+        self._config_watcher: Any | None = None
 
         # Channel/plugin lifecycle state.
         self._channels: dict[str, Channel] = {}
@@ -477,6 +478,9 @@ class DaemonService:
             if self._shutdown_done:
                 return
             self._shutdown_done = True
+
+        if self._config_watcher is not None:
+            self._config_watcher.stop(timeout=timeout)
 
         self.stop_scheduler(timeout=timeout)
         self.stop_cron_manager(wait=True)

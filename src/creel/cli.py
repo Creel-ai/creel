@@ -641,6 +641,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
             on_change=lambda: service.reload_config(),
         )
         watcher.start()
+        service._config_watcher = watcher
 
         return service
 

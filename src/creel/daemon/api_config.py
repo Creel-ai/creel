@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import signal
@@ -114,8 +115,6 @@ async def update_config(req: ConfigUpdateRequest) -> dict[str, Any]:
 @router.post("/reload")
 async def reload_config(request: Request) -> dict[str, Any]:
     """Hot-reload agent config from disk without restarting the daemon."""
-    import asyncio
-
     service = request.app.state.service
     result = await asyncio.to_thread(service.reload_config)
 
@@ -145,8 +144,6 @@ async def apply_config(request: Request) -> dict[str, Any]:
     Attempts a hot-reload. If there are non-reloadable changes, also sends
     SIGHUP so the daemon restarts to pick those up.
     """
-    import asyncio
-
     service = request.app.state.service
     result = await asyncio.to_thread(service.reload_config)
 

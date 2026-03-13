@@ -48,12 +48,12 @@ def search(
             params={"q": query, "count": count},  # type: ignore[arg-type]
             timeout=(connect_timeout, timeout),
         )
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError("Connection failed: could not connect to Brave Search API") from None
-    except requests.exceptions.Timeout:
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError("Connection failed: could not connect to Brave Search API") from e
+    except requests.exceptions.Timeout as e:
         raise RuntimeError(
             f"Brave Search request timed out after {timeout}s (connect timeout: {connect_timeout}s)"
-        ) from None
+        ) from e
     resp.raise_for_status()
     data = resp.json()
 

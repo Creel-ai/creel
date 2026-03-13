@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import anthropic
 
 from creel.models import LLMConfig
+from creel.rate_limiter import get_rate_limiter
 
 if TYPE_CHECKING:
     from creel.container_pool import ContainerPool
@@ -125,6 +126,11 @@ def call_llm(
     Returns:
         The raw Anthropic Message object.
     """
+    # Rate limit check (blocks until a slot is available or raises)
+    limiter = get_rate_limiter()
+    if limiter is not None:
+        limiter.check()
+
     client = _get_client()
 
     create_kwargs: dict = {
@@ -144,9 +150,19 @@ def call_llm(
         create_kwargs["tools"] = tools
 
     if on_text_delta is not None:
-        return _call_llm_streaming(client, create_kwargs, on_text_delta)
+        response = _call_llm_streaming(client, create_kwargs, on_text_delta)
+    else:
+        response = _retry_on_transient(client.messages.create, **create_kwargs)
 
-    return _retry_on_transient(client.messages.create, **create_kwargs)
+    # Record usage for rate tracking
+    if limiter is not None and hasattr(response, "usage") and response.usage:
+        limiter.record(
+            model=config.model,
+            input_tokens=getattr(response.usage, "input_tokens", 0),
+            output_tokens=getattr(response.usage, "output_tokens", 0),
+        )
+
+    return response
 
 
 def _call_llm_streaming(
@@ -261,6 +277,10 @@ def run_llm(
 
 def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
     """Call Anthropic API directly (non-containerized)."""
+    limiter = get_rate_limiter()
+    if limiter is not None:
+        limiter.check()
+
     client = _get_client()
 
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
@@ -273,6 +293,14 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
         create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
 
     message = _retry_on_transient(client.messages.create, **create_kwargs)
+
+    if limiter is not None and hasattr(message, "usage") and message.usage:
+        limiter.record(
+            model=config.model,
+            input_tokens=getattr(message.usage, "input_tokens", 0),
+            output_tokens=getattr(message.usage, "output_tokens", 0),
+        )
+
     return extract_text(message)
 
 

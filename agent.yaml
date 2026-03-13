@@ -1104,6 +1104,13 @@ llm:
     enabled: false
     idle_timeout_seconds: 300
     max_containers: 2
+  rate_limits:
+    requests_per_minute: 30
+    requests_per_hour: 500
+    tokens_per_day: 1000000
+    cost_per_day_usd: 10.00
+    queue_timeout: 30.0
+    enabled: true
 
 agent:
   max_turns: 15

@@ -66,6 +66,17 @@ class ContainerPoolConfig(BaseModel):
     max_containers: int = 2
 
 
+class RateLimitConfig(BaseModel):
+    """Rate limiting configuration for LLM API calls."""
+
+    requests_per_minute: int = Field(default=30, ge=1)
+    requests_per_hour: int = Field(default=500, ge=1)
+    tokens_per_day: int = Field(default=1_000_000, ge=1)
+    cost_per_day_usd: float = Field(default=10.00, gt=0)
+    queue_timeout: float = Field(default=30.0, ge=0)
+    enabled: bool = True
+
+
 class LLMConfig(BaseModel):
     """Configuration for the LLM processing step."""
 
@@ -73,6 +84,7 @@ class LLMConfig(BaseModel):
     max_tokens: int = 300
     secrets: str | None = None
     container_pool: ContainerPoolConfig = Field(default_factory=ContainerPoolConfig)
+    rate_limits: RateLimitConfig = Field(default_factory=RateLimitConfig)
 
 
 # --- Agent / tool models ---

@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
-_ENTRY_PREFIX_RE = re.compile(r"^- \[\d{2}:\d{2}\] \*\*\w+\*\*:\s*")
+_ENTRY_PREFIX_RE = re.compile(r"^- \[\d{2}:\d{2}\] \*\*[\w-]+\*\*:\s*")
 
 
 def _strip_entry_prefix(line: str) -> str:
@@ -228,6 +228,7 @@ class MemoryIndex:
         # Try FTS5 MATCH first; fall back to phrase search on syntax error.
         # Escape double quotes in the fallback to prevent invalid FTS5 syntax.
         escaped = query.replace('"', '""')
+        rows: list[tuple] = []
         for attempt_query in (query, f'"{escaped}"'):
             try:
                 rows = self._conn.execute(
@@ -239,7 +240,6 @@ class MemoryIndex:
                 break
             except sqlite3.OperationalError:
                 logger.debug("FTS5 MATCH failed for query %r", attempt_query)
-                rows = []
                 continue
 
         if not rows:
@@ -295,7 +295,7 @@ class MemoryManager:
                 self._index = MemoryIndex(db_path, recency_half_life_days=recency_half_life_days)
                 if not self._index.available:
                     self._index = None
-            except Exception:
+            except (sqlite3.Error, OSError):
                 logger.warning("Failed to initialize FTS index", exc_info=True)
                 self._index = None
 
@@ -350,8 +350,9 @@ class MemoryManager:
 
         # Create file with header if new
         if not path.exists():
-            path.write_text(f"# Memory — {today.date().isoformat()}\n\n")
-            existing_lines = 2  # header + blank line
+            header = f"# Memory — {today.date().isoformat()}\n\n"
+            path.write_text(header)
+            existing_lines = len(header.splitlines())
 
         with open(path, "a") as f:
             f.write(entry)
@@ -387,10 +388,11 @@ class MemoryManager:
         with open(path, "a") as f:
             f.write(f"\n{text}\n")
 
-        # Update FTS index
+        # Update FTS index (line_count was read before the write; the write adds
+        # "\n{text}\n" so the new entry lands on line_count + 1 + text's line count,
+        # but since index_entry only needs an approximate line ref, use line_count + 2).
         if self._index and self._index.available:
-            new_line_count = len(path.read_text().splitlines())
-            self._index.index_entry("long_term", "long_term", new_line_count, text)
+            self._index.index_entry("long_term", "long_term", line_count + 2, text)
 
         logger.info("Updated long-term memory: %s", text[:80])
         return "Long-term memory updated."
@@ -510,12 +512,15 @@ class MemoryManager:
             if len(candidates) >= collect_limit:
                 break
 
-        # Search long-term memory
+        # Search long-term memory (skip headers and blank lines)
         lt_path = self.long_term_path
         if lt_path.exists() and len(candidates) < collect_limit:
             try:
                 lines = lt_path.read_text().splitlines()
                 for i, line in enumerate(lines, start=1):
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
                     if query_lower in line.lower():
                         weight = _recency_weight("long_term", today, self._half_life)
                         candidates.append(("long_term", i, line, weight))
@@ -674,7 +679,9 @@ class MemoryManager:
                     lt_path.write_text("# Long-Term Memory\n\n")
                     lt_lines = 2
 
-                # Safety: skip writing if MEMORY.md is over 2x max_long_term_lines
+                # Safety: skip writing if MEMORY.md is over 2x max_long_term_lines.
+                # Note: read-then-append is not atomic, but compaction only runs at
+                # startup so concurrent access is not expected.
                 if lt_lines < self._max_long_term_lines * 2:
                     with open(lt_path, "a") as f:
                         if summarize:
@@ -688,7 +695,7 @@ class MemoryManager:
                             if self._compact_summarize_fn:
                                 try:
                                     summary_text = self._compact_summarize_fn(entries)
-                                except Exception:
+                                except (OSError, RuntimeError, ValueError):
                                     logger.warning(
                                         "LLM summarization failed for %s, "
                                         "falling back to extractive",
@@ -705,7 +712,7 @@ class MemoryManager:
                                 # header blank + section header + summary lines
                                 lt_lines += 2 + summary_text.rstrip("\n").count("\n") + 1
                             else:
-                                if self._compact_summarize_fn and summary_text is not None:
+                                if summary_text is not None and not summary_text.strip():
                                     logger.warning(
                                         "LLM returned empty summary for %s, "
                                         "falling back to extractive",

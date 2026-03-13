@@ -336,6 +336,9 @@ class TestStripEntryPrefix:
     def test_strips_various_categories(self):
         assert _strip_entry_prefix("- [14:30] **preference**: Likes coffee") == "Likes coffee"
 
+    def test_strips_hyphenated_category(self):
+        assert _strip_entry_prefix("- [09:00] **long-term**: Important fact") == "Important fact"
+
 
 class TestMemoryIndex:
     def _make_index(self, td: str, **kwargs) -> MemoryIndex:
@@ -569,8 +572,10 @@ class TestMemoryIndex:
             idx.index_entry("daily", "2026-01-15", 1, "test with special chars: a+b")
             # Query with FTS5 special chars should not raise
             results = idx.search("a+b", today=date(2026, 1, 15))
-            # May or may not find results, but should not crash
             assert isinstance(results, list)
+            # The phrase fallback should find the indexed content
+            if results:
+                assert "a+b" in results[0][2]
             idx.close()
 
     def test_search_empty_index(self):
@@ -987,6 +992,48 @@ class TestCompactLLMSummarize:
             assert f"### Compacted: {old_date.isoformat()}" in lt_content
             assert "- Alpha fact" in lt_content
 
+    def test_compact_llm_returns_none_falls_back(self):
+        """Callback returning None should fall back to extractive."""
+        with tempfile.TemporaryDirectory() as td:
+
+            def none_summarize(entries: list[str]) -> str:
+                return None  # type: ignore[return-value]
+
+            mm = self._make_manager(td, compact_summarize_fn=none_summarize)
+            old_date = self._create_old_file(mm)
+            mm.compact_daily_files(days_to_keep=7, summarize=True)
+
+            lt_content = mm.long_term_path.read_text()
+            assert f"### Compacted: {old_date.isoformat()}" in lt_content
+            assert "- Alpha fact" in lt_content
+
+    def test_compact_multiple_files_hits_safety_limit(self):
+        """Incremental lt_lines tracking should trigger safety limit mid-compaction."""
+        with tempfile.TemporaryDirectory() as td:
+            # max_long_term_lines=3 → safety limit at 2x = 6 lines.
+            # File 1 compacts: creates MEMORY.md header (2 lines) then appends
+            # blank+section_header+5 entries (7 lines) → 9 total. 9 >= 6, so
+            # file 2 should be kept.
+            mm = self._make_manager(td, max_long_term_lines=3)
+
+            dates = []
+            for days_ago in [12, 11]:
+                old_date = datetime.now(UTC).date() - timedelta(days=days_ago)
+                path = mm.daily_path(old_date)
+                path.write_text(
+                    f"# Memory — {old_date.isoformat()}\n\n"
+                    + "".join(f"- [10:0{i}] **general**: Entry {i}\n" for i in range(5))
+                )
+                dates.append((old_date, path))
+
+            result = mm.compact_daily_files(days_to_keep=7, summarize=True)
+            # First file should compact; second should be kept (safety limit)
+            assert "Compacted 1 file(s)" in result
+            assert "Warning" in result
+            assert "kept" in result
+            # The second file should still exist on disk
+            assert dates[1][1].exists()
+
 
 class TestWorkspaceConfigValidation:
     def test_recency_half_life_rejects_zero(self):
@@ -1000,3 +1047,11 @@ class TestWorkspaceConfigValidation:
     def test_recency_half_life_accepts_positive(self):
         cfg = WorkspaceConfig(recency_half_life_days=7.0)
         assert cfg.recency_half_life_days == 7.0
+
+    def test_compact_max_tokens_rejects_zero(self):
+        with pytest.raises(ValidationError, match="compact_max_tokens"):
+            WorkspaceConfig(compact_max_tokens=0)
+
+    def test_compact_max_tokens_rejects_negative(self):
+        with pytest.raises(ValidationError, match="compact_max_tokens"):
+            WorkspaceConfig(compact_max_tokens=-1)

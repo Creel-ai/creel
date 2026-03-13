@@ -78,6 +78,17 @@ def extract_text(message: anthropic.types.Message) -> str:
     return "\n".join(text_parts)
 
 
+def _record_usage(message: anthropic.types.Message, model: str) -> None:
+    """Record token usage from an API response if rate limiting is active."""
+    limiter = get_rate_limiter()
+    if limiter is not None and hasattr(message, "usage") and message.usage:
+        limiter.record(
+            model=model,
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+        )
+
+
 def _retry_on_transient(fn, *args, **kwargs):
     """Call fn with retry on transient API errors (429/500/502/503).
 
@@ -154,14 +165,7 @@ def call_llm(
     else:
         response = _retry_on_transient(client.messages.create, **create_kwargs)
 
-    # Record usage for rate tracking
-    if limiter is not None and hasattr(response, "usage") and response.usage:
-        limiter.record(
-            model=config.model,
-            input_tokens=getattr(response.usage, "input_tokens", 0),
-            output_tokens=getattr(response.usage, "output_tokens", 0),
-        )
-
+    _record_usage(response, config.model)
     return response
 
 
@@ -268,6 +272,11 @@ def run_llm(
     Returns:
         The LLM response text.
     """
+    # Rate limit check — applies to all paths (direct, container, pooled)
+    limiter = get_rate_limiter()
+    if limiter is not None:
+        limiter.check()
+
     if use_container:
         if container_pool is not None and container_pool.enabled:
             return _run_llm_pooled(prompt, config, container_pool)
@@ -277,10 +286,6 @@ def run_llm(
 
 def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
     """Call Anthropic API directly (non-containerized)."""
-    limiter = get_rate_limiter()
-    if limiter is not None:
-        limiter.check()
-
     client = _get_client()
 
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
@@ -293,14 +298,7 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
         create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
 
     message = _retry_on_transient(client.messages.create, **create_kwargs)
-
-    if limiter is not None and hasattr(message, "usage") and message.usage:
-        limiter.record(
-            model=config.model,
-            input_tokens=getattr(message.usage, "input_tokens", 0),
-            output_tokens=getattr(message.usage, "output_tokens", 0),
-        )
-
+    _record_usage(message, config.model)
     return extract_text(message)
 
 

@@ -1494,6 +1494,7 @@ def _init_rate_limiter(args: argparse.Namespace) -> None:
             getattr(args, "agent_config", None) or _default_agent_config()
         )
     except FileNotFoundError:
+        logger.debug("Agent config not found, skipping rate limiter init")
         return
 
     rl = agent_cfg.llm.rate_limits
@@ -1520,7 +1521,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
 
     limiter = get_rate_limiter()
     if limiter is None:
-        print("Rate limiting is not configured.")
+        print("Rate limiting is not enabled. Check agent.yaml (llm.rate_limits.enabled).")
         return 1
 
     if getattr(args, "history", False):
@@ -1571,7 +1572,7 @@ def cmd_limits_override(args: argparse.Namespace) -> int:
 
     limiter = get_rate_limiter()
     if limiter is None:
-        print("Rate limiting is not configured.")
+        print("Rate limiting is not enabled. Check agent.yaml (llm.rate_limits.enabled).")
         return 1
 
     duration_str = args.duration
@@ -1585,6 +1586,10 @@ def cmd_limits_override(args: argparse.Namespace) -> int:
         value = float(duration_str[:-1])
     except ValueError:
         print(f"Invalid duration value: {duration_str}")
+        return 1
+
+    if value <= 0:
+        print("Duration must be positive.")
         return 1
 
     seconds = value * multipliers[unit]

@@ -6,16 +6,20 @@ configurable per-minute, per-hour, daily token, and daily cost limits.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Model pricing per 1M tokens (USD) — input / output
+# Model pricing per 1M tokens (USD) — input / output.
+# Update this table when new models are released; unknown models fall back to
+# _DEFAULT_PRICING below.
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     # Claude 4 family
     "claude-sonnet-4-20250514": (3.00, 15.00),
@@ -102,7 +106,7 @@ class RateLimiter:
         tokens_per_day: int = 1_000_000,
         cost_per_day_usd: float = 10.00,
         queue_timeout: float = 30.0,
-        on_alert: None | (callable) = None,
+        on_alert: Callable | None = None,
         usage_dir: Path | str | None = None,
     ):
         self.requests_per_minute = requests_per_minute
@@ -147,13 +151,15 @@ class RateLimiter:
         if self._is_override_active():
             return
 
+        # Acquire the bucket token first (may block), then re-verify daily/hourly
+        # limits under the lock to close the TOCTOU gap between limit check and
+        # token acquisition.
+        self._acquire_bucket_token(block=block)
+
         with self._lock:
             self._prune_old_requests()
             self._check_daily_limits()
             self._check_hourly_limit()
-
-        # Token bucket (per-minute) — may block
-        self._acquire_bucket_token(block=block)
 
     def record(self, model: str, input_tokens: int, output_tokens: int) -> None:
         """Record a completed LLM call for tracking."""
@@ -225,8 +231,13 @@ class RateLimiter:
         return time.time() < self._override_until
 
     def _acquire_bucket_token(self, block: bool) -> None:
-        """Acquire a token from the per-minute bucket."""
+        """Acquire a token from the per-minute bucket.
+
+        Uses time.monotonic() for interval timing (immune to wall-clock jumps),
+        while rolling-window checks use time.time() for calendar-based windows.
+        """
         deadline = time.monotonic() + self.queue_timeout if block else time.monotonic()
+        logged_block = False
 
         while True:
             now = time.monotonic()
@@ -250,6 +261,12 @@ class RateLimiter:
                     limit=float(self.requests_per_minute),
                     retry_after=1.0 / self._bucket_rate if self._bucket_rate > 0 else 60.0,
                 )
+
+            if not logged_block:
+                logger.info(
+                    "Rate limiter: waiting for bucket token (timeout=%.1fs)", self.queue_timeout
+                )
+                logged_block = True
 
             # Wait a short interval before retrying
             time.sleep(min(0.1, max(0, deadline - time.monotonic())))
@@ -367,9 +384,21 @@ class RateLimiter:
                 "cost_usd": round(cost_usd, 6),
             }
             with open(path, "a") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
                 f.write(json.dumps(record) + "\n")
         except Exception:
             logger.debug("Failed to persist usage record", exc_info=True)
+
+    @staticmethod
+    def _empty_day(date_str: str) -> dict:
+        return {
+            "date": date_str,
+            "requests": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+        }
 
     def _load_persisted_history(self, days: int) -> list[dict]:
         """Load daily summaries from persisted JSONL files."""
@@ -377,21 +406,13 @@ class RateLimiter:
 
         result = []
         today = datetime.datetime.now(datetime.UTC).date()
+        assert self._usage_dir is not None
         for i in range(days):
             day = today - datetime.timedelta(days=i)
             filename = day.strftime("%Y-%m-%d") + ".jsonl"
-            path = self._usage_dir / filename  # type: ignore[union-attr]
+            path = self._usage_dir / filename
             if not path.exists():
-                result.append(
-                    {
-                        "date": day.isoformat(),
-                        "requests": 0,
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "total_tokens": 0,
-                        "cost_usd": 0.0,
-                    }
-                )
+                result.append(self._empty_day(day.isoformat()))
                 continue
             try:
                 requests = 0
@@ -418,16 +439,7 @@ class RateLimiter:
                 )
             except Exception:
                 logger.debug("Failed to read usage file %s", path, exc_info=True)
-                result.append(
-                    {
-                        "date": day.isoformat(),
-                        "requests": 0,
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "total_tokens": 0,
-                        "cost_usd": 0.0,
-                    }
-                )
+                result.append(self._empty_day(day.isoformat()))
         return result
 
     def _compute_history_from_memory(self, days: int) -> list[dict]:
@@ -479,7 +491,7 @@ def configure_rate_limiter(
     tokens_per_day: int = 1_000_000,
     cost_per_day_usd: float = 10.00,
     queue_timeout: float = 30.0,
-    on_alert: callable | None = None,
+    on_alert: Callable | None = None,
     usage_dir: Path | str | None = None,
 ) -> RateLimiter:
     """Create and install the global rate limiter."""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from unittest.mock import MagicMock
 
@@ -323,7 +324,7 @@ class TestRateLimitConfig:
         assert cfg.requests_per_hour == 500
         assert cfg.tokens_per_day == 1_000_000
         assert cfg.cost_per_day_usd == 10.00
-        assert cfg.enabled is True
+        assert cfg.enabled is False
 
     def test_config_in_llm_config(self):
         from creel.models import LLMConfig
@@ -351,15 +352,58 @@ class TestRateLimitConfig:
         assert llm.rate_limits.cost_per_day_usd == 20.0
 
 
+class TestConcurrency:
+    def test_concurrent_check_and_record(self):
+        """Verify thread safety of concurrent check() + record() calls."""
+        rl = RateLimiter(
+            requests_per_minute=200,
+            requests_per_hour=10000,
+            tokens_per_day=10_000_000,
+            cost_per_day_usd=1000.0,
+            queue_timeout=5.0,
+        )
+        errors: list[Exception] = []
+
+        def checker():
+            try:
+                for _ in range(20):
+                    rl.check(block=True)
+            except Exception as e:
+                errors.append(e)
+
+        def recorder():
+            try:
+                for _ in range(20):
+                    rl.record("claude-sonnet-4-20250514", 10, 5)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=checker) for _ in range(4)]
+        threads += [threading.Thread(target=recorder) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert not errors, f"Concurrent access raised errors: {errors}"
+        usage = rl.get_usage()
+        # 4 recorder threads * 20 records = 80
+        assert usage.tokens_today == 80 * 15  # 10 + 5 per record
+
+
 class TestLLMIntegration:
     """Test that rate limiter is checked during LLM calls."""
+
+    def setup_method(self):
+        reset_global_limiter()
+
+    def teardown_method(self):
+        reset_global_limiter()
 
     def test_call_llm_checks_rate_limit(self, monkeypatch):
         """Verify call_llm checks the rate limiter before making API call."""
         from creel import llm as llm_mod
-        from creel.rate_limiter import configure_rate_limiter, reset_global_limiter
 
-        reset_global_limiter()
         limiter = configure_rate_limiter(
             requests_per_minute=1,
             queue_timeout=0.0,
@@ -383,14 +427,10 @@ class TestLLMIntegration:
                 config=config,
             )
 
-        reset_global_limiter()
-
     def test_call_llm_records_usage(self, monkeypatch):
         """Verify call_llm records usage after a successful call."""
         from creel import llm as llm_mod
-        from creel.rate_limiter import configure_rate_limiter, reset_global_limiter
 
-        reset_global_limiter()
         limiter = configure_rate_limiter(requests_per_minute=100)
 
         # Create a mock response with usage
@@ -416,14 +456,9 @@ class TestLLMIntegration:
         assert usage.requests_last_minute == 1
         assert usage.tokens_today == 75
 
-        reset_global_limiter()
-
     def test_no_limiter_does_not_block(self, monkeypatch):
         """Without a configured limiter, calls proceed normally."""
         from creel import llm as llm_mod
-        from creel.rate_limiter import reset_global_limiter
-
-        reset_global_limiter()
 
         mock_response = MagicMock()
         mock_response.usage.input_tokens = 50
@@ -443,5 +478,3 @@ class TestLLMIntegration:
             config=config,
         )
         assert result is mock_response
-
-        reset_global_limiter()

@@ -74,7 +74,7 @@ class RateLimitConfig(BaseModel):
     tokens_per_day: int = Field(default=1_000_000, ge=1)
     cost_per_day_usd: float = Field(default=10.00, gt=0)
     queue_timeout: float = Field(default=30.0, ge=0)
-    enabled: bool = True
+    enabled: bool = False
 
 
 class LLMConfig(BaseModel):

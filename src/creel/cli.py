@@ -12,6 +12,8 @@ Usage:
     creel daemon install             Install daemon as launchd service
     creel daemon uninstall           Remove daemon launchd service
     creel send "message"             Send one message via daemon API
+    creel doctor                     Check installation health
+    creel doctor --fix               Auto-fix remediable issues
 """
 
 from __future__ import annotations
@@ -1484,6 +1486,19 @@ def cmd_encrypt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Run installation health checks."""
+    from creel.doctor import run_doctor
+
+    agent_config_path = args.agent_config
+    report = run_doctor(
+        agent_config_path=agent_config_path,
+        fix=args.fix,
+        no_color=args.no_color,
+    )
+    return 1 if report.errors > 0 else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -1624,6 +1639,13 @@ def main() -> int:
         default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     )
+
+    # doctor command
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Check Creel installation health and configuration"
+    )
+    doctor_parser.add_argument("--fix", action="store_true", help="Auto-fix remediable issues")
+    doctor_parser.add_argument("--no-color", action="store_true", help="Disable colorized output")
 
     # encrypt command
     encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
@@ -1937,6 +1959,7 @@ def main() -> int:
         "validate": cmd_validate,
         "attach": cmd_attach,
         "audit": cmd_audit,
+        "doctor": cmd_doctor,
         "send": cmd_send,
         "encrypt": cmd_encrypt,
     }

@@ -52,6 +52,7 @@ def fetch_url(
             headers={"User-Agent": USER_AGENT},
             timeout=(connect_timeout, timeout),
             allow_redirects=True,
+            stream=True,
         )
     except requests.exceptions.ConnectionError:
         return {
@@ -72,29 +73,43 @@ def fetch_url(
     try:
         resp.raise_for_status()
     except requests.exceptions.HTTPError as e:
+        resp.close()
         return {
             "url": url,
             "error": f"HTTP {resp.status_code}: {e}",
         }
 
-    # Check response size
+    # Check response size before downloading body
     max_bytes = int(max_size_mb * 1024 * 1024)
     content_length = resp.headers.get("Content-Length")
     if content_length and int(content_length) > max_bytes:
+        resp.close()
         return {
             "url": url,
             "error": (f"Response too large: {int(content_length)} bytes (limit: {max_size_mb} MB)"),
         }
-    if len(resp.content) > max_bytes:
-        return {
-            "url": url,
-            "error": (f"Response too large: {len(resp.content)} bytes (limit: {max_size_mb} MB)"),
-        }
+
+    # Read body in chunks, enforcing size limit
+    chunks = []
+    downloaded = 0
+    for chunk in resp.iter_content(chunk_size=65536):
+        downloaded += len(chunk)
+        if downloaded > max_bytes:
+            resp.close()
+            return {
+                "url": url,
+                "error": (f"Response too large: >{downloaded} bytes (limit: {max_size_mb} MB)"),
+            }
+        chunks.append(chunk)
+    resp.close()
+    body = b"".join(chunks)
 
     content_type = resp.headers.get("Content-Type", "")
+    encoding = resp.encoding or "utf-8"
+    text_body = body.decode(encoding, errors="replace")
 
     if "text/html" in content_type or "application/xhtml" in content_type:
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(text_body, "html.parser")
 
         # Remove script and style elements
         for element in soup(["script", "style", "nav", "footer", "header"]):
@@ -104,7 +119,7 @@ def fetch_url(
         text = soup.get_text(separator="\n", strip=True)
     elif "text/" in content_type or "application/json" in content_type:
         title = ""
-        text = resp.text
+        text = text_body
     else:
         return {
             "url": url,

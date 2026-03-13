@@ -10,13 +10,17 @@ from executors.fetch_url.executor import fetch_url
 
 
 def _mock_response(text, content_type="text/html; charset=utf-8", status_code=200):
-    """Create a mock requests.get response."""
+    """Create a mock requests.Session.get response (stream=True compatible)."""
     mock = MagicMock()
     mock.status_code = status_code
-    mock.text = text
     mock.headers = {"Content-Type": content_type}
-    mock.content = text.encode("utf-8") if isinstance(text, str) else text
+    raw_bytes = text.encode("utf-8") if isinstance(text, str) else text
+    mock.encoding = "utf-8"
+    mock.iter_content = MagicMock(return_value=iter([raw_bytes]))
+    mock.close = MagicMock()
     mock.raise_for_status = MagicMock()
+    # Keep .content for back-compat in size tests that override iter_content
+    mock.content = raw_bytes
     return mock
 
 
@@ -200,7 +204,10 @@ def test_fetch_url_response_too_large_by_actual_content(mock_get):
     """fetch_url should reject responses exceeding max_size_mb by actual size."""
     mock = _mock_response("<html><body>data</body></html>")
     mock.headers.pop("Content-Length", None)
-    mock.content = b"x" * (2 * 1024 * 1024)  # 2 MB
+    # Simulate streaming 2 MB across multiple chunks
+    chunk = b"x" * 65536
+    chunks = [chunk] * 32  # 32 * 64KB = 2 MB
+    mock.iter_content = MagicMock(return_value=iter(chunks))
     mock_get.return_value = mock
 
     result = fetch_url("https://example.com", max_size_mb=1.0)

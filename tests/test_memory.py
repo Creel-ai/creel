@@ -1,5 +1,7 @@
 """Tests for the memory system."""
 
+import os
+import sqlite3
 import tempfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -414,6 +416,95 @@ class TestMemoryIndex:
             count = idx.reindex_if_needed(mem_dir, lt_path)
             assert count == 0
 
+            idx.close()
+
+    def test_reindex_skips_when_only_mtime_changes(self):
+        """When file is touched but content unchanged, skip reindexing."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            mem_dir = Path(td) / "memory"
+            mem_dir.mkdir()
+            lt_path = Path(td) / "MEMORY.md"
+
+            daily = mem_dir / "2026-01-15.md"
+            daily.write_text("# Memory\n\n- [10:00] **general**: Stable content\n")
+
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 1
+
+            # Touch the file (changes mtime, same content)
+            os.utime(daily, None)
+
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 0  # hash matched — no reindex
+
+            # Content should still be searchable
+            results = idx.search("Stable content", today=date(2026, 1, 15))
+            assert len(results) == 1
+            idx.close()
+
+    def test_reindex_triggers_on_content_change(self):
+        """When file content actually changes, reindex should fire."""
+        with tempfile.TemporaryDirectory() as td:
+            idx = self._make_index(td)
+            mem_dir = Path(td) / "memory"
+            mem_dir.mkdir()
+            lt_path = Path(td) / "MEMORY.md"
+
+            daily = mem_dir / "2026-01-15.md"
+            daily.write_text("# Memory\n\n- [10:00] **general**: Original text\n")
+
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 1
+
+            # Change actual content
+            daily.write_text("# Memory\n\n- [10:00] **general**: Updated text\n")
+
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 1  # hash differs — reindexed
+
+            results = idx.search("Updated text", today=date(2026, 1, 15))
+            assert len(results) == 1
+            results = idx.search("Original text", today=date(2026, 1, 15))
+            assert len(results) == 0
+            idx.close()
+
+    def test_reindex_schema_migration(self):
+        """Old DBs without content_hash column should be migrated transparently."""
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "test.sqlite"
+            # Create DB with old schema (no content_hash column)
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute(
+                "CREATE VIRTUAL TABLE memory_fts USING fts5("
+                "source, date_str, line_number, content, "
+                "tokenize='porter unicode61')"
+            )
+            conn.execute(
+                "CREATE TABLE file_meta ("
+                "path TEXT PRIMARY KEY, mtime_ns INTEGER NOT NULL, "
+                "size INTEGER NOT NULL)"
+            )
+            conn.commit()
+            conn.close()
+
+            # Opening with MemoryIndex should migrate and work fine
+            idx = MemoryIndex(db_path)
+            assert idx.available
+
+            mem_dir = Path(td) / "memory"
+            mem_dir.mkdir()
+            lt_path = Path(td) / "MEMORY.md"
+
+            daily = mem_dir / "2026-01-15.md"
+            daily.write_text("# Memory\n\n- [10:00] **general**: After migration\n")
+
+            count = idx.reindex_if_needed(mem_dir, lt_path)
+            assert count == 1
+
+            results = idx.search("After migration", today=date(2026, 1, 15))
+            assert len(results) == 1
             idx.close()
 
     def test_reindex_removes_deleted_files(self):

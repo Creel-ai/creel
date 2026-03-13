@@ -10,6 +10,7 @@ that the LLM can call to persist information.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import sqlite3
@@ -39,6 +40,11 @@ def _recency_weight(date_str: str, today: date, half_life: float) -> float:
     return 2.0 ** (-age / half_life)
 
 
+def _file_content_hash(path: Path) -> str:
+    """Compute SHA-256 hex digest of a file's content."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 class MemoryIndex:
     """SQLite FTS5 full-text search index for memory files.
 
@@ -62,9 +68,17 @@ class MemoryIndex:
             )
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS file_meta ("
-                "path TEXT PRIMARY KEY, mtime_ns INTEGER NOT NULL, size INTEGER NOT NULL"
+                "path TEXT PRIMARY KEY, mtime_ns INTEGER NOT NULL, "
+                "size INTEGER NOT NULL, content_hash TEXT NOT NULL DEFAULT ''"
                 ")"
             )
+            # Migrate existing DBs that lack content_hash column
+            try:
+                self._conn.execute(
+                    "ALTER TABLE file_meta ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''"
+                )
+            except sqlite3.OperationalError:
+                pass  # column already exists
             self._conn.commit()
             self._available = True
         except (sqlite3.Error, OSError) as exc:
@@ -106,16 +120,28 @@ class MemoryIndex:
             size = stat.st_size
 
             row = self._conn.execute(
-                "SELECT mtime_ns, size FROM file_meta WHERE path = ?",
+                "SELECT mtime_ns, size, content_hash FROM file_meta WHERE path = ?",
                 (str(file_path),),
             ).fetchone()
             if row and row[0] == mtime_ns and row[1] == size:
+                continue  # fast path: stat unchanged, skip I/O
+
+            # mtime or size changed — compute hash to check actual content
+            content_hash = _file_content_hash(file_path)
+            if row and row[2] == content_hash:
+                # Content unchanged (e.g. file touched) — update stat, skip reindex
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO file_meta "
+                    "(path, mtime_ns, size, content_hash) VALUES (?, ?, ?, ?)",
+                    (str(file_path), mtime_ns, size, content_hash),
+                )
                 continue
 
             self.reindex_file(file_path, date_str, _commit=False)
             self._conn.execute(
-                "INSERT OR REPLACE INTO file_meta (path, mtime_ns, size) VALUES (?, ?, ?)",
-                (str(file_path), mtime_ns, size),
+                "INSERT OR REPLACE INTO file_meta "
+                "(path, mtime_ns, size, content_hash) VALUES (?, ?, ?, ?)",
+                (str(file_path), mtime_ns, size, content_hash),
             )
             reindexed += 1
 

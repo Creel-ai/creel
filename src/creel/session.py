@@ -9,12 +9,15 @@ string (standard Fernet key format).
 from __future__ import annotations
 
 import base64
+import fcntl
 import hashlib
 import json
 import logging
 import os
 import re
 import secrets
+import shutil
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -26,6 +29,12 @@ logger = logging.getLogger(__name__)
 _SALT_LENGTH = 16
 # PBKDF2 iterations — OWASP 2024 recommendation for SHA-256
 _KDF_ITERATIONS = 600_000
+# Advisory file lock timeout in seconds
+_LOCK_TIMEOUT = 5
+
+
+class SessionLockError(OSError):
+    """Raised when a session file lock cannot be acquired within the timeout."""
 
 
 def _derive_fernet_key(passphrase: str, salt: bytes) -> bytes:
@@ -52,6 +61,26 @@ def _decrypt_data(token: bytes, key: bytes) -> bytes:
 
     f = Fernet(key)
     return f.decrypt(token)
+
+
+def _flock_with_timeout(fd: int, operation: int, timeout: float = _LOCK_TIMEOUT) -> None:
+    """Acquire an advisory file lock with a timeout.
+
+    Uses non-blocking flock in a polling loop.  Raises ``SessionLockError``
+    if the lock cannot be acquired within *timeout* seconds.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(fd, operation | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise SessionLockError(
+                    f"Could not acquire file lock within {timeout}s. "
+                    "Another process may be writing to this session."
+                ) from None
+            time.sleep(0.05)
 
 
 _ACTIVE_INDEX_FILE = "_active.json"
@@ -445,9 +474,15 @@ class SessionManager:
         return trimmed[i:]
 
     def _save(self, session: Session) -> None:
-        """Write session to disk, trimming to max_history as safety net.
+        """Write session to disk with advisory locking and atomic rename.
 
-        If encryption is enabled, session data is encrypted before writing.
+        Steps:
+        1. Trim messages to max_history as safety net.
+        2. Serialize (and optionally encrypt) the session data.
+        3. Write to a temporary file in the same directory.
+        4. Acquire an exclusive lock on the temp file (blocks other writers).
+        5. Back up the previous version as ``<session_id>.json.bak``.
+        6. Atomically rename the temp file to the final path.
         """
         if len(session.messages) > self._max_history:
             session.messages = self._trim_preserving_tool_pairs(
@@ -470,19 +505,64 @@ class SessionManager:
         json_bytes = json.dumps(data, indent=2).encode()
 
         if self._encryption_key:
-            encrypted = _encrypt_data(json_bytes, self._encryption_key)
-            path.write_bytes(encrypted)
+            payload = _encrypt_data(json_bytes, self._encryption_key)
         elif self._encryption_passphrase:
             salt = os.urandom(_SALT_LENGTH)
             key = _derive_fernet_key(self._encryption_passphrase, salt)
-            encrypted = _encrypt_data(json_bytes, key)
-            path.write_bytes(salt + encrypted)
+            payload = salt + _encrypt_data(json_bytes, key)
         else:
-            path.write_text(json_bytes.decode())
+            payload = json_bytes
+
+        self._atomic_write(path, payload)
+
+    def _atomic_write(self, path: Path, payload: bytes) -> None:
+        """Write *payload* to *path* atomically with advisory locking.
+
+        1. Write to a temp file in the same directory (same filesystem).
+        2. Acquire an exclusive advisory lock on a ``.lock`` sentinel file
+           shared by all writers to the same *path* (serializes writers).
+        3. Copy the existing file to ``<path>.bak`` (if present).
+        4. ``os.replace`` (atomic rename) temp → final path.
+        """
+        tmp_name: str | None = None
+        try:
+            fd_tmp, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+            try:
+                os.write(fd_tmp, payload)
+                os.fsync(fd_tmp)
+            finally:
+                os.close(fd_tmp)
+
+            lock_path = path.with_suffix(path.suffix + ".lock")
+            lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+            try:
+                _flock_with_timeout(lock_fd, fcntl.LOCK_EX)
+
+                # Backup previous version (copy, not rename, so the original
+                # stays in place until the final atomic replace below)
+                if path.exists():
+                    bak = path.with_suffix(".json.bak")
+                    try:
+                        shutil.copy2(str(path), str(bak))
+                    except OSError:
+                        logger.debug("Could not create backup for %s", path.name)
+
+                os.replace(tmp_name, str(path))
+                tmp_name = None  # rename succeeded, don't clean up
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+        finally:
+            if tmp_name is not None:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
 
     def _load(self, session_id: str) -> Session | None:
         """Load a session by its session_id.
 
+        Acquires a shared advisory lock while reading.
         If encryption is enabled, attempts to decrypt the file first.
         Falls back to plaintext read for backward compatibility with
         unencrypted session files.
@@ -492,8 +572,9 @@ class SessionManager:
             return None
 
         try:
-            raw_bytes = path.read_bytes()
-            data = self._decrypt_or_parse(raw_bytes)
+            data = self._read_session_file(path)
+            if data is None:
+                return None
 
             session = Session(
                 sender_id=data["sender_id"],
@@ -540,10 +621,16 @@ class SessionManager:
                 return json.loads(raw_bytes)
         return json.loads(raw_bytes)
 
+    @staticmethod
+    def _locked_read(path: Path) -> bytes:
+        """Read a file while holding a shared advisory lock."""
+        with open(path, "rb") as f:
+            _flock_with_timeout(f.fileno(), fcntl.LOCK_SH)
+            return f.read()
+
     def _read_session_file(self, path: Path) -> dict | None:
-        """Read and parse a session file, handling encryption if enabled."""
-        raw_bytes = path.read_bytes()
-        return self._decrypt_or_parse(raw_bytes)
+        """Read and parse a session file with shared lock, handling encryption."""
+        return self._decrypt_or_parse(self._locked_read(path))
 
     def load_session(self, session_id: str) -> Session | None:
         """Load a session by its session_id (returns None if not found)."""
@@ -571,19 +658,19 @@ class SessionManager:
     # -- active index --
 
     def _load_active_index(self) -> dict[str, str]:
-        """Read the sender_id → session_id mapping."""
+        """Read the sender_id → session_id mapping with shared lock."""
         path = self._dir / _ACTIVE_INDEX_FILE
         if not path.exists():
             return {}
         try:
-            return json.loads(path.read_text())
+            return json.loads(self._locked_read(path))
         except (json.JSONDecodeError, OSError):
             return {}
 
     def _save_active_index(self, index: dict[str, str]) -> None:
-        """Write the sender_id → session_id mapping."""
+        """Write the sender_id → session_id mapping with atomic write."""
         path = self._dir / _ACTIVE_INDEX_FILE
-        path.write_text(json.dumps(index, indent=2))
+        self._atomic_write(path, json.dumps(index, indent=2).encode())
 
     def _get_active_session_id(self, sender_id: str) -> str | None:
         """Get the active session ID for a sender, or None."""

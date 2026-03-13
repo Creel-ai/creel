@@ -253,6 +253,60 @@ class AuditLogger:
             record["error"] = error[:200]
         self._write(record)
 
+    def log_network_request(
+        self,
+        *,
+        url: str,
+        domain: str,
+        executor: str,
+        method: str,
+        request_size_bytes: int = 0,
+        response_size_bytes: int = 0,
+        status_code: int | None = None,
+        blocked: bool = False,
+        block_reason: str = "",
+    ) -> None:
+        """Log a network request event."""
+        record: dict = {
+            "event": "network_request",
+            "ts": datetime.now(UTC).isoformat(),
+            "url": url,
+            "domain": domain,
+            "executor": executor,
+            "method": method,
+            "request_size_bytes": request_size_bytes,
+            "blocked": blocked,
+        }
+        if response_size_bytes:
+            record["response_size_bytes"] = response_size_bytes
+        if status_code is not None:
+            record["status_code"] = status_code
+        if block_reason:
+            record["block_reason"] = block_reason
+        self._write(record)
+
+    def log_network_alert(
+        self,
+        *,
+        alert_type: str,
+        executor: str,
+        detail: str,
+        url: str = "",
+        domain: str = "",
+    ) -> None:
+        """Log a network security alert (large payload, unknown domain, rate limit)."""
+        self._write(
+            {
+                "event": "network_alert",
+                "ts": datetime.now(UTC).isoformat(),
+                "alert_type": alert_type,
+                "executor": executor,
+                "detail": detail,
+                "url": url,
+                "domain": domain,
+            }
+        )
+
 
 def read_audit_log(
     log_file: str | Path,

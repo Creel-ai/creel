@@ -1455,6 +1455,164 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_network(args: argparse.Namespace) -> int:
+    """Dispatch network subcommands."""
+    network_commands = {
+        "log": cmd_network_log,
+        "policy": cmd_network_policy,
+        "allow": cmd_network_allow,
+        "block": cmd_network_block,
+    }
+    subcmd = getattr(args, "network_command", None)
+    if subcmd not in network_commands:
+        print("Usage: creel network {log,policy,allow,block}")
+        return 1
+    return network_commands[subcmd](args)
+
+
+def cmd_network_log(args: argparse.Namespace) -> int:
+    """Show recent network request audit entries."""
+    from guardian.audit import read_audit_log
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    log_file = (
+        agent_def.guardian.audit.log_file
+        if (agent_def.guardian and agent_def.guardian.audit.log_file)
+        else str(paths.audit_log())
+    )
+    tail = 0 if getattr(args, "all", False) else getattr(args, "tail", 20)
+
+    entries = read_audit_log(
+        log_file,
+        tail=tail,
+        event_filter="network_request",
+        tool_filter=getattr(args, "executor", None),
+    )
+
+    if not entries:
+        print("No network log entries found.")
+        return 0
+
+    for entry in entries:
+        ts = entry.get("ts", "?")
+        if len(ts) > 19:
+            ts = ts[:19]
+        domain = entry.get("domain", "?")
+        executor = entry.get("executor", "?")
+        blocked = entry.get("blocked", False)
+        method = entry.get("method", "?")
+        status = entry.get("status_code", "")
+        reason = entry.get("block_reason", "")
+        icon = "BLOCKED" if blocked else "OK"
+        status_str = f" [{status}]" if status else ""
+        reason_str = f" ({reason})" if reason else ""
+        print(f"[{ts}] {icon} {method} {domain} executor={executor}{status_str}{reason_str}")
+
+    print(f"\n{len(entries)} entries shown.")
+    return 0
+
+
+def cmd_network_policy(args: argparse.Namespace) -> int:
+    """Show current network policy configuration."""
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not agent_def.guardian or not agent_def.guardian.network_policy.enabled:
+        print("Network policy: disabled")
+        return 0
+
+    np = agent_def.guardian.network_policy
+    print("Network policy: enabled")
+    print(f"  Max request size:  {np.max_request_size_mb} MB")
+    print(f"  Max response size: {np.max_response_size_mb} MB")
+    print(f"  Rate limit:        {np.rate_limit_per_minute} req/min per executor")
+    print(f"  Alert on unknown:  {np.alert_on_unknown}")
+
+    if np.allowed_domains:
+        print(f"\n  Allowed domains ({len(np.allowed_domains)}):")
+        for d in np.allowed_domains:
+            print(f"    + {d}")
+    else:
+        print("\n  Allowed domains: (none — permissive mode)")
+
+    if np.blocked_domains:
+        print(f"\n  Blocked domains ({len(np.blocked_domains)}):")
+        for d in np.blocked_domains:
+            print(f"    - {d}")
+    else:
+        print("\n  Blocked domains: (none)")
+
+    return 0
+
+
+def cmd_network_allow(args: argparse.Namespace) -> int:
+    """Check if a domain would be allowed by the current network policy."""
+    from guardian.network import NetworkMonitor
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not agent_def.guardian or not agent_def.guardian.network_policy.enabled:
+        print(f"Network policy disabled — '{args.domain}' would be allowed (no policy active)")
+        return 0
+
+    monitor = NetworkMonitor(agent_def.guardian.network_policy)
+    url = f"https://{args.domain}/"
+    verdict = monitor.check_domain(url)
+    if verdict.allowed:
+        print(f"ALLOWED: {args.domain}")
+    else:
+        print(f"DENIED: {args.domain} — {verdict.reason}")
+    return 0
+
+
+def cmd_network_block(args: argparse.Namespace) -> int:
+    """Check if a domain would be blocked by the current network policy."""
+    from guardian.network import NetworkMonitor
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not agent_def.guardian or not agent_def.guardian.network_policy.enabled:
+        print(f"Network policy disabled — '{args.domain}' would not be blocked (no policy active)")
+        return 0
+
+    monitor = NetworkMonitor(agent_def.guardian.network_policy)
+    url = f"https://{args.domain}/"
+    verdict = monitor.check_domain(url)
+    if not verdict.allowed:
+        print(f"BLOCKED: {args.domain} — {verdict.reason}")
+    else:
+        print(f"NOT BLOCKED: {args.domain} (would be allowed)")
+    return 0
+
+
 def cmd_encrypt(args: argparse.Namespace) -> int:
     """Encrypt a plaintext .env file with age."""
     from creel.secrets import encrypt_env_file
@@ -1624,6 +1782,38 @@ def main() -> int:
         default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     )
+
+    # network command group
+    network_parser = subparsers.add_parser(
+        "network", help="Network traffic monitoring and policy management"
+    )
+    network_subparsers = network_parser.add_subparsers(
+        dest="network_command",
+        metavar="{log,policy,allow,block}",
+    )
+
+    network_log_parser = network_subparsers.add_parser("log", help="Show network request audit log")
+    network_log_parser.add_argument(
+        "--tail", type=int, default=20, help="Show last N entries (default: 20)"
+    )
+    network_log_parser.add_argument(
+        "--all", action="store_true", help="Show all entries (no tail limit)"
+    )
+    network_log_parser.add_argument(
+        "--executor", type=str, default=None, help="Filter by executor name"
+    )
+
+    network_subparsers.add_parser("policy", help="Show current network policy configuration")
+
+    network_allow_parser = network_subparsers.add_parser(
+        "allow", help="Check if a domain is allowed by the network policy"
+    )
+    network_allow_parser.add_argument("domain", help="Domain to check (e.g. api.example.com)")
+
+    network_block_parser = network_subparsers.add_parser(
+        "block", help="Check if a domain is blocked by the network policy"
+    )
+    network_block_parser.add_argument("domain", help="Domain to check (e.g. evil.example.com)")
 
     # encrypt command
     encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
@@ -1928,6 +2118,9 @@ def main() -> int:
             cron_parser.print_help()
             return 1
         return cron_commands[args.cron_command](args)
+
+    if args.command == "network":
+        return cmd_network(args)
 
     commands = {
         "init": cmd_init,

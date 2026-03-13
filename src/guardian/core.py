@@ -10,6 +10,7 @@ from guardian.credential_scanner import CredentialMatch, scan_for_credentials
 from guardian.drift import DriftDetector
 from guardian.fast_classifier import FastClassifier
 from guardian.llm_judge import LLMJudge
+from guardian.network import NetworkMonitor, NetworkVerdict
 from guardian.policy import PolicyEngine
 from guardian.types import (
     ActionDecision,
@@ -64,12 +65,16 @@ class Guardian:
             if config.drift.enabled
             else None
         )
+        self._network = (
+            NetworkMonitor(config.network_policy) if config.network_policy.enabled else None
+        )
         logger.info(
-            "Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s)",
+            "Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s, network=%s)",
             config.fast_classifier.enabled,
             config.llm_judge.enabled,
             config.policy.enabled,
             config.drift.enabled,
+            config.network_policy.enabled,
         )
 
     def warm_up(self) -> None:
@@ -377,3 +382,122 @@ class Guardian:
                 verdict=verdict,
                 outcome=outcome,
             )
+
+    # --- Network monitoring ---
+
+    @property
+    def network_monitor(self) -> NetworkMonitor | None:
+        """Return the active NetworkMonitor, or None if disabled."""
+        return self._network
+
+    def check_network_request(
+        self,
+        url: str,
+        *,
+        executor: str = "",
+        method: str = "GET",
+        request_size_bytes: int = 0,
+    ) -> NetworkVerdict:
+        """Check an outbound network request against the network policy.
+
+        If the network monitor is disabled, all requests are allowed.
+        """
+        if not self._network:
+            return NetworkVerdict(allowed=True)
+
+        verdict = self._network.check_request(
+            url,
+            executor=executor,
+            method=method,
+            request_size_bytes=request_size_bytes,
+        )
+
+        if self._audit:
+            domain = verdict.domain
+            self._audit.log_network_request(
+                url=url,
+                domain=domain,
+                executor=executor,
+                method=method,
+                request_size_bytes=request_size_bytes,
+                blocked=not verdict.allowed,
+                block_reason=verdict.reason,
+            )
+
+            if not verdict.allowed:
+                alert_type = "unknown_domain" if verdict.is_unknown_domain else "policy_violation"
+                self._audit.log_network_alert(
+                    alert_type=alert_type,
+                    executor=executor,
+                    detail=verdict.reason,
+                    url=url,
+                    domain=domain,
+                )
+            elif verdict.domain and self._network.config.alert_on_unknown:
+                # Check if domain is "unknown" (not in allowlist but allowlist is empty)
+                pass  # Already handled by check_domain logic
+
+        if not verdict.allowed:
+            logger.warning(
+                "Network request denied: %s (executor=%s, reason=%s)",
+                url,
+                executor,
+                verdict.reason,
+            )
+
+        return verdict
+
+    def record_network_response(
+        self,
+        url: str,
+        *,
+        executor: str = "",
+        method: str = "GET",
+        request_size_bytes: int = 0,
+        response_size_bytes: int = 0,
+        status_code: int | None = None,
+    ) -> None:
+        """Record a completed network response and audit-log it.
+
+        Alerts on oversized responses.
+        """
+        if not self._network:
+            return
+
+        alert = self._network.record_response(
+            url,
+            executor=executor,
+            method=method,
+            request_size_bytes=request_size_bytes,
+            response_size_bytes=response_size_bytes,
+            status_code=status_code,
+        )
+
+        domain = ""
+        from urllib.parse import urlparse
+
+        try:
+            domain = urlparse(url).hostname or ""
+        except Exception:
+            pass
+
+        if self._audit:
+            self._audit.log_network_request(
+                url=url,
+                domain=domain,
+                executor=executor,
+                method=method,
+                request_size_bytes=request_size_bytes,
+                response_size_bytes=response_size_bytes,
+                status_code=status_code,
+                blocked=False,
+            )
+
+            if alert and not alert.allowed:
+                self._audit.log_network_alert(
+                    alert_type="large_response",
+                    executor=executor,
+                    detail=alert.reason,
+                    url=url,
+                    domain=domain,
+                )

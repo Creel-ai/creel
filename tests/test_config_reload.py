@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -356,9 +357,11 @@ class TestConfigWatcher:
         assert watcher.running
 
         try:
-            # Modify the file
-            time.sleep(0.15)
+            # Bump mtime into the future to guarantee the watcher sees a change
+            # without relying on wall-clock sleeps.
+            future = time.time() + 10
             config_file.write_text("modified")
+            os.utime(config_file, (future, future))
 
             assert triggered.wait(timeout=2.0), "Watcher did not detect file change"
         finally:
@@ -415,8 +418,9 @@ class TestConfigWatcher:
         watcher.start()
 
         try:
-            time.sleep(0.15)
+            future = time.time() + 10
             config_file.write_text("modified")
+            os.utime(config_file, (future, future))
             time.sleep(0.5)
             assert call_count >= 1, "Callback should have been called despite error"
         finally:

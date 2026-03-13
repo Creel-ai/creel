@@ -685,6 +685,114 @@ class TestMemoryManagerFTS:
             assert count == 1
 
 
+class TestSubstringRecencyWeighting:
+    """Tests for recency-weighted substring search (fallback path)."""
+
+    def _make_manager(self, td: str, **kwargs) -> MemoryManager:
+        return MemoryManager(workspace_dir=td, timezone_name="UTC", fts_enabled=False, **kwargs)
+
+    def test_recent_entries_rank_higher(self):
+        """With short half-life, recent entries should sort above old ones."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, recency_half_life_days=7.0)
+            today = datetime.now(UTC).date()
+
+            old_date = today - timedelta(days=60)
+            old_path = mm.daily_path(old_date)
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Meeting about project alpha\n"
+            )
+
+            recent_date = today - timedelta(days=2)
+            recent_path = mm.daily_path(recent_date)
+            recent_path.write_text(
+                f"# Memory — {recent_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Meeting about project alpha\n"
+            )
+
+            result = mm.search_memory("project alpha")
+            assert "2 result" in result
+            lines = result.split("\n")
+            # Recent entry should appear first
+            assert recent_date.isoformat() in lines[1]
+            assert old_date.isoformat() in lines[2]
+
+    def test_long_term_evergreen_beats_decayed(self):
+        """Long-term entries (weight 1.0) should rank above heavily-decayed daily entries."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, recency_half_life_days=1.0)
+            today = datetime.now(UTC).date()
+
+            old_date = today - timedelta(days=30)
+            old_path = mm.daily_path(old_date)
+            old_path.write_text(
+                f"# Memory — {old_date.isoformat()}\n\n"
+                f"- [10:00] **general**: Important fact about widgets\n"
+            )
+
+            mm.update_long_term("- Important fact about widgets")
+
+            result = mm.search_memory("widgets")
+            assert "2 result" in result
+            lines = result.split("\n")
+            # Long-term (weight 1.0) should appear before 30-day-old daily (heavily decayed)
+            assert "long_term" in lines[1]
+
+    def test_same_day_preserves_line_order(self):
+        """Entries from the same date should maintain line order (stable sort)."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            today = datetime.now(UTC).date()
+            path = mm.daily_path(today)
+            path.write_text(
+                f"# Memory — {today.isoformat()}\n\n"
+                f"- [10:00] **general**: First note about coffee\n"
+                f"- [11:00] **general**: Second note about coffee\n"
+                f"- [12:00] **general**: Third note about coffee\n"
+            )
+
+            result = mm.search_memory("coffee")
+            assert "3 result" in result
+            lines = result.split("\n")[1:]  # skip "Found N result(s):" line
+            assert "First note" in lines[0]
+            assert "Second note" in lines[1]
+            assert "Third note" in lines[2]
+
+    def test_max_results_after_ranking(self):
+        """Top-N should be by recency, not first-found."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, recency_half_life_days=7.0)
+            today = datetime.now(UTC).date()
+
+            # Create entries across multiple dates
+            for days_ago in [1, 30, 60]:
+                d = today - timedelta(days=days_ago)
+                path = mm.daily_path(d)
+                path.write_text(
+                    f"# Memory — {d.isoformat()}\n\n"
+                    f"- [10:00] **general**: Status update from {d.isoformat()}\n"
+                )
+
+            result = mm.search_memory("Status update", max_results=2)
+            assert "2 result" in result
+            lines = result.split("\n")[1:]
+            recent = today - timedelta(days=1)
+            middle = today - timedelta(days=30)
+            assert recent.isoformat() in lines[0]
+            assert middle.isoformat() in lines[1]
+
+    def test_skips_non_date_files(self):
+        """Non-date .md files in memory dir should not appear in results."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            readme = mm._memory_dir / "README.md"
+            readme.write_text("- [10:00] **general**: Sneaky match\n")
+
+            result = mm.search_memory("Sneaky")
+            assert "No memories found" in result
+
+
 class TestCompactLLMSummarize:
     """Tests for the LLM summarization path in compact_daily_files."""
 
@@ -807,6 +915,33 @@ class TestCompactLLMSummarize:
             lt_content = mm.long_term_path.read_text()
             assert f"### Compacted: {old_date.isoformat()}" in lt_content
             assert "- Alpha fact" in lt_content
+
+    def test_compact_multiple_files_hits_safety_limit(self):
+        """Incremental lt_lines tracking should trigger safety limit mid-compaction."""
+        with tempfile.TemporaryDirectory() as td:
+            # max_long_term_lines=3 → safety limit at 2x = 6 lines.
+            # File 1 compacts: creates MEMORY.md header (2 lines) then appends
+            # blank+section_header+5 entries (7 lines) → 9 total. 9 >= 6, so
+            # file 2 should be kept.
+            mm = self._make_manager(td, max_long_term_lines=3)
+
+            dates = []
+            for days_ago in [12, 11]:
+                old_date = datetime.now(UTC).date() - timedelta(days=days_ago)
+                path = mm.daily_path(old_date)
+                path.write_text(
+                    f"# Memory — {old_date.isoformat()}\n\n"
+                    + "".join(f"- [10:0{i}] **general**: Entry {i}\n" for i in range(5))
+                )
+                dates.append((old_date, path))
+
+            result = mm.compact_daily_files(days_to_keep=7, summarize=True)
+            # First file should compact; second should be kept (safety limit)
+            assert "Compacted 1 file(s)" in result
+            assert "Warning" in result
+            assert "kept" in result
+            # The second file should still exist on disk
+            assert dates[1][1].exists()
 
 
 class TestWorkspaceConfigValidation:

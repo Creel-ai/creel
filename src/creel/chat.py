@@ -154,6 +154,7 @@ class ChatServer:
                 fts_enabled=agent_def.workspace.fts_enabled,
                 recency_half_life_days=agent_def.workspace.recency_half_life_days,
                 compact_summarize_fn=compact_summarize_fn,
+                extra_paths=agent_def.workspace.extra_paths,
             )
             self._memory.rebuild_index()
             self._memory.compact_daily_files(

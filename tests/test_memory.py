@@ -667,6 +667,127 @@ class TestMemoryIndex:
             idx.close()
 
 
+class TestExtraPaths:
+    """Tests for shared knowledge from extra directories."""
+
+    def _make_manager(self, td: str, **kwargs) -> MemoryManager:
+        return MemoryManager(workspace_dir=td, timezone_name="UTC", **kwargs)
+
+    def test_extra_paths_indexed_and_searchable(self):
+        """Markdown files in extra_paths should be indexed and searchable."""
+        with tempfile.TemporaryDirectory() as td:
+            # Create a shared docs directory outside workspace
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            (shared_dir / "runbook.md").write_text(
+                "# Runbook\n\nRestart the API server with `systemctl restart api`.\n"
+            )
+
+            mm = self._make_manager(td, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+
+            result = mm.search_memory("restart API server")
+            assert "systemctl restart api" in result
+
+    def test_extra_paths_in_substring_fallback(self):
+        """Extra paths should be searched even without FTS."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            (shared_dir / "faq.md").write_text("# FAQ\n\nThe deploy key is stored in 1Password.\n")
+
+            mm = self._make_manager(td, fts_enabled=False, extra_paths=[str(shared_dir)])
+            result = mm.search_memory("deploy key")
+            assert "1Password" in result
+
+    def test_extra_paths_recursive(self):
+        """Nested subdirectories in extra_paths should be searched."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "docs"
+            (shared_dir / "ops").mkdir(parents=True)
+            (shared_dir / "ops" / "alerts.md").write_text(
+                "# Alerts\n\nPage oncall if error rate exceeds 5%.\n"
+            )
+
+            mm = self._make_manager(td, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+
+            result = mm.search_memory("error rate")
+            assert "oncall" in result
+
+    def test_extra_paths_missing_dir_ignored(self):
+        """Non-existent extra_paths should be silently skipped."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td, extra_paths=["/nonexistent/path"])
+            count = mm.rebuild_index()
+            assert count == 0
+
+    def test_extra_paths_in_relevant_context(self):
+        """Extra path content should appear in relevant context results."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "team_docs"
+            shared_dir.mkdir()
+            (shared_dir / "processes.md").write_text(
+                "# Processes\n\nCode review requires two approvals before merge.\n"
+            )
+
+            mm = self._make_manager(td, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+
+            result = mm.get_relevant_context("code review approvals")
+            assert result is not None
+            assert "two approvals" in result
+
+    def test_stale_shared_file_cleanup(self):
+        """Deleting a shared file should remove it from the FTS index on reindex."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            runbook = shared_dir / "runbook.md"
+            runbook.write_text("# Runbook\n\nRestart the API server.\n")
+
+            mm = self._make_manager(td, fts_enabled=True, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+            assert "Restart" in mm.search_memory("restart")
+
+            # Delete the file and reindex — stale entry should be cleaned up
+            runbook.unlink()
+            mm.rebuild_index()
+            assert "No memories found" in mm.search_memory("restart")
+
+    def test_date_named_shared_file_not_confused_with_daily(self):
+        """A shared file named like a date (e.g. 2025-01-15.md) should be
+        classified as shared, not as a daily memory file."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            date_named = shared_dir / "2025-01-15.md"
+            date_named.write_text("# Meeting notes\n\nDiscussed Q1 roadmap.\n")
+
+            mm = self._make_manager(td, fts_enabled=True, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+            assert "roadmap" in mm.search_memory("roadmap")
+
+            # Delete and reindex — should clean up as shared, not as date 2025-01-15
+            date_named.unlink()
+            mm.rebuild_index()
+            assert "No memories found" in mm.search_memory("roadmap")
+
+    def test_extra_paths_large_dir_skipped(self):
+        """An extra_paths directory with too many files should be skipped with a warning."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "huge_docs"
+            shared_dir.mkdir()
+            # Create 501 files to exceed the limit
+            for i in range(501):
+                (shared_dir / f"doc_{i}.md").write_text(f"Content {i}\n")
+
+            mm = self._make_manager(td, fts_enabled=True, extra_paths=[str(shared_dir)])
+            count = mm.rebuild_index()
+            # None of the 501 files should have been indexed
+            assert count == 0
+
+
 class TestMemoryManagerFTS:
     """Integration tests for MemoryManager with FTS index."""
 

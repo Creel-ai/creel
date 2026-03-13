@@ -30,8 +30,8 @@ def _strip_entry_prefix(line: str) -> str:
 
 
 def _recency_weight(date_str: str, today: date, half_life: float) -> float:
-    """Compute temporal decay weight. Evergreen (long_term) entries get 1.0."""
-    if date_str == "long_term":
+    """Compute temporal decay weight. Evergreen (long_term/shared) entries get 1.0."""
+    if date_str == "long_term" or date_str.startswith("shared:"):
         return 1.0
     try:
         age = (today - date.fromisoformat(date_str)).days
@@ -89,7 +89,12 @@ class MemoryIndex:
     def available(self) -> bool:
         return self._available
 
-    def reindex_if_needed(self, memory_dir: Path, long_term_path: Path) -> int:
+    def reindex_if_needed(
+        self,
+        memory_dir: Path,
+        long_term_path: Path,
+        extra_paths: list[Path] | None = None,
+    ) -> int:
         """Scan memory files and re-index any that have changed. Returns count of files re-indexed."""
         if not self._available or self._conn is None:
             return 0
@@ -110,6 +115,26 @@ class MemoryIndex:
         if long_term_path.exists():
             files_to_check.append((long_term_path, "long_term"))
             current_paths.add(str(long_term_path))
+
+        # Extra paths: shared knowledge directories
+        _MAX_EXTRA_FILES = 500
+        for extra_dir in extra_paths or []:
+            if not extra_dir.is_dir():
+                logger.debug("Extra path not found: %s", extra_dir)
+                continue
+            extra_files = list(extra_dir.rglob("*.md"))
+            if len(extra_files) > _MAX_EXTRA_FILES:
+                logger.warning(
+                    "Extra path %s contains %d markdown files (limit %d), skipping",
+                    extra_dir,
+                    len(extra_files),
+                    _MAX_EXTRA_FILES,
+                )
+                continue
+            for md_path in extra_files:
+                ds = f"shared:{md_path}"
+                files_to_check.append((md_path, ds))
+                current_paths.add(str(md_path))
 
         for file_path, date_str in files_to_check:
             try:
@@ -148,9 +173,13 @@ class MemoryIndex:
         # Remove entries for deleted files
         stored_paths = {r[0] for r in self._conn.execute("SELECT path FROM file_meta").fetchall()}
         for stale_path in stored_paths - current_paths:
-            # Determine date_str from stored path
             stale = Path(stale_path)
-            ds = "long_term" if stale.name == "MEMORY.md" else stale.stem
+            if str(stale) == str(long_term_path):
+                ds = "long_term"
+            elif stale.parent == memory_dir:
+                ds = stale.stem
+            else:
+                ds = f"shared:{stale_path}"
             self._conn.execute("DELETE FROM memory_fts WHERE date_str = ?", (ds,))
             self._conn.execute("DELETE FROM file_meta WHERE path = ?", (stale_path,))
             reindexed += 1
@@ -167,7 +196,12 @@ class MemoryIndex:
         """
         if not self._available or self._conn is None:
             return
-        source = "long_term" if date_str == "long_term" else "daily"
+        if date_str.startswith("shared:"):
+            source = "shared"
+        elif date_str == "long_term":
+            source = "long_term"
+        else:
+            source = "daily"
         self._conn.execute("DELETE FROM memory_fts WHERE date_str = ?", (date_str,))
         try:
             lines = path.read_text().splitlines()
@@ -273,6 +307,7 @@ class MemoryManager:
         fts_enabled: bool = True,
         recency_half_life_days: float = 30.0,
         compact_summarize_fn: Callable[[list[str]], str] | None = None,
+        extra_paths: list[str] | None = None,
     ):
         self._workspace = Path(workspace_dir)
         self._memory_dir = self._workspace / "memory"
@@ -281,6 +316,7 @@ class MemoryManager:
         self._max_long_term_lines = max_long_term_lines
         self._compact_summarize_fn = compact_summarize_fn
         self._half_life = recency_half_life_days
+        self._extra_paths = [Path(p) for p in (extra_paths or [])]
         self._tz: tzinfo
         try:
             self._tz = ZoneInfo(timezone_name)
@@ -318,7 +354,9 @@ class MemoryManager:
         """Rebuild the FTS index from memory files on disk. Returns count of files re-indexed."""
         if self._index is None or not self._index.available:
             return 0
-        return self._index.reindex_if_needed(self._memory_dir, self.long_term_path)
+        return self._index.reindex_if_needed(
+            self._memory_dir, self.long_term_path, extra_paths=self._extra_paths
+        )
 
     def remember(self, text: str, category: str = "general") -> str:
         """Append a memory entry to today's daily file.
@@ -530,6 +568,29 @@ class MemoryManager:
                             break
             except OSError:
                 pass
+
+        # Search extra paths (shared knowledge — evergreen, weight 1.0)
+        for extra_dir in self._extra_paths:
+            if len(candidates) >= collect_limit:
+                break
+            if not extra_dir.is_dir():
+                continue
+            for md_path in extra_dir.rglob("*.md"):
+                if len(candidates) >= collect_limit:
+                    break
+                ds = f"shared:{md_path}"
+                try:
+                    lines = md_path.read_text().splitlines()
+                except OSError:
+                    continue
+                for i, line in enumerate(lines, start=1):
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    if query_lower in line.lower():
+                        candidates.append((ds, i, line, 1.0))
+                        if len(candidates) >= collect_limit:
+                            break
 
         if not candidates:
             return []

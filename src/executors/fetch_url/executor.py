@@ -43,9 +43,23 @@ def fetch_url(
         max_redirects: Maximum number of redirects to follow.
         max_size_mb: Maximum response size in MB.
     """
-    session = requests.Session()
-    session.max_redirects = max_redirects
+    with requests.Session() as session:
+        session.max_redirects = max_redirects
+        return _fetch_with_session(
+            session, url, max_chars, timeout, connect_timeout, max_redirects, max_size_mb
+        )
 
+
+def _fetch_with_session(
+    session: requests.Session,
+    url: str,
+    max_chars: int,
+    timeout: float,
+    connect_timeout: float,
+    max_redirects: int,
+    max_size_mb: float,
+) -> dict:
+    """Perform the fetch using an already-configured session."""
     try:
         resp = session.get(
             url,

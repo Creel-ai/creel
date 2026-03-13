@@ -9,6 +9,10 @@ import pytest
 
 from creel.containers import _compute_executor_hash, _ensure_image, _image_cache
 
+# All _ensure_image tests patch out the base-image Dockerfile existence check
+# so that _ensure_base_image() is never called (it adds extra subprocess calls).
+_PATCH_NO_BASE = patch("creel.containers._BASE_DOCKERFILE", MagicMock(exists=lambda: False))
+
 
 @pytest.fixture(autouse=True)
 def _clear_image_cache():
@@ -107,8 +111,6 @@ class TestEnsureImageContentHash:
     def test_builds_with_hash_tag_when_missing(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """When no hashed image exists, build with hash + latest tags."""
         executor_dir = self._setup_executor_dir(tmp_path)
-        content_hash = _compute_executor_hash(executor_dir)
-        expected_image = f"executor-weather:{content_hash}"
 
         # inspect -> not found; build -> success
         mock_run.side_effect = [
@@ -116,7 +118,11 @@ class TestEnsureImageContentHash:
             MagicMock(returncode=0, stderr="", stdout=""),  # docker build
         ]
 
-        with patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
+        with _PATCH_NO_BASE, patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
+            # Compute hash inside the mock context so it matches the hash
+            # used by _ensure_image (base Dockerfile excluded).
+            content_hash = _compute_executor_hash(executor_dir)
+            expected_image = f"executor-weather:{content_hash}"
             result = _ensure_image("executor-weather:latest")
 
         assert result == expected_image
@@ -138,7 +144,7 @@ class TestEnsureImageContentHash:
         # inspect -> found
         mock_run.return_value = MagicMock(returncode=0)
 
-        with patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
+        with _PATCH_NO_BASE, patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
             result = _ensure_image("executor-weather:latest")
 
         assert result.startswith("executor-weather:")
@@ -169,6 +175,6 @@ class TestEnsureImageContentHash:
 
         mock_run.return_value = MagicMock(returncode=1)
 
-        with patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
+        with _PATCH_NO_BASE, patch("creel.containers.Path", side_effect=lambda x: tmp_path / x):
             with pytest.raises(FileNotFoundError):
                 _ensure_image("executor-weather:latest")

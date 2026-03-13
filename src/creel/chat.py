@@ -215,6 +215,11 @@ class ChatServer:
         if media_cfg is not None and media_cfg.enabled:
             self._media = MediaProcessor(media_cfg)
 
+        # Expose individual media services for direct access
+        self._media_store = self._media._store if self._media else None
+        self._transcription = self._media._transcription if self._media else None
+        self._vision = self._media._vision if self._media else None
+
         # Initialize sub-agent manager
         self._subagent_manager = SubAgentManager(
             llm_config=agent_def.llm,

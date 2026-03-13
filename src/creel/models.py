@@ -154,7 +154,7 @@ class WorkspaceConfig(BaseModel):
     recency_half_life_days: float = Field(default=30.0, gt=0)
     compact_summarize: bool = True
     compact_model: str = "claude-haiku-4-5-20251001"
-    compact_max_tokens: int = 512
+    compact_max_tokens: int = Field(default=512, gt=0)
     memory_context_mode: Literal["recent", "relevant"] = "recent"
     memory_context_max_results: int = 20
 

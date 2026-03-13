@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import os
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import _pytest.pathlib
+import _pytest.tmpdir
 import pyrage
 import pytest
 import yaml
@@ -18,6 +22,34 @@ from creel.models import (
     SessionConfig,
     WorkspaceConfig,
 )
+
+# ---------------------------------------------------------------------------
+# Monkey-patch pytest's pathlib helpers to tolerate missing basetemp dirs.
+# pytest 8.x's os.scandir(root) raises FileNotFoundError when /tmp cleanup
+# or parallel runs delete the basetemp root between creation and scan.
+# make_numbered_dir also fails because new_path.mkdir() lacks parents=True.
+# Both are fixed upstream in pytest 9.x, but pytest-asyncio 0.24.x pins 8.x.
+# ---------------------------------------------------------------------------
+_orig_find_prefixed = _pytest.pathlib.find_prefixed
+_orig_make_numbered_dir = _pytest.pathlib.make_numbered_dir
+
+
+def _safe_find_prefixed(root: Path, prefix: str) -> Iterator[os.DirEntry[str]]:
+    try:
+        yield from _orig_find_prefixed(root, prefix)
+    except FileNotFoundError:
+        return
+
+
+def _safe_make_numbered_dir(root: Path, prefix: str, mode: int = 0o700) -> Path:
+    root.mkdir(mode=mode, parents=True, exist_ok=True)
+    return _orig_make_numbered_dir(root, prefix, mode)
+
+
+_pytest.pathlib.find_prefixed = _safe_find_prefixed
+_pytest.pathlib.make_numbered_dir = _safe_make_numbered_dir
+# Also patch the already-imported references in _pytest.tmpdir
+_pytest.tmpdir.make_numbered_dir = _safe_make_numbered_dir
 
 
 @pytest.fixture

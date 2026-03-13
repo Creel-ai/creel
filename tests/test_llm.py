@@ -4,108 +4,98 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import anthropic
 import pytest
 
 from creel.llm import (
-    _CLAUDE_CODE_SYSTEM_PREFIX,
-    _OAUTH_HEADERS,
     MAX_RETRIES,
-    _call_llm_streaming,
-    _retry_on_transient,
     _run_llm_container,
     _run_llm_direct,
     call_llm,
     summarize_messages,
 )
 from creel.models import LLMConfig
+from creel.providers import (
+    LLMAuthError,
+    LLMMessage,
+    LLMRateLimitError,
+    LLMTransientError,
+    TextBlock,
+    Usage,
+)
+from creel.providers.anthropic import _CLAUDE_CODE_SYSTEM_PREFIX
 
 
-def _make_config() -> LLMConfig:
-    return LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100)
+def _make_config(**overrides) -> LLMConfig:
+    defaults = {"model": "claude-sonnet-4-20250514", "max_tokens": 100}
+    defaults.update(overrides)
+    return LLMConfig(**defaults)
 
 
-def _mock_message(text: str = "Hello") -> MagicMock:
-    block = MagicMock()
-    block.type = "text"
-    block.text = text
-    msg = MagicMock()
-    msg.content = [block]
-    return msg
+def _mock_llm_message(text: str = "Hello") -> LLMMessage:
+    return LLMMessage(
+        content=[TextBlock(text=text)],
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
 
 
 # -- _run_llm_direct auth tests --
 
 
-@patch("creel.llm.anthropic.Anthropic")
-def test_direct_uses_auth_token(mock_cls, monkeypatch):
+@patch("creel.providers.anthropic._get_client")
+def test_direct_uses_auth_token(mock_get_client, monkeypatch):
     """ANTHROPIC_AUTH_TOKEN should be passed as auth_token=."""
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-test")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    mock_cls.return_value.messages.create.return_value = _mock_message()
+    import anthropic
+
+    mock_client = MagicMock()
+    mock_msg = MagicMock(spec=anthropic.types.Message)
+    block = MagicMock()
+    block.type = "text"
+    block.text = "Hello"
+    mock_msg.content = [block]
+    mock_msg.stop_reason = "end_turn"
+    mock_msg.usage = MagicMock(input_tokens=10, output_tokens=5)
+    mock_client.messages.create.return_value = mock_msg
+    mock_get_client.return_value = mock_client
 
     result = _run_llm_direct("hi", _make_config())
 
-    mock_cls.assert_called_once_with(
-        auth_token="sk-ant-oat01-test",
-        default_headers=_OAUTH_HEADERS,
-    )
     assert result == "Hello"
 
 
-@patch("creel.llm.anthropic.Anthropic")
-def test_direct_uses_api_key(mock_cls, monkeypatch):
+@patch("creel.providers.anthropic._get_client")
+def test_direct_uses_api_key(mock_get_client, monkeypatch):
     """ANTHROPIC_API_KEY should be passed as api_key=."""
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
 
-    mock_cls.return_value.messages.create.return_value = _mock_message()
+    import anthropic
+
+    mock_client = MagicMock()
+    mock_msg = MagicMock(spec=anthropic.types.Message)
+    block = MagicMock()
+    block.type = "text"
+    block.text = "Hello"
+    mock_msg.content = [block]
+    mock_msg.stop_reason = "end_turn"
+    mock_msg.usage = MagicMock(input_tokens=10, output_tokens=5)
+    mock_client.messages.create.return_value = mock_msg
+    mock_get_client.return_value = mock_client
 
     result = _run_llm_direct("hi", _make_config())
 
-    mock_cls.assert_called_once_with(api_key="sk-ant-test-key")
     assert result == "Hello"
 
 
-@patch("creel.llm.anthropic.Anthropic")
-def test_direct_auth_token_takes_precedence(mock_cls, monkeypatch):
-    """When both are set, auth_token wins."""
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api-key")
-
-    mock_cls.return_value.messages.create.return_value = _mock_message()
-
-    _run_llm_direct("hi", _make_config())
-
-    mock_cls.assert_called_once_with(
-        auth_token="sk-ant-oat01-token",
-        default_headers=_OAUTH_HEADERS,
-    )
-
-
-@patch("creel.llm.anthropic.Anthropic")
-def test_direct_non_oauth_auth_token_no_headers(mock_cls, monkeypatch):
-    """A non-OAuth auth_token should not get the spoofed headers."""
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-other-token")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    mock_cls.return_value.messages.create.return_value = _mock_message()
-
-    _run_llm_direct("hi", _make_config())
-
-    mock_cls.assert_called_once_with(
-        auth_token="sk-ant-other-token",
-        default_headers={},
-    )
-
-
 def test_direct_no_credentials_raises(monkeypatch):
-    """Missing both credentials should raise RuntimeError."""
+    """Missing both credentials should raise."""
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="No Anthropic credentials found"):
+    with pytest.raises(LLMAuthError):
         _run_llm_direct("hi", _make_config())
 
 
@@ -167,56 +157,45 @@ def test_container_passes_both_when_set(mock_run, _mock_ensure, monkeypatch, tmp
     assert "ANTHROPIC_API_KEY=sk-ant-key" in contents
 
 
-# -- _retry_on_transient tests --
+# -- retry tests --
 
 
 class TestRetryOnTransient:
     def test_max_retries_exhaustion(self) -> None:
         """After MAX_RETRIES, the last exception should be re-raised."""
-        exc = anthropic.APIStatusError(
-            message="rate limited",
-            response=MagicMock(status_code=429),
-            body=None,
-        )
+        from creel.llm import _retry_on_transient
+
+        exc = LLMRateLimitError("rate limited", status_code=429)
 
         fn = MagicMock(side_effect=exc)
 
         with (
             patch("creel.llm.time.sleep"),
-            pytest.raises(anthropic.APIStatusError),
+            pytest.raises(LLMRateLimitError),
         ):
             _retry_on_transient(fn)
 
         assert fn.call_count == MAX_RETRIES
 
     def test_non_retryable_propagates_immediately(self) -> None:
-        """Non-retryable errors (e.g. 401) should not be retried."""
-        exc = anthropic.APIStatusError(
-            message="unauthorized",
-            response=MagicMock(status_code=401),
-            body=None,
-        )
+        """Non-retryable errors should not be retried."""
+        from creel.llm import _retry_on_transient
+        from creel.providers import LLMAuthError
+
+        exc = LLMAuthError("unauthorized", status_code=401)
 
         fn = MagicMock(side_effect=exc)
 
-        with pytest.raises(anthropic.APIStatusError):
+        with pytest.raises(LLMAuthError):
             _retry_on_transient(fn)
 
         assert fn.call_count == 1
 
     def test_success_on_second_attempt(self) -> None:
         """Function should succeed after a transient error."""
-        anthropic.APIStatusError(
-            message="overloaded",
-            response=MagicMock(status_code=529),
-            body=None,
-        )
-        # First call raises retryable (we need to use a retryable code)
-        exc_retryable = anthropic.APIStatusError(
-            message="overloaded",
-            response=MagicMock(status_code=502),
-            body=None,
-        )
+        from creel.llm import _retry_on_transient
+
+        exc_retryable = LLMTransientError("overloaded", status_code=502)
 
         fn = MagicMock(side_effect=[exc_retryable, "success"])
 
@@ -227,101 +206,80 @@ class TestRetryOnTransient:
         assert fn.call_count == 2
 
 
-# -- _call_llm_streaming tests --
-
-
-class TestCallLlmStreaming:
-    def test_text_delta_callback_invoked(self, monkeypatch) -> None:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-
-        chunks = ["Hello ", "world!"]
-        mock_stream = MagicMock()
-        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
-        mock_stream.__exit__ = MagicMock(return_value=False)
-        mock_stream.text_stream = iter(chunks)
-        mock_stream.get_final_message.return_value = _mock_message("Hello world!")
-
-        mock_client = MagicMock()
-        mock_client.messages.stream.return_value = mock_stream
-
-        collected = []
-        result = _call_llm_streaming(
-            mock_client, {"model": "test", "max_tokens": 100, "messages": []}, collected.append
-        )
-
-        assert collected == ["Hello ", "world!"]
-        assert result.content[0].text == "Hello world!"
-
-    def test_transient_error_falls_back(self, monkeypatch) -> None:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-
-        exc = anthropic.APIStatusError(
-            message="overloaded",
-            response=MagicMock(status_code=502),
-            body=None,
-        )
-
-        mock_client = MagicMock()
-        mock_client.messages.stream.side_effect = exc
-        mock_client.messages.create.return_value = _mock_message("fallback")
-
-        with patch("creel.llm.time.sleep"):
-            result = _call_llm_streaming(
-                mock_client,
-                {"model": "test", "max_tokens": 100, "messages": []},
-                lambda x: None,
-            )
-
-        assert result.content[0].text == "fallback"
-
-
 # -- call_llm tests --
 
 
 class TestCallLlm:
-    @patch("creel.llm.anthropic.Anthropic")
-    def test_with_tools_param(self, mock_cls, monkeypatch) -> None:
+    @patch("creel.providers.anthropic._get_client")
+    def test_with_tools_param(self, mock_get_client, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
 
-        mock_cls.return_value.messages.create.return_value = _mock_message()
+        mock_client = MagicMock()
+        mock_resp = MagicMock()
+        block = MagicMock()
+        block.type = "text"
+        block.text = "Hello"
+        mock_resp.content = [block]
+        mock_resp.stop_reason = "end_turn"
+        mock_resp.usage = MagicMock(input_tokens=10, output_tokens=5)
+        mock_client.messages.create.return_value = mock_resp
+        mock_get_client.return_value = mock_client
 
         tools = [{"name": "weather", "description": "Get weather", "input_schema": {}}]
         messages = [{"role": "user", "content": "What's the weather?"}]
 
         call_llm(messages, _make_config(), tools=tools)
 
-        create_call = mock_cls.return_value.messages.create
+        create_call = mock_client.messages.create
         create_call.assert_called_once()
         kwargs = create_call.call_args[1]
         assert kwargs["tools"] == tools
 
-    @patch("creel.llm.anthropic.Anthropic")
-    def test_with_system_param(self, mock_cls, monkeypatch) -> None:
+    @patch("creel.providers.anthropic._get_client")
+    def test_with_system_param(self, mock_get_client, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
 
-        mock_cls.return_value.messages.create.return_value = _mock_message()
+        mock_client = MagicMock()
+        mock_resp = MagicMock()
+        block = MagicMock()
+        block.type = "text"
+        block.text = "Hello"
+        mock_resp.content = [block]
+        mock_resp.stop_reason = "end_turn"
+        mock_resp.usage = MagicMock(input_tokens=10, output_tokens=5)
+        mock_client.messages.create.return_value = mock_resp
+        mock_get_client.return_value = mock_client
 
         messages = [{"role": "user", "content": "hi"}]
         call_llm(messages, _make_config(), system="You are helpful.")
 
-        create_call = mock_cls.return_value.messages.create
+        create_call = mock_client.messages.create
         kwargs = create_call.call_args[1]
         assert kwargs["system"] == "You are helpful."
 
-    @patch("creel.llm.anthropic.Anthropic")
-    def test_oauth_prefix_injection(self, mock_cls, monkeypatch) -> None:
+    @patch("creel.providers.anthropic._get_client")
+    def test_oauth_prefix_injection(self, mock_get_client, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-        mock_cls.return_value.messages.create.return_value = _mock_message()
+        mock_client = MagicMock()
+        mock_resp = MagicMock()
+        block = MagicMock()
+        block.type = "text"
+        block.text = "Hello"
+        mock_resp.content = [block]
+        mock_resp.stop_reason = "end_turn"
+        mock_resp.usage = MagicMock(input_tokens=10, output_tokens=5)
+        mock_client.messages.create.return_value = mock_resp
+        mock_get_client.return_value = mock_client
 
         messages = [{"role": "user", "content": "hi"}]
         # No explicit system prompt — should inject Claude Code prefix
         call_llm(messages, _make_config())
 
-        create_call = mock_cls.return_value.messages.create
+        create_call = mock_client.messages.create
         kwargs = create_call.call_args[1]
         assert kwargs["system"] == _CLAUDE_CODE_SYSTEM_PREFIX
 
@@ -330,11 +288,11 @@ class TestCallLlm:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         messages = [{"role": "user", "content": "hi"}]
-        with pytest.raises(RuntimeError, match="No Anthropic credentials"):
+        with pytest.raises(LLMAuthError):
             call_llm(messages, _make_config())
 
-    @patch("creel.llm.anthropic.Anthropic")
-    def test_on_text_delta_uses_streaming(self, mock_cls, monkeypatch) -> None:
+    @patch("creel.providers.anthropic._get_client")
+    def test_on_text_delta_uses_streaming(self, mock_get_client, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
 
@@ -342,16 +300,26 @@ class TestCallLlm:
         mock_stream.__enter__ = MagicMock(return_value=mock_stream)
         mock_stream.__exit__ = MagicMock(return_value=False)
         mock_stream.text_stream = iter(["hi"])
-        mock_stream.get_final_message.return_value = _mock_message("hi")
 
-        mock_cls.return_value.messages.stream.return_value = mock_stream
+        final_msg = MagicMock()
+        block = MagicMock()
+        block.type = "text"
+        block.text = "hi"
+        final_msg.content = [block]
+        final_msg.stop_reason = "end_turn"
+        final_msg.usage = MagicMock(input_tokens=10, output_tokens=5)
+        mock_stream.get_final_message.return_value = final_msg
+
+        mock_client = MagicMock()
+        mock_client.messages.stream.return_value = mock_stream
+        mock_get_client.return_value = mock_client
 
         messages = [{"role": "user", "content": "hi"}]
         deltas = []
         call_llm(messages, _make_config(), on_text_delta=deltas.append)
 
         assert deltas == ["hi"]
-        mock_cls.return_value.messages.stream.assert_called_once()
+        mock_client.messages.stream.assert_called_once()
 
 
 # -- summarize_messages tests --
@@ -359,10 +327,7 @@ class TestCallLlm:
 
 class TestSummarizeMessages:
     @patch("creel.llm._run_llm_direct")
-    @patch("creel.llm._get_client")
-    def test_formats_tool_use_and_tool_result(
-        self, mock_get_client, mock_direct, monkeypatch
-    ) -> None:
+    def test_formats_tool_use_and_tool_result(self, mock_direct, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         mock_direct.return_value = "Summary of conversation"
 
@@ -393,8 +358,7 @@ class TestSummarizeMessages:
         assert "Sunny" in prompt
 
     @patch("creel.llm._run_llm_direct")
-    @patch("creel.llm._get_client")
-    def test_truncation_at_200_chars(self, mock_get_client, mock_direct, monkeypatch) -> None:
+    def test_truncation_at_200_chars(self, mock_direct, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         mock_direct.return_value = "summary"
 

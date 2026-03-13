@@ -400,9 +400,24 @@ class TestLLMIntegration:
     def teardown_method(self):
         reset_global_limiter()
 
+    @staticmethod
+    def _mock_provider(monkeypatch, mock_response):
+        """Patch get_provider_with_fallback to return a mock provider."""
+        from creel import llm as llm_mod
+
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = mock_response
+        monkeypatch.setattr(
+            llm_mod,
+            "get_provider_with_fallback",
+            lambda **kwargs: mock_provider,
+        )
+        return mock_provider
+
     def test_call_llm_checks_rate_limit(self, monkeypatch):
         """Verify call_llm checks the rate limiter before making API call."""
         from creel import llm as llm_mod
+        from creel.providers import LLMMessage, Usage
 
         limiter = configure_rate_limiter(
             requests_per_minute=1,
@@ -412,10 +427,8 @@ class TestLLMIntegration:
         # Drain the bucket
         limiter.check(block=False)
 
-        # Mock the client so we don't need actual API credentials
-        mock_client = MagicMock()
-        monkeypatch.setattr(llm_mod, "_get_client", lambda: mock_client)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        mock_response = LLMMessage(content=[], usage=Usage(input_tokens=10, output_tokens=5))
+        self._mock_provider(monkeypatch, mock_response)
 
         from creel.models import LLMConfig
 
@@ -430,19 +443,12 @@ class TestLLMIntegration:
     def test_call_llm_records_usage(self, monkeypatch):
         """Verify call_llm records usage after a successful call."""
         from creel import llm as llm_mod
+        from creel.providers import LLMMessage, Usage
 
         limiter = configure_rate_limiter(requests_per_minute=100)
 
-        # Create a mock response with usage
-        mock_response = MagicMock()
-        mock_response.usage.input_tokens = 50
-        mock_response.usage.output_tokens = 25
-        mock_response.content = []
-
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        monkeypatch.setattr(llm_mod, "_get_client", lambda: mock_client)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        mock_response = LLMMessage(content=[], usage=Usage(input_tokens=50, output_tokens=25))
+        self._mock_provider(monkeypatch, mock_response)
 
         from creel.models import LLMConfig
 
@@ -459,16 +465,10 @@ class TestLLMIntegration:
     def test_no_limiter_does_not_block(self, monkeypatch):
         """Without a configured limiter, calls proceed normally."""
         from creel import llm as llm_mod
+        from creel.providers import LLMMessage, Usage
 
-        mock_response = MagicMock()
-        mock_response.usage.input_tokens = 50
-        mock_response.usage.output_tokens = 25
-        mock_response.content = []
-
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        monkeypatch.setattr(llm_mod, "_get_client", lambda: mock_client)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        mock_response = LLMMessage(content=[], usage=Usage(input_tokens=50, output_tokens=25))
+        self._mock_provider(monkeypatch, mock_response)
 
         from creel.models import LLMConfig
 

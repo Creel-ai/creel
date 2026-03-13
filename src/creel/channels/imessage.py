@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from creel.channels import Channel
-from creel.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.channels.message import Attachment, IncomingMessage
+from creel.channels.mixins import MediaHandlerMixin
 from creel.outputs import MESSAGE_PREFIX
 
 if TYPE_CHECKING:
@@ -20,23 +21,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Mapping MIME type prefixes to AttachmentType
-_MIME_TO_ATTACHMENT_TYPE: dict[str, AttachmentType] = {
-    "image/": AttachmentType.IMAGE,
-    "audio/": AttachmentType.AUDIO,
-    "video/": AttachmentType.VIDEO,
-}
-
-# Audio MIME types that should be marked as "voice" (common iMessage voice formats)
-_VOICE_MIME_TYPES = frozenset({"audio/x-caf", "audio/caf", "audio/amr"})
-
 # Core Data epoch: 2001-01-01 00:00:00 UTC in Unix time
 _CORE_DATA_EPOCH = 978307200
 # chat.db stores timestamps in nanoseconds since Core Data epoch
 _NS_FACTOR = 1_000_000_000
 
 
-class IMessageChannel(Channel):
+class IMessageChannel(MediaHandlerMixin, Channel):
     """iMessage channel that polls chat.db for incoming messages."""
 
     MESSAGES_DB = Path.home() / "Library" / "Messages" / "chat.db"
@@ -245,8 +236,7 @@ class IMessageChannel(Channel):
         finally:
             conn.close()
 
-    @staticmethod
-    def _query_attachments(conn: sqlite3.Connection, message_rowid: int) -> list[Attachment]:
+    def _query_attachments(self, conn: sqlite3.Connection, message_rowid: int) -> list[Attachment]:
         """Query attachments for a specific message from chat.db."""
         cursor = conn.execute(
             """
@@ -278,16 +268,8 @@ class IMessageChannel(Channel):
                 else:
                     logger.warning("iMessage attachment file missing from disk: %s", expanded)
 
-            # Determine attachment type from MIME type
-            attachment_type = AttachmentType.FILE
-            if mime_type:
-                if mime_type in _VOICE_MIME_TYPES:
-                    attachment_type = AttachmentType.VOICE
-                else:
-                    for prefix, atype in _MIME_TO_ATTACHMENT_TYPE.items():
-                        if mime_type.startswith(prefix):
-                            attachment_type = atype
-                            break
+            # Classify using the MediaHandlerMixin
+            attachment_type = self._classify_mime_type(mime_type)
 
             # Skip attachments with no file on disk and no useful metadata
             if file_path is None and not transfer_name:

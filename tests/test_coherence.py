@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from creel.providers import LLMMessage, TextBlock, Usage
 from guardian.coherence import CoherenceChecker
 from guardian.types import CoherenceConfig
 
@@ -15,13 +16,12 @@ def config() -> CoherenceConfig:
     return CoherenceConfig(enabled=True, model="test-model")
 
 
-def _mock_response(text: str) -> MagicMock:
-    block = MagicMock()
-    block.type = "text"
-    block.text = text
-    response = MagicMock()
-    response.content = [block]
-    return response
+def _mock_llm_response(text: str, input_tokens: int = 100, output_tokens: int = 50) -> LLMMessage:
+    return LLMMessage(
+        content=[TextBlock(text=text)],
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
 
 
 class TestCoherenceChecker:
@@ -30,64 +30,64 @@ class TestCoherenceChecker:
         result = checker.check("what's the weather?", "check_weather", {})
         assert result.coherent is True
 
-    @patch("creel.llm._get_client")
-    def test_coherent_action(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+    @patch("creel.providers.build_provider")
+    def test_coherent_action(self, mock_build: MagicMock, config: CoherenceConfig) -> None:
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '{"coherent": true, "confidence": 0.95, "reasoning": "Weather check matches request"}'
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
 
         checker = CoherenceChecker(config)
         result = checker.check("what's the weather?", "check_weather", {"location": "Denver"})
         assert result.coherent is True
         assert result.confidence == 0.95
 
-    @patch("creel.llm._get_client")
-    def test_incoherent_action(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+    @patch("creel.providers.build_provider")
+    def test_incoherent_action(self, mock_build: MagicMock, config: CoherenceConfig) -> None:
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '{"coherent": false, "confidence": 0.92, "reasoning": "User asked about weather but agent is sending email"}'
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
 
         checker = CoherenceChecker(config)
         result = checker.check("what's the weather?", "send_email", {"to": "hacker@evil.com"})
         assert result.coherent is False
         assert "email" in result.reasoning.lower()
 
-    @patch("creel.llm._get_client")
+    @patch("creel.providers.build_provider")
     def test_api_failure_defaults_coherent(
-        self, mock_get_client: MagicMock, config: CoherenceConfig
+        self, mock_build: MagicMock, config: CoherenceConfig
     ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.side_effect = RuntimeError("API down")
-        mock_get_client.return_value = mock_client
+        mock_provider = MagicMock()
+        mock_provider.create.side_effect = RuntimeError("API down")
+        mock_build.return_value = mock_provider
 
         checker = CoherenceChecker(config)
         result = checker.check("test", "check_weather", {})
         assert result.coherent is True
         assert "failed" in result.reasoning.lower()
 
-    @patch("creel.llm._get_client")
+    @patch("creel.providers.build_provider")
     def test_json_parse_error_defaults_coherent(
-        self, mock_get_client: MagicMock, config: CoherenceConfig
+        self, mock_build: MagicMock, config: CoherenceConfig
     ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response("not json")
-        mock_get_client.return_value = mock_client
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response("not json")
+        mock_build.return_value = mock_provider
 
         checker = CoherenceChecker(config)
         result = checker.check("test", "check_weather", {})
         assert result.coherent is True
 
-    @patch("creel.llm._get_client")
-    def test_usage_stats(self, mock_get_client: MagicMock, config: CoherenceConfig) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+    @patch("creel.providers.build_provider")
+    def test_usage_stats(self, mock_build: MagicMock, config: CoherenceConfig) -> None:
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '{"coherent": true, "confidence": 0.9, "reasoning": "ok"}'
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
 
         checker = CoherenceChecker(config)
         checker.check("test", "tool", {})

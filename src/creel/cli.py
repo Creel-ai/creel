@@ -12,6 +12,8 @@ Usage:
     creel daemon install             Install daemon as launchd service
     creel daemon uninstall           Remove daemon launchd service
     creel send "message"             Send one message via daemon API
+    creel doctor                     Check installation health
+    creel doctor --fix               Auto-fix remediable issues
 """
 
 from __future__ import annotations
@@ -571,6 +573,8 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
             print(f"Error building {channel_type} channel: {e}", file=sys.stderr)
             raise RuntimeError(f"Channel configuration error: {e}") from e
 
+        config_path = args.agent_config or _default_agent_config()
+
         server = ChatServer(
             agent_def,
             use_containers=args.containers,
@@ -580,6 +584,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
             agent_def,
             use_containers=args.containers,
             server=server,
+            config_path=config_path,
         )
 
         if not getattr(args, "no_scheduler", False):
@@ -606,6 +611,39 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         # Start host bridge server if enabled
         if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
             _start_bridge_server(agent_def.bridge)
+
+        # Install SIGHUP handler for config reload.
+        # Signal handlers run on the main thread and can interrupt code holding
+        # locks, so we defer the actual reload to a background thread.
+        import signal as _signal
+
+        def _sighup_handler(signum, frame):
+            logger.info("Received SIGHUP — scheduling config reload")
+            t = threading.Thread(
+                target=_deferred_sighup_reload,
+                name="creel-sighup-reload",
+                daemon=True,
+            )
+            t.start()
+
+        def _deferred_sighup_reload():
+            try:
+                result = service.reload_config()
+                logger.info("SIGHUP reload: %s", result.summary())
+            except Exception:
+                logger.exception("SIGHUP config reload failed")
+
+        _signal.signal(_signal.SIGHUP, _sighup_handler)
+
+        # Start file watcher for automatic config reload
+        from creel.daemon.watcher import ConfigWatcher
+
+        watcher = ConfigWatcher(
+            config_path=Path(config_path),
+            on_change=lambda: service.reload_config(),
+        )
+        watcher.start()
+        service._config_watcher = watcher
 
         return service
 
@@ -1046,6 +1084,41 @@ def cmd_daemon_status(args: argparse.Namespace) -> int:
                 print(f"Bridge: not reachable ({bridge_url})")
     except Exception:
         pass  # No agent config or bridge not configured
+
+    return 0
+
+
+def cmd_reload(args: argparse.Namespace) -> int:
+    """Hot-reload daemon config without restarting."""
+    socket_path = _daemon_socket_path(args)
+
+    try:
+        resp = _daemon_request(socket_path, "POST", "/api/config/reload", timeout=10.0)
+    except Exception as e:
+        print(f"Error: Could not reach daemon at {socket_path}: {e}", file=sys.stderr)
+        return 1
+
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.json().get("detail", "")
+        except Exception:
+            detail = resp.text
+        print(f"Reload failed: {detail}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    print(data.get("summary", "Config reloaded."))
+
+    changes = data.get("changes", [])
+    for change in changes:
+        print(f"  - {change['field']}")
+
+    non_reloadable = data.get("non_reloadable", [])
+    if non_reloadable:
+        print("\nNon-reloadable changes (restart required):")
+        for nr in non_reloadable:
+            print(f"  - {nr['field']}: {nr['message']}")
 
     return 0
 
@@ -1598,6 +1671,19 @@ def cmd_limits_override(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Run installation health checks."""
+    from creel.doctor import run_doctor
+
+    agent_config_path = args.agent_config
+    report = run_doctor(
+        agent_config_path=agent_config_path,
+        fix=args.fix,
+        no_color=args.no_color,
+    )
+    return 1 if report.errors > 0 else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -1738,6 +1824,13 @@ def main() -> int:
         default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     )
+
+    # doctor command
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Check Creel installation health and configuration"
+    )
+    doctor_parser.add_argument("--fix", action="store_true", help="Auto-fix remediable issues")
+    doctor_parser.add_argument("--no-color", action="store_true", help="Disable colorized output")
 
     # encrypt command
     encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
@@ -1890,6 +1983,15 @@ def main() -> int:
         for action in daemon_subparsers._choices_actions  # type: ignore[attr-defined]
         if action.dest != "run"
     ]
+
+    # reload command
+    reload_parser = subparsers.add_parser("reload", help="Hot-reload daemon config without restart")
+    reload_parser.add_argument(
+        "--socket-path",
+        type=Path,
+        default=None,
+        help="Unix socket path (default: ~/.creel/daemon.sock)",
+    )
 
     # send command
     send_parser = subparsers.add_parser("send", help="Send one message to the running daemon")
@@ -2089,9 +2191,11 @@ def main() -> int:
         "validate": cmd_validate,
         "attach": cmd_attach,
         "audit": cmd_audit,
+        "doctor": cmd_doctor,
         "send": cmd_send,
         "encrypt": cmd_encrypt,
         "usage": cmd_usage,
+        "reload": cmd_reload,
     }
 
     return commands[args.command](args)

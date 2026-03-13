@@ -26,7 +26,7 @@ from creel.channels.message import (
 from creel.channels.message import (
     IncomingMessage as MediaMessage,
 )
-from creel.channels.mixins import BridgeClientMixin, PollingChannelMixin
+from creel.channels.mixins import BridgeClientMixin, MediaHandlerMixin, PollingChannelMixin
 from creel.channels.telegram_bridge import (
     HttpTelegramBridge,
     TelegramBridge,
@@ -46,7 +46,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixin, Channel):
+class TelegramChannel(
+    MediaHandlerMixin, PollingChannelMixin, BridgeClientMixin, WebhookChannelMixin, Channel
+):
     """Telegram messaging channel.
 
     Supports two operating modes:
@@ -54,6 +56,18 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
     - **webhook**: blocks in ``listen()`` and relies on FastAPI webhook
       routes (mounted via ``get_webhook_routes()``) to push messages.
     """
+
+    _platform_type_map: dict[str, AttachmentType] = {
+        "photo": AttachmentType.IMAGE,
+        "voice": AttachmentType.VOICE,
+        "audio": AttachmentType.AUDIO,
+        "video": AttachmentType.VIDEO,
+        "document": AttachmentType.FILE,
+    }
+    # Telegram voice messages use audio/ogg in addition to the defaults.
+    _voice_mime_types: frozenset[str] = frozenset(
+        {"audio/x-caf", "audio/caf", "audio/amr", "audio/ogg"}
+    )
 
     def __init__(
         self,
@@ -252,27 +266,16 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
         """Download Telegram media files and convert to Attachment objects."""
         attachments: list[Attachment] = []
         for media in media_list:
-            try:
-                data = self._bridge.download_file(media.file_id)
-            except Exception:
-                logger.warning(
-                    "Failed to download Telegram file %s",
-                    media.file_id,
-                    exc_info=True,
-                )
-                continue
-
-            # Map Telegram file_type to AttachmentType
-            att_type = _telegram_file_type_to_attachment(media.file_type)
-            attachments.append(
-                Attachment(
-                    type=att_type,
-                    data=data,
-                    mime_type=media.mime_type,
-                    file_name=media.file_name,
-                    file_size=media.file_size or len(data),
-                )
+            att = self._download_and_classify(
+                self._bridge.download_file,
+                media.file_id,
+                platform_type=media.file_type,
+                mime_type=media.mime_type,
+                file_name=media.file_name,
+                file_size=media.file_size,
             )
+            if att is not None:
+                attachments.append(att)
         return attachments
 
     # --- Webhook mode ---
@@ -368,20 +371,6 @@ class TelegramChannel(PollingChannelMixin, BridgeClientMixin, WebhookChannelMixi
 
     def health_check(self) -> dict[str, Any]:
         return self._bridge_health_check()
-
-
-_TELEGRAM_TYPE_MAP: dict[str, AttachmentType] = {
-    "photo": AttachmentType.IMAGE,
-    "voice": AttachmentType.VOICE,
-    "audio": AttachmentType.AUDIO,
-    "video": AttachmentType.VIDEO,
-    "document": AttachmentType.FILE,
-}
-
-
-def _telegram_file_type_to_attachment(file_type: str) -> AttachmentType:
-    """Map a TelegramMedia file_type to an AttachmentType."""
-    return _TELEGRAM_TYPE_MAP.get(file_type, AttachmentType.FILE)
 
 
 def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:

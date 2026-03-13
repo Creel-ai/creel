@@ -50,6 +50,7 @@ _SKIP_COHERENCE = frozenset({"browser_close", "browser_sessions", "mark_read"})
 class CoherenceChecker:
     """LLM-based action coherence checker.
 
+    Uses the provider abstraction to support multiple LLM backends.
     Compares the user's request against a proposed tool call to catch
     cases where injection causes unrelated tool execution.
     """
@@ -65,6 +66,17 @@ class CoherenceChecker:
             "calls": self._total_calls,
             "total_latency_ms": round(self._total_latency_ms, 1),
         }
+
+    def _get_provider(self):
+        """Get the LLM provider for coherence checking."""
+        from creel.providers import build_provider
+        from creel.providers.base import _resolve_model_name, _resolve_provider_name
+
+        provider_name = _resolve_provider_name(
+            self._config.model,
+            self._config.provider or "anthropic",
+        )
+        return build_provider(provider_name), _resolve_model_name(self._config.model)
 
     def check(
         self,
@@ -91,8 +103,6 @@ class CoherenceChecker:
 
         t0 = time.perf_counter()
         try:
-            from creel.llm import _get_client
-
             extra_context = ""
             if prior_tools:
                 extra_context += (
@@ -109,9 +119,9 @@ class CoherenceChecker:
                 f"{extra_context}"
             )
 
-            client = _get_client()
-            response = client.messages.create(
-                model=self._config.model,
+            provider, model = self._get_provider()
+            response = provider.create(
+                model=model,
                 max_tokens=self._config.max_tokens,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],

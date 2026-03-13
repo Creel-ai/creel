@@ -8,7 +8,7 @@ Docker containers are sandboxed and can't access the macOS scripting bridge or a
 
 ## How
 
-A FastAPI server (`./runner.py bridge`) runs as a host process and exposes REST endpoints at `/notes/*`, `/reminders/*`, `/things/*`, and `/imessage/*`. Containerized executors make HTTP requests to these endpoints with scoped authentication tokens.
+A FastAPI server runs as a host process and exposes REST endpoints at `/notes/*`, `/reminders/*`, `/things/*`, and `/imessage/*`. Containerized executors make HTTP requests to these endpoints with scoped authentication tokens.
 
 ## Security
 
@@ -26,7 +26,7 @@ The bridge server delegates to command-line tools:
 ## Starting the Bridge
 
 ```bash
-./runner.py bridge
+creel daemon start
 ```
 
-This starts the FastAPI server on `localhost:8765` with authentication middleware and scoped endpoint routing.
+This starts the FastAPI server on `localhost:8099` with authentication middleware and scoped endpoint routing.

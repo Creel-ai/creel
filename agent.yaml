@@ -595,6 +595,29 @@ tools:
         type: string
         description: "Number of results (default: 5, max: 20)"
 
+  # Text-to-Speech
+  synthesize_speech:
+    executor: tts
+    network: true
+    description: "Convert text to speech audio using TTS"
+    parameters:
+      text:
+        type: string
+        description: "Text to convert to speech (max 5000 chars)"
+        required: true
+      voice:
+        type: string
+        description: "Voice name (e.g. nova, alloy, shimmer for OpenAI; Rachel for ElevenLabs)"
+      backend:
+        type: string
+        description: "TTS backend: openai, elevenlabs, or local"
+      output_format:
+        type: string
+        description: "Audio format: mp3, wav, ogg (default: mp3)"
+      output_path:
+        type: string
+        description: "Custom output file path (optional)"
+
   notion_api:
     executor: notion
     secrets: secrets/notion_read.env.enc

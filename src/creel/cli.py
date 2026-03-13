@@ -610,11 +610,21 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
             _start_bridge_server(agent_def.bridge)
 
-        # Install SIGHUP handler for config reload
+        # Install SIGHUP handler for config reload.
+        # Signal handlers run on the main thread and can interrupt code holding
+        # locks, so we defer the actual reload to a background thread.
         import signal as _signal
 
         def _sighup_handler(signum, frame):
-            logger.info("Received SIGHUP — reloading config")
+            logger.info("Received SIGHUP — scheduling config reload")
+            t = threading.Thread(
+                target=_deferred_sighup_reload,
+                name="creel-sighup-reload",
+                daemon=True,
+            )
+            t.start()
+
+        def _deferred_sighup_reload():
             try:
                 result = service.reload_config()
                 logger.info("SIGHUP reload: %s", result.summary())

@@ -396,7 +396,7 @@ class OpenAIProvider(LLMProvider):
         """Check connectivity by listing models."""
         try:
             client = self._get_client()
-            client.models.list()
+            next(iter(client.models.list()), None)
             return True
         except Exception:
             return False

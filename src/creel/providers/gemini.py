@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 from collections.abc import Callable
@@ -21,15 +22,13 @@ from creel.providers.base import (
 
 logger = logging.getLogger(__name__)
 
-# Counter for generating unique tool-call IDs within a session
-_tool_call_counter = 0
+# Thread-safe counter for generating unique tool-call IDs within a session
+_tool_call_ids = itertools.count(1)
 
 
 def _next_tool_call_id() -> str:
     """Generate a unique tool-call ID."""
-    global _tool_call_counter
-    _tool_call_counter += 1
-    return f"gemini_tc_{_tool_call_counter}"
+    return f"gemini_tc_{next(_tool_call_ids)}"
 
 
 def _get_genai_module():
@@ -96,8 +95,21 @@ def _convert_messages_to_gemini(
         {"role": "user"|"model", "parts": [{"text": "..."}, ...]}
 
     Tool calls become function_call parts, tool results become function_response parts.
+    Gemini requires ``function_response.name`` to be the **function name** (not the
+    call ID), so we build a lookup from ``tool_use_id`` → ``name`` while scanning.
     """
     gemini_contents = []
+
+    # Build lookup: tool_use_id -> function name from tool_use blocks
+    tool_id_to_name: dict[str, str] = {}
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    tid = block.get("id", "")
+                    if tid:
+                        tool_id_to_name[tid] = block.get("name", "unknown")
 
     for msg in messages:
         role = msg["role"]
@@ -145,10 +157,12 @@ def _convert_messages_to_gemini(
                         else:
                             text_parts.append(str(item))
                     result_content = "\n".join(text_parts)
+                tool_use_id = block.get("tool_use_id", "")
+                func_name = tool_id_to_name.get(tool_use_id, "unknown")
                 parts.append(
                     {
                         "function_response": {
-                            "name": block.get("tool_use_id", "unknown"),
+                            "name": func_name,
                             "response": {"result": str(result_content)},
                         }
                     }

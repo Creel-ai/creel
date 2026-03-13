@@ -112,6 +112,17 @@ class TestConvertMessagesToGemini:
     def test_tool_result_blocks(self):
         messages = [
             {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "call_123",
+                        "name": "weather",
+                        "input": {"location": "Denver"},
+                    }
+                ],
+            },
+            {
                 "role": "user",
                 "content": [
                     {
@@ -120,13 +131,30 @@ class TestConvertMessagesToGemini:
                         "content": "Sunny, 72F",
                     }
                 ],
-            }
+            },
         ]
         result = _convert_messages_to_gemini(messages)
-        assert result[0]["role"] == "user"
-        fr = result[0]["parts"][0]["function_response"]
-        assert fr["name"] == "call_123"
+        # tool_result message is the second entry
+        fr = result[1]["parts"][0]["function_response"]
+        assert fr["name"] == "weather"
         assert fr["response"]["result"] == "Sunny, 72F"
+
+    def test_tool_result_without_prior_tool_use_falls_back(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "orphan_id",
+                        "content": "some result",
+                    }
+                ],
+            },
+        ]
+        result = _convert_messages_to_gemini(messages)
+        fr = result[0]["parts"][0]["function_response"]
+        assert fr["name"] == "unknown"
 
 
 # -- Error wrapping --

@@ -22,6 +22,7 @@ class SessionState:
 
     sender_id: str = ""
     workspace: str | None = None
+    model_override: str | None = None
 
 
 class ExecutorConfig(BaseModel):

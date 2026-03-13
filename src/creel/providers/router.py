@@ -7,6 +7,7 @@ chain.  Auth errors and non-retryable errors propagate immediately.
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Callable
 
@@ -61,8 +62,9 @@ class ModelRouter(LLMProvider):
         self._region = region
         self._check_health = check_health
 
-    def _build_chain(self) -> list[tuple[LLMProvider, str]]:
-        """Build the ordered list of (provider_instance, model_name) to try.
+    @functools.cached_property
+    def _chain(self) -> list[tuple[LLMProvider, str]]:
+        """Build and cache the ordered list of (provider_instance, model_name) to try.
 
         Returns the primary first, then each fallback entry.
         """
@@ -96,7 +98,7 @@ class ModelRouter(LLMProvider):
         tools: list[dict] | None = None,
         timeout: float | None = None,
     ) -> LLMMessage:
-        chain = self._build_chain()
+        chain = self._chain
         last_exc: LLMProviderError | None = None
 
         for i, (provider, provider_model) in enumerate(chain):
@@ -150,8 +152,19 @@ class ModelRouter(LLMProvider):
         tools: list[dict] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
     ) -> LLMMessage:
-        chain = self._build_chain()
+        chain = self._chain
         last_exc: LLMProviderError | None = None
+
+        # Track whether any text deltas have been emitted.  Once the user has
+        # received partial output we cannot transparently retry on another
+        # provider — doing so would produce garbled/duplicated text.
+        delta_emitted = False
+
+        def _guarded_delta(text: str) -> None:
+            nonlocal delta_emitted
+            delta_emitted = True
+            if on_text_delta:
+                on_text_delta(text)
 
         for i, (provider, provider_model) in enumerate(chain):
             label = f"{provider.__class__.__name__}/{provider_model}"
@@ -173,9 +186,17 @@ class ModelRouter(LLMProvider):
                     max_tokens=max_tokens,
                     system=system,
                     tools=tools,
-                    on_text_delta=on_text_delta,
+                    on_text_delta=_guarded_delta if on_text_delta else None,
                 )
             except _FAILOVER_ERRORS as exc:
+                if delta_emitted:
+                    # Partial output already sent to the caller — cannot retry
+                    # transparently without garbling.  Propagate the error.
+                    logger.warning(
+                        "Streaming provider %s failed after partial output, cannot failover",
+                        label,
+                    )
+                    raise
                 last_exc = exc
                 logger.warning(
                     "Streaming provider %s failed with %s (status %s), trying next",
@@ -193,7 +214,7 @@ class ModelRouter(LLMProvider):
 
     def health(self) -> bool:
         """Returns True if at least one provider in the chain is healthy."""
-        chain = self._build_chain()
+        chain = self._chain
         for provider, _ in chain:
             try:
                 if provider.health():
@@ -205,7 +226,7 @@ class ModelRouter(LLMProvider):
     def extract_env_vars(self) -> dict[str, str]:
         """Merge env vars from all providers in the chain."""
         env: dict[str, str] = {}
-        chain = self._build_chain()
+        chain = self._chain
         for provider, _ in chain:
             env.update(provider.extract_env_vars())
         return env

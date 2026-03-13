@@ -370,6 +370,96 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 1
 
 
+def _deploy_dir(args: argparse.Namespace) -> Path:
+    """Resolve the deployments directory."""
+    creel_home = (args.agent_config or _default_agent_config()).parent
+    return creel_home / "deployments"
+
+
+def cmd_config_validate(args: argparse.Namespace) -> int:
+    """Validate the agent configuration."""
+    from creel.deploy import validate_config
+
+    config_path = args.agent_config or _default_agent_config()
+    errors = validate_config(config_path)
+    if errors:
+        print("Config validation failed:", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 1
+    print(f"Config is valid: {config_path}")
+    return 0
+
+
+def cmd_deploy(args: argparse.Namespace) -> int:
+    """Deploy (snapshot) the current agent configuration."""
+    from creel.deploy import create_snapshot, validate_config
+
+    config_path = args.agent_config or _default_agent_config()
+    creel_home = config_path.parent
+    deploy_dir = _deploy_dir(args)
+
+    # Always validate before deploying
+    errors = validate_config(config_path)
+    if errors:
+        print("Config validation failed — cannot deploy:", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 1
+
+    tag = getattr(args, "tag", None)
+    message = getattr(args, "message", "") or ""
+
+    try:
+        record = create_snapshot(creel_home, deploy_dir, tag=tag, message=message)
+    except ValueError as exc:
+        print(f"Deploy failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Deployed {record.label} (hash {record.config_hash})")
+    return 0
+
+
+def cmd_deploy_history(args: argparse.Namespace) -> int:
+    """Show deployment history."""
+    from creel.deploy import get_history
+
+    deploy_dir = _deploy_dir(args)
+    rows = get_history(deploy_dir)
+    if not rows:
+        print("No deployments recorded yet.")
+        return 0
+
+    print(f"{'Ver':<6} {'Tag':<12} {'Hash':<18} {'Active':<8} {'Timestamp':<28} {'Message'}")
+    print("-" * 100)
+    for row in rows:
+        marker = "*" if row["active"] else ""
+        print(
+            f"v{row['version']:<5} {row['tag']:<12} {row['hash']:<18} "
+            f"{marker:<8} {row['timestamp']:<28} {row['message']}"
+        )
+    return 0
+
+
+def cmd_rollback(args: argparse.Namespace) -> int:
+    """Roll back to a previous deployment version."""
+    from creel.deploy import rollback
+
+    config_path = args.agent_config or _default_agent_config()
+    creel_home = config_path.parent
+    deploy_dir = _deploy_dir(args)
+    target = getattr(args, "to", None)
+
+    try:
+        record = rollback(creel_home, deploy_dir, target_tag=target)
+    except ValueError as exc:
+        print(f"Rollback failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Rolled back to {record.label} (hash {record.config_hash})")
+    return 0
+
+
 def _load_agent_def(args: argparse.Namespace):
     """Load the global agent definition from agent.yaml."""
     from creel.models import load_agent_config
@@ -1644,6 +1734,36 @@ def main() -> int:
         help="Delete the plaintext file after encryption",
     )
 
+    # config command group
+    config_parser = subparsers.add_parser("config", help="Agent configuration management")
+    config_subparsers = config_parser.add_subparsers(
+        dest="config_command",
+        metavar="{validate}",
+    )
+    config_subparsers.add_parser("validate", help="Validate agent.yaml configuration")
+
+    # deploy command
+    deploy_parser = subparsers.add_parser("deploy", help="Deploy agent configuration")
+    deploy_parser.add_argument(
+        "--tag", type=str, default=None, help="Tag this deployment (e.g. v1.2)"
+    )
+    deploy_parser.add_argument("-m", "--message", type=str, default="", help="Deployment message")
+    deploy_parser.add_argument(
+        "deploy_subcommand",
+        nargs="?",
+        default=None,
+        choices=["history"],
+        help="Optional subcommand (history)",
+    )
+
+    # rollback command
+    rollback_parser = subparsers.add_parser(
+        "rollback", help="Roll back to a previous agent configuration"
+    )
+    rollback_parser.add_argument(
+        "--to", type=str, default=None, help="Tag or version to roll back to (e.g. v1.1)"
+    )
+
     # --- Shared daemon parent parsers (to avoid option duplication) ---
     _daemon_paths_parent = argparse.ArgumentParser(add_help=False)
     _daemon_paths_parent.add_argument(
@@ -1928,6 +2048,23 @@ def main() -> int:
             cron_parser.print_help()
             return 1
         return cron_commands[args.cron_command](args)
+
+    if args.command == "config":
+        config_commands = {
+            "validate": cmd_config_validate,
+        }
+        if args.config_command not in config_commands:
+            config_parser.print_help()
+            return 1
+        return config_commands[args.config_command](args)
+
+    if args.command == "deploy":
+        if args.deploy_subcommand == "history":
+            return cmd_deploy_history(args)
+        return cmd_deploy(args)
+
+    if args.command == "rollback":
+        return cmd_rollback(args)
 
     commands = {
         "init": cmd_init,

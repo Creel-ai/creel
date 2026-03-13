@@ -564,6 +564,38 @@ class ChannelsConfig(BaseModel):
         return None
 
 
+class MonitorDefinition(BaseModel):
+    """Monitor definition from agent.yaml monitors section."""
+
+    executor: str
+    prompt: str
+    schedule: str  # cron expression
+    delivery: str | None = None  # channel name
+    delivery_mode: Literal["announce", "webhook", "none"] = "announce"
+    delivery_url: str | None = None
+    alert_level: str = "notice"  # info, notice, urgent
+    quiet_hours: str | None = None  # "HH:MM-HH:MM"
+    cooldown_seconds: int = 3600
+    description: str = ""
+    enabled: bool = True
+
+    @field_validator("schedule")
+    @classmethod
+    def validate_cron(cls, v: str) -> str:
+        parts = v.split()
+        if len(parts) != 5:
+            raise ValueError(f"schedule must be a 5-part cron expression, got {len(parts)} parts")
+        return v
+
+    @field_validator("alert_level")
+    @classmethod
+    def validate_alert_level(cls, v: str) -> str:
+        allowed = {"info", "notice", "urgent"}
+        if v not in allowed:
+            raise ValueError(f"alert_level must be one of {allowed}, got '{v}'")
+        return v
+
+
 class AgentDefinition(BaseModel):
     """Global agent config loaded from agent.yaml."""
 
@@ -581,6 +613,7 @@ class AgentDefinition(BaseModel):
     media: MediaConfig | None = None
     guardian: GuardianConfig | None = None
     knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
+    monitors: dict[str, MonitorDefinition] = Field(default_factory=dict)
 
 
 # --- Task definition ---

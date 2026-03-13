@@ -1,9 +1,15 @@
 """Session manager - persistent conversation sessions backed by JSON files.
 
-Supports optional encryption at rest using Fernet symmetric encryption.
-When an encryption key is provided, session JSON is encrypted before writing
-and decrypted on read. The key should be a 32-byte URL-safe base64-encoded
-string (standard Fernet key format).
+Provides a clean SessionStore interface for storage backends with a default
+file-based implementation (FileSessionStore) that supports atomic saves,
+backup, and optional encryption at rest.
+
+Storage backend abstraction enables future pluggable backends (SQLite, Redis)
+by implementing the SessionStore interface.
+
+Migration: Existing session files without newer fields (total_tokens,
+updated_at, message_count) are loaded with sensible defaults and upgraded
+on next save.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ import secrets
 import shutil
 import tempfile
 import time
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +42,24 @@ _LOCK_TIMEOUT = 5
 
 class SessionLockError(OSError):
     """Raised when a session file lock cannot be acquired within the timeout."""
+
+
+# -- exceptions --
+
+
+class SessionNotFoundError(ValueError):
+    """Raised when a requested session does not exist.
+
+    Inherits from ValueError for backward compatibility with code that
+    previously caught ValueError from resume_session / load_session.
+    """
+
+
+class SessionCorruptedError(Exception):
+    """Raised when a session file exists but cannot be parsed or decrypted."""
+
+
+# -- encryption helpers --
 
 
 def _derive_fernet_key(passphrase: str, salt: bytes) -> bytes:
@@ -86,6 +111,31 @@ def _flock_with_timeout(fd: int, operation: int, timeout: float = _LOCK_TIMEOUT)
 _ACTIVE_INDEX_FILE = "_active.json"
 
 
+# -- data classes --
+
+
+@dataclass
+class SessionFilter:
+    """Filter criteria for listing sessions."""
+
+    sender_id: str | None = None
+    created_after: float | None = None
+    created_before: float | None = None
+
+
+@dataclass
+class SessionSummary:
+    """Lightweight session metadata returned by list operations."""
+
+    session_id: str
+    sender_id: str
+    title: str
+    created_at: float
+    updated_at: float
+    message_count: int
+    total_tokens: int
+
+
 @dataclass
 class Session:
     """A conversation session with message history."""
@@ -98,15 +148,278 @@ class Session:
     last_active: float = field(default_factory=time.time)
     summary: str = ""
     token_count: int = 0
+    total_tokens: int = 0
+
+
+# -- storage backend abstraction --
+
+
+class SessionStore(ABC):
+    """Abstract interface for session persistence backends.
+
+    Implementations handle the raw storage of session data.  The default
+    FileSessionStore writes JSON files with atomic saves and optional
+    encryption.  Future backends (SQLite, Redis) can implement this
+    interface for pluggable storage.
+    """
+
+    @abstractmethod
+    def save(self, session: Session) -> None:
+        """Persist a session.  Creates a backup of any existing data first."""
+
+    @abstractmethod
+    def load(self, session_id: str) -> Session:
+        """Load a session by ID.
+
+        Raises:
+            SessionNotFoundError: If the session does not exist.
+            SessionCorruptedError: If the session data is corrupt.
+        """
+
+    @abstractmethod
+    def delete(self, session_id: str) -> None:
+        """Delete a session by ID.
+
+        Raises:
+            SessionNotFoundError: If the session does not exist.
+        """
+
+    @abstractmethod
+    def list(self, session_filter: SessionFilter | None = None) -> list[SessionSummary]:
+        """List sessions matching the optional filter criteria."""
+
+    @abstractmethod
+    def exists(self, session_id: str) -> bool:
+        """Check whether a session exists."""
+
+
+class FileSessionStore(SessionStore):
+    """File-based session store with atomic saves and optional encryption.
+
+    Sessions are stored as individual JSON files.  Writes use atomic
+    temp-file-then-rename to prevent corruption from interrupted writes.
+    A ``.bak`` copy of the previous version is kept before each save.
+    """
+
+    def __init__(
+        self,
+        sessions_dir: str = "sessions",
+        encryption_key: str | None = None,
+    ):
+        self._dir = Path(sessions_dir)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._encryption_key: bytes | None = None
+        self._encryption_passphrase: str | None = None
+
+        if encryption_key:
+            try:
+                key_bytes = encryption_key.encode()
+                base64.urlsafe_b64decode(key_bytes)
+                if len(key_bytes) == 44:
+                    self._encryption_key = key_bytes
+                else:
+                    self._encryption_passphrase = encryption_key
+            except Exception:
+                logger.debug("Encryption key is not valid base64, treating as passphrase")
+                self._encryption_passphrase = encryption_key
+            logger.info("Session encryption enabled")
+
+    @property
+    def dir(self) -> Path:
+        """The directory where session files are stored."""
+        return self._dir
+
+    def save(self, session: Session) -> None:
+        """Persist a session atomically with backup."""
+        data = {
+            "session_id": session.session_id,
+            "sender_id": session.sender_id,
+            "title": session.title,
+            "created_at": session.created_at,
+            "last_active": session.last_active,
+            "updated_at": session.last_active,
+            "messages": session.messages,
+            "summary": session.summary,
+            "token_count": session.token_count,
+            "total_tokens": session.total_tokens,
+            "message_count": len(session.messages),
+        }
+
+        path = self._session_path(session.session_id)
+        json_bytes = json.dumps(data, indent=2).encode()
+
+        # Create backup of existing file
+        if path.exists():
+            bak_path = path.with_suffix(".bak")
+            try:
+                bak_path.write_bytes(path.read_bytes())
+            except OSError:
+                logger.debug("Could not create backup for %s", path.name, exc_info=True)
+
+        # Atomic write: temp file → fsync → rename
+        content = self._maybe_encrypt(json_bytes)
+        fd = None
+        tmp_path_str = None
+        try:
+            fd, tmp_path_str = tempfile.mkstemp(dir=self._dir, suffix=".tmp")
+            os.write(fd, content)
+            os.fsync(fd)
+            os.close(fd)
+            fd = None
+            os.replace(tmp_path_str, path)
+        except BaseException:
+            if fd is not None:
+                os.close(fd)
+            if tmp_path_str is not None:
+                try:
+                    os.unlink(tmp_path_str)
+                except OSError:
+                    pass
+            raise
+
+    def load(self, session_id: str) -> Session:
+        """Load a session from a JSON file.
+
+        Raises:
+            SessionNotFoundError: If the session file does not exist.
+            SessionCorruptedError: If the file cannot be parsed.
+        """
+        path = self._session_path(session_id)
+        if not path.exists():
+            raise SessionNotFoundError(f"Session {session_id} not found")
+
+        try:
+            raw_bytes = path.read_bytes()
+            data = self._decrypt_or_parse(raw_bytes)
+            return Session(
+                sender_id=data["sender_id"],
+                session_id=data.get("session_id", session_id),
+                title=data.get("title", ""),
+                messages=data.get("messages", []),
+                created_at=data.get("created_at", time.time()),
+                last_active=data.get("last_active", time.time()),
+                summary=data.get("summary", ""),
+                token_count=data.get("token_count", 0),
+                total_tokens=data.get("total_tokens", 0),
+            )
+        except (json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
+            raise SessionCorruptedError(f"Session {session_id} is corrupted: {e}") from e
+
+    def delete(self, session_id: str) -> None:
+        """Delete a session file and its backup."""
+        path = self._session_path(session_id)
+        if not path.exists():
+            raise SessionNotFoundError(f"Session {session_id} not found")
+        path.unlink()
+        bak_path = path.with_suffix(".bak")
+        if bak_path.exists():
+            bak_path.unlink()
+
+    def list(self, session_filter: SessionFilter | None = None) -> list[SessionSummary]:
+        """List sessions matching filter criteria."""
+        results: list[SessionSummary] = []
+        for path in self._dir.glob("*.json"):
+            if path.name == _ACTIVE_INDEX_FILE:
+                continue
+            try:
+                raw_bytes = path.read_bytes()
+                data = self._decrypt_or_parse(raw_bytes)
+            except Exception:
+                logger.debug("Could not read session file %s, skipping", path.name, exc_info=True)
+                continue
+
+            # Apply filters
+            if session_filter:
+                if session_filter.sender_id and data.get("sender_id") != session_filter.sender_id:
+                    continue
+                created = data.get("created_at", 0)
+                if session_filter.created_after and created < session_filter.created_after:
+                    continue
+                if session_filter.created_before and created > session_filter.created_before:
+                    continue
+
+            results.append(
+                SessionSummary(
+                    session_id=data.get("session_id", path.stem),
+                    sender_id=data.get("sender_id", ""),
+                    title=data.get("title", ""),
+                    created_at=data.get("created_at", 0),
+                    updated_at=data.get("last_active", 0),
+                    message_count=data.get("message_count", len(data.get("messages", []))),
+                    total_tokens=data.get("total_tokens", 0),
+                )
+            )
+
+        results.sort(key=lambda r: r.updated_at, reverse=True)
+        return results
+
+    def exists(self, session_id: str) -> bool:
+        """Check if a session file exists."""
+        try:
+            path = self._session_path(session_id)
+        except ValueError:
+            return False
+        return path.exists()
+
+    # -- internal helpers --
+
+    def _session_path(self, session_id: str) -> Path:
+        """Get the filesystem path for a session file.
+
+        Raises ValueError if the session_id contains path traversal characters.
+        """
+        if not re.fullmatch(r"[a-f0-9]+", session_id):
+            raise ValueError(f"Invalid session_id: {session_id}")
+        return self._dir / f"{session_id}.json"
+
+    def _maybe_encrypt(self, json_bytes: bytes) -> bytes:
+        """Encrypt data if encryption is configured, otherwise return as-is."""
+        if self._encryption_key:
+            return _encrypt_data(json_bytes, self._encryption_key)
+        if self._encryption_passphrase:
+            salt = os.urandom(_SALT_LENGTH)
+            key = _derive_fernet_key(self._encryption_passphrase, salt)
+            return salt + _encrypt_data(json_bytes, key)
+        return json_bytes
+
+    def _decrypt_or_parse(self, raw_bytes: bytes) -> dict:
+        """Decrypt (if encryption enabled) or parse raw session bytes.
+
+        Tries decryption first, falls back to plaintext for backward compat.
+        """
+        if self._encryption_key:
+            try:
+                decrypted = _decrypt_data(raw_bytes, self._encryption_key)
+                return json.loads(decrypted)
+            except Exception:
+                logger.warning(
+                    "Decryption failed, falling back to plaintext (may be an old unencrypted file)",
+                    exc_info=True,
+                )
+                return json.loads(raw_bytes)
+        if self._encryption_passphrase:
+            try:
+                salt = raw_bytes[:_SALT_LENGTH]
+                key = _derive_fernet_key(self._encryption_passphrase, salt)
+                decrypted = _decrypt_data(raw_bytes[_SALT_LENGTH:], key)
+                return json.loads(decrypted)
+            except Exception:
+                logger.warning(
+                    "Passphrase decryption failed, falling back to plaintext "
+                    "(may be an old unencrypted file)",
+                    exc_info=True,
+                )
+                return json.loads(raw_bytes)
+        return json.loads(raw_bytes)
 
 
 class SessionManager:
-    """Manages conversation sessions persisted as JSON files.
+    """Manages conversation sessions with persistence, trimming, and compaction.
 
-    Supports optional encryption at rest: when ``encryption_key`` is provided,
-    session data is encrypted with Fernet before writing to disk and decrypted
-    on read. The key can be a Fernet key (44 bytes base64) or a passphrase
-    (any string, hashed to derive a key).
+    Delegates raw storage to a :class:`SessionStore` backend (default:
+    :class:`FileSessionStore`).  Handles higher-level concerns: active
+    session tracking, message trimming, tool-pair preservation, compaction
+    with summarization, and TTL management.
     """
 
     def __init__(
@@ -119,31 +432,26 @@ class SessionManager:
         max_context_tokens: int = 180_000,
         encryption_key: str | None = None,
         on_session_archived: Callable[[str, list[dict]], None] | None = None,
+        store: SessionStore | None = None,
     ):
-        self._dir = Path(sessions_dir)
-        self._dir.mkdir(parents=True, exist_ok=True)
+        if store is not None:
+            self._store = store
+            self._dir = Path(sessions_dir)
+            self._dir.mkdir(parents=True, exist_ok=True)
+        else:
+            file_store = FileSessionStore(
+                sessions_dir=sessions_dir,
+                encryption_key=encryption_key,
+            )
+            self._store = file_store
+            self._dir = file_store.dir
+
         self._max_history = max_history
         self._ttl_seconds = ttl_hours * 3600 if ttl_hours > 0 else 0
         self._summarize_on_trim = summarize_on_trim
         self._summarize_fn = summarize_fn
         self._max_context_tokens = max_context_tokens
         self._on_session_archived = on_session_archived
-        self._encryption_key: bytes | None = None
-        self._encryption_passphrase: str | None = None
-
-        if encryption_key:
-            # If it looks like a Fernet key (44 chars base64), use directly
-            try:
-                key_bytes = encryption_key.encode()
-                base64.urlsafe_b64decode(key_bytes)
-                if len(key_bytes) == 44:
-                    self._encryption_key = key_bytes
-                else:
-                    self._encryption_passphrase = encryption_key
-            except Exception:
-                logger.debug("Encryption key is not valid base64, treating as passphrase")
-                self._encryption_passphrase = encryption_key
-            logger.info("Session encryption enabled")
 
     # -- public API --
 
@@ -184,21 +492,15 @@ class SessionManager:
         if not self._ttl_seconds:
             return 0
         removed = 0
-        for path in self._dir.glob("*.json"):
-            if path.name == _ACTIVE_INDEX_FILE:
-                continue
-            try:
-                data = self._read_session_file(path)
-            except Exception:
-                logger.debug("Could not read session file %s, skipping", path.name, exc_info=True)
-                continue
-            if data is None or data.get("sender_id") != sender_id:
-                continue
-            last_active = data.get("last_active", 0)
-            if (time.time() - last_active) > self._ttl_seconds:
-                path.unlink()
-                removed += 1
-                logger.info("Removed expired session %s", path.stem)
+        summaries = self._store.list(SessionFilter(sender_id=sender_id))
+        for s in summaries:
+            if (time.time() - s.updated_at) > self._ttl_seconds:
+                try:
+                    self._store.delete(s.session_id)
+                    removed += 1
+                    logger.info("Removed expired session %s", s.session_id)
+                except SessionNotFoundError:
+                    pass
         return removed
 
     def new_session(self, sender_id: str) -> Session:
@@ -224,39 +526,36 @@ class SessionManager:
 
     def list_sessions(self, sender_id: str) -> list[dict]:
         """Return metadata for all sessions belonging to a sender, sorted by last_active desc."""
-        results = []
-        for path in self._dir.glob("*.json"):
-            if path.name == _ACTIVE_INDEX_FILE:
-                continue
-            try:
-                data = self._read_session_file(path)
-            except Exception:
-                logger.debug("Could not read session file %s, skipping", path.name, exc_info=True)
-                continue
-            if data is None or data.get("sender_id") != sender_id:
-                continue
-            results.append(
-                {
-                    "session_id": data.get("session_id", path.stem),
-                    "title": data.get("title", ""),
-                    "created_at": data.get("created_at", 0),
-                    "last_active": data.get("last_active", 0),
-                    "message_count": len(data.get("messages", [])),
-                }
-            )
-        results.sort(key=lambda r: r["last_active"], reverse=True)
-        return results
+        summaries = self._store.list(SessionFilter(sender_id=sender_id))
+        return [
+            {
+                "session_id": s.session_id,
+                "title": s.title,
+                "created_at": s.created_at,
+                "last_active": s.updated_at,
+                "message_count": s.message_count,
+                "total_tokens": s.total_tokens,
+            }
+            for s in summaries
+        ]
 
     def resume_session(self, sender_id: str, session_id: str) -> Session:
         """Switch the active session to an existing one.
 
-        Raises ValueError if the session doesn't exist or belongs to another sender.
+        Raises SessionNotFoundError if the session doesn't exist or belongs
+        to another sender.
         """
-        session = self._load(session_id)
-        if session is None:
-            raise ValueError(f"Session {session_id} not found")
+        try:
+            session = self._store.load(session_id)
+        except (SessionNotFoundError, SessionCorruptedError) as exc:
+            raise SessionNotFoundError(f"Session {session_id} not found") from exc
         if session.sender_id != sender_id:
-            raise ValueError(f"Session {session_id} not found")
+            raise SessionNotFoundError(f"Session {session_id} not found")
+        if len(session.messages) > self._max_history:
+            session.messages = self._trim_preserving_tool_pairs(
+                session.messages,
+                self._max_history,
+            )
         self._set_active_session_id(sender_id, session_id)
         logger.info("Resumed session %s for %s", session_id, sender_id)
         return session
@@ -334,10 +633,13 @@ class SessionManager:
     def update_token_count(self, sender_id: str, input_tokens: int) -> None:
         """Update the session's token count and trigger compaction if needed.
 
-        Called after each LLM response with the input_tokens from usage data.
+        Called once per LLM turn (not per streaming chunk) with the
+        input_tokens from usage data.  Always persists to disk so that
+        total_tokens metadata stays accurate across restarts.
         """
         session = self.get_or_create(sender_id)
         session.token_count = input_tokens
+        session.total_tokens += input_tokens
 
         if (
             self._summarize_on_trim
@@ -345,7 +647,8 @@ class SessionManager:
             and len(session.messages) > 2
         ):
             self._compact_with_summary(session)
-            self._save(session)
+
+        self._save(session)
 
     def _compact_with_summary(self, session: Session) -> None:
         """Compact older messages into a summary, keeping recent messages."""
@@ -416,7 +719,7 @@ class SessionManager:
                 return i
         return target_idx
 
-    # -- persistence --
+    # -- persistence (delegates to store) --
 
     @staticmethod
     def _ensure_valid_start(messages: list[dict]) -> list[dict]:
@@ -474,46 +777,64 @@ class SessionManager:
         return trimmed[i:]
 
     def _save(self, session: Session) -> None:
-        """Write session to disk with advisory locking and atomic rename.
-
-        Steps:
-        1. Trim messages to max_history as safety net.
-        2. Serialize (and optionally encrypt) the session data.
-        3. Write to a temporary file in the same directory.
-        4. Acquire an exclusive lock on the temp file (blocks other writers).
-        5. Back up the previous version as ``<session_id>.json.bak``.
-        6. Atomically rename the temp file to the final path.
-        """
+        """Write session via store, trimming to max_history as safety net."""
         if len(session.messages) > self._max_history:
             session.messages = self._trim_preserving_tool_pairs(
                 session.messages,
                 self._max_history,
             )
+        self._store.save(session)
 
-        data = {
-            "session_id": session.session_id,
-            "sender_id": session.sender_id,
-            "title": session.title,
-            "created_at": session.created_at,
-            "last_active": session.last_active,
-            "messages": session.messages,
-            "summary": session.summary,
-            "token_count": session.token_count,
-        }
+    def _load(self, session_id: str) -> Session | None:
+        """Load a session, returning None on missing or corrupt.
 
-        path = self._session_path(session.session_id)
-        json_bytes = json.dumps(data, indent=2).encode()
+        Applies max_history trimming on load.
+        """
+        try:
+            session = self._store.load(session_id)
+            if len(session.messages) > self._max_history:
+                session.messages = self._trim_preserving_tool_pairs(
+                    session.messages,
+                    self._max_history,
+                )
+            return session
+        except SessionNotFoundError:
+            return None
+        except SessionCorruptedError:
+            logger.warning("Corrupt session file %s, ignoring", session_id)
+            return None
 
-        if self._encryption_key:
-            payload = _encrypt_data(json_bytes, self._encryption_key)
-        elif self._encryption_passphrase:
-            salt = os.urandom(_SALT_LENGTH)
-            key = _derive_fernet_key(self._encryption_passphrase, salt)
-            payload = salt + _encrypt_data(json_bytes, key)
-        else:
-            payload = json_bytes
+    def load_session(self, session_id: str) -> Session | None:
+        """Load a session by its session_id (returns None if not found)."""
+        return self._load(session_id)
 
-        self._atomic_write(path, payload)
+    def get_active_session_id(self, sender_id: str) -> str | None:
+        """Get the active session ID for a sender, or None."""
+        return self._load_active_index().get(sender_id)
+
+    def session_stats(self) -> dict[str, int]:
+        """Return stored session count and active sender count."""
+        session_files = [p for p in self._dir.glob("*.json") if p.name != _ACTIVE_INDEX_FILE]
+        active_senders = len(self._load_active_index())
+        return {"stored": len(session_files), "active_senders": active_senders}
+
+    def _session_path(self, session_id: str) -> Path:
+        """Get the filesystem path for a session file.
+
+        Raises ValueError if the session_id contains path traversal characters.
+        """
+        if not re.fullmatch(r"[a-f0-9]+", session_id):
+            raise ValueError(f"Invalid session_id: {session_id}")
+        return self._dir / f"{session_id}.json"
+
+    # -- active index --
+
+    @staticmethod
+    def _locked_read(path: Path) -> bytes:
+        """Read a file while holding a shared advisory lock."""
+        with open(path, "rb") as f:
+            _flock_with_timeout(f.fileno(), fcntl.LOCK_SH)
+            return f.read()
 
     def _atomic_write(self, path: Path, payload: bytes) -> None:
         """Write *payload* to *path* atomically with advisory locking.
@@ -558,104 +879,6 @@ class SessionManager:
                     os.unlink(tmp_name)
                 except OSError:
                     pass
-
-    def _load(self, session_id: str) -> Session | None:
-        """Load a session by its session_id.
-
-        Acquires a shared advisory lock while reading.
-        If encryption is enabled, attempts to decrypt the file first.
-        Falls back to plaintext read for backward compatibility with
-        unencrypted session files.
-        """
-        path = self._session_path(session_id)
-        if not path.exists():
-            return None
-
-        try:
-            data = self._read_session_file(path)
-            if data is None:
-                return None
-
-            session = Session(
-                sender_id=data["sender_id"],
-                session_id=data.get("session_id", session_id),
-                title=data.get("title", ""),
-                messages=data.get("messages", []),
-                created_at=data.get("created_at", time.time()),
-                last_active=data.get("last_active", time.time()),
-                summary=data.get("summary", ""),
-                token_count=data.get("token_count", 0),
-            )
-            if len(session.messages) > self._max_history:
-                session.messages = self._trim_preserving_tool_pairs(
-                    session.messages,
-                    self._max_history,
-                )
-            return session
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Corrupt session file %s, ignoring: %s", session_id, e)
-            return None
-
-    def _decrypt_or_parse(self, raw_bytes: bytes) -> dict:
-        """Decrypt (if encryption enabled) or parse raw session bytes.
-
-        Tries decryption first, falls back to plaintext for backward compat.
-        """
-        if self._encryption_key:
-            try:
-                decrypted = _decrypt_data(raw_bytes, self._encryption_key)
-                return json.loads(decrypted)
-            except Exception:
-                logger.debug("Decryption failed, falling back to plaintext", exc_info=True)
-                return json.loads(raw_bytes)
-        if self._encryption_passphrase:
-            try:
-                salt = raw_bytes[:_SALT_LENGTH]
-                key = _derive_fernet_key(self._encryption_passphrase, salt)
-                decrypted = _decrypt_data(raw_bytes[_SALT_LENGTH:], key)
-                return json.loads(decrypted)
-            except Exception:
-                logger.debug(
-                    "Passphrase decryption failed, falling back to plaintext", exc_info=True
-                )
-                return json.loads(raw_bytes)
-        return json.loads(raw_bytes)
-
-    @staticmethod
-    def _locked_read(path: Path) -> bytes:
-        """Read a file while holding a shared advisory lock."""
-        with open(path, "rb") as f:
-            _flock_with_timeout(f.fileno(), fcntl.LOCK_SH)
-            return f.read()
-
-    def _read_session_file(self, path: Path) -> dict | None:
-        """Read and parse a session file with shared lock, handling encryption."""
-        return self._decrypt_or_parse(self._locked_read(path))
-
-    def load_session(self, session_id: str) -> Session | None:
-        """Load a session by its session_id (returns None if not found)."""
-        return self._load(session_id)
-
-    def get_active_session_id(self, sender_id: str) -> str | None:
-        """Get the active session ID for a sender, or None."""
-        return self._load_active_index().get(sender_id)
-
-    def session_stats(self) -> dict[str, int]:
-        """Return stored session count and active sender count."""
-        session_files = [p for p in self._dir.glob("*.json") if p.name != _ACTIVE_INDEX_FILE]
-        active_senders = len(self._load_active_index())
-        return {"stored": len(session_files), "active_senders": active_senders}
-
-    def _session_path(self, session_id: str) -> Path:
-        """Get the filesystem path for a session file.
-
-        Raises ValueError if the session_id contains path traversal characters.
-        """
-        if not re.fullmatch(r"[a-f0-9]+", session_id):
-            raise ValueError(f"Invalid session_id: {session_id}")
-        return self._dir / f"{session_id}.json"
-
-    # -- active index --
 
     def _load_active_index(self) -> dict[str, str]:
         """Read the sender_id → session_id mapping with shared lock."""

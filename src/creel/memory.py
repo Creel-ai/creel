@@ -117,11 +117,21 @@ class MemoryIndex:
             current_paths.add(str(long_term_path))
 
         # Extra paths: shared knowledge directories
+        _MAX_EXTRA_FILES = 500
         for extra_dir in extra_paths or []:
             if not extra_dir.is_dir():
                 logger.debug("Extra path not found: %s", extra_dir)
                 continue
-            for md_path in extra_dir.rglob("*.md"):
+            extra_files = list(extra_dir.rglob("*.md"))
+            if len(extra_files) > _MAX_EXTRA_FILES:
+                logger.warning(
+                    "Extra path %s contains %d markdown files (limit %d), skipping",
+                    extra_dir,
+                    len(extra_files),
+                    _MAX_EXTRA_FILES,
+                )
+                continue
+            for md_path in extra_files:
                 ds = f"shared:{md_path}"
                 files_to_check.append((md_path, ds))
                 current_paths.add(str(md_path))
@@ -164,15 +174,12 @@ class MemoryIndex:
         stored_paths = {r[0] for r in self._conn.execute("SELECT path FROM file_meta").fetchall()}
         for stale_path in stored_paths - current_paths:
             stale = Path(stale_path)
-            if stale.name == "MEMORY.md":
+            if str(stale) == str(long_term_path):
                 ds = "long_term"
+            elif stale.parent == memory_dir:
+                ds = stale.stem
             else:
-                # Try date stem (daily file); if not a valid date, it's shared
-                try:
-                    date.fromisoformat(stale.stem)
-                    ds = stale.stem
-                except ValueError:
-                    ds = f"shared:{stale_path}"
+                ds = f"shared:{stale_path}"
             self._conn.execute("DELETE FROM memory_fts WHERE date_str = ?", (ds,))
             self._conn.execute("DELETE FROM file_meta WHERE path = ?", (stale_path,))
             reindexed += 1

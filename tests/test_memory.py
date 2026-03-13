@@ -738,6 +738,55 @@ class TestExtraPaths:
             assert result is not None
             assert "two approvals" in result
 
+    def test_stale_shared_file_cleanup(self):
+        """Deleting a shared file should remove it from the FTS index on reindex."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            runbook = shared_dir / "runbook.md"
+            runbook.write_text("# Runbook\n\nRestart the API server.\n")
+
+            mm = self._make_manager(td, fts_enabled=True, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+            assert "Restart" in mm.search_memory("restart")
+
+            # Delete the file and reindex — stale entry should be cleaned up
+            runbook.unlink()
+            mm.rebuild_index()
+            assert "No memories found" in mm.search_memory("restart")
+
+    def test_date_named_shared_file_not_confused_with_daily(self):
+        """A shared file named like a date (e.g. 2025-01-15.md) should be
+        classified as shared, not as a daily memory file."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "shared_docs"
+            shared_dir.mkdir()
+            date_named = shared_dir / "2025-01-15.md"
+            date_named.write_text("# Meeting notes\n\nDiscussed Q1 roadmap.\n")
+
+            mm = self._make_manager(td, fts_enabled=True, extra_paths=[str(shared_dir)])
+            mm.rebuild_index()
+            assert "roadmap" in mm.search_memory("roadmap")
+
+            # Delete and reindex — should clean up as shared, not as date 2025-01-15
+            date_named.unlink()
+            mm.rebuild_index()
+            assert "No memories found" in mm.search_memory("roadmap")
+
+    def test_extra_paths_large_dir_skipped(self):
+        """An extra_paths directory with too many files should be skipped with a warning."""
+        with tempfile.TemporaryDirectory() as td:
+            shared_dir = Path(td) / "huge_docs"
+            shared_dir.mkdir()
+            # Create 501 files to exceed the limit
+            for i in range(501):
+                (shared_dir / f"doc_{i}.md").write_text(f"Content {i}\n")
+
+            mm = self._make_manager(td, fts_enabled=True, extra_paths=[str(shared_dir)])
+            count = mm.rebuild_index()
+            # None of the 501 files should have been indexed
+            assert count == 0
+
 
 class TestMemoryManagerFTS:
     """Integration tests for MemoryManager with FTS index."""

@@ -515,25 +515,23 @@ def check_guardian(agent_config_path: Path | None = None) -> list[CheckResult]:
             )
         )
 
-    # Fast classifier
+    # Fast classifier — only check importability to avoid loading the full ONNX model
     if gc.fast_classifier.enabled:
         try:
-            from guardian.fast_classifier import FastClassifier
-
-            _fc = FastClassifier(gc.fast_classifier)
+            importlib.import_module("guardian.fast_classifier")
             results.append(
                 CheckResult(
                     status="pass",
                     label="Guardian: fast classifier",
-                    message="Enabled (DeBERTa/ONNX)",
+                    message="Enabled (DeBERTa/ONNX — module importable)",
                 )
             )
-        except Exception as exc:
+        except ImportError as exc:
             results.append(
                 CheckResult(
                     status="warn",
                     label="Guardian: fast classifier",
-                    message=f"Cannot initialize: {exc}",
+                    message=f"Cannot import: {exc}",
                 )
             )
     else:

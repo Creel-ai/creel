@@ -1,5 +1,6 @@
 """Tests for the memory system."""
 
+import os
 import sqlite3
 import tempfile
 from datetime import UTC, date, datetime, timedelta
@@ -429,8 +430,6 @@ class TestMemoryIndex:
             assert count == 1
 
             # Touch the file (changes mtime, same content)
-            import os
-
             os.utime(daily, None)
 
             count = idx.reindex_if_needed(mem_dir, lt_path)

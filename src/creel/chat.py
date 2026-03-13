@@ -103,17 +103,23 @@ class ChatServer:
         )
 
         # Build memory compaction summarize callback.
-        # NOTE: runs synchronously during __init__ via compact_daily_files(),
+        # NOTE: This callback fires only during __init__ (via compact_daily_files),
         # making N sequential Haiku calls for N old daily files. Acceptable
         # given Haiku latency (~200ms/call) but startup scales linearly with
         # compaction backlog.
         compact_summarize_fn = None
         if agent_def.workspace.compact_summarize:
-            # Load secrets once upfront (not per-file inside the closure)
+            # Pre-load secrets once rather than on every callback invocation.
             if agent_def.llm.secrets:
                 from creel.orchestrator import _load_secrets_to_env
 
                 _load_secrets_to_env(agent_def.llm.secrets)
+
+            # Capture only the values the closure needs, not the full agent_def.
+            _compact_model = agent_def.workspace.compact_model
+            _compact_max_tokens = agent_def.workspace.compact_max_tokens
+            _llm_secrets = agent_def.llm.secrets
+            _use_containers = use_containers
 
             def _summarize_memory(entries: list[str]) -> str:
                 from creel.llm import run_llm
@@ -128,11 +134,11 @@ class ChatServer:
                 )
 
                 config = LLMConfig(
-                    model=agent_def.workspace.compact_model,
-                    max_tokens=agent_def.workspace.compact_max_tokens,
-                    secrets=agent_def.llm.secrets,
+                    model=_compact_model,
+                    max_tokens=_compact_max_tokens,
+                    secrets=_llm_secrets,
                 )
-                return run_llm(prompt, config, use_container=use_containers)
+                return run_llm(prompt, config, use_container=_use_containers)
 
             compact_summarize_fn = _summarize_memory
 

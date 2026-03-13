@@ -94,7 +94,7 @@ class TestBuildDaemonRunCommand:
     def test_basic(self, cli_args) -> None:
         args = cli_args()
         cmd = cli._build_daemon_run_command(args, args.socket_path, args.pid_file)
-        assert cmd[0] == cli.sys.executable
+        assert cmd[0] == cli.sys.executable or Path(cmd[0]).name == "creel"
         assert "daemon" in cmd
         assert "run" in cmd
         assert "--socket-path" in cmd

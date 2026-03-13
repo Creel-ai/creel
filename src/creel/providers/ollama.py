@@ -262,5 +262,13 @@ class OllamaProvider(LLMProvider):
 
         return _convert_messages_to_openai(messages)
 
+    def health(self) -> bool:
+        """Check connectivity by hitting the Ollama tags endpoint."""
+        try:
+            resp = httpx.get(f"{self._api_base}/api/tags", timeout=5.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
     def extract_env_vars(self) -> dict[str, str]:
         return {"OLLAMA_HOST": self._api_base}

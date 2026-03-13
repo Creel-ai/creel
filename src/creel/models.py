@@ -22,6 +22,7 @@ class SessionState:
 
     sender_id: str = ""
     workspace: str | None = None
+    model_override: str | None = None
 
 
 class ExecutorConfig(BaseModel):
@@ -75,6 +76,10 @@ class LLMConfig(BaseModel):
     secrets: str | None = None
     api_base: str | None = None  # Custom endpoint (e.g. Ollama, proxies)
     region: str | None = None  # AWS region for Bedrock
+    fallback: list[str] = Field(
+        default_factory=list,
+        description="Failover chain of 'provider/model' strings tried on transient errors",
+    )
     container_pool: ContainerPoolConfig = Field(default_factory=ContainerPoolConfig)
 
 
@@ -168,6 +173,7 @@ class SessionConfig(BaseModel):
     summary_max_tokens: int = 1024
     max_context_tokens: int = 180_000
     encryption_key: str | None = None  # Fernet key or passphrase for encryption at rest
+    model_override: str | None = None  # Per-session "provider/model" override
 
 
 class QuietHoursConfig(BaseModel):

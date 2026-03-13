@@ -15,6 +15,7 @@ from creel.providers.base import (
     _resolve_provider_name,
     build_provider,
 )
+from creel.providers.router import ModelRouter
 
 __all__ = [
     "ContentBlock",
@@ -24,6 +25,7 @@ __all__ = [
     "LLMProviderError",
     "LLMRateLimitError",
     "LLMTransientError",
+    "ModelRouter",
     "TextBlock",
     "ToolUseBlock",
     "Usage",
@@ -31,6 +33,7 @@ __all__ = [
     "_resolve_provider_name",
     "build_provider",
     "get_provider",
+    "get_provider_with_fallback",
 ]
 
 
@@ -53,3 +56,27 @@ def get_provider(
     """
     effective_provider = _resolve_provider_name(model, provider)
     return build_provider(effective_provider, api_base=api_base, region=region)
+
+
+def get_provider_with_fallback(
+    provider: str = "anthropic",
+    model: str = "",
+    fallback: list[str] | None = None,
+    api_base: str | None = None,
+    region: str | None = None,
+) -> LLMProvider:
+    """Factory that returns a ModelRouter when fallback is configured.
+
+    If ``fallback`` is empty or None, returns a plain provider (no router
+    overhead).  Otherwise wraps the primary + fallback chain in a ModelRouter.
+    """
+    if not fallback:
+        return get_provider(provider=provider, model=model, api_base=api_base, region=region)
+
+    return ModelRouter(
+        primary_provider=provider,
+        primary_model=model,
+        fallback=fallback,
+        api_base=api_base,
+        region=region,
+    )

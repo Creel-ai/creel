@@ -392,6 +392,15 @@ class OpenAIProvider(LLMProvider):
     def format_messages(self, messages: list[dict]) -> list[dict]:
         return _convert_messages_to_openai(messages)
 
+    def health(self) -> bool:
+        """Check connectivity by listing models."""
+        try:
+            client = self._get_client()
+            next(iter(client.models.list()), None)
+            return True
+        except Exception:
+            return False
+
     def extract_env_vars(self) -> dict[str, str]:
         env: dict[str, str] = {}
         api_key = os.environ.get("OPENAI_API_KEY")

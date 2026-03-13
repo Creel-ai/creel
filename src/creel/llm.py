@@ -15,7 +15,7 @@ from creel.providers import (
     LLMRateLimitError,
     LLMTransientError,
     _resolve_model_name,
-    get_provider,
+    get_provider_with_fallback,
 )
 
 if TYPE_CHECKING:
@@ -83,6 +83,7 @@ def call_llm(
     tools: list[dict] | None = None,
     system: str | None = None,
     on_text_delta: Callable[[str], None] | None = None,
+    model_override: str | None = None,
 ) -> LLMMessage:
     """Call the LLM provider with multi-turn messages and optional tools.
 
@@ -95,17 +96,22 @@ def call_llm(
             streaming.  When provided, uses the streaming API instead of the
             blocking call.  Note: retry logic is not applied in streaming mode
             since a partial stream cannot be retried.
+        model_override: Optional "provider/model" string that overrides
+            config.model for this call (used by per-session or per-job overrides).
 
     Returns:
         A provider-agnostic LLMMessage object.
     """
-    provider = get_provider(
+    effective_model = model_override or config.model
+
+    provider = get_provider_with_fallback(
         provider=config.provider,
-        model=config.model,
+        model=effective_model,
+        fallback=config.fallback,
         api_base=config.api_base,
         region=config.region,
     )
-    model = _resolve_model_name(config.model)
+    model = _resolve_model_name(effective_model)
 
     if on_text_delta is not None:
         return _call_llm_streaming(provider, model, config, messages, tools, system, on_text_delta)
@@ -247,9 +253,10 @@ def run_llm(
 
 def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
     """Call the LLM provider directly (non-containerized)."""
-    provider = get_provider(
+    provider = get_provider_with_fallback(
         provider=config.provider,
         model=config.model,
+        fallback=config.fallback,
         api_base=config.api_base,
         region=config.region,
     )

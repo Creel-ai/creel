@@ -144,6 +144,14 @@ class LLMProvider(ABC):
         """
         return messages
 
+    def health(self) -> bool:
+        """Check if the provider is reachable and operational.
+
+        Default implementation returns True. Providers should override this
+        with a lightweight API call (e.g. list models) to verify connectivity.
+        """
+        return True
+
     def extract_env_vars(self) -> dict[str, str]:
         """Return environment variables needed for container execution.
 
@@ -225,7 +233,12 @@ def build_provider(provider_name: str, **kwargs: Any) -> LLMProvider:
 
         return OllamaProvider(api_base=kwargs.get("api_base"))
 
+    if name == "gemini":
+        from creel.providers.gemini import GeminiProvider
+
+        return GeminiProvider()
+
     raise ValueError(
         f"Unknown LLM provider: {provider_name!r}. "
-        f"Supported providers: anthropic, openai, bedrock, ollama"
+        f"Supported providers: anthropic, openai, bedrock, ollama, gemini"
     )

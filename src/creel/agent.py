@@ -428,6 +428,7 @@ def run_agent_loop(
     tool_calls_made = 0
     tool_history: list[dict] = []
     last_input_tokens = 0
+    _model_override = session_state.model_override if session_state else None
 
     for _turn in range(agent_config.max_turns):
         turns_used += 1
@@ -441,6 +442,7 @@ def run_agent_loop(
                 tools=tool_defs if tool_defs else None,
                 system=system_prompt,
                 on_text_delta=on_text_delta,
+                model_override=_model_override,
             )
         except Exception as e:
             logger.exception("LLM call failed on turn %d", turns_used)
@@ -697,6 +699,7 @@ def run_agent_loop(
             config=llm_config,
             tools=None,
             system=system_prompt,
+            model_override=_model_override,
         )
         text = extract_text(response)
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})

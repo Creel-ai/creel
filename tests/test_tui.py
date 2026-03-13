@@ -27,6 +27,8 @@ def _make_mock_server(tmp_path, handle_response="Mock response"):
     server.handle_message = MagicMock(return_value=handle_response)
     server.get_or_create_session = mgr.get_or_create
     server.new_session = mgr.new_session
+    server.list_sessions = mgr.list_sessions
+    server.resume_session = mgr.resume_session
     return server
 
 
@@ -506,7 +508,7 @@ async def test_help_includes_new_commands(tmp_path):
         assert "/model" in lines_text
         assert "ctrl+s" in lines_text
         assert "ctrl+l" in lines_text
-        assert "ctrl+d" in lines_text
+        assert "ctrl+c/d" in lines_text
 
 
 @pytest.mark.asyncio
@@ -585,33 +587,44 @@ async def test_tool_call_panel_exists(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_tool_call_panel_add_and_complete():
+async def test_tool_call_panel_add_and_complete(tmp_path):
     """ToolCallPanel should show active tools and mark completed."""
-    panel = ToolCallPanel(id="test-panel")
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
 
-    # Test add
-    panel.add_tool_call("call-1", "weather_fetch")
-    assert "call-1" in panel._active
-    assert panel._active["call-1"] == "weather_fetch"
-    assert "visible" in panel.classes
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one("#tool-panel", ToolCallPanel)
 
-    # Test complete
-    panel.complete_tool_call("call-1")
-    assert "call-1" not in panel._active
-    assert "weather_fetch" in panel._completed
+        # Test add
+        panel.add_tool_call("call-1", "weather_fetch")
+        assert "call-1" in panel._active
+        assert panel._active["call-1"] == "weather_fetch"
+        assert "visible" in panel.classes
+
+        # Test complete
+        panel.complete_tool_call("call-1")
+        assert "call-1" not in panel._active
+        assert "weather_fetch" in panel._completed
 
 
 @pytest.mark.asyncio
-async def test_tool_call_panel_clear():
+async def test_tool_call_panel_clear(tmp_path):
     """ToolCallPanel.clear_tools() should reset state."""
-    panel = ToolCallPanel(id="test-panel")
-    panel.add_tool_call("call-1", "weather_fetch")
-    panel.complete_tool_call("call-1")
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
 
-    panel.clear_tools()
-    assert len(panel._active) == 0
-    assert len(panel._completed) == 0
-    assert "visible" not in panel.classes
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one("#tool-panel", ToolCallPanel)
+
+        panel.add_tool_call("call-1", "weather_fetch")
+        panel.complete_tool_call("call-1")
+
+        panel.clear_tools()
+        assert len(panel._active) == 0
+        assert len(panel._completed) == 0
+        assert "visible" not in panel.classes
 
 
 @pytest.mark.asyncio
@@ -778,6 +791,9 @@ async def test_ctrl_d_quits(tmp_path):
         assert len(bindings) == 1
         assert bindings[0].action == "quit"
 
+        # Verify the action resolves to the quit handler
+        assert app.action_quit is not None
+
 
 @pytest.mark.asyncio
 async def test_new_session_resets_status_bar(tmp_path):
@@ -808,7 +824,7 @@ async def test_new_session_resets_status_bar(tmp_path):
 
 @pytest.mark.asyncio
 async def test_status_bar_connection_status(tmp_path):
-    """StatusBar should show connection_status (default 'Connected')."""
+    """StatusBar connection_status defaults to empty (not rendered until wired)."""
     server = _make_mock_server(tmp_path)
     app = ChatApp(server)
 
@@ -816,12 +832,12 @@ async def test_status_bar_connection_status(tmp_path):
         await pilot.pause()
 
         bar = app.query_one("#status-bar", StatusBar)
-        assert bar.connection_status == "Connected"
+        assert bar.connection_status == ""
 
 
 @pytest.mark.asyncio
 async def test_status_bar_connection_status_update(tmp_path):
-    """StatusBar connection_status should be updatable."""
+    """StatusBar connection_status should be updatable and rendered when set."""
     server = _make_mock_server(tmp_path)
     app = ChatApp(server)
 

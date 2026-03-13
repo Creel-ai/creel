@@ -7,7 +7,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypedDict, runtime_checkable
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
@@ -70,8 +70,7 @@ _HELP_TEXT = """\
   [cyan]ctrl+n[/cyan]        New session
   [cyan]ctrl+s[/cyan]        Switch session
   [cyan]ctrl+l[/cyan]        Clear display
-  [cyan]ctrl+d[/cyan]        Quit
-  [cyan]ctrl+c[/cyan]        Quit
+  [cyan]ctrl+c/d[/cyan]      Quit
   [cyan]enter[/cyan]         Send message
   [cyan]shift+enter[/cyan]   New line
 
@@ -154,6 +153,7 @@ class ToolCallPanel(Static):
         super().__init__("", **kwargs)
         self._active: dict[str, str] = {}  # call_id -> tool_name
         self._completed: list[str] = []  # tool_names (recent)
+        self._hide_timer: Timer | None = None
 
     def add_tool_call(self, call_id: str, tool_name: str) -> None:
         """Register a tool call as active (shows spinner indicator)."""
@@ -169,7 +169,9 @@ class ToolCallPanel(Static):
         self._completed = self._completed[-3:]
         self._render_panel()
         if not self._active:
-            self.set_timer(2.0, self._auto_hide)
+            if self._hide_timer is not None:
+                self._hide_timer.stop()
+            self._hide_timer = self.set_timer(2.0, self._auto_hide)
 
     def clear_tools(self) -> None:
         """Remove all tool call indicators."""
@@ -179,6 +181,7 @@ class ToolCallPanel(Static):
         self.update("")
 
     def _auto_hide(self) -> None:
+        self._hide_timer = None
         if not self._active:
             self.remove_class("visible")
             self._completed.clear()
@@ -211,7 +214,9 @@ class StatusBar(Static):
     message_count: reactive[int] = reactive(0, init=False)
     token_count: reactive[int] = reactive(0, init=False)
     session_name: reactive[str] = reactive("", init=False)
-    connection_status: reactive[str] = reactive("Connected", init=False)
+    # connection_status is available for external callers but not rendered by default
+    # until it's wired to actual connectivity checks.
+    connection_status: reactive[str] = reactive("", init=False)
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__("", **kwargs)
@@ -275,6 +280,14 @@ class StatusBar(Static):
         self.update("  ".join(parts))
 
 
+class SessionInfo(TypedDict, total=False):
+    """Shape of session dicts passed to SessionSwitcher."""
+
+    session_id: str
+    title: str
+    message_count: int
+
+
 class SessionSwitcher(ModalScreen[str]):
     """Modal screen for switching between sessions."""
 
@@ -296,7 +309,7 @@ class SessionSwitcher(ModalScreen[str]):
     }
     """
 
-    def __init__(self, sessions: list[dict]) -> None:
+    def __init__(self, sessions: list[SessionInfo]) -> None:
         super().__init__()
         self._sessions = sessions
         self._session_ids: list[str] = [str(s.get("session_id", "")) for s in sessions]
@@ -740,13 +753,7 @@ class ChatApp(App):
     def action_switch_session(self) -> None:
         """Open the session switcher modal."""
         list_fn = getattr(self._server, "list_sessions", None)
-        if list_fn is None:
-            # Try SessionManager directly (local backend)
-            mgr = getattr(self._server, "_session_mgr", None)
-            if mgr is not None:
-                list_fn = mgr.list_sessions
-
-        if list_fn is None:
+        if not callable(list_fn):
             self.notify("Session switching not available for this backend.", timeout=3)
             return
 
@@ -762,11 +769,10 @@ class ChatApp(App):
             return
         # Resume the selected session via the backend
         resume_fn = getattr(self._server, "resume_session", None)
-        if resume_fn is not None:
-            resume_fn(self._sender_id, session_id)
-        else:
-            # Fall back to /resume command
-            self._server.handle_message(self._sender_id, f"/resume {session_id}")
+        if not callable(resume_fn):
+            self.notify("Session resume not supported by this backend.", timeout=3)
+            return
+        resume_fn(self._sender_id, session_id)
 
         log = self.query_one("#chat-log", RichLog)
         log.clear()

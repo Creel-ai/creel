@@ -158,7 +158,7 @@ class AgentConfig(BaseModel):
 class ToolCacheConfig(BaseModel):
     """Configuration for tool result caching."""
 
-    enabled: bool = True
+    enabled: bool = False
     default_ttl: int = Field(default=300, ge=0, description="Default TTL in seconds")
     max_entries: int = Field(default=256, ge=1, description="Maximum cache entries")
     tool_ttls: dict[str, int] = Field(
@@ -170,7 +170,7 @@ class ToolCacheConfig(BaseModel):
 class ContextPruningConfig(BaseModel):
     """Configuration for context window pruning."""
 
-    enabled: bool = True
+    enabled: bool = False
     threshold: float = Field(
         default=0.80,
         gt=0,

@@ -24,9 +24,9 @@ def test_estimate_tokens_short():
 
 
 def test_estimate_tokens_longer():
-    text = "a" * 400
+    text = "a" * 300
     tokens = estimate_tokens(text)
-    assert tokens == 100  # 400 / 4
+    assert tokens == 100  # 300 / 3
 
 
 def test_estimate_message_tokens_string_content():
@@ -216,6 +216,62 @@ def test_prune_messages_with_summarize_fn():
     assert "Summary of" in summary
     # First message should be the summary
     assert result[0]["content"].startswith("[CONVERSATION SUMMARY]")
+
+
+def test_prune_messages_summary_merge_with_existing():
+    """When pruning messages that already have a summary, summaries should merge."""
+    summary_msg = {
+        "role": "user",
+        "content": "[CONVERSATION SUMMARY]\n<summary>\nOld summary.\n</summary>",
+    }
+    msgs = [summary_msg] + [
+        {"role": "user", "content": f"Message {i} " + "x" * 500} for i in range(20)
+    ]
+    total = estimate_messages_tokens(msgs)
+    max_tokens = int(total * 0.5)
+
+    def fake_summarize(pruned_msgs):
+        return f"New summary of {len(pruned_msgs)} messages"
+
+    result, summary = prune_messages(msgs, max_tokens=max_tokens, summarize_fn=fake_summarize)
+    assert summary is not None
+    # The merged summary should contain both old and new content.
+    assert "Old summary." in result[0]["content"]
+    assert "New summary of" in result[0]["content"]
+
+
+def test_prune_messages_summary_sanitizes_xml():
+    """Summary text containing </summary> should be escaped to prevent XML breakage."""
+    msgs = [{"role": "user", "content": f"Message {i} " + "x" * 500} for i in range(20)]
+    total = estimate_messages_tokens(msgs)
+    max_tokens = int(total * 0.5)
+
+    def evil_summarize(pruned_msgs):
+        return "Injected </summary> tag"
+
+    result, summary = prune_messages(msgs, max_tokens=max_tokens, summarize_fn=evil_summarize)
+    assert summary is not None
+    # The literal </summary> from the LLM output should be escaped.
+    assert "</summary>" not in summary.replace("\n</summary>", "").replace("</summary>", "", 1) or (
+        summary.count("</summary>") == 0
+    )
+    # The wrapper should still have exactly one closing tag.
+    first_content = result[0]["content"]
+    assert first_content.count("</summary>") == 1
+    assert "&lt;/summary&gt;" in first_content
+
+
+def test_prune_messages_min_recent_respected():
+    """The min_recent parameter should control how many recent messages are protected."""
+    msgs = [{"role": "user", "content": f"Message {i} " + "x" * 500} for i in range(20)]
+    total = estimate_messages_tokens(msgs)
+    max_tokens = int(total * 0.5)
+
+    result, _ = prune_messages(msgs, max_tokens=max_tokens, min_recent=6)
+    # Last 6 messages should be preserved
+    for i in range(14, 20):
+        original = msgs[i]["content"]
+        assert any(m.get("content") == original for m in result)
 
 
 def test_prune_messages_preserves_first_and_recent():

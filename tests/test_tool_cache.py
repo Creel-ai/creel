@@ -89,10 +89,12 @@ def test_cache_zero_ttl_disables_caching():
 # -- Error handling --
 
 
-def test_cache_errors_not_served():
+def test_cache_errors_not_stored():
+    """Errors should not be stored in the cache at all."""
     cache = ToolResultCache()
     cache.put("weather", {"location": "NYC"}, "Error: timeout", is_error=True)
     assert cache.get("weather", {"location": "NYC"}) is None
+    assert cache.stats["entries"] == 0
 
 
 # -- Invalidation --

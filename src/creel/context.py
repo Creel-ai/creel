@@ -14,12 +14,16 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Rough token estimate: ~4 characters per token for English text.
-# This is intentionally conservative (overestimates) to avoid overflows.
-_CHARS_PER_TOKEN = 4
+# Rough token estimate: ~3 characters per token.
+# Conservative (overestimates) to account for JSON-heavy tool results.
+_CHARS_PER_TOKEN = 3
 
 # Default pruning threshold — start pruning at 80 % of model max.
 DEFAULT_PRUNING_THRESHOLD = 0.80
+
+# Prune down to this fraction of max_tokens to create headroom and avoid
+# re-pruning every turn.
+_PRUNE_TARGET_FRACTION = 0.60
 
 # Importance weights by message role / content type.
 _WEIGHT_USER_TEXT = 1.5
@@ -30,6 +34,9 @@ _WEIGHT_SUMMARY = float("inf")  # never prune summaries
 
 # Exponential decay half-life (in number of messages from the end).
 _DECAY_HALF_LIFE = 8
+
+# Default number of recent messages to always protect from pruning.
+_DEFAULT_MIN_RECENT = 4
 
 
 @dataclass
@@ -177,12 +184,13 @@ def select_messages_to_prune(
     messages: list[dict],
     target_tokens: int,
     current_tokens: int | None = None,
+    min_recent: int = _DEFAULT_MIN_RECENT,
 ) -> list[int]:
     """Select message indices to prune to get under ``target_tokens``.
 
     Preserves:
     - The first message (system/summary context)
-    - The most recent messages (last 4)
+    - The most recent ``min_recent`` messages
     - Tool-call pairs (never splits assistant tool_use from user tool_result)
 
     Returns indices sorted ascending.
@@ -196,16 +204,19 @@ def select_messages_to_prune(
     scores = score_messages(messages)
     n = len(messages)
 
-    # Build set of indices that are candidates for pruning.
-    # Never prune first message or last 4 messages.
-    protected = {0} | {i for i in range(max(1, n - 4), n)}
+    # Never prune first message or last min_recent messages.
+    protected = {0} | {i for i in range(max(1, n - min_recent), n)}
 
     # Build tool-pair groups: indices that must be pruned together.
     pair_groups: dict[int, list[int]] = {}  # leader_idx -> [idx1, idx2]
+    # Reverse index: idx -> leader_idx for O(1) lookup.
+    idx_to_leader: dict[int, int] = {}
     i = 0
     while i < n:
         if _is_tool_pair_boundary(messages, i):
             pair_groups[i] = [i, i + 1]
+            idx_to_leader[i] = i
+            idx_to_leader[i + 1] = i
             i += 2
         else:
             i += 1
@@ -216,12 +227,8 @@ def select_messages_to_prune(
     for s in scores:
         if s.index in protected or s.index in visited or not s.is_prunable:
             continue
-        # Check if this index is part of a pair group.
-        group_leader = None
-        for leader, group in pair_groups.items():
-            if s.index in group:
-                group_leader = leader
-                break
+        # Check if this index is part of a pair group via reverse index.
+        group_leader = idx_to_leader.get(s.index)
         if group_leader is not None:
             # Add the whole group.
             group = pair_groups[group_leader]
@@ -251,32 +258,44 @@ def select_messages_to_prune(
     return to_prune
 
 
+def _sanitize_summary_xml(text: str) -> str:
+    """Escape </summary> in summary text to prevent breaking the XML wrapper."""
+    return text.replace("</summary>", "&lt;/summary&gt;")
+
+
 def prune_messages(
     messages: list[dict],
     max_tokens: int,
     threshold: float = DEFAULT_PRUNING_THRESHOLD,
     summarize_fn=None,
+    min_recent: int = _DEFAULT_MIN_RECENT,
 ) -> tuple[list[dict], str | None]:
     """Prune messages to stay within the token budget.
 
     Args:
         messages: Conversation messages (Anthropic format).
         max_tokens: Model's maximum context tokens.
-        threshold: Fraction of max_tokens at which to start pruning.
+        threshold: Fraction of max_tokens at which pruning is triggered.
+            Once triggered, messages are pruned down to ``_PRUNE_TARGET_FRACTION``
+            of max_tokens to create headroom.
         summarize_fn: Optional callable(list[dict]) -> str for summarizing
             pruned messages. If provided, pruned messages are summarized
             and the summary is prepended.
+        min_recent: Minimum number of recent messages to always keep.
 
     Returns:
         (pruned_messages, summary_text_or_None)
     """
-    target = int(max_tokens * threshold)
+    trigger = int(max_tokens * threshold)
     current = estimate_messages_tokens(messages)
 
-    if current <= target:
+    if current <= trigger:
         return messages, None
 
-    indices_to_prune = select_messages_to_prune(messages, target, current)
+    # Prune to a lower target to create headroom.
+    target = int(max_tokens * _PRUNE_TARGET_FRACTION)
+
+    indices_to_prune = select_messages_to_prune(messages, target, current, min_recent=min_recent)
     if not indices_to_prune:
         return messages, None
 
@@ -286,24 +305,26 @@ def prune_messages(
     summary_text = None
     if summarize_fn and pruned_msgs:
         try:
-            summary_text = summarize_fn(pruned_msgs)
+            raw_summary = summarize_fn(pruned_msgs)
+            safe_summary = _sanitize_summary_xml(raw_summary)
             summary_msg = {
                 "role": "user",
-                "content": f"[CONVERSATION SUMMARY]\n<summary>\n{summary_text}\n</summary>",
+                "content": f"[CONVERSATION SUMMARY]\n<summary>\n{safe_summary}\n</summary>",
             }
             # Insert summary at the beginning (after any existing summary).
-            insert_pos = 0
             if kept and _is_summary_message(kept[0]):
                 # Merge with existing summary.
                 existing = kept[0].get("content", "")
                 if isinstance(existing, str):
-                    merged = existing.replace("</summary>", f"\n{summary_text}\n</summary>")
+                    merged = existing.replace("</summary>", f"\n{safe_summary}\n</summary>")
                     kept[0] = {"role": "user", "content": merged}
                     summary_text = merged
                 else:
                     kept.insert(0, summary_msg)
             else:
-                kept.insert(insert_pos, summary_msg)
+                kept.insert(0, summary_msg)
+            if summary_text is None:
+                summary_text = safe_summary
         except Exception:
             logger.warning("Summary compression failed during pruning", exc_info=True)
 

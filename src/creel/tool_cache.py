@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,6 @@ class CacheEntry:
     result: str
     created_at: float
     ttl_seconds: float
-    is_error: bool = False
 
     @property
     def is_expired(self) -> bool:
@@ -74,8 +74,7 @@ class ToolResultCache:
         self._tool_ttls = tool_ttls or {}
         self._default_ttl = default_ttl
         self._max_entries = max_entries
-        self._cache: dict[str, CacheEntry] = {}
-        self._access_order: list[str] = []  # Most recently accessed last
+        self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._hits = 0
         self._misses = 0
 
@@ -94,24 +93,12 @@ class ToolResultCache:
 
         if entry.is_expired:
             del self._cache[key]
-            if key in self._access_order:
-                self._access_order.remove(key)
             self._misses += 1
             logger.debug("Cache expired for %s", tool_name)
             return None
 
-        # Don't serve cached errors.
-        if entry.is_error:
-            del self._cache[key]
-            if key in self._access_order:
-                self._access_order.remove(key)
-            self._misses += 1
-            return None
-
-        # Update access order (LRU).
-        if key in self._access_order:
-            self._access_order.remove(key)
-        self._access_order.append(key)
+        # Move to end (most recently used).
+        self._cache.move_to_end(key)
 
         self._hits += 1
         logger.debug("Cache hit for %s (age=%.1fs)", tool_name, time.time() - entry.created_at)
@@ -124,23 +111,26 @@ class ToolResultCache:
         result: str,
         is_error: bool = False,
     ) -> None:
-        """Store a tool result in the cache."""
+        """Store a tool result in the cache. Errors are not cached."""
+        if is_error:
+            return
+
         ttl = self._ttl_for(tool_name)
         if ttl <= 0:
             return  # TTL of 0 means no caching for this tool
 
         key = _cache_key(tool_name, tool_input)
+
+        # Remove existing entry so move_to_end works correctly on re-insert.
+        if key in self._cache:
+            del self._cache[key]
+
         self._cache[key] = CacheEntry(
             tool_name=tool_name,
             result=result,
             created_at=time.time(),
             ttl_seconds=ttl,
-            is_error=is_error,
         )
-
-        if key in self._access_order:
-            self._access_order.remove(key)
-        self._access_order.append(key)
 
         # Evict oldest entries if over capacity.
         self._evict()
@@ -151,28 +141,22 @@ class ToolResultCache:
         expired_keys = [k for k, v in self._cache.items() if v.is_expired]
         for k in expired_keys:
             del self._cache[k]
-            if k in self._access_order:
-                self._access_order.remove(k)
 
-        # LRU eviction.
-        while len(self._cache) > self._max_entries and self._access_order:
-            oldest_key = self._access_order.pop(0)
-            self._cache.pop(oldest_key, None)
+        # LRU eviction — pop from the front (oldest).
+        while len(self._cache) > self._max_entries:
+            self._cache.popitem(last=False)
 
     def invalidate(self, tool_name: str, tool_input: dict) -> bool:
         """Remove a specific entry from the cache. Returns True if found."""
         key = _cache_key(tool_name, tool_input)
         if key in self._cache:
             del self._cache[key]
-            if key in self._access_order:
-                self._access_order.remove(key)
             return True
         return False
 
     def clear(self) -> None:
         """Clear all cached entries."""
         self._cache.clear()
-        self._access_order.clear()
 
     @property
     def stats(self) -> dict[str, int | float]:

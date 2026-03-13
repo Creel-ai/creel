@@ -418,6 +418,10 @@ def run_agent_loop(
             tools may be called regardless of global policy.
         cron_manager: Optional CronManager for cron scheduling tool.
         subagent_manager: Optional SubAgentManager for sub-agent tool.
+        tool_cache: Optional ToolResultCache for caching tool results.
+        context_pruning: Optional ContextPruningConfig for automatic pruning.
+        max_context_tokens: Model's maximum context window size.
+        summarize_fn: Optional callback to summarize pruned messages.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -457,12 +461,16 @@ def run_agent_loop(
                     estimated,
                     threshold_tokens,
                 )
-                messages[:], _summary = prune_messages(
+                pruned, summary = prune_messages(
                     messages,
                     max_tokens=max_context_tokens,
                     threshold=context_pruning.threshold,
                     summarize_fn=summarize_fn,
+                    min_recent=context_pruning.min_recent_messages,
                 )
+                messages[:] = pruned
+                if summary:
+                    logger.info("Context summary generated (%d chars)", len(summary))
 
         try:
             response = call_llm(
@@ -618,9 +626,9 @@ def run_agent_loop(
                     is_error = True
                     elapsed_ms = (time.perf_counter() - t0) * 1000
 
-                # Store result in cache (errors are stored but not served).
-                if tool_cache is not None:
-                    tool_cache.put(tool_name, tool_input, result, is_error=is_error)
+                # Cache successful results only.
+                if tool_cache is not None and not is_error:
+                    tool_cache.put(tool_name, tool_input, result)
 
             # Audit tool execution result
             if guardian is not None and hasattr(guardian, "_audit") and guardian._audit:

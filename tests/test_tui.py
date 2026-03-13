@@ -9,7 +9,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from creel.session import SessionManager
-from creel.tui import SENDER_ID, ChatApp, ChatInput, StatusBar
+from creel.tui import (
+    SENDER_ID,
+    ChatApp,
+    ChatInput,
+    SessionSwitcher,
+    StatusBar,
+    ToolCallPanel,
+)
 
 
 def _make_mock_server(tmp_path, handle_response="Mock response"):
@@ -31,7 +38,7 @@ def mock_server(tmp_path):
 @pytest.mark.asyncio
 async def test_message_send(tmp_path):
     """Typing text + enter should show user message and mock response."""
-    server = _make_mock_server(tmp_path, "It's sunny and 72°F.")
+    server = _make_mock_server(tmp_path, "It's sunny and 72\u00b0F.")
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
@@ -483,7 +490,7 @@ async def test_model_command(tmp_path):
 
 @pytest.mark.asyncio
 async def test_help_includes_new_commands(tmp_path):
-    """/help should mention /status and /model."""
+    """/help should mention /status, /model, and new shortcuts."""
     server = _make_mock_server(tmp_path)
     app = ChatApp(server)
 
@@ -497,6 +504,9 @@ async def test_help_includes_new_commands(tmp_path):
         lines_text = "\n".join(str(line) for line in log.lines)
         assert "/status" in lines_text
         assert "/model" in lines_text
+        assert "ctrl+s" in lines_text
+        assert "ctrl+l" in lines_text
+        assert "ctrl+d" in lines_text
 
 
 @pytest.mark.asyncio
@@ -520,3 +530,332 @@ async def test_message_count(tmp_path):
 
         # 1 for user message + 1 for assistant response
         assert bar.message_count == 2
+
+
+# --- Tests for new TUI features (issue #121) ---
+
+
+@pytest.mark.asyncio
+async def test_status_bar_token_count(tmp_path):
+    """StatusBar should display token_count when session has it."""
+    server = _make_mock_server(tmp_path)
+    mgr = server._session_mgr
+    session = mgr.get_or_create(SENDER_ID)
+    session.token_count = 1500
+    mgr._save(session)
+
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        bar = app.query_one("#status-bar", StatusBar)
+        assert bar.token_count == 1500
+
+
+@pytest.mark.asyncio
+async def test_status_bar_session_name(tmp_path):
+    """StatusBar should display session title."""
+    server = _make_mock_server(tmp_path)
+    mgr = server._session_mgr
+    mgr.add_user_message(SENDER_ID, "Weather check")
+
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        bar = app.query_one("#status-bar", StatusBar)
+        assert bar.session_name == "Weather check"
+
+
+@pytest.mark.asyncio
+async def test_tool_call_panel_exists(tmp_path):
+    """ToolCallPanel should be mounted in the app."""
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        panel = app.query_one("#tool-panel", ToolCallPanel)
+        assert panel is not None
+        # Should be hidden by default
+        assert "visible" not in panel.classes
+
+
+@pytest.mark.asyncio
+async def test_tool_call_panel_add_and_complete():
+    """ToolCallPanel should show active tools and mark completed."""
+    panel = ToolCallPanel(id="test-panel")
+
+    # Test add
+    panel.add_tool_call("call-1", "weather_fetch")
+    assert "call-1" in panel._active
+    assert panel._active["call-1"] == "weather_fetch"
+    assert "visible" in panel.classes
+
+    # Test complete
+    panel.complete_tool_call("call-1")
+    assert "call-1" not in panel._active
+    assert "weather_fetch" in panel._completed
+
+
+@pytest.mark.asyncio
+async def test_tool_call_panel_clear():
+    """ToolCallPanel.clear_tools() should reset state."""
+    panel = ToolCallPanel(id="test-panel")
+    panel.add_tool_call("call-1", "weather_fetch")
+    panel.complete_tool_call("call-1")
+
+    panel.clear_tools()
+    assert len(panel._active) == 0
+    assert len(panel._completed) == 0
+    assert "visible" not in panel.classes
+
+
+@pytest.mark.asyncio
+async def test_tool_stream_events(tmp_path):
+    """tool_start/tool_end stream events should update the ToolCallPanel."""
+
+    class _ToolStreamBackend:
+        def handle_message(self, sender_id, text, on_text_delta=None):
+            raise AssertionError("should use stream_message")
+
+        def stream_message(self, sender_id, text):
+            yield {"type": "tool_start", "payload": {"call_id": "c1", "tool_name": "fetch_url"}}
+            yield {"type": "token", "payload": {"text": "fetching..."}}
+            yield {"type": "tool_end", "payload": {"call_id": "c1"}}
+            yield {"type": "final", "payload": {"text": "Done fetching"}}
+
+        def get_or_create_session(self, sender_id):
+            return SimpleNamespace(session_id="abc", title="Test", messages=[])
+
+        def new_session(self, sender_id):
+            return SimpleNamespace(session_id="def", title="", messages=[])
+
+    app = ChatApp(_ToolStreamBackend())
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("fetch something")
+        await pilot.press("enter")
+
+        for _ in range(30):
+            await pilot.pause()
+            if not inp.disabled:
+                break
+
+        # After completion, tool panel should have been used
+        # (it auto-hides after 2s, but clear_tools is called in _finish_streaming)
+        panel = app.query_one("#tool-panel", ToolCallPanel)
+        assert len(panel._active) == 0
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "Done fetching" in lines_text
+
+
+@pytest.mark.asyncio
+async def test_ctrl_l_clears_display(tmp_path):
+    """Ctrl+L should clear the display like /compact."""
+    server = _make_mock_server(tmp_path)
+    mgr = server._session_mgr
+    mgr.add_user_message(SENDER_ID, "Hello there")
+
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "Hello there" in lines_text
+
+        await pilot.press("ctrl+l")
+        await pilot.pause()
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "Hello there" not in lines_text
+        assert "Display cleared" in lines_text
+
+
+@pytest.mark.asyncio
+async def test_session_switcher_modal_compose():
+    """SessionSwitcher should render options from session list."""
+    sessions = [
+        {"session_id": "aaa111222333", "title": "Weather chat", "message_count": 5},
+        {"session_id": "bbb444555666", "title": "Code review", "message_count": 12},
+    ]
+    switcher = SessionSwitcher(sessions)
+    assert len(switcher._session_ids) == 2
+    assert switcher._session_ids[0] == "aaa111222333"
+    assert switcher._session_ids[1] == "bbb444555666"
+
+
+@pytest.mark.asyncio
+async def test_session_switcher_keybinding_no_sessions(tmp_path):
+    """Ctrl+S with no sessions should show a notification, not crash."""
+    server = _make_mock_server(tmp_path)
+    # The default session won't appear in list_sessions since no messages yet
+    # and list_sessions checks for files; new session creates a file though
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # This should not raise — just show notification
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_session_switcher_with_sessions(tmp_path):
+    """Ctrl+S with existing sessions should open the session switcher modal."""
+    server = _make_mock_server(tmp_path)
+    mgr = server._session_mgr
+
+    # Create two sessions with messages so they show up in list
+    mgr.add_user_message(SENDER_ID, "First session")
+    mgr.new_session(SENDER_ID)
+    mgr.add_user_message(SENDER_ID, "Second session")
+
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        sessions = mgr.list_sessions(SENDER_ID)
+        assert len(sessions) >= 2
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+
+        # The modal screen should be pushed
+        assert len(app.screen_stack) > 1
+
+        # Press escape to dismiss
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert len(app.screen_stack) == 1
+
+
+@pytest.mark.asyncio
+async def test_syntax_highlighting_in_response(tmp_path):
+    """Responses with code blocks should use syntax highlighting."""
+    code_response = "Here is some code:\n```python\ndef hello():\n    print('hi')\n```"
+    server = _make_mock_server(tmp_path, code_response)
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        inp = app.query_one("#chat-input", ChatInput)
+        inp.load_text("show me code")
+        await pilot.press("enter")
+
+        for _ in range(20):
+            await pilot.pause()
+            if not inp.disabled:
+                break
+
+        # The response should be rendered (we can't easily check Pygments
+        # highlighting in the RichLog, but we can verify it rendered)
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "hello" in lines_text
+
+
+@pytest.mark.asyncio
+async def test_ctrl_d_quits(tmp_path):
+    """Ctrl+D should quit the app (same as Ctrl+C)."""
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # Verify ctrl+d is bound to quit
+        bindings = [b for b in app.BINDINGS if b.key == "ctrl+d"]
+        assert len(bindings) == 1
+        assert bindings[0].action == "quit"
+
+
+@pytest.mark.asyncio
+async def test_new_session_resets_status_bar(tmp_path):
+    """Ctrl+N should reset token_count and session_name in status bar."""
+    server = _make_mock_server(tmp_path)
+    mgr = server._session_mgr
+    session = mgr.get_or_create(SENDER_ID)
+    session.token_count = 500
+    mgr._save(session)
+    mgr.add_user_message(SENDER_ID, "Test message")
+
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        bar = app.query_one("#status-bar", StatusBar)
+        assert bar.token_count == 500
+        assert bar.session_name == "Test message"
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+
+        assert bar.message_count == 0
+        assert bar.token_count == 0
+        assert bar.session_name == ""
+
+
+@pytest.mark.asyncio
+async def test_status_bar_connection_status(tmp_path):
+    """StatusBar should show connection_status (default 'Connected')."""
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        bar = app.query_one("#status-bar", StatusBar)
+        assert bar.connection_status == "Connected"
+
+
+@pytest.mark.asyncio
+async def test_status_bar_connection_status_update(tmp_path):
+    """StatusBar connection_status should be updatable."""
+    server = _make_mock_server(tmp_path)
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        bar = app.query_one("#status-bar", StatusBar)
+        bar.connection_status = "Disconnected"
+        await pilot.pause()
+        assert bar.connection_status == "Disconnected"
+
+
+@pytest.mark.asyncio
+async def test_tool_messages_in_history_replay(tmp_path):
+    """Tool use content blocks in assistant messages should render in replay."""
+    server = _make_mock_server(tmp_path)
+    mgr = server._session_mgr
+
+    # Pre-populate a session with tool_use in an assistant message
+    mgr.add_user_message(SENDER_ID, "What is the weather?")
+    mgr.add_assistant_response(
+        SENDER_ID,
+        [
+            {"type": "tool_use", "id": "tc1", "name": "weather_fetch", "input": {}},
+            {"type": "text", "text": "It is sunny today."},
+        ],
+    )
+
+    app = ChatApp(server)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        log = app.query_one("#chat-log")
+        lines_text = "\n".join(str(line) for line in log.lines)
+        assert "weather_fetch" in lines_text
+        assert "sunny" in lines_text

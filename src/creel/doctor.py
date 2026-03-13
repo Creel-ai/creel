@@ -89,6 +89,16 @@ def _section_header(title: str) -> str:
     return f"\n{_BOLD}{title}{_RESET}"
 
 
+_NO_COLOR_ICONS = {"pass": "OK", "warn": "!!", "error": "XX"}
+
+
+def _icon(status: str, no_color: bool) -> str:
+    """Return the appropriate icon for a check status."""
+    if no_color:
+        return _NO_COLOR_ICONS.get(status, "!!")
+    return {"pass": PASS, "warn": WARN, "error": FAIL}.get(status, WARN)
+
+
 # ---------------------------------------------------------------------------
 # Individual check functions
 # ---------------------------------------------------------------------------
@@ -862,34 +872,33 @@ def run_doctor(
         ("Session Store", check_sessions()),
     ]
 
+    def _bold(text: str) -> str:
+        return text if no_color else f"{_BOLD}{text}{_RESET}"
+
+    def _dim(text: str) -> str:
+        return text if no_color else f"{_DIM}{text}{_RESET}"
+
     for title, results in config_sections:
-        print(_section_header(title) if not no_color else f"\n{title}")
+        print(f"\n{_bold(title)}")
         for r in results:
             report.add(r)
-            icon = r.icon if not no_color else {"pass": "OK", "warn": "!!", "error": "XX"}[r.status]
-            print(f"  {icon} {r.label}: {r.message}")
+            print(f"  {_icon(r.status, no_color)} {r.label}: {r.message}")
 
     # Summary
-    print(f"\n{_BOLD}Summary{_RESET}" if not no_color else "\nSummary")
+    print(f"\n{_bold('Summary')}")
     print(f"  {report.passed} passed, {report.warnings} warning(s), {report.errors} error(s)")
 
     if fix and report.fixable:
-        print(f"\n{_BOLD}Applying fixes...{_RESET}" if not no_color else "\nApplying fixes...")
+        print(f"\n{_bold('Applying fixes...')}")
         actions = apply_fixes(report)
         if actions:
             for action in actions:
-                print(f"  {PASS if not no_color else 'OK'} {action}")
+                print(f"  {_icon('pass', no_color)} {action}")
         else:
-            print(
-                f"  {_DIM}No automatic fixes available{_RESET}"
-                if not no_color
-                else "  No automatic fixes available"
-            )
+            print(f"  {_dim('No automatic fixes available')}")
     elif report.fixable and not fix:
-        print(
-            f"\n{_DIM}Run 'creel doctor --fix' to auto-fix {len(report.fixable)} issue(s){_RESET}"
-            if not no_color
-            else f"\nRun 'creel doctor --fix' to auto-fix {len(report.fixable)} issue(s)"
-        )
+        count = len(report.fixable)
+        hint = f"Run 'creel doctor --fix' to auto-fix {count} issue(s)"
+        print(f"\n{_dim(hint)}")
 
     return report

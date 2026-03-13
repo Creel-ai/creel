@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -70,9 +69,8 @@ deny:
 """
     )
 
-    with patch.object(Path, "home", return_value=tmp_path):
-        with patch.dict(os.environ, {"CREEL_HOME": str(home)}):
-            yield home
+    with patch.dict(os.environ, {"CREEL_HOME": str(home)}):
+        yield home
 
 
 @pytest.fixture()

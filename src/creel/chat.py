@@ -232,6 +232,21 @@ class ChatServer:
             result_callback=self._on_subagent_result,
         )
 
+    def update_agent_def(self, agent_def: AgentDefinition) -> None:
+        """Swap the agent definition and update derived references.
+
+        Called by DaemonService during hot-reload. Components that cache
+        config at init time (SessionManager, MemoryManager, ContainerPool)
+        are intentionally left untouched — their settings are either
+        non-reloadable or don't benefit from live swaps.
+        """
+        self._agent_def = agent_def
+        # SubAgentManager holds config refs used when spawning new agents.
+        self._subagent_manager._llm_config = agent_def.llm
+        self._subagent_manager._tools_config = agent_def.tools
+        self._subagent_manager._agent_config = agent_def.agent
+        self._subagent_manager._bridge_config = agent_def.bridge
+
     def handle_message(
         self,
         sender_id: str,

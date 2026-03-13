@@ -53,6 +53,7 @@ class CheckResult:
     fixable: bool = False
     fix_label: str = ""
     fix_id: str = ""
+    fix_paths: list[Path] = field(default_factory=list)
 
     @property
     def icon(self) -> str:
@@ -701,9 +702,9 @@ def check_sessions() -> list[CheckResult]:
         )
         return results
 
-    # Count and check for stale sessions
-    stale_count = 0
-    corrupt_count = 0
+    # Classify sessions as stale or corrupt, recording paths for fix mode
+    stale_paths: list[Path] = []
+    corrupt_paths: list[Path] = []
     now = time.time()
     stale_threshold = 7 * 24 * 3600  # 7 days
 
@@ -712,9 +713,9 @@ def check_sessions() -> list[CheckResult]:
             data = json.loads(sf.read_text())
             last_active = data.get("last_active", 0)
             if now - last_active > stale_threshold:
-                stale_count += 1
+                stale_paths.append(sf)
         except (json.JSONDecodeError, OSError):
-            corrupt_count += 1
+            corrupt_paths.append(sf)
 
     results.append(
         CheckResult(
@@ -724,27 +725,29 @@ def check_sessions() -> list[CheckResult]:
         )
     )
 
-    if stale_count > 0:
+    if stale_paths:
         results.append(
             CheckResult(
                 status="warn",
                 label="Stale sessions",
-                message=f"{stale_count} session(s) inactive for >7 days",
+                message=f"{len(stale_paths)} session(s) inactive for >7 days",
                 fixable=True,
                 fix_label="Clean up old session files",
                 fix_id=FIX_STALE_SESSIONS,
+                fix_paths=stale_paths,
             )
         )
 
-    if corrupt_count > 0:
+    if corrupt_paths:
         results.append(
             CheckResult(
                 status="error",
                 label="Corrupt sessions",
-                message=f"{corrupt_count} session file(s) could not be read",
+                message=f"{len(corrupt_paths)} session file(s) could not be read",
                 fixable=True,
                 fix_label="Remove corrupt session files",
                 fix_id=FIX_CORRUPT_SESSIONS,
+                fix_paths=corrupt_paths,
             )
         )
 
@@ -770,39 +773,26 @@ def apply_fixes(report: DoctorReport) -> list[str]:
                 actions.append(f"Fixed permissions on {age_key} to 0600")
 
         elif check.fix_id == FIX_STALE_SESSIONS:
-            sessions = paths.sessions_dir()
-            if sessions.is_dir():
-                now = time.time()
-                stale_threshold = 7 * 24 * 3600
-                cleaned = 0
-                for sf in sessions.glob("*.json"):
-                    if sf.name.startswith("_"):
-                        continue
-                    try:
-                        data = json.loads(sf.read_text())
-                        last_active = data.get("last_active", 0)
-                        if now - last_active > stale_threshold:
-                            sf.unlink()
-                            cleaned += 1
-                    except (json.JSONDecodeError, OSError):
-                        pass
-                if cleaned:
-                    actions.append(f"Cleaned {cleaned} stale session file(s)")
+            cleaned = 0
+            for sf in check.fix_paths:
+                try:
+                    sf.unlink()
+                    cleaned += 1
+                except OSError:
+                    pass
+            if cleaned:
+                actions.append(f"Cleaned {cleaned} stale session file(s)")
 
         elif check.fix_id == FIX_CORRUPT_SESSIONS:
-            sessions = paths.sessions_dir()
-            if sessions.is_dir():
-                cleaned = 0
-                for sf in sessions.glob("*.json"):
-                    if sf.name.startswith("_"):
-                        continue
-                    try:
-                        json.loads(sf.read_text())
-                    except (json.JSONDecodeError, OSError):
-                        sf.unlink()
-                        cleaned += 1
-                if cleaned:
-                    actions.append(f"Removed {cleaned} corrupt session file(s)")
+            cleaned = 0
+            for sf in check.fix_paths:
+                try:
+                    sf.unlink()
+                    cleaned += 1
+                except OSError:
+                    pass
+            if cleaned:
+                actions.append(f"Removed {cleaned} corrupt session file(s)")
 
         elif check.fix_id == FIX_SESSION_DIR_MISSING:
             sessions = paths.sessions_dir()

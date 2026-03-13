@@ -491,7 +491,8 @@ class TestApplyFixes:
             "messages": [],
             "last_active": time.time() - 8 * 24 * 3600,
         }
-        (sessions_dir / "old.json").write_text(json.dumps(old_session))
+        stale_file = sessions_dir / "old.json"
+        stale_file.write_text(json.dumps(old_session))
 
         report = DoctorReport()
         report.add(
@@ -501,6 +502,7 @@ class TestApplyFixes:
                 message="1 stale",
                 fixable=True,
                 fix_id=FIX_STALE_SESSIONS,
+                fix_paths=[stale_file],
             )
         )
         actions = apply_fixes(report)
@@ -510,7 +512,8 @@ class TestApplyFixes:
 
     def test_fix_corrupt_sessions(self, creel_home):
         sessions_dir = creel_home / "sessions"
-        (sessions_dir / "bad.json").write_text("not json")
+        corrupt_file = sessions_dir / "bad.json"
+        corrupt_file.write_text("not json")
 
         report = DoctorReport()
         report.add(
@@ -520,6 +523,7 @@ class TestApplyFixes:
                 message="1 corrupt",
                 fixable=True,
                 fix_id=FIX_CORRUPT_SESSIONS,
+                fix_paths=[corrupt_file],
             )
         )
         actions = apply_fixes(report)

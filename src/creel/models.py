@@ -69,9 +69,12 @@ class ContainerPoolConfig(BaseModel):
 class LLMConfig(BaseModel):
     """Configuration for the LLM processing step."""
 
+    provider: str = "anthropic"
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 300
     secrets: str | None = None
+    api_base: str | None = None  # Custom endpoint (e.g. Ollama, proxies)
+    region: str | None = None  # AWS region for Bedrock
     container_pool: ContainerPoolConfig = Field(default_factory=ContainerPoolConfig)
 
 

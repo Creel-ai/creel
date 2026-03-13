@@ -68,6 +68,7 @@ class LLMJudgeConfig(BaseModel):
     """Configuration for the LLM-based judge (Haiku)."""
 
     enabled: bool = True  # enabled by default for security
+    provider: str | None = None  # None = inherit from main LLM config
     model: str = "claude-haiku-4-5-20251001"
     max_tokens: int = 256
     timeout: float = 3.0
@@ -96,6 +97,7 @@ class CoherenceConfig(BaseModel):
     """Configuration for the action coherence checker."""
 
     enabled: bool = False  # off by default — opt-in
+    provider: str | None = None  # None = inherit from main LLM config
     model: str = "claude-haiku-4-5-20251001"
     max_tokens: int = 256
     timeout: float = 3.0

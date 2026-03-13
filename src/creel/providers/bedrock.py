@@ -272,6 +272,20 @@ class BedrockProvider(LLMProvider):
             usage=Usage(input_tokens=usage_input, output_tokens=usage_output),
         )
 
+    def health(self) -> bool:
+        """Check connectivity by listing foundation models."""
+        try:
+            import boto3
+
+            region_kwargs = {}
+            if self._region:
+                region_kwargs["region_name"] = self._region
+            client = boto3.client("bedrock", **region_kwargs)
+            client.list_foundation_models(maxResults=1)
+            return True
+        except Exception:
+            return False
+
     def extract_env_vars(self) -> dict[str, str]:
         env: dict[str, str] = {}
         for key in (

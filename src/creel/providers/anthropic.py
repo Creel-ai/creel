@@ -177,6 +177,15 @@ class AnthropicProvider(LLMProvider):
         except anthropic.APIStatusError as exc:
             raise _wrap_api_error(exc) from exc
 
+    def health(self) -> bool:
+        """Check connectivity by listing models."""
+        try:
+            client = self._get_client()
+            client.models.list(limit=1)
+            return True
+        except Exception:
+            return False
+
     def extract_env_vars(self) -> dict[str, str]:
         env: dict[str, str] = {}
         auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")

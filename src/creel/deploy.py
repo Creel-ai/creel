@@ -39,14 +39,6 @@ class DeploymentHistory(BaseModel):
     active_version: int | None = None
 
 
-def _hash_content(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()[:16]
-
-
-def _read_yaml_bytes(path: Path) -> bytes:
-    return path.read_bytes()
-
-
 def _snapshot_dir(deploy_dir: Path, version: int) -> Path:
     return deploy_dir / "snapshots" / str(version)
 
@@ -202,16 +194,25 @@ def deploy(creel_home: Path, deploy_dir: Path, version: int) -> DeploymentRecord
     if not snap.exists():
         raise ValueError(f"Snapshot directory missing for version {version}")
 
-    # Atomic switch: write files from snapshot back into creel_home
-    for rel_path in sorted(snap.rglob("*")):
-        if rel_path.is_file():
-            rel = rel_path.relative_to(snap)
-            dest = creel_home / rel
-            # Write to temp then rename for atomicity
-            tmp = dest.with_suffix(dest.suffix + ".tmp")
-            tmp.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(rel_path, tmp)
-            tmp.rename(dest)
+    # Determine which files the snapshot contains
+    snapshot_rels = {
+        rel_path.relative_to(snap) for rel_path in snap.rglob("*") if rel_path.is_file()
+    }
+
+    # Remove config files that aren't in the target snapshot
+    current_files = _collect_config_files(creel_home)
+    for rel_str in current_files:
+        if Path(rel_str) not in snapshot_rels:
+            current_files[rel_str].unlink()
+
+    # Restore files from snapshot, writing to temp then renaming per-file
+    for rel in sorted(snapshot_rels):
+        src = snap / rel
+        dest = creel_home / rel
+        tmp = dest.with_suffix(dest.suffix + ".tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, tmp)
+        tmp.rename(dest)
 
     history.active_version = version
     _save_history(deploy_dir, history)

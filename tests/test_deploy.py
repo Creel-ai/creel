@@ -176,6 +176,29 @@ class TestDeploy:
         with pytest.raises(ValueError, match="not found"):
             deploy(creel_home, deploy_dir, version=99)
 
+    def test_deploy_removes_stale_files(self, creel_home: Path, deploy_dir: Path) -> None:
+        # v1: no evening task
+        create_snapshot(creel_home, deploy_dir, tag="v1")
+
+        # Add a new task file, then snapshot as v2
+        (creel_home / "tasks" / "evening.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "evening",
+                    "schedule": "0 20 * * *",
+                    "prompt": "Good evening",
+                    "output": {"type": "stdout", "to": "console"},
+                }
+            )
+        )
+        create_snapshot(creel_home, deploy_dir, tag="v2")
+        assert (creel_home / "tasks" / "evening.yaml").exists()
+
+        # Deploy v1 — evening.yaml should be removed
+        deploy(creel_home, deploy_dir, version=1)
+        assert not (creel_home / "tasks" / "evening.yaml").exists()
+        assert (creel_home / "tasks" / "morning.yaml").exists()
+
     def test_deploy_updates_active_version(self, creel_home: Path, deploy_dir: Path) -> None:
         create_snapshot(creel_home, deploy_dir)
         create_snapshot(creel_home, deploy_dir)

@@ -370,10 +370,11 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 1
 
 
-def _deploy_dir(args: argparse.Namespace) -> Path:
+def _deploy_dir() -> Path:
     """Resolve the deployments directory."""
-    creel_home = (args.agent_config or _default_agent_config()).parent
-    return creel_home / "deployments"
+    from creel.paths import deployments_dir
+
+    return deployments_dir()
 
 
 def cmd_config_validate(args: argparse.Namespace) -> int:
@@ -397,7 +398,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
 
     config_path = args.agent_config or _default_agent_config()
     creel_home = config_path.parent
-    deploy_dir = _deploy_dir(args)
+    deploy_dir = _deploy_dir()
 
     # Always validate before deploying
     errors = validate_config(config_path)
@@ -407,8 +408,8 @@ def cmd_deploy(args: argparse.Namespace) -> int:
             print(f"  - {err}", file=sys.stderr)
         return 1
 
-    tag = getattr(args, "tag", None)
-    message = getattr(args, "message", "") or ""
+    tag = args.tag
+    message = args.message or ""
 
     try:
         record = create_snapshot(creel_home, deploy_dir, tag=tag, message=message)
@@ -424,7 +425,7 @@ def cmd_deploy_history(args: argparse.Namespace) -> int:
     """Show deployment history."""
     from creel.deploy import get_history
 
-    deploy_dir = _deploy_dir(args)
+    deploy_dir = _deploy_dir()
     rows = get_history(deploy_dir)
     if not rows:
         print("No deployments recorded yet.")
@@ -447,8 +448,8 @@ def cmd_rollback(args: argparse.Namespace) -> int:
 
     config_path = args.agent_config or _default_agent_config()
     creel_home = config_path.parent
-    deploy_dir = _deploy_dir(args)
-    target = getattr(args, "to", None)
+    deploy_dir = _deploy_dir()
+    target = args.to
 
     try:
         record = rollback(creel_home, deploy_dir, target_tag=target)

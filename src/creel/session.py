@@ -572,10 +572,7 @@ class SessionManager:
             return None
 
         try:
-            with open(path, "rb") as f:
-                _flock_with_timeout(f.fileno(), fcntl.LOCK_SH)
-                raw_bytes = f.read()
-            data = self._decrypt_or_parse(raw_bytes)
+            data = self._read_session_file(path)
 
             session = Session(
                 sender_id=data["sender_id"],
@@ -622,12 +619,16 @@ class SessionManager:
                 return json.loads(raw_bytes)
         return json.loads(raw_bytes)
 
-    def _read_session_file(self, path: Path) -> dict | None:
-        """Read and parse a session file with shared lock, handling encryption."""
+    @staticmethod
+    def _locked_read(path: Path) -> bytes:
+        """Read a file while holding a shared advisory lock."""
         with open(path, "rb") as f:
             _flock_with_timeout(f.fileno(), fcntl.LOCK_SH)
-            raw_bytes = f.read()
-        return self._decrypt_or_parse(raw_bytes)
+            return f.read()
+
+    def _read_session_file(self, path: Path) -> dict | None:
+        """Read and parse a session file with shared lock, handling encryption."""
+        return self._decrypt_or_parse(self._locked_read(path))
 
     def load_session(self, session_id: str) -> Session | None:
         """Load a session by its session_id (returns None if not found)."""
@@ -660,9 +661,7 @@ class SessionManager:
         if not path.exists():
             return {}
         try:
-            with open(path, "rb") as f:
-                _flock_with_timeout(f.fileno(), fcntl.LOCK_SH)
-                return json.loads(f.read())
+            return json.loads(self._locked_read(path))
         except (json.JSONDecodeError, OSError):
             return {}
 

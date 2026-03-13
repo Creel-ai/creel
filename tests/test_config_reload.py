@@ -336,6 +336,38 @@ class TestServiceReload:
         assert result.success
         assert svc._agent_def.system_prompt == "From other path"
 
+    def test_concurrent_reloads_are_serialized(self, minimal_agent_def, tmp_path):
+        """Only one reload should run at a time; concurrent attempts are skipped."""
+        from creel.daemon.service import DaemonService
+
+        config_file = tmp_path / "agent.yaml"
+        new_def = _make_agent_def(
+            system_prompt="Concurrent test",
+            session=SessionConfig(
+                sessions_dir=minimal_agent_def.session.sessions_dir,
+                max_history=50,
+            ),
+        )
+        _write_config(config_file, new_def)
+
+        server = MagicMock()
+        server._session_mgr = MagicMock()
+        server._guardian = None
+        svc = DaemonService(minimal_agent_def, server=server, config_path=config_file)
+
+        # Hold the reload lock so any concurrent reload_config() call is skipped.
+        svc._reload_lock.acquire()
+        try:
+            result = svc.reload_config()
+        finally:
+            svc._reload_lock.release()
+
+        # Should succeed but with no changes (skipped due to lock)
+        assert result.success
+        assert result.changed_count == 0
+        # Original config should be preserved
+        assert svc._agent_def.system_prompt == "You are a helpful assistant."
+
 
 # ---------------------------------------------------------------------------
 # ConfigWatcher

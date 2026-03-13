@@ -29,17 +29,14 @@ python scripts/setup-google-oauth.py --encrypt-all
 |---------|----------|-------------|
 | Google Calendar (read) | `gcal` | `calendar.readonly` |
 | Google Calendar (write) | `gcal_write` | `calendar.events` |
-| Gmail (read) | `gmail` | `gmail.readonly` |
+| Gmail (read) | `gmail_readonly` | `gmail.readonly` |
 | Gmail (send) | `gmail_send` | `gmail.send` |
 | Gmail (modify) | `gmail_modify` | `gmail.modify` |
 | Google Drive (read) | `drive` | `drive.readonly` |
 | Google Drive (write) | `drive_write` | `drive.file` |
-| Google Docs (read) | `docs_read` | `documents.readonly` |
-| Google Docs (write) | `docs_write` | `documents` |
-| Google Sheets (read) | `sheets_read` | `spreadsheets.readonly` |
-| Google Sheets (write) | `sheets_write` | `spreadsheets` |
-| Google Slides (read) | `slides_read` | `presentations.readonly` |
-| Google Slides (write) | `slides_write` | `presentations` |
+| Google Docs | `google_docs` | `documents`, `documents.readonly` |
+| Google Sheets | `google_sheets` | `spreadsheets`, `spreadsheets.readonly` |
+| Google Slides | `google_slides` | `presentations`, `presentations.readonly` |
 
 ## GCP Project Setup
 

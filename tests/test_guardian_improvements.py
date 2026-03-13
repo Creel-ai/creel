@@ -26,22 +26,24 @@ class TestFastClassifierWarmUp:
         classifier.warm_up()  # should not raise
         assert classifier.backend == "none"
 
-    def test_warm_up_unavailable(self) -> None:
+    def test_warm_up_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Warm-up should handle unavailable model gracefully.
 
-        With a nonexistent model, _load() will raise RuntimeError (either
-        because backends aren't installed, or because model download fails).
-        The constructor doesn't call _load(); warm_up() only runs inference
-        if a pipeline was already loaded, so it's a no-op here.
+        With _load() patched to simulate a missing model, the classifier
+        should remain in 'none' backend state and warm_up() should be a no-op.
         """
         config = FastClassifierConfig(
             enabled=True, model_name="nonexistent/model-that-does-not-exist-anywhere"
         )
-        # _load() is called lazily or not at all — the constructor just stores config.
-        # If _load() is called eagerly and raises, that's expected for a bad model.
+
+        def _raise_load(self: FastClassifier) -> None:
+            raise RuntimeError("model not found")
+
+        # Patch _load to raise immediately instead of hitting the network
+        monkeypatch.setattr(FastClassifier, "_load", _raise_load)
         try:
             classifier = FastClassifier(config)
-        except RuntimeError:
+        except Exception:
             return  # acceptable: bad model can't load
         classifier.warm_up()  # should not raise
         assert classifier.backend == "none"

@@ -11,6 +11,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from creel.doctor import (
+    FIX_AGE_KEY_PERMISSIONS,
+    FIX_CORRUPT_SESSIONS,
+    FIX_SESSION_DIR_MISSING,
+    FIX_STALE_SESSIONS,
     CheckResult,
     DoctorReport,
     apply_fixes,
@@ -456,6 +460,7 @@ class TestApplyFixes:
                 label="Age key permissions",
                 message="too open",
                 fixable=True,
+                fix_id=FIX_AGE_KEY_PERMISSIONS,
             )
         )
         actions = apply_fixes(report)
@@ -480,6 +485,7 @@ class TestApplyFixes:
                 label="Stale sessions",
                 message="1 stale",
                 fixable=True,
+                fix_id=FIX_STALE_SESSIONS,
             )
         )
         actions = apply_fixes(report)
@@ -498,6 +504,7 @@ class TestApplyFixes:
                 label="Corrupt sessions",
                 message="1 corrupt",
                 fixable=True,
+                fix_id=FIX_CORRUPT_SESSIONS,
             )
         )
         actions = apply_fixes(report)
@@ -520,6 +527,7 @@ class TestApplyFixes:
                 label="Session store",
                 message=f"Directory not found: {sessions_dir}",
                 fixable=True,
+                fix_id=FIX_SESSION_DIR_MISSING,
             )
         )
         actions = apply_fixes(report)

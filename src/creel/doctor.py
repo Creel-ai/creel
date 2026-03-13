@@ -20,6 +20,12 @@ from creel import paths
 
 logger = logging.getLogger(__name__)
 
+# Check IDs — used for fix dispatch so labels can change without breaking fixes
+FIX_AGE_KEY_PERMISSIONS = "fix:age_key_permissions"
+FIX_STALE_SESSIONS = "fix:stale_sessions"
+FIX_CORRUPT_SESSIONS = "fix:corrupt_sessions"
+FIX_SESSION_DIR_MISSING = "fix:session_dir_missing"
+
 # Status symbols and colors (ANSI)
 _GREEN = "\033[32m"
 _YELLOW = "\033[33m"
@@ -42,6 +48,7 @@ class CheckResult:
     message: str
     fixable: bool = False
     fix_label: str = ""
+    fix_id: str = ""
 
     @property
     def icon(self) -> str:
@@ -620,6 +627,7 @@ def check_security_posture(agent_config_path: Path | None = None) -> list[CheckR
                     message=f"Permissions too open ({oct(mode)}), recommend 0600",
                     fixable=True,
                     fix_label=f"chmod 600 {age_key}",
+                    fix_id=FIX_AGE_KEY_PERMISSIONS,
                 )
             )
         else:
@@ -702,6 +710,7 @@ def check_sessions() -> list[CheckResult]:
                 message=f"Directory not found: {sessions}",
                 fixable=True,
                 fix_label="Will be created on first session",
+                fix_id=FIX_SESSION_DIR_MISSING,
             )
         )
         return results
@@ -751,6 +760,7 @@ def check_sessions() -> list[CheckResult]:
                 message=f"{stale_count} session(s) inactive for >7 days",
                 fixable=True,
                 fix_label="Clean up old session files",
+                fix_id=FIX_STALE_SESSIONS,
             )
         )
 
@@ -762,6 +772,7 @@ def check_sessions() -> list[CheckResult]:
                 message=f"{corrupt_count} session file(s) could not be read",
                 fixable=True,
                 fix_label="Remove corrupt session files",
+                fix_id=FIX_CORRUPT_SESSIONS,
             )
         )
 
@@ -778,7 +789,7 @@ def apply_fixes(report: DoctorReport) -> list[str]:
     actions: list[str] = []
 
     for check in report.fixable:
-        if check.label == "Age key permissions":
+        if check.fix_id == FIX_AGE_KEY_PERMISSIONS:
             age_key = Path(
                 os.environ.get("AGE_IDENTITY_FILE", str(Path.home() / ".age" / "key.txt"))
             )
@@ -786,7 +797,7 @@ def apply_fixes(report: DoctorReport) -> list[str]:
                 age_key.chmod(0o600)
                 actions.append(f"Fixed permissions on {age_key} to 0600")
 
-        elif check.label == "Stale sessions":
+        elif check.fix_id == FIX_STALE_SESSIONS:
             sessions = paths.sessions_dir()
             if sessions.is_dir():
                 now = time.time()
@@ -806,7 +817,7 @@ def apply_fixes(report: DoctorReport) -> list[str]:
                 if cleaned:
                     actions.append(f"Cleaned {cleaned} stale session file(s)")
 
-        elif check.label == "Corrupt sessions":
+        elif check.fix_id == FIX_CORRUPT_SESSIONS:
             sessions = paths.sessions_dir()
             if sessions.is_dir():
                 cleaned = 0
@@ -821,7 +832,7 @@ def apply_fixes(report: DoctorReport) -> list[str]:
                 if cleaned:
                     actions.append(f"Removed {cleaned} corrupt session file(s)")
 
-        elif check.label == "Session store" and "not found" in check.message:
+        elif check.fix_id == FIX_SESSION_DIR_MISSING:
             sessions = paths.sessions_dir()
             sessions.mkdir(parents=True, exist_ok=True)
             actions.append(f"Created session directory: {sessions}")

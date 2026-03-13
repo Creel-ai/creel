@@ -1,0 +1,178 @@
+# Tool catalog for the creel init wizard.
+# Each top-level key is a selectable group ID.
+# Each group has a "label" (display name) and "tools" (tool definitions).
+#
+# To add a new tool to the wizard, add it under the appropriate group's
+# "tools" key — or create a new group.  No Python changes required.
+
+gmail:
+  label: "Gmail (read & send email)"
+  tools:
+    check_email:
+      executor: gmail_readonly
+      network: true
+      secrets: secrets/gmail.env.enc
+      description: "Search Gmail for emails"
+      parameters:
+        query:
+          type: string
+          description: "Gmail search query (e.g., 'is:unread newer_than:1d')"
+          required: true
+    send_email:
+      executor: gmail_send
+      network: true
+      secrets: secrets/gmail_send.env.enc
+      description: "Send an email"
+      parameters:
+        to:
+          type: string
+          description: "Recipient email"
+          required: true
+        subject:
+          type: string
+          description: "Subject line"
+          required: true
+        body:
+          type: string
+          description: "Email body"
+          required: true
+
+calendar:
+  label: "Google Calendar (read & write)"
+  tools:
+    check_calendar:
+      executor: gcal
+      network: true
+      secrets: secrets/gcal.env.enc
+      description: "Check today's calendar events"
+      parameters:
+        range:
+          type: string
+          description: "Time range: 'today' or 'week'"
+    create_event:
+      executor: gcal_write
+      network: true
+      secrets: secrets/gcal_write.env.enc
+      description: "Create a calendar event"
+      parameters:
+        summary:
+          type: string
+          description: "Event title"
+          required: true
+        start:
+          type: string
+          description: "Start time (ISO 8601)"
+          required: true
+        end:
+          type: string
+          description: "End time (ISO 8601)"
+          required: true
+
+drive:
+  label: "Google Drive (read & write)"
+  tools:
+    search_drive:
+      executor: drive
+      network: true
+      secrets: secrets/drive.env.enc
+      description: "Search Google Drive for files"
+      parameters:
+        query:
+          type: string
+          description: "Search query"
+          required: true
+    upload_file:
+      executor: drive_write
+      network: true
+      secrets: secrets/drive_write.env.enc
+      description: "Upload a file to Google Drive"
+      parameters:
+        file_path:
+          type: string
+          description: "Path to the file to upload"
+          required: true
+        name:
+          type: string
+          description: "Name for the uploaded file"
+
+web_search:
+  label: "Web Search (Brave Search)"
+  tools:
+    web_search:
+      executor: brave_search
+      network: true
+      secrets: secrets/brave.env.enc
+      description: "Search the web using Brave Search"
+      parameters:
+        query:
+          type: string
+          description: "Search query"
+          required: true
+
+weather:
+  label: "Weather (current & forecast)"
+  tools:
+    check_weather:
+      executor: weather
+      network: true
+      description: "Get current weather and forecast"
+      parameters:
+        location:
+          type: string
+          description: "City name or coordinates"
+          required: true
+
+github:
+  label: "GitHub (issues, PRs, repos)"
+  tools:
+    github:
+      executor: github
+      network: true
+      secrets: secrets/github.env.enc
+      description: "Run GitHub CLI commands (issues, PRs, repos)"
+      parameters:
+        command:
+          type: string
+          description: "gh CLI command (e.g., 'issue list --repo owner/repo')"
+          required: true
+
+notion:
+  label: "Notion (search, read & write pages)"
+  tools:
+    search_notion:
+      executor: notion
+      network: true
+      secrets: secrets/notion.env.enc
+      description: "Search Notion pages and databases"
+      parameters:
+        query:
+          type: string
+          description: "Search query"
+          required: true
+    create_notion_page:
+      executor: notion_write
+      network: true
+      secrets: secrets/notion.env.enc
+      description: "Create a page in a Notion database"
+      parameters:
+        database_id:
+          type: string
+          description: "Target database UUID"
+          required: true
+        properties_json:
+          type: string
+          description: "Page properties as JSON"
+          required: true
+
+shell:
+  label: "Shell (sandboxed command execution)"
+  tools:
+    run_command:
+      executor: exec
+      network: false
+      description: "Run a shell command in a sandboxed environment"
+      parameters:
+        command:
+          type: string
+          description: "Shell command to execute"
+          required: true

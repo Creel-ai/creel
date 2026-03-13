@@ -1561,7 +1561,7 @@ def main() -> int:
         "--tools",
         type=str,
         help="Comma-separated list of tools to enable "
-        "(gmail,calendar,drive,web_search,weather,github,shell)",
+        "(gmail,calendar,drive,web_search,weather,github,notion,shell)",
     )
     init_parser.add_argument("--enable-media", action="store_true", help="Enable media processing")
     init_parser.add_argument(

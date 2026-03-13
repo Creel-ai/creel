@@ -73,29 +73,6 @@ _DEFAULT_MODELS: dict[str, str] = {
     "ollama": "llama3",
 }
 
-# Tool definitions available for selection
-ToolID = Literal["gmail", "calendar", "drive", "web_search", "weather", "github", "shell"]
-
-_TOOL_IDS: tuple[ToolID, ...] = (
-    "gmail",
-    "calendar",
-    "drive",
-    "web_search",
-    "weather",
-    "github",
-    "shell",
-)
-
-_TOOL_LABELS: dict[str, str] = {
-    "gmail": "Gmail (read & send email)",
-    "calendar": "Google Calendar (read & write)",
-    "drive": "Google Drive (read & write)",
-    "web_search": "Web Search (Brave Search)",
-    "weather": "Weather (current & forecast)",
-    "github": "GitHub (issues, PRs, repos)",
-    "shell": "Shell (sandboxed command execution)",
-}
-
 
 def _prompt_choice(prompt: str, options: list[str], default: int = 0) -> int:
     """Display numbered options and return the selected index."""
@@ -161,176 +138,24 @@ def _prompt_multi_select(prompt: str, options: list[str], ids: list[str]) -> lis
 
 
 # ---------------------------------------------------------------------------
-# Tool definition templates
+# Tool catalog (loaded from bundled YAML)
 # ---------------------------------------------------------------------------
 
-_TOOL_DEFS: dict[str, dict[str, Any]] = {
-    "gmail": {
-        "check_email": {
-            "executor": "gmail_readonly",
-            "network": True,
-            "secrets": "secrets/gmail.env.enc",
-            "description": "Search Gmail for emails",
-            "parameters": {
-                "query": {
-                    "type": "string",
-                    "description": "Gmail search query (e.g., 'is:unread newer_than:1d')",
-                    "required": True,
-                },
-            },
-        },
-        "send_email": {
-            "executor": "gmail_send",
-            "network": True,
-            "secrets": "secrets/gmail_send.env.enc",
-            "description": "Send an email",
-            "parameters": {
-                "to": {
-                    "type": "string",
-                    "description": "Recipient email",
-                    "required": True,
-                },
-                "subject": {
-                    "type": "string",
-                    "description": "Subject line",
-                    "required": True,
-                },
-                "body": {
-                    "type": "string",
-                    "description": "Email body",
-                    "required": True,
-                },
-            },
-        },
-    },
-    "calendar": {
-        "check_calendar": {
-            "executor": "gcal",
-            "network": True,
-            "secrets": "secrets/gcal.env.enc",
-            "description": "Check today's calendar events",
-            "parameters": {
-                "range": {
-                    "type": "string",
-                    "description": "Time range: 'today' or 'week'",
-                },
-            },
-        },
-        "create_event": {
-            "executor": "gcal_write",
-            "network": True,
-            "secrets": "secrets/gcal_write.env.enc",
-            "description": "Create a calendar event",
-            "parameters": {
-                "summary": {
-                    "type": "string",
-                    "description": "Event title",
-                    "required": True,
-                },
-                "start": {
-                    "type": "string",
-                    "description": "Start time (ISO 8601)",
-                    "required": True,
-                },
-                "end": {
-                    "type": "string",
-                    "description": "End time (ISO 8601)",
-                    "required": True,
-                },
-            },
-        },
-    },
-    "drive": {
-        "search_drive": {
-            "executor": "drive",
-            "network": True,
-            "secrets": "secrets/drive.env.enc",
-            "description": "Search Google Drive for files",
-            "parameters": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query",
-                    "required": True,
-                },
-            },
-        },
-        "upload_file": {
-            "executor": "drive_write",
-            "network": True,
-            "secrets": "secrets/drive_write.env.enc",
-            "description": "Upload a file to Google Drive",
-            "parameters": {
-                "file_path": {
-                    "type": "string",
-                    "description": "Path to the file to upload",
-                    "required": True,
-                },
-                "name": {
-                    "type": "string",
-                    "description": "Name for the uploaded file",
-                },
-            },
-        },
-    },
-    "web_search": {
-        "web_search": {
-            "executor": "brave_search",
-            "network": True,
-            "secrets": "secrets/brave.env.enc",
-            "description": "Search the web using Brave Search",
-            "parameters": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query",
-                    "required": True,
-                },
-            },
-        },
-    },
-    "weather": {
-        "check_weather": {
-            "executor": "weather",
-            "network": True,
-            "description": "Get current weather and forecast",
-            "parameters": {
-                "location": {
-                    "type": "string",
-                    "description": "City name or coordinates",
-                    "required": True,
-                },
-            },
-        },
-    },
-    "github": {
-        "github": {
-            "executor": "github",
-            "network": True,
-            "secrets": "secrets/github.env.enc",
-            "description": "Run GitHub CLI commands (issues, PRs, repos)",
-            "parameters": {
-                "command": {
-                    "type": "string",
-                    "description": "gh CLI command (e.g., 'issue list --repo owner/repo')",
-                    "required": True,
-                },
-            },
-        },
-    },
-    "shell": {
-        "run_command": {
-            "executor": "exec",
-            "network": False,
-            "description": "Run a shell command in a sandboxed environment",
-            "parameters": {
-                "command": {
-                    "type": "string",
-                    "description": "Shell command to execute",
-                    "required": True,
-                },
-            },
-        },
-    },
-}
+_catalog_cache: dict[str, Any] | None = None
+
+
+def _load_catalog() -> dict[str, Any]:
+    """Load the tool catalog from the bundled YAML template.
+
+    Returns a dict mapping group IDs to dicts with ``label`` and ``tools`` keys.
+    """
+    global _catalog_cache  # noqa: PLW0603
+    if _catalog_cache is not None:
+        return _catalog_cache
+
+    catalog_file = importlib.resources.files("creel") / "templates" / "tool_catalog.yaml"
+    _catalog_cache = yaml.safe_load(catalog_file.read_text(encoding="utf-8"))
+    return _catalog_cache
 
 
 # ---------------------------------------------------------------------------
@@ -452,11 +277,13 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     print()
     print("Step 2/4: Tools")
     print("-" * 30)
-    tool_labels = [_TOOL_LABELS[tid] for tid in _TOOL_IDS]
+    catalog = _load_catalog()
+    tool_ids = list(catalog.keys())
+    tool_labels = [catalog[tid]["label"] for tid in tool_ids]
     selected_tools = _prompt_multi_select(
         "Select tools to enable",
         tool_labels,
-        list(_TOOL_IDS),
+        tool_ids,
     )
     print(f"  Selected: {', '.join(selected_tools) if selected_tools else 'none'}")
 
@@ -634,10 +461,11 @@ def _encrypt_secrets(config: InitConfig) -> dict[str, str]:
 
 def _build_tools_section(selected_tools: list[str]) -> dict[str, Any]:
     """Build the ``tools`` dict for agent.yaml from selected tool IDs."""
+    catalog = _load_catalog()
     tools: dict[str, Any] = {}
     for tool_id in selected_tools:
-        if tool_id in _TOOL_DEFS:
-            tools.update(_TOOL_DEFS[tool_id])
+        if tool_id in catalog:
+            tools.update(catalog[tool_id]["tools"])
     return tools
 
 

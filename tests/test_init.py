@@ -19,6 +19,7 @@ from creel.init import (
     _encrypt_secrets,
     _ensure_age_keypair,
     _generate_agent_yaml,
+    _load_catalog,
     _prompt_multi_select,
     _send_test_message,
     init,
@@ -635,6 +636,34 @@ class TestGenerateAgentYaml:
 # ---------------------------------------------------------------------------
 # Tool building tests
 # ---------------------------------------------------------------------------
+
+
+class TestToolCatalog:
+    def test_catalog_loads(self):
+        catalog = _load_catalog()
+        assert len(catalog) >= 8
+
+    def test_catalog_structure(self):
+        catalog = _load_catalog()
+        for group_id, group in catalog.items():
+            assert "label" in group, f"group {group_id!r} missing 'label'"
+            assert "tools" in group, f"group {group_id!r} missing 'tools'"
+            assert isinstance(group["tools"], dict)
+            assert len(group["tools"]) >= 1
+
+    def test_catalog_has_expected_groups(self):
+        catalog = _load_catalog()
+        expected = {
+            "gmail",
+            "calendar",
+            "drive",
+            "web_search",
+            "weather",
+            "github",
+            "notion",
+            "shell",
+        }
+        assert expected <= set(catalog.keys())
 
 
 class TestBuildToolsSection:

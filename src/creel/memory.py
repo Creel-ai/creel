@@ -571,7 +571,7 @@ class MemoryManager:
         filtered = [(ds, ln, content, sc) for ds, ln, content, sc in hits if ds != today_str]
 
         if filtered:
-            lines = [f"[{ds}] {content}" for ds, ln, content, _sc in filtered]
+            lines = [f"[{ds}] {content}" for ds, _ln, content, _sc in filtered]
             relevant_text = "\n".join(lines)
 
             remaining = max_chars - total_chars

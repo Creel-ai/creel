@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 _GOOGLE_TOKEN_MAX_AGE_SECONDS = 3600
 
 # Lock for inline executor env-var mutations (os.environ is process-global)
-_ENV_LOCK = threading.Lock()
+_ENV_LOCK = threading.RLock()
 
 # Re-export container symbols for backward compatibility
 __all__ = [

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,10 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from guardian.types import GuardianConfig
+
+logger = logging.getLogger(__name__)
+
+_HTTP_TIMEOUT_HARD_LIMIT = 120.0
 
 
 @dataclass
@@ -36,16 +41,24 @@ class HttpConfig(BaseModel):
     @classmethod
     def clamp_timeout(cls, v: float) -> float:
         """Enforce hard upper limit of 120 seconds."""
-        if v > 120:
-            return 120.0
+        if v > _HTTP_TIMEOUT_HARD_LIMIT:
+            logger.warning(
+                "timeout %ss exceeds hard limit, clamped to %ss", v, _HTTP_TIMEOUT_HARD_LIMIT
+            )
+            return _HTTP_TIMEOUT_HARD_LIMIT
         return v
 
     @field_validator("connect_timeout")
     @classmethod
     def clamp_connect_timeout(cls, v: float) -> float:
         """Enforce hard upper limit of 120 seconds."""
-        if v > 120:
-            return 120.0
+        if v > _HTTP_TIMEOUT_HARD_LIMIT:
+            logger.warning(
+                "connect_timeout %ss exceeds hard limit, clamped to %ss",
+                v,
+                _HTTP_TIMEOUT_HARD_LIMIT,
+            )
+            return _HTTP_TIMEOUT_HARD_LIMIT
         return v
 
 

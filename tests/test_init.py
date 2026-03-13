@@ -12,11 +12,14 @@ from creel import paths
 from creel.init import (
     InitChannelConfig,
     InitConfig,
+    InitGuardianConfig,
     InitLLMConfig,
     InitTelegramConfig,
+    _build_tools_section,
     _encrypt_secrets,
     _ensure_age_keypair,
     _generate_agent_yaml,
+    _prompt_multi_select,
     init,
     migrate,
 )
@@ -124,14 +127,18 @@ class TestWizard:
     def test_wizard_anthropic_flow(self, monkeypatch, tmp_path):
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
-        # Simulate: Anthropic(1) → api key → model default → no channel(3) → no media → yes guardian
+        # Wizard flow: provider(1) → model(default) → tools(none) → channel(Terminal=1)
+        #   → guardian(yes) → policy(yes) → audit(yes) → media(no)
         inputs = self._make_inputs(
             [
                 "1",  # provider: Anthropic
                 "",  # model: default
-                "3",  # channel: none
-                "n",  # media: no
+                "none",  # tools: none
+                "1",  # channel: Terminal (CLI only)
                 "",  # guardian: yes (default)
+                "",  # policy: yes (default)
+                "",  # audit: yes (default)
+                "n",  # media: no
             ]
         )
         monkeypatch.setattr("builtins.input", inputs)
@@ -163,10 +170,14 @@ class TestWizard:
             [
                 "2",  # provider: OpenAI
                 "",  # model: default
-                "1",  # channel: telegram
+                "none",  # tools: none
+                "2",  # channel: Telegram
                 "alice,bob",  # allowed senders
+                "n",  # test message: no
+                "",  # guardian: yes (default)
+                "",  # policy: yes (default)
+                "",  # audit: yes (default)
                 "n",  # media: no
-                "y",  # guardian: yes
             ]
         )
         monkeypatch.setattr("builtins.input", inputs)
@@ -213,15 +224,19 @@ class TestWizard:
         """After 3 failed validations, declining should clear the key."""
         monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
 
-        # provider(1) → decline bad key(n) → model default → no channel(3) → no media → yes guardian
+        # provider(1) → decline bad key(n) → model(default) → tools(none)
+        #   → channel(Terminal=1) → guardian(yes) → policy(yes) → audit(yes) → media(no)
         inputs = self._make_inputs(
             [
                 "1",  # provider: Anthropic
                 "n",  # decline invalid key
                 "",  # model: default
-                "3",  # channel: none
-                "n",  # media: no
+                "none",  # tools: none
+                "1",  # channel: Terminal
                 "",  # guardian: yes (default)
+                "",  # policy: yes (default)
+                "",  # audit: yes (default)
+                "n",  # media: no
             ]
         )
         monkeypatch.setattr("builtins.input", inputs)
@@ -244,6 +259,165 @@ class TestWizard:
         config = yaml.safe_load(agent_yaml.read_text())
         # No secrets should be present since the key was declined
         assert "secrets" not in config["llm"]
+
+    def test_wizard_google_provider(self, monkeypatch, tmp_path):
+        """Google (Gemini) provider should use correct default model."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        inputs = self._make_inputs(
+            [
+                "3",  # provider: Google
+                "",  # model: default (gemini-2.0-flash)
+                "none",  # tools: none
+                "1",  # channel: Terminal
+                "",  # guardian: yes
+                "",  # policy: yes
+                "",  # audit: yes
+                "n",  # media: no
+            ]
+        )
+        monkeypatch.setattr("builtins.input", inputs)
+        monkeypatch.setattr("getpass.getpass", lambda prompt="": "AIza-test-key")
+
+        monkeypatch.setattr(
+            "creel.validation.validate_google_key",
+            lambda key: ValidationResult(ok=True, message="API key is valid"),
+        )
+        monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
+
+        # Mock age keypair
+        mock_identity = pyrage.x25519.Identity.generate()
+        mock_recipient = mock_identity.to_public()
+        key_file = tmp_path / "key.txt"
+        key_file.write_text(f"# test\n{mock_identity!s}\n")
+        pub_file = tmp_path / "key.pub"
+        pub_file.write_text(f"{mock_recipient!s}\n")
+        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+
+        init(force=True)
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert config["llm"]["model"] == "gemini-2.0-flash"
+        assert config["llm"]["secrets"] == "secrets/google.env.enc"
+
+    def test_wizard_with_tools_selection(self, monkeypatch, tmp_path):
+        """Selecting tools should generate tool definitions in agent.yaml."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        inputs = self._make_inputs(
+            [
+                "1",  # provider: Anthropic
+                "",  # model: default
+                "5,6",  # tools: weather, github
+                "1",  # channel: Terminal
+                "",  # guardian: yes
+                "",  # policy: yes
+                "",  # audit: yes
+                "n",  # media: no
+            ]
+        )
+        monkeypatch.setattr("builtins.input", inputs)
+        monkeypatch.setattr("getpass.getpass", lambda prompt="": "sk-ant-test-key")
+
+        monkeypatch.setattr(
+            "creel.validation.validate_anthropic_key",
+            lambda key: ValidationResult(ok=True, message="OK"),
+        )
+        monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
+
+        # Mock age keypair
+        mock_identity = pyrage.x25519.Identity.generate()
+        mock_recipient = mock_identity.to_public()
+        key_file = tmp_path / "key.txt"
+        key_file.write_text(f"# test\n{mock_identity!s}\n")
+        pub_file = tmp_path / "key.pub"
+        pub_file.write_text(f"{mock_recipient!s}\n")
+        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+
+        lines = init(force=True)
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert "check_weather" in config["tools"]
+        assert config["tools"]["check_weather"]["executor"] == "weather"
+        assert "github" in config["tools"]
+        assert any("tools:" in line for line in lines)
+
+    def test_wizard_whatsapp_channel(self, monkeypatch, tmp_path):
+        """Selecting WhatsApp channel should generate whatsapp config."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        inputs = self._make_inputs(
+            [
+                "1",  # provider: Anthropic
+                "",  # model: default
+                "none",  # tools: none
+                "4",  # channel: WhatsApp
+                "",  # guardian: yes
+                "",  # policy: yes
+                "",  # audit: yes
+                "n",  # media: no
+            ]
+        )
+        monkeypatch.setattr("builtins.input", inputs)
+        monkeypatch.setattr("getpass.getpass", lambda prompt="": "sk-ant-test-key")
+
+        monkeypatch.setattr(
+            "creel.validation.validate_anthropic_key",
+            lambda key: ValidationResult(ok=True, message="OK"),
+        )
+        monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
+
+        # Mock age keypair
+        mock_identity = pyrage.x25519.Identity.generate()
+        mock_recipient = mock_identity.to_public()
+        key_file = tmp_path / "key.txt"
+        key_file.write_text(f"# test\n{mock_identity!s}\n")
+        pub_file = tmp_path / "key.pub"
+        pub_file.write_text(f"{mock_recipient!s}\n")
+        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+
+        lines = init(force=True)
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert "whatsapp" in config["channels"]
+        assert any("WHATSAPP_API_URL" in line for line in lines)
+
+    def test_wizard_guardian_disabled(self, monkeypatch, tmp_path):
+        """Disabling guardian should omit guardian section."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        inputs = self._make_inputs(
+            [
+                "1",  # provider: Anthropic
+                "",  # model: default
+                "none",  # tools: none
+                "1",  # channel: Terminal
+                "n",  # guardian: no
+                "n",  # media: no
+            ]
+        )
+        monkeypatch.setattr("builtins.input", inputs)
+        monkeypatch.setattr("getpass.getpass", lambda prompt="": "sk-ant-test-key")
+
+        monkeypatch.setattr(
+            "creel.validation.validate_anthropic_key",
+            lambda key: ValidationResult(ok=True, message="OK"),
+        )
+        monkeypatch.setattr("sys.stdin", MagicMock(isatty=lambda: True))
+
+        # Mock age keypair
+        mock_identity = pyrage.x25519.Identity.generate()
+        mock_recipient = mock_identity.to_public()
+        key_file = tmp_path / "key.txt"
+        key_file.write_text(f"# test\n{mock_identity!s}\n")
+        pub_file = tmp_path / "key.pub"
+        pub_file.write_text(f"{mock_recipient!s}\n")
+        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+
+        init(force=True)
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert "guardian" not in config
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +514,76 @@ class TestNonInteractiveInit:
         config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
         assert config["media"]["enabled"] is True
 
+    def test_google_provider(self, monkeypatch, tmp_path):
+        """Google provider should use gemini default model and GOOGLE_API_KEY env var."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        mock_identity = pyrage.x25519.Identity.generate()
+        mock_recipient = mock_identity.to_public()
+        key_file = tmp_path / "key.txt"
+        key_file.write_text(f"# test\n{mock_identity!s}\n")
+        pub_file = tmp_path / "key.pub"
+        pub_file.write_text(f"{mock_recipient!s}\n")
+        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+
+        init(interactive=False, provider="google", api_key="AIza-test")
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert config["llm"]["model"] == "gemini-2.0-flash"
+        assert config["llm"]["secrets"] == "secrets/google.env.enc"
+
+        # Verify the encrypted secret uses GOOGLE_API_KEY
+        from creel.secrets import decrypt_env_file
+
+        enc_path = tmp_path / "home" / "secrets" / "google.env.enc"
+        env = decrypt_env_file(enc_path, identity_path=str(key_file))
+        assert env["GOOGLE_API_KEY"] == "AIza-test"
+
+    def test_with_tools(self, monkeypatch, tmp_path):
+        """Tools passed via CLI should appear in generated agent.yaml."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        init(
+            interactive=False,
+            provider="anthropic",
+            tools=["weather", "shell"],
+        )
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert "check_weather" in config["tools"]
+        assert "run_command" in config["tools"]
+
+    def test_whatsapp_channel(self, monkeypatch, tmp_path):
+        """WhatsApp channel should generate whatsapp config."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        init(interactive=False, provider="anthropic", channel="whatsapp")
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert "whatsapp" in config["channels"]
+        assert config["channels"]["whatsapp"]["api_url"] == "$WHATSAPP_API_URL"
+
+    def test_all_tools(self, monkeypatch, tmp_path):
+        """Selecting all tools should generate all tool definitions."""
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+
+        init(
+            interactive=False,
+            provider="anthropic",
+            tools=["gmail", "calendar", "drive", "web_search", "weather", "github", "shell"],
+        )
+
+        config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
+        assert "check_email" in config["tools"]
+        assert "send_email" in config["tools"]
+        assert "check_calendar" in config["tools"]
+        assert "create_event" in config["tools"]
+        assert "search_drive" in config["tools"]
+        assert "web_search" in config["tools"]
+        assert "check_weather" in config["tools"]
+        assert "github" in config["tools"]
+        assert "run_command" in config["tools"]
+
 
 # ---------------------------------------------------------------------------
 # YAML generation tests
@@ -389,17 +633,52 @@ class TestGenerateAgentYaml:
         doc = yaml.safe_load(content)
         assert "imessage" in doc["channels"]
 
+    def test_whatsapp_channel(self):
+        config = self._make_config(channel=InitChannelConfig(type="whatsapp"))
+        content = _generate_agent_yaml(config, {})
+        doc = yaml.safe_load(content)
+        assert "whatsapp" in doc["channels"]
+        assert config.channel.type == "whatsapp"
+
     def test_no_guardian_when_disabled(self):
         config = self._make_config(enable_guardian=False)
         content = _generate_agent_yaml(config, {})
         doc = yaml.safe_load(content)
         assert "guardian" not in doc
 
+    def test_guardian_with_policy_and_audit(self):
+        config = self._make_config(
+            guardian=InitGuardianConfig(enabled=True, policy=True, audit=False),
+        )
+        content = _generate_agent_yaml(config, {})
+        doc = yaml.safe_load(content)
+        assert doc["guardian"]["policy"]["enabled"] is True
+        assert doc["guardian"]["audit"]["enabled"] is False
+
     def test_media_section_when_enabled(self):
         config = self._make_config(enable_media=True)
         content = _generate_agent_yaml(config, {})
         doc = yaml.safe_load(content)
         assert doc["media"]["enabled"] is True
+
+    def test_with_tools(self):
+        config = self._make_config(tools=["weather", "github"])
+        content = _generate_agent_yaml(config, {})
+        doc = yaml.safe_load(content)
+        assert "check_weather" in doc["tools"]
+        assert doc["tools"]["check_weather"]["executor"] == "weather"
+        assert "github" in doc["tools"]
+        assert doc["tools"]["github"]["executor"] == "github"
+
+    def test_no_tools_has_example_comment(self):
+        config = self._make_config()
+        content = _generate_agent_yaml(config, {})
+        assert "# Example tool" in content
+
+    def test_with_tools_no_example_comment(self):
+        config = self._make_config(tools=["weather"])
+        content = _generate_agent_yaml(config, {})
+        assert "# Example tool" not in content
 
     def test_yaml_round_trips_through_agent_definition(self):
         """Generated YAML should parse as a valid AgentDefinition."""
@@ -410,6 +689,76 @@ class TestGenerateAgentYaml:
         doc = yaml.safe_load(content)
         agent_def = AgentDefinition(**doc)
         assert agent_def.llm.model == "claude-sonnet-4-20250514"
+
+
+# ---------------------------------------------------------------------------
+# Tool building tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildToolsSection:
+    def test_empty_selection(self):
+        tools = _build_tools_section([])
+        assert tools == {}
+
+    def test_single_tool(self):
+        tools = _build_tools_section(["weather"])
+        assert "check_weather" in tools
+        assert tools["check_weather"]["executor"] == "weather"
+
+    def test_gmail_has_two_tools(self):
+        tools = _build_tools_section(["gmail"])
+        assert "check_email" in tools
+        assert "send_email" in tools
+
+    def test_calendar_has_two_tools(self):
+        tools = _build_tools_section(["calendar"])
+        assert "check_calendar" in tools
+        assert "create_event" in tools
+
+    def test_unknown_tool_ignored(self):
+        tools = _build_tools_section(["nonexistent", "weather"])
+        assert "check_weather" in tools
+        assert len(tools) == 1
+
+    def test_all_tools(self):
+        tools = _build_tools_section(
+            ["gmail", "calendar", "drive", "web_search", "weather", "github", "shell"]
+        )
+        # Should have tools from all categories
+        assert len(tools) >= 7
+
+
+# ---------------------------------------------------------------------------
+# Multi-select prompt tests
+# ---------------------------------------------------------------------------
+
+
+class TestPromptMultiSelect:
+    def test_all_default(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "")
+        result = _prompt_multi_select("Pick", ["A", "B"], ["a", "b"])
+        assert result == ["a", "b"]
+
+    def test_none(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "none")
+        result = _prompt_multi_select("Pick", ["A", "B"], ["a", "b"])
+        assert result == []
+
+    def test_specific_indices(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "1,3")
+        result = _prompt_multi_select("Pick", ["A", "B", "C"], ["a", "b", "c"])
+        assert result == ["a", "c"]
+
+    def test_all_keyword(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "all")
+        result = _prompt_multi_select("Pick", ["A", "B"], ["a", "b"])
+        assert result == ["a", "b"]
+
+    def test_invalid_index_ignored(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt="": "1,99,abc")
+        result = _prompt_multi_select("Pick", ["A", "B"], ["a", "b"])
+        assert result == ["a"]
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +873,22 @@ class TestEncryptSecrets:
         enc_path = tmp_path / "home" / "secrets" / "openai.env.enc"
         env = decrypt_env_file(enc_path, identity_path=str(key_file))
         assert "OPENAI_API_KEY" in env
+
+    def test_google_env_var_name(self, monkeypatch, tmp_path, age_keypair):
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path / "home"))
+        key_file, pub_file = age_keypair
+        monkeypatch.setattr("creel.init._ensure_age_keypair", lambda: (key_file, pub_file))
+
+        config = InitConfig(
+            llm=InitLLMConfig(provider="google", model="gemini-2.0-flash", api_key="AIza-test"),
+        )
+        _encrypt_secrets(config)
+
+        from creel.secrets import decrypt_env_file
+
+        enc_path = tmp_path / "home" / "secrets" / "google.env.enc"
+        env = decrypt_env_file(enc_path, identity_path=str(key_file))
+        assert env["GOOGLE_API_KEY"] == "AIza-test"
 
 
 # ---------------------------------------------------------------------------

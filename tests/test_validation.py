@@ -9,6 +9,7 @@ import httpx
 from creel.validation import (
     ValidationResult,
     validate_anthropic_key,
+    validate_google_key,
     validate_ollama_reachable,
     validate_openai_key,
     validate_telegram_token,
@@ -86,6 +87,48 @@ class TestValidateOpenAIKey:
         monkeypatch.setattr(httpx, "get", raise_err)
         result = validate_openai_key("sk-test")
         assert result.ok is False
+
+
+class TestValidateGoogleKey:
+    def test_valid_key(self, monkeypatch):
+        resp = MagicMock(status_code=200)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
+        result = validate_google_key("AIza-valid")
+        assert result.ok is True
+
+    def test_invalid_key(self, monkeypatch):
+        resp = MagicMock(status_code=403)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
+        result = validate_google_key("bad-key")
+        assert result.ok is False
+        assert "authentication failed" in result.message
+
+    def test_unauthorized(self, monkeypatch):
+        resp = MagicMock(status_code=401)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
+        result = validate_google_key("bad-key")
+        assert result.ok is False
+
+    def test_rate_limited(self, monkeypatch):
+        resp = MagicMock(status_code=429)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
+        result = validate_google_key("AIza-ratelimited")
+        assert result.ok is True
+
+    def test_network_error(self, monkeypatch):
+        def raise_err(*a, **kw):
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(httpx, "get", raise_err)
+        result = validate_google_key("AIza-test")
+        assert result.ok is False
+
+    def test_unexpected_status(self, monkeypatch):
+        resp = MagicMock(status_code=404)
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: resp)
+        result = validate_google_key("AIza-test")
+        assert result.ok is False
+        assert "404" in result.message
 
 
 class TestValidateOllamaReachable:

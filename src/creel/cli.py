@@ -259,6 +259,9 @@ def cmd_init(args: argparse.Namespace) -> int:
             return 1
         lines = migrate(repo_root, force=args.force)
     else:
+        parsed_tools = (
+            [t.strip() for t in args.tools.split(",") if t.strip()] if args.tools else None
+        )
         lines = init(
             force=args.force,
             interactive=not args.non_interactive,
@@ -268,6 +271,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             channel=args.channel,
             bot_token=args.bot_token,
             allowed_senders=args.allowed_senders,
+            tools=parsed_tools,
             enable_media=args.enable_media,
             enable_guardian=not args.no_guardian,
         )
@@ -1537,14 +1541,14 @@ def main() -> int:
     )
     init_parser.add_argument(
         "--provider",
-        choices=["anthropic", "openai", "ollama"],
+        choices=["anthropic", "openai", "google", "ollama"],
         help="LLM provider",
     )
     init_parser.add_argument("--api-key", type=str, help="LLM API key")
     init_parser.add_argument("--model", type=str, help="LLM model name")
     init_parser.add_argument(
         "--channel",
-        choices=["telegram", "imessage", "none"],
+        choices=["telegram", "imessage", "whatsapp", "none"],
         help="Communication channel",
     )
     init_parser.add_argument("--bot-token", type=str, help="Telegram bot token")
@@ -1552,6 +1556,12 @@ def main() -> int:
         "--allowed-senders",
         type=str,
         help="Comma-separated list of allowed sender usernames",
+    )
+    init_parser.add_argument(
+        "--tools",
+        type=str,
+        help="Comma-separated list of tools to enable "
+        "(gmail,calendar,drive,web_search,weather,github,shell)",
     )
     init_parser.add_argument("--enable-media", action="store_true", help="Enable media processing")
     init_parser.add_argument(

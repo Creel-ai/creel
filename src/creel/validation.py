@@ -84,6 +84,33 @@ def validate_openai_key(api_key: str) -> ValidationResult:
     )
 
 
+def validate_google_key(api_key: str) -> ValidationResult:
+    """Validate a Google AI (Gemini) API key via ``GET /v1beta/models``."""
+    try:
+        resp = httpx.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            params={"key": api_key},
+            timeout=_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        return ValidationResult(ok=False, message=f"Network error: {exc}")
+
+    if resp.status_code == 200:
+        return ValidationResult(ok=True, message="API key is valid")
+    if resp.status_code in (401, 403):
+        return ValidationResult(ok=False, message="Invalid API key (authentication failed)")
+    if resp.status_code in (429, 500, 502, 503):
+        return ValidationResult(
+            ok=True,
+            message=f"Key accepted (server returned {resp.status_code}, likely rate-limited)",
+        )
+    return ValidationResult(
+        ok=False,
+        message=f"Unexpected response ({resp.status_code})",
+        detail={"status_code": resp.status_code},
+    )
+
+
 def validate_ollama_reachable(base_url: str) -> ValidationResult:
     """Check that an Ollama instance is reachable via ``GET /api/tags``."""
     url = base_url.rstrip("/") + "/api/tags"

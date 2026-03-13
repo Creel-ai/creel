@@ -225,9 +225,12 @@ class TestEnsureImage:
         dockerfile.parent.mkdir(parents=True)
         dockerfile.write_text("FROM python:3.11")
 
-        with patch(
-            "creel.containers.Path",
-            side_effect=lambda x: tmp_path / x if not str(x).startswith("/") else x,
+        with (
+            patch("creel.containers._BASE_DOCKERFILE", MagicMock(exists=lambda: False)),
+            patch(
+                "creel.containers.Path",
+                side_effect=lambda x: tmp_path / x if not str(x).startswith("/") else x,
+            ),
         ):
             with pytest.raises(RuntimeError, match="Could not find"):
                 _ensure_image("executor-test:latest")

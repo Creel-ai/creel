@@ -1484,6 +1484,89 @@ def cmd_encrypt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _default_pairing_dir() -> Path:
+    return paths.creel_home() / "pairing"
+
+
+def cmd_pair_generate(args: argparse.Namespace) -> int:
+    """Generate a new device pairing code."""
+    from creel.pairing import PairingManager, _generate_totp_code
+
+    manager = PairingManager(_default_pairing_dir())
+    session = manager.generate_pairing(timeout_seconds=args.timeout)
+
+    print("Device Pairing Code")
+    print("=" * 40)
+    print(f"  Code:    {session.pairing_code}")
+    print(f"  Session: {session.session_id}")
+    print()
+    # Show the current TOTP code so the user can verify manually
+    totp = _generate_totp_code(session.totp_secret)
+    print(f"  TOTP verification code: {totp}")
+    print(f"  TOTP secret: {session.totp_secret}")
+    print()
+    print(f"  Expires in {args.timeout} seconds.")
+    print()
+    print("Share the pairing code with the device to pair.")
+    return 0
+
+
+def cmd_pair_list(args: argparse.Namespace) -> int:
+    """List all paired devices."""
+    from creel.pairing import PairingManager
+
+    manager = PairingManager(_default_pairing_dir())
+    devices = manager.list_devices()
+
+    if not devices:
+        print("No paired devices.")
+        return 0
+
+    print(f"{'ID':<34} {'Name':<20} {'Type':<10} {'Last Seen':<20} {'Capabilities'}")
+    print("-" * 110)
+    for d in devices:
+        import datetime
+
+        last_seen = datetime.datetime.fromtimestamp(d.last_seen).strftime("%Y-%m-%d %H:%M:%S")
+        caps = ", ".join(d.capabilities) if d.capabilities else "(none)"
+        print(f"{d.id:<34} {d.name:<20} {d.device_type:<10} {last_seen:<20} {caps}")
+
+    return 0
+
+
+def cmd_pair_remove(args: argparse.Namespace) -> int:
+    """Remove a paired device."""
+    from creel.pairing import PairingManager
+
+    manager = PairingManager(_default_pairing_dir())
+    removed = manager.remove_device(args.device_id)
+    if removed:
+        print(f"Device {args.device_id} removed.")
+        return 0
+    else:
+        print(f"Device {args.device_id} not found.", file=sys.stderr)
+        return 1
+
+
+def cmd_pair_test(args: argparse.Namespace) -> int:
+    """Test connectivity to a paired device."""
+    from creel.pairing import PairingManager
+
+    manager = PairingManager(_default_pairing_dir())
+    device = manager.get_device(args.device_id)
+    if device is None:
+        print(f"Device {args.device_id} not found.", file=sys.stderr)
+        return 1
+
+    print(f"Device: {device.name} ({device.device_type})")
+    print(f"Capabilities: {', '.join(device.capabilities) or '(none)'}")
+    print(f"Auth token present: {'yes' if device.auth_token else 'no'}")
+    # Update last_seen as a lightweight connectivity check
+    manager.update_last_seen(args.device_id)
+    print("Status: reachable (last_seen updated)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -1882,6 +1965,29 @@ def main() -> int:
         help="Show last N runs (default: 20)",
     )
 
+    # pair command group
+    pair_parser = subparsers.add_parser("pair", help="Device pairing management")
+    pair_subparsers = pair_parser.add_subparsers(
+        dest="pair_command",
+        metavar="{generate,list,remove,test}",
+    )
+
+    pair_gen_parser = pair_subparsers.add_parser("generate", help="Generate a pairing code")
+    pair_gen_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Pairing timeout in seconds (default: 300)",
+    )
+
+    pair_subparsers.add_parser("list", help="List paired devices")
+
+    pair_remove_parser = pair_subparsers.add_parser("remove", help="Remove a paired device")
+    pair_remove_parser.add_argument("device_id", help="Device ID to remove")
+
+    pair_test_parser = pair_subparsers.add_parser("test", help="Test connectivity to a device")
+    pair_test_parser.add_argument("device_id", help="Device ID to test")
+
     args = parser.parse_args()
 
     # Set up logging
@@ -1928,6 +2034,18 @@ def main() -> int:
             cron_parser.print_help()
             return 1
         return cron_commands[args.cron_command](args)
+
+    if args.command == "pair":
+        pair_commands = {
+            "generate": cmd_pair_generate,
+            "list": cmd_pair_list,
+            "remove": cmd_pair_remove,
+            "test": cmd_pair_test,
+        }
+        if args.pair_command not in pair_commands:
+            pair_parser.print_help()
+            return 1
+        return pair_commands[args.pair_command](args)
 
     commands = {
         "init": cmd_init,

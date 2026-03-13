@@ -448,7 +448,10 @@ def execute_tool_call(
         if error:
             return json.dumps({"error": error})
         resolved = os.path.realpath(path)
-        session_state.workspace = resolved
+        if isinstance(session_state, dict):
+            session_state["workspace"] = resolved
+        else:
+            session_state.workspace = resolved
         return json.dumps({"workspace": resolved, "status": "ok"})
 
     # Handle built-in tools
@@ -488,7 +491,15 @@ def execute_tool_call(
     if tool_name == "subagent" and subagent_manager is not None:
         from creel.subagents.executor import handle_subagent_tool
 
-        sender_id = session_state.sender_id if session_state else ""
+        sender_id = (
+            (
+                session_state.get("sender_id", "")
+                if isinstance(session_state, dict)
+                else getattr(session_state, "sender_id", "")
+            )
+            if session_state
+            else ""
+        )
         return handle_subagent_tool(tool_input, manager=subagent_manager, sender_id=sender_id)
 
     # Handle knowledge base built-in tools
@@ -509,8 +520,17 @@ def execute_tool_call(
     merged_args = {**tool_input, **cfg.fixed_args}
 
     # Inject workspace from session_state for file_ops tools
-    if cfg.executor == "file_ops" and session_state and session_state.workspace:
-        workspace = session_state.workspace
+    _ws = (
+        (
+            session_state.get("workspace")
+            if isinstance(session_state, dict)
+            else getattr(session_state, "workspace", None)
+        )
+        if session_state
+        else None
+    )
+    if cfg.executor == "file_ops" and _ws:
+        workspace = _ws
         # Re-validate: workspace may have been removed since set_workspace
         if not os.path.isdir(workspace):
             return json.dumps(

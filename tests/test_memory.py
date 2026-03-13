@@ -125,7 +125,7 @@ class TestMemoryManager:
             mm.remember("x" * 500)
             result = mm.get_relevant_context("anything", max_chars=200)
             assert result is not None
-            assert len(result) <= 300  # some overhead for headers
+            assert len(result) <= 220  # max_chars + truncation marker overhead
 
     def test_get_relevant_context_excludes_today_from_search(self):
         """Today's entries from search results should not be duplicated."""

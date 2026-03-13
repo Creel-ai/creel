@@ -573,6 +573,8 @@ class SessionManager:
 
         try:
             data = self._read_session_file(path)
+            if data is None:
+                return None
 
             session = Session(
                 sender_id=data["sender_id"],

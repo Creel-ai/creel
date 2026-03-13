@@ -13,6 +13,7 @@ from typing import Any
 from creel.channels.base import Channel
 from creel.channels.message import IncomingMessage
 from creel.chat import ChatServer
+from creel.config_reload import ReloadResult, reload_from_path
 from creel.cron.executor import JobExecutor
 from creel.cron.manager import CronManager
 from creel.cron.store import JobStore
@@ -38,9 +39,11 @@ class DaemonService:
         now_fn: Callable[[], float] = time.time,
         cron_store: JobStore | None = None,
         cron_sender_id: str = "main",
+        config_path: str | Path | None = None,
     ) -> None:
         self._agent_def = agent_def
         self._use_containers = use_containers
+        self._config_path = Path(config_path) if config_path else None
         self._now_fn = now_fn
         self._started_at = self._now_fn()
         self._lock = threading.RLock()
@@ -486,6 +489,84 @@ class DaemonService:
                 self.stop_channel(name, timeout=timeout)
             except Exception:
                 logger.exception("Failed to stop channel '%s'", name)
+
+    # --- Config reload ---
+
+    @property
+    def config_path(self) -> Path | None:
+        return self._config_path
+
+    def reload_config(self, config_path: str | Path | None = None) -> ReloadResult:
+        """Reload agent config from disk and apply reloadable changes atomically.
+
+        Returns a ReloadResult describing what changed.
+        """
+        path = Path(config_path) if config_path else self._config_path
+        if path is None:
+            return ReloadResult(success=False, error="No config path configured")
+
+        result = reload_from_path(path, self._agent_def)
+        if not result.success:
+            logger.warning("Config reload failed: %s", result.error)
+            return result
+
+        if not result.changes:
+            logger.info("Config reload: no reloadable changes detected")
+            return result
+
+        # Load the validated new config for atomic swap
+        from creel.models import load_agent_config
+
+        try:
+            new_config = load_agent_config(path)
+        except Exception as exc:
+            return ReloadResult(success=False, error=f"Config re-read failed: {exc}")
+
+        with self._lock:
+            old_config = self._agent_def
+            self._agent_def = new_config
+
+            # Update ChatServer's config reference
+            self._server._agent_def = new_config
+
+            # Update cron executor's config reference
+            self._cron_executor._agent_def = new_config
+
+            # Log each change
+            changed_fields = [c.field for c in result.changes]
+            logger.info(
+                "Config reloaded: %d setting(s) updated: %s",
+                len(result.changes),
+                ", ".join(changed_fields),
+            )
+
+            # Rebuild guardian if guardian config changed
+            if any(c.field == "guardian" for c in result.changes):
+                self._rebuild_guardian(old_config, new_config)
+
+        if result.non_reloadable:
+            nr_fields = ", ".join(c.field for c in result.non_reloadable)
+            logger.warning(
+                "Config reload: %d non-reloadable change(s) ignored (restart required): %s",
+                len(result.non_reloadable),
+                nr_fields,
+            )
+
+        return result
+
+    def _rebuild_guardian(self, old: AgentDefinition, new: AgentDefinition) -> None:
+        """Rebuild the guardian pipeline after config change (called under lock)."""
+        try:
+            if new.guardian and new.guardian.enabled:
+                from guardian.core import Guardian
+
+                self._server._guardian = Guardian(new.guardian)
+                logger.info("Guardian pipeline rebuilt with new config")
+            elif not new.guardian or not new.guardian.enabled:
+                self._server._guardian = None
+                logger.info("Guardian pipeline disabled")
+        except Exception:
+            logger.exception("Failed to rebuild guardian pipeline, keeping previous")
 
     # --- Status ---
 

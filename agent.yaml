@@ -698,6 +698,39 @@ tools:
         mode: rw
     network: false
 
+  # Interactive/PTY exec — SSH, REPLs, editors, etc.
+  exec_interactive:
+    executor: exec_interactive
+    description: "Start and manage interactive terminal sessions (SSH, REPLs, etc.)"
+    network: true
+    timeout: 300
+    parameters:
+      action:
+        type: string
+        description: "Action: start, send_input, read_output, resize, close, info, list_sessions"
+        required: true
+      command:
+        type: string
+        description: "Shell command to run in PTY (required for 'start' action)"
+      session_id:
+        type: string
+        description: "Session ID (required for send_input, read_output, resize, close, info)"
+      input:
+        type: string
+        description: "Input to send to the session (for 'send_input' action, include \\n for Enter)"
+      timeout:
+        type: number
+        description: "Hard timeout in seconds (for 'start' action, default 300)"
+      cols:
+        type: number
+        description: "Terminal width in columns (default 120)"
+      rows:
+        type: number
+        description: "Terminal height in rows (default 40)"
+      read_timeout:
+        type: number
+        description: "How long to wait for output in seconds (for 'read_output', default 10)"
+
   # Coding / dev environment
   coding:
     executor: coding

@@ -231,6 +231,61 @@ class AuditLogger:
             }
         )
 
+    def log_interactive_io(
+        self,
+        *,
+        session_id: str,
+        tool_name: str,
+        direction: str,
+        data_length: int,
+        data_hash: str,
+    ) -> None:
+        """Log an interactive session I/O event.
+
+        Records the direction (input/output), data length, and hash
+        of the data — never raw content for privacy.
+        """
+        self._write(
+            {
+                "event": "interactive_io",
+                "ts": datetime.now(UTC).isoformat(),
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "direction": direction,
+                "data_length": data_length,
+                "data_hash": data_hash,
+            }
+        )
+
+    def log_interactive_session(
+        self,
+        *,
+        session_id: str,
+        tool_name: str,
+        action: str,
+        command_hash: str | None = None,
+        exit_code: int | None = None,
+        duration_s: float | None = None,
+        io_summary: dict | None = None,
+    ) -> None:
+        """Log an interactive session lifecycle event (start/close)."""
+        record: dict = {
+            "event": "interactive_session",
+            "ts": datetime.now(UTC).isoformat(),
+            "session_id": session_id,
+            "tool_name": tool_name,
+            "action": action,
+        }
+        if command_hash is not None:
+            record["command_hash"] = command_hash
+        if exit_code is not None:
+            record["exit_code"] = exit_code
+        if duration_s is not None:
+            record["duration_s"] = round(duration_s, 1)
+        if io_summary is not None:
+            record["io_summary"] = io_summary
+        self._write(record)
+
     def log_tool_result(
         self,
         *,

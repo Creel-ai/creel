@@ -333,6 +333,7 @@ class ChatServer:
         result = self._invoke_agent_loop(
             session.messages,
             session_state,
+            user_message=text,
             confirm_action=confirm_action,
             on_text_delta=on_text_delta,
         )
@@ -446,6 +447,7 @@ class ChatServer:
         messages: list[dict],
         session_state: SessionState,
         *,
+        user_message: str | None = None,
         confirm_action: Callable[[str, dict, str], bool] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
     ):
@@ -454,7 +456,7 @@ class ChatServer:
         Centralises the "prepare + invoke" sequence so handle_message and
         _handle_approval_response stay in sync.
         """
-        system_prompt = self._build_system_prompt()
+        system_prompt = self._build_system_prompt(user_message=user_message)
 
         if self._agent_def.llm.secrets:
             from creel.orchestrator import _load_secrets_to_env
@@ -751,11 +753,15 @@ class ChatServer:
             self._container_pool.shutdown()
             self._container_pool = None
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, *, user_message: str | None = None) -> str:
         """Build the system prompt from workspace files, memory, and config.
 
         This mirrors OpenClaw's pattern of assembling the system prompt from
         multiple sources each run, rather than using a static string.
+
+        Args:
+            user_message: Latest user message, used for relevant-mode context
+                injection to select only memories that match the query.
         """
         ws_cfg = self._agent_def.workspace
 
@@ -766,13 +772,20 @@ class ChatServer:
             if prompt_path.exists():
                 base_prompt = prompt_path.read_text().strip()
 
-        # Get memory context
+        # Get memory context — "recent" dumps last N days, "relevant" uses search
         memory_context = None
         if self._memory:
-            memory_context = self._memory.get_recent_context(
-                days=ws_cfg.memory_days,
-                max_chars=ws_cfg.memory_max_chars,
-            )
+            if ws_cfg.memory_context_mode == "relevant" and user_message:
+                memory_context = self._memory.get_relevant_context(
+                    query=user_message,
+                    max_results=ws_cfg.memory_context_max_results,
+                    max_chars=ws_cfg.memory_max_chars,
+                )
+            else:
+                memory_context = self._memory.get_recent_context(
+                    days=ws_cfg.memory_days,
+                    max_chars=ws_cfg.memory_max_chars,
+                )
             # Screen memory context for stored injection payloads
             if memory_context and self._guardian:
                 screen_result = self._guardian.screen_input(memory_context)

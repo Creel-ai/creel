@@ -40,6 +40,20 @@ def _recency_weight(date_str: str, today: date, half_life: float) -> float:
     return 2.0 ** (-age / half_life)
 
 
+def _extract_message_text(msg: dict) -> str:
+    """Extract plain text from a message dict (handles string and block content)."""
+    content = msg.get("content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+        return " ".join(parts)
+    return ""
+
+
 def _file_content_hash(path: Path) -> str:
     """Compute SHA-256 hex digest of a file's content."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -356,6 +370,39 @@ class MemoryManager:
             return 0
         return self._index.reindex_if_needed(
             self._memory_dir, self.long_term_path, extra_paths=self._extra_paths
+        )
+
+    def index_transcript(self, session_id: str, messages: list[dict]) -> str:
+        """Save key conversation topics from a session to today's daily file.
+
+        Extracts user messages and saves a compact session log entry so that
+        past conversations are searchable via memory search.
+
+        Args:
+            session_id: The session being archived.
+            messages: The messages being discarded/archived.
+
+        Returns:
+            Confirmation message from remember().
+        """
+        user_turns: list[str] = []
+        for msg in messages:
+            if msg.get("role") != "user":
+                continue
+            text = _extract_message_text(msg)
+            if text and len(text.strip()) >= 10:
+                user_turns.append(text.strip()[:150])
+
+        if not user_turns:
+            return "No content to index."
+
+        topics = " | ".join(user_turns[:10])
+        if len(topics) > 800:
+            topics = topics[:800] + "..."
+
+        return self.remember(
+            f"[session:{session_id[:8]}] Topics discussed: {topics}",
+            category="session",
         )
 
     def remember(self, text: str, category: str = "general") -> str:

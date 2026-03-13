@@ -89,6 +89,7 @@ class SessionManager:
         summarize_fn: Callable[[list[dict]], str] | None = None,
         max_context_tokens: int = 180_000,
         encryption_key: str | None = None,
+        on_session_archived: Callable[[str, list[dict]], None] | None = None,
     ):
         self._dir = Path(sessions_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +98,7 @@ class SessionManager:
         self._summarize_on_trim = summarize_on_trim
         self._summarize_fn = summarize_fn
         self._max_context_tokens = max_context_tokens
+        self._on_session_archived = on_session_archived
         self._encryption_key: bytes | None = None
         self._encryption_passphrase: str | None = None
 
@@ -177,6 +179,12 @@ class SessionManager:
         if active_id:
             existing = self._load(active_id)
             if existing is not None:
+                # Archive transcript before starting fresh
+                if self._on_session_archived and existing.messages:
+                    try:
+                        self._on_session_archived(existing.session_id, list(existing.messages))
+                    except (OSError, RuntimeError, ValueError):
+                        logger.warning("on_session_archived failed", exc_info=True)
                 self._save(existing)
 
         session = Session(sender_id=sender_id)
@@ -279,6 +287,12 @@ class SessionManager:
         if active_id:
             session = self._load(active_id)
             if session is not None:
+                # Archive transcript before clearing
+                if self._on_session_archived and session.messages:
+                    try:
+                        self._on_session_archived(session.session_id, list(session.messages))
+                    except (OSError, RuntimeError, ValueError):
+                        logger.warning("on_session_archived failed", exc_info=True)
                 session.messages = []
                 session.title = ""
                 self._save(session)
@@ -323,6 +337,13 @@ class SessionManager:
 
         if not older:
             return
+
+        # Archive older messages before they're discarded
+        if self._on_session_archived:
+            try:
+                self._on_session_archived(session.session_id, list(older))
+            except (OSError, RuntimeError, ValueError):
+                logger.warning("on_session_archived failed during compaction", exc_info=True)
 
         try:
             summary_text = self._summarize_fn(older)

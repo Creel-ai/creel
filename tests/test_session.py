@@ -592,3 +592,71 @@ def test_max_history_safety_net(tmp_path: Path) -> None:
 
     session = mgr.get_or_create("cli")
     assert len(session.messages) <= 5
+
+
+# -- session transcript archival --
+
+
+def test_on_session_archived_called_on_new_session(tmp_path: Path) -> None:
+    """Starting a new session should archive the old session's messages."""
+    archived: list[tuple[str, list[dict]]] = []
+
+    def on_archive(session_id: str, messages: list[dict]) -> None:
+        archived.append((session_id, messages))
+
+    mgr = SessionManager(sessions_dir=str(tmp_path), on_session_archived=on_archive)
+    session = mgr.add_user_message("user1", "Hello from first session")
+    old_id = session.session_id
+
+    mgr.new_session("user1")
+    assert len(archived) == 1
+    assert archived[0][0] == old_id
+    assert any("Hello from first session" in str(m) for m in archived[0][1])
+
+
+def test_on_session_archived_called_on_clear(tmp_path: Path) -> None:
+    """Clearing a session should archive its messages first."""
+    archived: list[tuple[str, list[dict]]] = []
+
+    def on_archive(session_id: str, messages: list[dict]) -> None:
+        archived.append((session_id, messages))
+
+    mgr = SessionManager(sessions_dir=str(tmp_path), on_session_archived=on_archive)
+    mgr.add_user_message("user1", "Important discussion topic here")
+    mgr.clear("user1")
+
+    assert len(archived) == 1
+    assert any("Important discussion" in str(m) for m in archived[0][1])
+
+
+def test_on_session_archived_called_on_compaction(tmp_path: Path) -> None:
+    """Session compaction should archive discarded older messages."""
+    archived: list[tuple[str, list[dict]]] = []
+
+    def on_archive(session_id: str, messages: list[dict]) -> None:
+        archived.append((session_id, messages))
+
+    mgr = SessionManager(
+        sessions_dir=str(tmp_path),
+        summarize_on_trim=True,
+        summarize_fn=lambda msgs: "Summary of older messages.",
+        max_context_tokens=100,
+        on_session_archived=on_archive,
+    )
+    # Add enough messages to trigger compaction
+    for i in range(6):
+        mgr.add_user_message("user1", f"Discussion topic number {i} with enough length")
+        mgr.add_assistant_response("user1", [{"type": "text", "text": f"Response {i}"}])
+
+    # Trigger compaction via token count
+    mgr.update_token_count("user1", 200)
+
+    assert len(archived) == 1  # compaction archived the older messages
+
+
+def test_on_session_archived_not_called_when_disabled(tmp_path: Path) -> None:
+    """Without callback, sessions should work normally."""
+    mgr = SessionManager(sessions_dir=str(tmp_path))
+    mgr.add_user_message("user1", "Hello")
+    mgr.new_session("user1")  # should not raise
+    mgr.clear("user1")  # should not raise

@@ -788,6 +788,87 @@ class TestExtraPaths:
             assert count == 0
 
 
+class TestSessionTranscriptMemory:
+    """Tests for session transcript indexing."""
+
+    def _make_manager(self, td: str, **kwargs) -> MemoryManager:
+        return MemoryManager(workspace_dir=td, timezone_name="UTC", **kwargs)
+
+    def test_index_transcript_saves_to_daily_file(self):
+        """User messages from a session should be saved as a memory entry."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            messages = [
+                {"role": "user", "content": "What's the deploy process for staging?"},
+                {"role": "assistant", "content": "Run the staging pipeline..."},
+                {"role": "user", "content": "How do I rollback if something breaks?"},
+            ]
+            result = mm.index_transcript("abc12345deadbeef", messages)
+            assert "Remembered" in result
+
+            # Should be searchable
+            search_result = mm.search_memory("deploy process")
+            assert "deploy process" in search_result
+
+    def test_index_transcript_skips_short_messages(self):
+        """Messages under 10 chars should be filtered out."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            messages = [
+                {"role": "user", "content": "ok"},
+                {"role": "user", "content": "yes"},
+                {"role": "assistant", "content": "Sure thing"},
+            ]
+            result = mm.index_transcript("abc12345", messages)
+            assert result == "No content to index."
+
+    def test_index_transcript_skips_assistant_messages(self):
+        """Only user messages should be indexed for topic recall."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            messages = [
+                {
+                    "role": "assistant",
+                    "content": "Here is the detailed explanation of quantum computing...",
+                },
+            ]
+            result = mm.index_transcript("abc12345", messages)
+            assert result == "No content to index."
+
+    def test_index_transcript_handles_content_blocks(self):
+        """Multimodal content blocks should have text extracted."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What does this error screenshot mean?"},
+                        {"type": "image", "source": {"data": "..."}},
+                    ],
+                },
+            ]
+            result = mm.index_transcript("abc12345", messages)
+            assert "Remembered" in result
+
+            search_result = mm.search_memory("error screenshot")
+            assert "error screenshot" in search_result
+
+    def test_index_transcript_truncates_long_topics(self):
+        """Very long messages should be truncated per-turn and overall."""
+        with tempfile.TemporaryDirectory() as td:
+            mm = self._make_manager(td)
+            messages = [
+                {"role": "user", "content": "x" * 500},
+            ]
+            result = mm.index_transcript("abc12345", messages)
+            assert "Remembered" in result
+            # The stored entry should be bounded
+            daily = mm.daily_path()
+            content = daily.read_text()
+            assert len(content) < 1500
+
+
 class TestMemoryManagerFTS:
     """Integration tests for MemoryManager with FTS index."""
 

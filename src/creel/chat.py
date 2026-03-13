@@ -93,6 +93,18 @@ class ChatServer:
 
             summarize_fn = _do_summarize
 
+        # Build session transcript archival callback.
+        # Uses a closure over self so it works even though MemoryManager
+        # is constructed after SessionManager.
+        on_session_archived = None
+        if agent_def.workspace.index_session_transcripts:
+
+            def _archive_transcript(session_id: str, messages: list[dict]) -> None:
+                if self._memory is not None:
+                    self._memory.index_transcript(session_id, messages)
+
+            on_session_archived = _archive_transcript
+
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
             max_history=agent_def.session.max_history,
@@ -100,6 +112,7 @@ class ChatServer:
             summarize_on_trim=agent_def.session.summarize_on_trim,
             summarize_fn=summarize_fn,
             max_context_tokens=agent_def.session.max_context_tokens,
+            on_session_archived=on_session_archived,
         )
 
         # Build memory compaction summarize callback.

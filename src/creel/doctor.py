@@ -287,7 +287,7 @@ def check_executors(agent_config_path: Path | None = None) -> list[CheckResult]:
     if docker:
         try:
             proc = subprocess.run(
-                ["docker", "info"],
+                ["docker", "version", "--format", "{{.Client.Version}}"],
                 capture_output=True,
                 timeout=10,
             )

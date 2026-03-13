@@ -483,6 +483,30 @@ def _scaffold_static(*, force: bool = False) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Docker image auto-pull
+# ---------------------------------------------------------------------------
+
+
+def _auto_pull_images(agent_config_path: Path) -> list[str]:
+    """Pull pre-built Docker images referenced by the agent config.
+
+    Returns status lines.  Silently returns empty list if Docker is
+    unavailable or no remote images are configured.
+    """
+    try:
+        from creel.containers import pull_required_images
+        from creel.models import load_agent_config
+
+        agent_def = load_agent_config(agent_config_path)
+        return pull_required_images(agent_def)
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        logger.debug("Auto-pull skipped: %s", exc)
+        return [f"  skipped image pull ({exc})"]
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -586,6 +610,13 @@ def init(
     agent_path.parent.mkdir(parents=True, exist_ok=True)
     agent_path.write_text(yaml_content, encoding="utf-8")
     lines.append(f"  wrote: {agent_path}")
+
+    # Pull pre-built images if any tools use remote images
+    pull_lines = _auto_pull_images(paths.agent_config())
+    if pull_lines:
+        lines.append("")
+        lines.append("Docker images:")
+        lines.extend(pull_lines)
 
     # Next steps
     lines.append("")

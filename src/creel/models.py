@@ -105,6 +105,10 @@ class ToolConfig(BaseModel):
     mounts: list[MountConfig] = Field(default_factory=list)
     network: bool = False
     image: str | None = None
+    dockerfile: str | None = Field(
+        default=None,
+        description="Path to a custom Dockerfile (mutually exclusive with pre-built image)",
+    )
     host_auth: bool = Field(
         default=False, description="Mount host CLI auth into executor container (read-only)"
     )

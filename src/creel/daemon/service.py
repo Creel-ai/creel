@@ -536,6 +536,7 @@ class DaemonService:
             return result
 
         new_config = result.new_config
+        assert new_config is not None  # guaranteed when result.success and result.changes
 
         with self._lock:
             old_config = self._agent_def

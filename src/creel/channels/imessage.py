@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from creel.channels import Channel
-from creel.channels.message import Attachment, AttachmentType, IncomingMessage
+from creel.channels.message import Attachment, IncomingMessage
 from creel.channels.mixins import MediaHandlerMixin
 from creel.outputs import MESSAGE_PREFIX
 

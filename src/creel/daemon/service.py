@@ -514,13 +514,7 @@ class DaemonService:
             logger.info("Config reload: no reloadable changes detected")
             return result
 
-        # Load the validated new config for atomic swap
-        from creel.models import load_agent_config
-
-        try:
-            new_config = load_agent_config(path)
-        except Exception as exc:
-            return ReloadResult(success=False, error=f"Config re-read failed: {exc}")
+        new_config = result.new_config
 
         with self._lock:
             old_config = self._agent_def

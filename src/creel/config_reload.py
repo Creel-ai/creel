@@ -63,6 +63,7 @@ class ReloadResult:
     changes: list[ConfigChange] = field(default_factory=list)
     non_reloadable: list[ConfigChange] = field(default_factory=list)
     error: str | None = None
+    new_config: AgentDefinition | None = None
 
     @property
     def changed_count(self) -> int:
@@ -185,7 +186,7 @@ def reload_from_path(
 
     all_changes = diff_configs(current, new_config)
     if not all_changes:
-        return ReloadResult(success=True)
+        return ReloadResult(success=True, new_config=new_config)
 
     reloadable, non_reloadable = classify_changes(all_changes)
 
@@ -193,4 +194,5 @@ def reload_from_path(
         success=True,
         changes=reloadable,
         non_reloadable=non_reloadable,
+        new_config=new_config,
     )

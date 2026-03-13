@@ -295,8 +295,8 @@ class TestServiceReload:
         assert result.success
         assert result.changed_count > 0
         assert svc._agent_def.system_prompt == "Updated prompt"
-        # ChatServer should also have the updated config
-        assert server._agent_def.system_prompt == "Updated prompt"
+        # ChatServer should also have the updated config via update_agent_def
+        server.update_agent_def.assert_called_once()
 
     def test_reload_config_invalid_file(self, minimal_agent_def, tmp_path):
         from creel.daemon.service import DaemonService

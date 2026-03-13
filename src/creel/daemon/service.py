@@ -520,11 +520,9 @@ class DaemonService:
             old_config = self._agent_def
             self._agent_def = new_config
 
-            # Update ChatServer's config reference
-            self._server._agent_def = new_config
-
-            # Update cron executor's config reference
-            self._cron_executor._agent_def = new_config
+            # Update component config references via public methods
+            self._server.update_agent_def(new_config)
+            self._cron_executor.update_agent_def(new_config)
 
             # Log each change
             changed_fields = [c.field for c in result.changes]
@@ -554,10 +552,13 @@ class DaemonService:
             if new.guardian and new.guardian.enabled:
                 from guardian.core import Guardian
 
-                self._server._guardian = Guardian(new.guardian)
+                guardian = Guardian(new.guardian)
+                self._server._guardian = guardian
+                self._server._subagent_manager._guardian = guardian
                 logger.info("Guardian pipeline rebuilt with new config")
-            elif not new.guardian or not new.guardian.enabled:
+            else:
                 self._server._guardian = None
+                self._server._subagent_manager._guardian = None
                 logger.info("Guardian pipeline disabled")
         except Exception:
             logger.exception("Failed to rebuild guardian pipeline, keeping previous")

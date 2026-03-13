@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 from unittest.mock import MagicMock, patch
 
@@ -512,9 +513,6 @@ class TestApplyFixes:
 
     def test_fix_create_session_dir(self, creel_home):
         sessions_dir = creel_home / "sessions"
-        # Remove the sessions dir
-        import shutil
-
         shutil.rmtree(sessions_dir)
         assert not sessions_dir.exists()
 

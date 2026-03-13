@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -188,6 +188,15 @@ class WorkspaceConfig(BaseModel):
     compact_after_days: int = 7
     max_daily_entries: int = 50
     max_long_term_lines: int = 500
+    fts_enabled: bool = True
+    recency_half_life_days: float = Field(default=30.0, gt=0)
+    compact_summarize: bool = True
+    compact_model: str = "claude-haiku-4-5-20251001"
+    compact_max_tokens: int = Field(default=512, gt=0)
+    memory_context_mode: Literal["recent", "relevant"] = "recent"
+    memory_context_max_results: int = 20
+    extra_paths: list[str] = Field(default_factory=list)
+    index_session_transcripts: bool = False
 
 
 class IMessageChannelConfig(BaseModel):

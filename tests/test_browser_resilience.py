@@ -19,13 +19,13 @@ from bridge.browser import (
 
 @pytest.fixture
 def relay():
-    """Create a BrowserRelay with short timeouts for testing."""
+    """Create a BrowserRelay with minimal timeouts for testing."""
     return BrowserRelay(
         max_sessions=3,
         session_timeout_minutes=10,
         blocked_domains=["evil.com"],
-        navigate_timeout_ms=5000,
-        snapshot_timeout_ms=2000,
+        navigate_timeout_ms=100,
+        snapshot_timeout_ms=100,
         block_heavy_resources=True,
     )
 
@@ -44,14 +44,14 @@ class TestNavigateTimeout:
 
     @pytest.mark.asyncio
     async def test_navigate_timeout_fires(self, relay):
-        """When page.goto hangs, asyncio timeout should trigger."""
+        """When page.goto times out, navigate should return a partial result."""
         page = AsyncMock()
 
-        # Make goto hang forever
-        async def hang_forever(*args, **kwargs):
-            await asyncio.sleep(999)
+        # Simulate Playwright's timeout (mocks don't enforce the timeout kwarg)
+        async def goto_timeout(*args, **kwargs):
+            raise TimeoutError("Navigation timeout")
 
-        page.goto = hang_forever
+        page.goto = goto_timeout
         page.title = AsyncMock(return_value="")
         page.url = "about:blank"
 

@@ -24,6 +24,31 @@ class SessionState:
     workspace: str | None = None
 
 
+class HttpConfig(BaseModel):
+    """HTTP request timeout and limit configuration for network executors."""
+
+    timeout: float = Field(default=15.0, gt=0, description="Total request timeout in seconds")
+    connect_timeout: float = Field(default=5.0, gt=0, description="Connection timeout in seconds")
+    max_redirects: int = Field(default=3, ge=0, description="Maximum number of redirects to follow")
+    max_size_mb: float = Field(default=5.0, gt=0, description="Maximum response size in MB")
+
+    @field_validator("timeout")
+    @classmethod
+    def clamp_timeout(cls, v: float) -> float:
+        """Enforce hard upper limit of 120 seconds."""
+        if v > 120:
+            return 120.0
+        return v
+
+    @field_validator("connect_timeout")
+    @classmethod
+    def clamp_connect_timeout(cls, v: float) -> float:
+        """Enforce hard upper limit of 120 seconds."""
+        if v > 120:
+            return 120.0
+        return v
+
+
 class ExecutorConfig(BaseModel):
     """Configuration for a single executor step."""
 
@@ -31,6 +56,7 @@ class ExecutorConfig(BaseModel):
     secrets: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)
     timeout: int = 60  # seconds, per-executor configurable
+    http: HttpConfig = Field(default_factory=HttpConfig)
 
     @property
     def image(self) -> str:
@@ -114,6 +140,7 @@ class ToolConfig(BaseModel):
     memory: str = Field(default="256m", description="Docker --memory limit")
     cpus: str = Field(default="0.5", description="Docker --cpus limit")
     timeout: int = Field(default=60, ge=1, description="Executor timeout in seconds")
+    http: HttpConfig = Field(default_factory=HttpConfig, description="HTTP request timeouts")
 
     @field_validator("tmpfs_size")
     @classmethod

@@ -17,16 +17,72 @@ from bs4 import BeautifulSoup
 USER_AGENT = "Creel/1.0 (URL Fetcher)"
 DEFAULT_MAX_CHARS = 10000
 
+# Default HTTP settings
+DEFAULT_TIMEOUT = 15.0
+DEFAULT_CONNECT_TIMEOUT = 5.0
+DEFAULT_MAX_REDIRECTS = 3
+DEFAULT_MAX_SIZE_MB = 5.0
 
-def fetch_url(url: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:
-    """Fetch a URL and extract its text content."""
-    resp = requests.get(
-        url,
-        headers={"User-Agent": USER_AGENT},
-        timeout=15,
-        allow_redirects=True,
-    )
+
+def fetch_url(
+    url: str,
+    max_chars: int = DEFAULT_MAX_CHARS,
+    *,
+    timeout: float = DEFAULT_TIMEOUT,
+    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
+    max_redirects: int = DEFAULT_MAX_REDIRECTS,
+    max_size_mb: float = DEFAULT_MAX_SIZE_MB,
+) -> dict:
+    """Fetch a URL and extract its text content.
+
+    Args:
+        url: URL to fetch.
+        max_chars: Maximum characters to return from extracted text.
+        timeout: Total request timeout in seconds (hard limit: 120s).
+        connect_timeout: Connection timeout in seconds (hard limit: 120s).
+        max_redirects: Maximum number of redirects to follow.
+        max_size_mb: Maximum response size in MB.
+    """
+    session = requests.Session()
+    session.max_redirects = max_redirects
+
+    try:
+        resp = session.get(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=(connect_timeout, timeout),
+            allow_redirects=True,
+        )
+    except requests.exceptions.ConnectionError:
+        return {
+            "url": url,
+            "error": f"Connection failed: could not connect to {url}",
+        }
+    except requests.exceptions.Timeout:
+        return {
+            "url": url,
+            "error": (f"Request timed out after {timeout}s (connect timeout: {connect_timeout}s)"),
+        }
+    except requests.exceptions.TooManyRedirects:
+        return {
+            "url": url,
+            "error": f"Too many redirects (limit: {max_redirects})",
+        }
     resp.raise_for_status()
+
+    # Check response size
+    max_bytes = int(max_size_mb * 1024 * 1024)
+    content_length = resp.headers.get("Content-Length")
+    if content_length and int(content_length) > max_bytes:
+        return {
+            "url": url,
+            "error": (f"Response too large: {int(content_length)} bytes (limit: {max_size_mb} MB)"),
+        }
+    if len(resp.content) > max_bytes:
+        return {
+            "url": url,
+            "error": (f"Response too large: {len(resp.content)} bytes (limit: {max_size_mb} MB)"),
+        }
 
     content_type = resp.headers.get("Content-Type", "")
 

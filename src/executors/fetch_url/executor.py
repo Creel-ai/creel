@@ -68,7 +68,14 @@ def fetch_url(
             "url": url,
             "error": f"Too many redirects (limit: {max_redirects})",
         }
-    resp.raise_for_status()
+
+    try:
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        return {
+            "url": url,
+            "error": f"HTTP {resp.status_code}: {e}",
+        }
 
     # Check response size
     max_bytes = int(max_size_mb * 1024 * 1024)

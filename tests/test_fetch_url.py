@@ -207,3 +207,16 @@ def test_fetch_url_response_too_large_by_actual_content(mock_get):
 
     assert "error" in result
     assert "too large" in result["error"].lower()
+
+
+@patch("executors.fetch_url.executor.requests.Session.get")
+def test_fetch_url_http_error_returns_message(mock_get):
+    """fetch_url should return an error dict on HTTP 4xx/5xx responses."""
+    mock = _mock_response("<html><body>Not Found</body></html>", status_code=404)
+    mock.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Client Error")
+    mock_get.return_value = mock
+
+    result = fetch_url("https://example.com/missing")
+
+    assert "error" in result
+    assert "404" in result["error"]

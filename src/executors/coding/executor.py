@@ -131,6 +131,86 @@ def validate_command(command: str) -> str | None:
     return None
 
 
+_SETUP_DONE_MARKER = ".creel-setup-done"
+
+# Track which workspaces have been set up in this process (for dev_runner keepalive)
+_setup_cache: set[str] = set()
+
+
+def detect_and_setup(workdir: str) -> dict:
+    """Detect project type and install dependencies automatically.
+
+    Looks for common project manifest files and runs the appropriate
+    install command. Idempotent — tracks completion via a marker file.
+
+    Args:
+        workdir: Absolute path to the project directory.
+
+    Returns:
+        Dict describing what was detected, installed, and any errors.
+    """
+    result: dict = {"workdir": workdir, "detected": None, "installed": False, "error": None}
+
+    marker = os.path.join(workdir, _SETUP_DONE_MARKER)
+    if os.path.exists(marker) or workdir in _setup_cache:
+        result["installed"] = True
+        result["detected"] = "already-setup"
+        return result
+
+    # Detection order matters: more specific first
+    detectors = [
+        ("package.json", "npm ci --prefer-offline 2>&1 || npm install 2>&1"),
+        (
+            "requirements.txt",
+            "uv pip install --system -r requirements.txt 2>&1 || pip install -r requirements.txt 2>&1",
+        ),
+        ("pyproject.toml", "uv pip install --system -e . 2>&1 || pip install -e . 2>&1"),
+        ("Cargo.toml", "cargo build 2>&1"),
+        ("go.mod", "go mod download 2>&1"),
+    ]
+
+    detected_file: str | None = None
+    install_cmd: str | None = None
+    for manifest, cmd in detectors:
+        if os.path.exists(os.path.join(workdir, manifest)):
+            detected_file = manifest
+            install_cmd = cmd
+            break
+
+    if not detected_file or not install_cmd:
+        # No known project type — mark as done to avoid re-scanning
+        _setup_cache.add(workdir)
+        return result
+
+    result["detected"] = detected_file
+    assert install_cmd is not None  # guaranteed by the loop above
+
+    try:
+        proc = subprocess.run(
+            ["bash", "-c", install_cmd],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if proc.returncode == 0:
+            result["installed"] = True
+            # Write marker file
+            try:
+                Path(marker).write_text(f"setup via {detected_file}\n")
+            except OSError:
+                pass
+            _setup_cache.add(workdir)
+        else:
+            result["error"] = proc.stderr[:500] if proc.stderr else f"exit code {proc.returncode}"
+    except subprocess.TimeoutExpired:
+        result["error"] = "Setup timed out after 300s"
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
 def run_command(
     command: str,
     workdir: str | None = None,

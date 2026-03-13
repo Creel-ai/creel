@@ -42,6 +42,7 @@ class ManagedContainer:
     entrypoint: str
     proc: subprocess.Popen
     env_file_path: str
+    container_name: str = ""
     created_at: float = field(default_factory=time.monotonic)
     last_used: float = field(default_factory=time.monotonic)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -279,7 +280,15 @@ class ContainerPool:
     ) -> ManagedContainer:
         """Start a new Docker container."""
         container_id = uuid.uuid4().hex[:12]
-        container_name = f"creel-llm-{container_id}"
+        # Derive container name from image (e.g. llm-runner → creel-llm, executor-coding → creel-coding)
+        image_base = image.split(":")[0]
+        if image_base == "llm-runner":
+            name_prefix = "creel-llm"
+        elif image_base.startswith("executor-"):
+            name_prefix = f"creel-{image_base.removeprefix('executor-')}"
+        else:
+            name_prefix = f"creel-{image_base}"
+        container_name = f"{name_prefix}-{container_id}"
 
         # Write env file
         env_file = tempfile.NamedTemporaryFile(
@@ -329,12 +338,23 @@ class ContainerPool:
             entrypoint=entrypoint,
             proc=proc,
             env_file_path=env_file_path,
+            container_name=container_name,
         )
 
         with self._lock:
             self._all.append(container)
 
         return container
+
+    def discard(self, container: ManagedContainer) -> None:
+        """Force-kill and remove a container without returning it to the pool.
+
+        Use this when a container is in a bad state (e.g. protocol error)
+        and should not be reused.
+        """
+        container.force_kill()
+        with self._lock:
+            self._remove_container(container)
 
     def _cleanup_container(self, container: ManagedContainer) -> None:
         """Shut down and remove a container from tracking."""
@@ -350,16 +370,17 @@ class ContainerPool:
             pass
 
         # Clean up the docker container (it may still exist without --rm)
+        docker_name = container.container_name or f"creel-llm-{container.id}"
         try:
             subprocess.run(
-                ["docker", "rm", "-f", f"creel-llm-{container.id}"],
+                ["docker", "rm", "-f", docker_name],
                 capture_output=True,
                 timeout=10,
             )
         except Exception:
             logger.warning(
-                "Failed to remove Docker container creel-llm-%s; it may be orphaned",
-                container.id,
+                "Failed to remove Docker container %s; it may be orphaned",
+                docker_name,
             )
 
         # Clean up env file

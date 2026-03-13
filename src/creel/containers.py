@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 _HASH_GLOBS = ("Dockerfile", "**/*.py", "**/*.txt")
 
+_BASE_IMAGE_NAME = "creel-executor-base"
+_BASE_DOCKERFILE = Path("src/executors/base/Dockerfile")
+
 
 class ImageBuildCache:
     """Coordinates Docker image builds, deduplicating concurrent requests.
@@ -152,6 +155,43 @@ _HOST_AUTH_REGISTRY: dict[str, _HostAuthEntry] = {
 }
 
 
+def _compute_base_image_hash() -> str:
+    """Hash the base Dockerfile contents for cache-busting.
+
+    Returns the first 12 hex chars of the SHA-256 digest.
+    """
+    h = sha256()
+    if _BASE_DOCKERFILE.exists():
+        h.update(_BASE_DOCKERFILE.read_bytes())
+    return h.hexdigest()[:12]
+
+
+def _ensure_base_image() -> str:
+    """Build the shared executor base image if it doesn't already exist.
+
+    Returns the tagged image reference (e.g. ``creel-executor-base:abc123``).
+    """
+    content_hash = _compute_base_image_hash()
+    tagged = f"{_BASE_IMAGE_NAME}:{content_hash}"
+
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", tagged],
+        capture_output=True,
+    )
+    if inspect.returncode == 0:
+        return tagged
+
+    if not _BASE_DOCKERFILE.exists():
+        raise FileNotFoundError(f"Base Dockerfile not found at {_BASE_DOCKERFILE}")
+
+    _build_image(
+        tags=[tagged, f"{_BASE_IMAGE_NAME}:latest"],
+        dockerfile=_BASE_DOCKERFILE,
+        context=_BASE_DOCKERFILE.parent,
+    )
+    return tagged
+
+
 def _compute_executor_hash(executor_dir: Path) -> str:
     """Hash all source files in an executor directory and shared context files.
 
@@ -159,8 +199,13 @@ def _compute_executor_hash(executor_dir: Path) -> str:
     sorted (relative-path, file-contents) pairs.  Shared files in the
     parent build-context directory (e.g. ``google_creds.py``) are also
     included so that changes to shared modules trigger a rebuild.
+    The base Dockerfile is included so base image changes trigger child rebuilds.
     """
     h = sha256()
+    # Include base Dockerfile so changes to it invalidate executor caches
+    if _BASE_DOCKERFILE.exists():
+        h.update(b"base:")
+        h.update(_BASE_DOCKERFILE.read_bytes())
     # Executor-specific files
     paths = sorted(p for pattern in _HASH_GLOBS for p in executor_dir.glob(pattern) if p.is_file())
     # Shared files in the build context (src/executors/)
@@ -211,6 +256,11 @@ def _ensure_image_uncached(image: str) -> str:
         )
         if inspect.returncode == 0:
             return hashed_image
+
+        # Ensure the shared base image is built first (child Dockerfiles
+        # use FROM creel-executor-base:latest).
+        if _BASE_DOCKERFILE.exists():
+            _ensure_base_image()
 
         context = Path("src/executors")
         dockerfile = executor_dir / "Dockerfile"
@@ -279,25 +329,45 @@ def collect_required_images(agent_def: AgentDefinition) -> list[str]:
     ``ToolConfig.image`` overrides the derived name when set.
     The ``llm-runner:latest`` image is included when tools are present
     (agent mode requires the containerised LLM runner).
+    The shared base image (``creel-executor-base:latest``) is included
+    when any executor images are present.
     """
     images: set[str] = set()
+    has_executor_images = False
     for _tool_name, tool_config in agent_def.tools.items():
         if tool_config.image:
             images.add(tool_config.image)
         else:
             image = f"executor-{tool_config.executor.replace('_', '-')}:latest"
             images.add(image)
+            has_executor_images = True
     if agent_def.tools:
         images.add("llm-runner:latest")
+    if has_executor_images and _BASE_DOCKERFILE.exists():
+        images.add(f"{_BASE_IMAGE_NAME}:latest")
     return sorted(images)
 
 
 def prebuild_images(agent_def: AgentDefinition) -> list[threading.Thread]:
     """Kick off background image builds for all tools in the agent definition.
 
+    Builds the shared base image synchronously first (all executor images
+    depend on it), then kicks off parallel builds for the rest.
+
     Returns the list of spawned threads (callers are not expected to join).
     """
     images = collect_required_images(agent_def)
+
+    # Build base image synchronously first if it's in the list
+    base_tag = f"{_BASE_IMAGE_NAME}:latest"
+    if base_tag in images:
+        logger.info("Building shared base image before executor images")
+        try:
+            _ensure_base_image()
+        except Exception:
+            logger.warning("Base image pre-build failed (will retry on demand)", exc_info=True)
+        images = [img for img in images if img != base_tag]
+
     logger.info("Pre-building %d Docker image(s): %s", len(images), images)
     return _image_cache.start_prebuild(images)
 
@@ -324,6 +394,29 @@ def _run_executor_container(
         _EXECUTOR_TO_BRIDGE_SCOPE,
         _replace_google_credentials_with_access_token,
     )
+
+    # Validate host_auth early — before image build — so misconfigurations fail fast
+    _host_auth_entry: _HostAuthEntry | None = None
+    if tool_config and tool_config.host_auth:
+        if tool_config.secrets:
+            raise ValueError(
+                "host_auth and secrets are mutually exclusive — use one or the other, not both"
+            )
+        executor_name = config.name
+        if not executor_name:
+            raise ValueError("host_auth requires the executor to have a name")
+        _host_auth_entry = _HOST_AUTH_REGISTRY.get(executor_name)
+        if _host_auth_entry is None:
+            raise ValueError(
+                f"host_auth is not supported for executor '{executor_name}' "
+                f"(supported: {sorted(_HOST_AUTH_REGISTRY)})"
+            )
+        auth_host_path = Path(os.path.expanduser(_host_auth_entry["host_path"]))
+        if not auth_host_path.is_dir():
+            raise RuntimeError(
+                f"Host auth directory not found: {auth_host_path} — "
+                f"run `gh auth login` to authenticate first"
+            )
 
     # Determine image to use - tool config overrides executor config
     image = tool_config.image if (tool_config and tool_config.image) else config.image
@@ -385,21 +478,31 @@ def _run_executor_container(
             env_file.write(f"{key}={sanitized}\n")
         env_file.flush()
 
-        # Build docker run command
+        # Build docker run command with per-tool resource overrides
+        writable = tool_config.writable if tool_config else False
+        tmpfs_size = tool_config.tmpfs_size if tool_config else "16M"
+        memory = tool_config.memory if tool_config else "256m"
+        cpus = tool_config.cpus if tool_config else "0.5"
+
         docker_cmd = [
             "docker",
             "run",
             "--rm",
-            "--read-only",
-            "--tmpfs",
-            "/tmp:rw,noexec,nosuid,size=16M",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--memory=256m",
-            "--cpus=0.5",
-            "--env-file",
-            env_file.name,
         ]
+        if not writable:
+            docker_cmd.append("--read-only")
+        docker_cmd.extend(
+            [
+                "--tmpfs",
+                f"/tmp:rw,noexec,nosuid,size={tmpfs_size}",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                f"--memory={memory}",
+                f"--cpus={cpus}",
+                "--env-file",
+                env_file.name,
+            ]
+        )
 
         # Add mount options from tool config
         if tool_config and tool_config.mounts:
@@ -408,28 +511,10 @@ def _run_executor_container(
                 host_path = os.path.expanduser(mount.path)
                 docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
 
-        # Mount host CLI auth directory (e.g. gh config) when host_auth is enabled
-        if tool_config and tool_config.host_auth:
-            if tool_config.secrets:
-                raise ValueError(
-                    "host_auth and secrets are mutually exclusive — use one or the other, not both"
-                )
-            executor_name = config.name
-            if not executor_name:
-                raise ValueError("host_auth requires the executor to have a name")
-            auth_entry = _HOST_AUTH_REGISTRY.get(executor_name)
-            if auth_entry is None:
-                raise ValueError(
-                    f"host_auth is not supported for executor '{executor_name}' "
-                    f"(supported: {sorted(_HOST_AUTH_REGISTRY)})"
-                )
-            auth_host_path = Path(os.path.expanduser(auth_entry["host_path"]))
-            if not auth_host_path.is_dir():
-                raise RuntimeError(
-                    f"Host auth directory not found: {auth_host_path} — "
-                    f"run `gh auth login` to authenticate first"
-                )
-            docker_cmd.extend(["-v", f"{auth_host_path}:{auth_entry['container_path']}:ro"])
+        # Mount host CLI auth directory (validated above, before image build)
+        if _host_auth_entry is not None:
+            auth_host_path = Path(os.path.expanduser(_host_auth_entry["host_path"]))
+            docker_cmd.extend(["-v", f"{auth_host_path}:{_host_auth_entry['container_path']}:ro"])
 
         # Mount dynamic workspace for file_ops executor
         if _workspace_mount:

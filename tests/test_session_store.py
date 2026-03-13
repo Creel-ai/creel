@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -135,6 +136,41 @@ class TestFileSessionStoreDelete:
             store.delete("deadbeef00")
 
 
+class TestFileSessionStoreEncryption:
+    """Encrypted save / load round-trip."""
+
+    @staticmethod
+    def _fernet_key() -> str:
+        """Generate a valid Fernet key (44-char base64)."""
+        return base64.urlsafe_b64encode(b"\x00" * 32).decode()
+
+    def test_encrypted_round_trip(self, tmp_path: Path):
+        key = self._fernet_key()
+        store = FileSessionStore(sessions_dir=str(tmp_path), encryption_key=key)
+        session = Session(sender_id="cli", total_tokens=99)
+        session.messages.append({"role": "user", "content": "secret"})
+        store.save(session)
+
+        # Raw file should NOT be valid JSON (it's encrypted)
+        raw = (tmp_path / f"{session.session_id}.json").read_bytes()
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(raw)
+
+        loaded = store.load(session.session_id)
+        assert loaded.sender_id == "cli"
+        assert loaded.messages == [{"role": "user", "content": "secret"}]
+        assert loaded.total_tokens == 99
+
+    def test_passphrase_round_trip(self, tmp_path: Path):
+        store = FileSessionStore(sessions_dir=str(tmp_path), encryption_key="my-passphrase")
+        session = Session(sender_id="cli")
+        session.messages.append({"role": "user", "content": "hidden"})
+        store.save(session)
+
+        loaded = store.load(session.session_id)
+        assert loaded.messages == [{"role": "user", "content": "hidden"}]
+
+
 class TestFileSessionStoreList:
     def test_list_returns_summaries(self, tmp_path: Path):
         store = FileSessionStore(sessions_dir=str(tmp_path))
@@ -199,6 +235,17 @@ class TestFileSessionStoreList:
 
         results = store.list()
         assert len(results) == 1
+
+    def test_list_skips_active_index_file(self, tmp_path: Path):
+        """The _active.json index file should not appear in list results."""
+        store = FileSessionStore(sessions_dir=str(tmp_path))
+        store.save(Session(sender_id="cli"))
+        # Simulate the active index file that SessionManager creates
+        (tmp_path / "_active.json").write_text(json.dumps({"cli": "abc123"}))
+
+        results = store.list()
+        assert len(results) == 1
+        assert results[0].sender_id == "cli"
 
 
 class TestFileSessionStoreExists:

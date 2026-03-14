@@ -286,7 +286,7 @@ class KnowledgeBaseConfig(BaseModel):
     store: str = "sqlite"
     db_path: str = ""  # default: workspace/.kb_index.sqlite
     embedding_model: str = "all-MiniLM-L6-v2"
-    chunk_size: int = Field(default=512, gt=0)
+    chunk_size: int = Field(default=512, ge=50)
     chunk_overlap: int = Field(default=50, ge=0)
     auto_index: list[str] = Field(default_factory=list)
 

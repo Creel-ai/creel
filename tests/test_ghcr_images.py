@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from creel.containers import (
     _ensure_image_from_dockerfile,
     _ensure_image_uncached,
@@ -51,7 +53,6 @@ class TestPullImage:
     @patch("subprocess.run")
     def test_pull_failure_raises(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(returncode=1, stderr="not found")
-        import pytest
 
         with pytest.raises(RuntimeError, match="Failed to pull"):
             _pull_image("ghcr.io/creel-ai/executor-bad:latest")
@@ -61,30 +62,14 @@ class TestEnsureImageUncachedRemote:
     """Tests for _ensure_image_uncached with remote images."""
 
     @patch("subprocess.run")
-    def test_remote_image_already_local(self, mock_run: MagicMock) -> None:
-        """Should skip pull if remote image is already present locally."""
-        mock_run.return_value = MagicMock(returncode=0)
+    def test_remote_image_always_pulled(self, mock_run: MagicMock) -> None:
+        """Should always pull remote images to pick up security patches."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
         result = _ensure_image_uncached("ghcr.io/creel-ai/executor-weather:latest")
         assert result == "ghcr.io/creel-ai/executor-weather:latest"
-        # Only docker inspect was called
+        # docker pull should have been called
         assert mock_run.call_count == 1
-        assert "inspect" in mock_run.call_args[0][0][2]
-
-    @patch("subprocess.run")
-    def test_remote_image_pulled(self, mock_run: MagicMock) -> None:
-        """Should pull remote image when not present locally."""
-
-        def side_effect(cmd, **kwargs):
-            if "inspect" in cmd:
-                return MagicMock(returncode=1)
-            if "pull" in cmd:
-                return MagicMock(returncode=0, stderr="")
-            return MagicMock(returncode=0)
-
-        mock_run.side_effect = side_effect
-        result = _ensure_image_uncached("ghcr.io/creel-ai/executor-weather:latest")
-        assert result == "ghcr.io/creel-ai/executor-weather:latest"
-        assert mock_run.call_count == 2
+        assert "pull" in mock_run.call_args[0][0]
 
 
 class TestEnsureImageFromDockerfile:
@@ -101,8 +86,6 @@ class TestEnsureImageFromDockerfile:
         assert result == "custom-tool:latest"
 
     def test_missing_dockerfile_raises(self) -> None:
-        import pytest
-
         with pytest.raises(FileNotFoundError, match="Custom Dockerfile not found"):
             _ensure_image_from_dockerfile("/nonexistent/Dockerfile", "custom:latest")
 
@@ -246,8 +229,6 @@ class TestToolConfigDockerfile:
 
     def test_dockerfile_and_image_mutually_exclusive(self) -> None:
         """Setting both dockerfile and image should raise a validation error."""
-        import pytest
-
         with pytest.raises(ValueError, match="mutually exclusive"):
             ToolConfig(
                 executor="test",

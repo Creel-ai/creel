@@ -244,13 +244,14 @@ class TestToolConfigDockerfile:
         )
         assert tc.dockerfile == "./my-executor/Dockerfile"
 
-    def test_dockerfile_and_image_both_set(self) -> None:
-        """Both can be set — dockerfile takes precedence at runtime."""
-        tc = ToolConfig(
-            executor="test",
-            description="Test",
-            image="some-image:latest",
-            dockerfile="./Dockerfile",
-        )
-        assert tc.dockerfile == "./Dockerfile"
-        assert tc.image == "some-image:latest"
+    def test_dockerfile_and_image_mutually_exclusive(self) -> None:
+        """Setting both dockerfile and image should raise a validation error."""
+        import pytest
+
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            ToolConfig(
+                executor="test",
+                description="Test",
+                image="some-image:latest",
+                dockerfile="./Dockerfile",
+            )

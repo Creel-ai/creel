@@ -277,15 +277,10 @@ def _ensure_image_uncached(image: str) -> str:
       executor-gmail-modify:latest -> -f src/executors/gmail_modify/Dockerfile src/executors/
       llm-runner:latest            -> src/llm/
     """
-    # Remote registry images — pull instead of build
+    # Remote registry images — always pull to pick up security patches.
+    # The :latest tag can change upstream (e.g. weekly rebuilds), so
+    # relying on a local cache would leave stale images in place.
     if _is_remote_image(image):
-        # Check if already present locally
-        inspect = subprocess.run(
-            ["docker", "image", "inspect", image],
-            capture_output=True,
-        )
-        if inspect.returncode == 0:
-            return image
         return _pull_image(image)
 
     base = image.split(":")[0]

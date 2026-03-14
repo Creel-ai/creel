@@ -29,6 +29,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Maximum file size to index (50 MB) — prevents OOM on large files
+_MAX_FILE_SIZE = 50 * 1024 * 1024
+
 # File extensions we know how to ingest
 _TEXT_EXTENSIONS = frozenset(
     {
@@ -404,7 +407,7 @@ class KnowledgeBase:
             return result.tolist()
         return list(result)
 
-    def add(self, path: str | Path, recursive: bool = True) -> dict:
+    def add(self, path: str | Path, recursive: bool = True) -> dict[str, Any]:
         """Index a file or directory.
 
         Args:
@@ -415,7 +418,13 @@ class KnowledgeBase:
             Dict with 'added', 'updated', 'skipped', 'errors' counts.
         """
         path = Path(os.path.expanduser(str(path))).resolve()
-        stats = {"added": 0, "updated": 0, "skipped": 0, "errors": 0, "files": []}
+        stats: dict[str, Any] = {
+            "added": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "files": [],
+        }
 
         if path.is_file():
             self._index_file(path, stats)
@@ -427,16 +436,39 @@ class KnowledgeBase:
 
         return stats
 
-    def _index_directory(self, dir_path: Path, recursive: bool, stats: dict) -> None:
+    def _index_directory(self, dir_path: Path, recursive: bool, stats: dict[str, Any]) -> None:
         """Index all supported files in a directory."""
+        resolved_root = dir_path.resolve()
         pattern = "**/*" if recursive else "*"
         for file_path in sorted(dir_path.glob(pattern)):
-            if file_path.is_file() and _is_supported_file(file_path):
-                self._index_file(file_path, stats)
+            if not file_path.is_file() or not _is_supported_file(file_path):
+                continue
+            # Resolve symlinks and ensure the file is still under the root
+            # to prevent symlink-based directory escape.
+            try:
+                resolved = file_path.resolve(strict=True)
+            except OSError:
+                continue
+            if not str(resolved).startswith(str(resolved_root)):
+                logger.debug("Skipping symlink outside root: %s -> %s", file_path, resolved)
+                continue
+            self._index_file(resolved, stats)
 
-    def _index_file(self, file_path: Path, stats: dict) -> None:
+    def _index_file(self, file_path: Path, stats: dict[str, Any]) -> None:
         """Index a single file, skipping if unchanged."""
         assert self._conn is not None
+
+        # Guard against very large files
+        try:
+            file_size = file_path.stat().st_size
+        except OSError as exc:
+            logger.warning("Cannot stat %s: %s", file_path, exc)
+            stats["errors"] += 1
+            return
+        if file_size > _MAX_FILE_SIZE:
+            logger.warning("Skipping %s: file too large (%d bytes)", file_path, file_size)
+            stats["skipped"] += 1
+            return
 
         try:
             content_bytes = file_path.read_bytes()
@@ -609,7 +641,12 @@ class KnowledgeBase:
         top_k: int = 5,
         filter_path: str | None = None,
     ) -> list[dict]:
-        """Search using cosine similarity on stored embeddings."""
+        """Search using cosine similarity on stored embeddings.
+
+        Note: performs a linear scan over all stored embeddings. This is
+        fine for personal document collections (up to ~10k chunks) but
+        will degrade for very large corpora.
+        """
         assert self._conn is not None
 
         query_embedding = self._embed_texts([query])
@@ -657,42 +694,40 @@ class KnowledgeBase:
         """Search using FTS5 BM25 ranking (fallback when embeddings unavailable)."""
         assert self._conn is not None
 
+        # Always quote the query to prevent FTS5 operator injection
+        # (NOT, OR, NEAR, *, ^ etc.). Double-quote escaping inside the phrase.
         escaped = query.replace('"', '""')
+        safe_query = f'"{escaped}"'
 
-        results: list[dict] = []
-        for attempt_query in (query, f'"{escaped}"'):
-            try:
-                sql = (
-                    "SELECT f.content, f.source, f.title, bm25(kb_fts) as score "
-                    "FROM kb_fts f "
-                    "WHERE kb_fts MATCH ? "
-                )
-                params: list = [attempt_query]
+        try:
+            sql = (
+                "SELECT f.content, f.source, f.title, bm25(kb_fts) as score "
+                "FROM kb_fts f "
+                "WHERE kb_fts MATCH ? "
+            )
+            params: list[str | int] = [safe_query]
 
-                if filter_path:
-                    sql += "AND f.source LIKE ? "
-                    params.append(f"{filter_path}%")
+            if filter_path:
+                sql += "AND f.source LIKE ? "
+                params.append(f"{filter_path}%")
 
-                sql += "ORDER BY bm25(kb_fts) LIMIT ?"
-                params.append(top_k)
+            sql += "ORDER BY bm25(kb_fts) LIMIT ?"
+            params.append(top_k)
 
-                rows = self._conn.execute(sql, params).fetchall()
+            rows = self._conn.execute(sql, params).fetchall()
 
-                for content, source, title, score in rows:
-                    results.append(
-                        {
-                            "content": content,
-                            "source": source,
-                            "title": title,
-                            "score": round(-score, 4),  # bm25() returns negative
-                        }
-                    )
-                break
-            except sqlite3.OperationalError:
-                logger.debug("FTS5 MATCH failed for query %r", attempt_query)
-                continue
-
-        return results
+            return [
+                {
+                    "content": content,
+                    "source": source,
+                    "title": title,
+                    "score": round(-score, 4),  # bm25() returns negative
+                }
+                for content, source, title, score in rows
+            ]
+        except sqlite3.OperationalError:
+            logger.debug("FTS5 MATCH failed for query %r", safe_query)
+            return []
 
     def remove(self, path: str | Path) -> dict:
         """Remove a document from the knowledge base.
@@ -802,7 +837,13 @@ class KnowledgeBase:
         self._conn.commit()
 
         # Re-index
-        stats = {"added": 0, "updated": 0, "skipped": 0, "errors": 0, "files": []}
+        stats: dict[str, Any] = {
+            "added": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "files": [],
+        }
         for path_str in paths:
             path = Path(path_str)
             if path.exists():
@@ -825,7 +866,14 @@ class KnowledgeBase:
         Returns:
             Stats dict from the indexing operation.
         """
-        stats = {"added": 0, "updated": 0, "skipped": 0, "errors": 0, "removed": 0, "files": []}
+        stats: dict[str, Any] = {
+            "added": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "removed": 0,
+            "files": [],
+        }
 
         indexed_paths: set[str] = set()
 
@@ -858,6 +906,12 @@ class KnowledgeBase:
             self._conn.commit()
 
         return stats
+
+    def __enter__(self) -> KnowledgeBase:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def close(self) -> None:
         """Close the database connection."""

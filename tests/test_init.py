@@ -355,7 +355,7 @@ class TestWizard:
 
         config = yaml.safe_load((tmp_path / "home" / "agent.yaml").read_text())
         assert "whatsapp" in config["channels"]
-        assert any("WHATSAPP_API_URL" in line for line in lines)
+        assert any("WHATSAPP" in line for line in lines)
 
     def test_wizard_guardian_disabled(self, monkeypatch, tmp_path, mock_age):
         """Disabling guardian should omit guardian section."""

@@ -164,6 +164,10 @@ class ToolConfig(BaseModel):
     mounts: list[MountConfig] = Field(default_factory=list)
     network: bool = False
     image: str | None = None
+    dockerfile: str | None = Field(
+        default=None,
+        description="Path to a custom Dockerfile (mutually exclusive with image)",
+    )
     host_auth: bool = Field(
         default=False, description="Mount host CLI auth into executor container (read-only)"
     )
@@ -207,6 +211,13 @@ class ToolConfig(BaseModel):
         if val <= 0:
             raise ValueError(f"cpus must be positive, got '{v}'")
         return v
+
+    @model_validator(mode="after")
+    def check_dockerfile_image_exclusive(self) -> ToolConfig:
+        """Reject configs that set both dockerfile and image."""
+        if self.dockerfile and self.image:
+            raise ValueError("dockerfile and image are mutually exclusive — use one or the other")
+        return self
 
 
 class AgentConfig(BaseModel):

@@ -529,6 +529,7 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
     elif config.channel.type == "whatsapp":
         doc["channels"] = {
             "whatsapp": {
+                "phone_number": "$WHATSAPP_PHONE_NUMBER",
                 "api_url": "$WHATSAPP_API_URL",
             },
         }
@@ -631,6 +632,30 @@ def _scaffold_static(*, force: bool = False) -> list[str]:
     )
 
     return lines
+
+
+# ---------------------------------------------------------------------------
+# Docker image auto-pull
+# ---------------------------------------------------------------------------
+
+
+def _auto_pull_images(agent_config_path: Path) -> list[str]:
+    """Pull pre-built Docker images referenced by the agent config.
+
+    Returns status lines.  Silently returns empty list if Docker is
+    unavailable or no remote images are configured.
+    """
+    try:
+        from creel.containers import pull_required_images
+        from creel.models import load_agent_config
+
+        agent_def = load_agent_config(agent_config_path)
+        return pull_required_images(agent_def)
+    except FileNotFoundError:
+        return []
+    except (ImportError, RuntimeError, OSError) as exc:
+        logger.debug("Auto-pull skipped: %s", exc)
+        return [f"  skipped image pull ({exc})"]
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +768,13 @@ def init(
     # Tool summary
     if config.tools:
         lines.append(f"  tools: {', '.join(config.tools)}")
+
+    # Pull pre-built images if any tools use remote images
+    pull_lines = _auto_pull_images(paths.agent_config())
+    if pull_lines:
+        lines.append("")
+        lines.append("Docker images:")
+        lines.extend(pull_lines)
 
     # Next steps
     lines.append("")

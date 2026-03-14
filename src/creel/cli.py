@@ -1394,7 +1394,7 @@ def _get_kb(args: argparse.Namespace) -> KnowledgeBase:
         kb_config = agent_def.knowledge_base
         workspace = Path(agent_def.workspace.path)
         db_path = kb_config.db_path or str(workspace / ".kb_index.sqlite")
-    except (FileNotFoundError, Exception):
+    except FileNotFoundError:
         db_path = "workspace/.kb_index.sqlite"
         kb_config = None
 

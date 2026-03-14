@@ -529,6 +529,7 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
     elif config.channel.type == "whatsapp":
         doc["channels"] = {
             "whatsapp": {
+                "phone_number": "$WHATSAPP_PHONE_NUMBER",
                 "api_url": "$WHATSAPP_API_URL",
             },
         }

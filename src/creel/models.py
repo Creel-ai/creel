@@ -195,6 +195,15 @@ class KnowledgeBaseConfig(BaseModel):
             raise ValueError(f"Only 'sqlite' store is supported, got '{v}'")
         return v
 
+    @model_validator(mode="after")
+    def check_overlap_less_than_size(self) -> KnowledgeBaseConfig:
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError(
+                f"chunk_overlap ({self.chunk_overlap}) must be less than "
+                f"chunk_size ({self.chunk_size})"
+            )
+        return self
+
     @field_validator("auto_index", mode="before")
     @classmethod
     def expand_auto_index(cls, v: list[str] | str) -> list[str]:

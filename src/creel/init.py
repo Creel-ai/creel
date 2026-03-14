@@ -30,7 +30,7 @@ class InitTelegramConfig(BaseModel):
 
 
 class InitLLMConfig(BaseModel):
-    provider: Literal["anthropic", "openai", "ollama"]
+    provider: Literal["anthropic", "openai", "google", "ollama"]
     model: str
     max_tokens: int = 4096
     api_key: str | None = None  # transient — never written to YAML
@@ -38,30 +38,38 @@ class InitLLMConfig(BaseModel):
 
 
 class InitChannelConfig(BaseModel):
-    type: Literal["telegram", "imessage", "none"] = "none"
+    type: Literal["telegram", "imessage", "whatsapp", "none"] = "none"
     telegram: InitTelegramConfig | None = None
+
+
+class InitGuardianConfig(BaseModel):
+    policy: bool = True
+    audit: bool = True
 
 
 class InitConfig(BaseModel):
     llm: InitLLMConfig
     channel: InitChannelConfig = InitChannelConfig()
+    tools: list[str] = []
     enable_media: bool = False
     enable_guardian: bool = True
+    guardian: InitGuardianConfig = InitGuardianConfig()
 
 
 # ---------------------------------------------------------------------------
 # Prompt helpers (interactive mode)
 # ---------------------------------------------------------------------------
 
-ProviderType = Literal["anthropic", "openai", "ollama"]
-ChannelType = Literal["telegram", "imessage", "none"]
+ProviderType = Literal["anthropic", "openai", "google", "ollama"]
+ChannelType = Literal["telegram", "imessage", "whatsapp", "none"]
 
-_PROVIDERS: tuple[ProviderType, ...] = ("anthropic", "openai", "ollama")
-_CHANNELS: tuple[ChannelType, ...] = ("telegram", "imessage", "none")
+_PROVIDERS: tuple[ProviderType, ...] = ("anthropic", "openai", "google", "ollama")
+_CHANNELS: tuple[ChannelType, ...] = ("telegram", "imessage", "whatsapp", "none")
 
 _DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-sonnet-4-20250514",
     "openai": "gpt-4o",
+    "google": "gemini-2.0-flash",
     "ollama": "llama3",
 }
 
@@ -104,6 +112,80 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
     return raw.startswith("y")
 
 
+def _prompt_multi_select(prompt: str, options: list[str], ids: list[str]) -> list[str]:
+    """Display numbered options and let the user select multiple (comma-separated).
+
+    Returns the list of selected *ids*.
+    """
+    for i, opt in enumerate(options):
+        print(f"  [{i + 1}] {opt}")
+    print()
+    raw = input(f"{prompt} (comma-separated, or 'all' / 'none') [all]: ").strip().lower()
+    if not raw or raw == "all":
+        return list(ids)
+    if raw == "none":
+        return []
+    selected: list[str] = []
+    for part in raw.split(","):
+        part = part.strip()
+        try:
+            idx = int(part) - 1
+            if 0 <= idx < len(ids):
+                selected.append(ids[idx])
+        except ValueError:
+            pass
+    return selected
+
+
+# ---------------------------------------------------------------------------
+# Tool catalog (loaded from bundled YAML)
+# ---------------------------------------------------------------------------
+
+_catalog_cache: dict[str, Any] | None = None
+
+
+def _load_catalog() -> dict[str, Any]:
+    """Load the tool catalog from the bundled YAML template.
+
+    Returns a dict mapping group IDs to dicts with ``label`` and ``tools`` keys.
+    """
+    global _catalog_cache  # noqa: PLW0603
+    if _catalog_cache is not None:
+        return _catalog_cache
+
+    catalog_file = importlib.resources.files("creel") / "templates" / "tool_catalog.yaml"
+    _catalog_cache = yaml.safe_load(catalog_file.read_text(encoding="utf-8"))
+    return _catalog_cache
+
+
+# ---------------------------------------------------------------------------
+# Test message helpers
+# ---------------------------------------------------------------------------
+
+
+def _send_test_message(channel_type: str, config: InitChannelConfig) -> bool:
+    """Send a test message through the configured channel.
+
+    Returns True if successful, False otherwise.
+    """
+    import httpx
+
+    if channel_type == "telegram" and config.telegram and config.telegram.allowed_senders:
+        try:
+            resp = httpx.post(
+                f"https://api.telegram.org/bot{config.telegram.bot_token}/sendMessage",
+                json={
+                    "chat_id": config.telegram.allowed_senders[0],
+                    "text": "Creel setup complete! This is a test message.",
+                },
+                timeout=15.0,
+            )
+            return resp.status_code == 200
+        except httpx.HTTPError:
+            return False
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Wizard flow
 # ---------------------------------------------------------------------------
@@ -117,10 +199,16 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     print("Welcome to Creel setup!")
     print("=" * 40)
 
-    # --- LLM provider ---
+    # --- Step 1: LLM provider ---
     print()
-    print("LLM Provider")
-    provider_labels = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (local)"]
+    print("Step 1/4: LLM Provider")
+    print("-" * 30)
+    provider_labels = [
+        "Anthropic (Claude)",
+        "OpenAI (GPT)",
+        "Google (Gemini)",
+        "Ollama (local)",
+    ]
     existing_idx = _PROVIDERS.index(existing.llm.provider) if existing else 0
     idx = _prompt_choice("Select provider", provider_labels, default=existing_idx)
     provider = _PROVIDERS[idx]
@@ -129,12 +217,15 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
     api_key: str | None = None
     ollama_url: str | None = None
 
-    if provider in ("anthropic", "openai"):
+    if provider in ("anthropic", "openai", "google"):
         print()
-        validator = (
-            _val.validate_anthropic_key if provider == "anthropic" else _val.validate_openai_key
-        )
-        label = "Anthropic" if provider == "anthropic" else "OpenAI"
+        validators = {
+            "anthropic": _val.validate_anthropic_key,
+            "openai": _val.validate_openai_key,
+            "google": _val.validate_google_key,
+        }
+        validator = validators[provider]
+        label = {"anthropic": "Anthropic", "openai": "OpenAI", "google": "Google AI"}[provider]
         for attempt in range(3):
             api_key = _prompt_string(f"{label} API key", secret=True)
             if not api_key:
@@ -182,17 +273,33 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
         ollama_url=ollama_url,
     )
 
-    # --- Channel ---
+    # --- Step 2: Tools ---
     print()
-    print("Channel (how you'll talk to Creel)")
-    channel_labels = ["Telegram", "iMessage (macOS only)", "None (CLI only)"]
-    existing_ch_idx = (
-        _CHANNELS.index(existing.channel.type)
-        if existing and existing.channel.type in _CHANNELS
-        else 2
+    print("Step 2/4: Tools")
+    print("-" * 30)
+    catalog = _load_catalog()
+    tool_ids = list(catalog.keys())
+    tool_labels = [catalog[tid]["label"] for tid in tool_ids]
+    selected_tools = _prompt_multi_select(
+        "Select tools to enable",
+        tool_labels,
+        tool_ids,
     )
-    ch_idx = _prompt_choice("Select channel", channel_labels, default=existing_ch_idx)
-    channel_type = _CHANNELS[ch_idx]
+    print(f"  Selected: {', '.join(selected_tools) if selected_tools else 'none'}")
+
+    # --- Step 3: Channel ---
+    print()
+    print("Step 3/4: Channel (how you'll talk to Creel)")
+    print("-" * 30)
+    _CHANNEL_MENU: list[tuple[str, ChannelType]] = [
+        ("Terminal (CLI only)", "none"),
+        ("Telegram bot", "telegram"),
+        ("iMessage (macOS only)", "imessage"),
+        ("WhatsApp", "whatsapp"),
+    ]
+    channel_labels = [label for label, _ in _CHANNEL_MENU]
+    ch_label_idx = _prompt_choice("Select channel", channel_labels, default=0)
+    channel_type = _CHANNEL_MENU[ch_label_idx][1]
 
     telegram_cfg: InitTelegramConfig | None = None
     if channel_type == "telegram":
@@ -230,21 +337,41 @@ def _run_wizard(existing: InitConfig | None = None) -> InitConfig:
 
         telegram_cfg = InitTelegramConfig(bot_token=bot_token, allowed_senders=allowed_senders)
 
+        # Offer test message
+        if bot_token and _prompt_yes_no("Send a test message?", default=False):
+            ch_cfg = InitChannelConfig(type="telegram", telegram=telegram_cfg)
+            print("  Sending test message...", end=" ", flush=True)
+            if _send_test_message("telegram", ch_cfg):
+                print("sent!")
+            else:
+                print("failed (check bot token and allowed sender).")
+
     channel_config = InitChannelConfig(
         type=channel_type,
         telegram=telegram_cfg,
     )
 
+    # --- Step 4: Security ---
+    print()
+    print("Step 4/4: Security")
+    print("-" * 30)
+    enable_guardian = _prompt_yes_no("Enable Guardian security pipeline?", default=True)
+    guardian_cfg = InitGuardianConfig()
+    if enable_guardian:
+        guardian_cfg.policy = _prompt_yes_no("  Enable policy engine (tool access control)?")
+        guardian_cfg.audit = _prompt_yes_no("  Enable audit logging?")
+
     # --- Feature toggles ---
     print()
     enable_media = _prompt_yes_no("Enable media processing (images, voice)?", default=False)
-    enable_guardian = _prompt_yes_no("Enable guardian security pipeline?", default=True)
 
     config = InitConfig(
         llm=llm_config,
         channel=channel_config,
+        tools=selected_tools,
         enable_media=enable_media,
         enable_guardian=enable_guardian,
+        guardian=guardian_cfg,
     )
 
     print()
@@ -286,6 +413,12 @@ def _ensure_age_keypair() -> tuple[Path, Path]:
 # Secret encryption
 # ---------------------------------------------------------------------------
 
+_API_KEY_ENV_VARS: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "google": "GOOGLE_API_KEY",
+}
+
 
 def _encrypt_secrets(config: InitConfig) -> dict[str, str]:
     """Encrypt API keys / tokens into age-encrypted ``.enc`` files.
@@ -303,7 +436,7 @@ def _encrypt_secrets(config: InitConfig) -> dict[str, str]:
 
     # LLM API key
     if config.llm.api_key:
-        env_var = "ANTHROPIC_API_KEY" if config.llm.provider == "anthropic" else "OPENAI_API_KEY"
+        env_var = _API_KEY_ENV_VARS.get(config.llm.provider, "API_KEY")
         plaintext = f"{env_var}={config.llm.api_key}\n"
         enc_name = f"{config.llm.provider}.env.enc"
         ciphertext = pyrage.encrypt(plaintext.encode(), [recipient])
@@ -326,6 +459,16 @@ def _encrypt_secrets(config: InitConfig) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def _build_tools_section(selected_tools: list[str]) -> dict[str, Any]:
+    """Build the ``tools`` dict for agent.yaml from selected tool IDs."""
+    catalog = _load_catalog()
+    tools: dict[str, Any] = {}
+    for tool_id in selected_tools:
+        if tool_id in catalog:
+            tools.update(catalog[tool_id]["tools"])
+    return tools
+
+
 def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> str:
     """Build ``agent.yaml`` content from the wizard configuration.
 
@@ -339,8 +482,9 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
         "You are a personal assistant running on Creel. Be concise and helpful.\nToday is {date}.\n"
     )
 
-    # Tools — empty by default; example shown in post-dump comment
-    doc["tools"] = {}
+    # Tools
+    tools = _build_tools_section(config.tools)
+    doc["tools"] = tools
 
     # LLM
     llm: dict[str, Any] = {
@@ -382,6 +526,12 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
                 "listen_to": "$IMESSAGE_LISTEN_TO",
             },
         }
+    elif config.channel.type == "whatsapp":
+        doc["channels"] = {
+            "whatsapp": {
+                "api_url": "$WHATSAPP_API_URL",
+            },
+        }
 
     # Media
     if config.enable_media:
@@ -393,26 +543,27 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
             "enabled": True,
             "fast_classifier": {"enabled": False},
             "llm_judge": {"enabled": False},
-            "policy": {"enabled": True},
-            "audit": {"enabled": True},
+            "policy": {"enabled": config.guardian.policy},
+            "audit": {"enabled": config.guardian.audit},
         }
 
     output = yaml.dump(doc, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-    # Insert an example tool comment after the empty tools dict
-    example = (
-        "# Example tool (requires the weather executor):\n"
-        "#   check_weather:\n"
-        "#     executor: weather\n"
-        "#     network: true\n"
-        "#     description: Get current weather and forecast\n"
-        "#     parameters:\n"
-        "#       location:\n"
-        "#         type: string\n"
-        "#         description: City name or coordinates\n"
-        "#         required: true\n"
-    )
-    output = output.replace("tools: {}\n", f"tools: {{}}\n{example}", 1)
+    # If no tools were selected, insert an example comment after the empty tools dict
+    if not tools:
+        example = (
+            "# Example tool (requires the weather executor):\n"
+            "#   check_weather:\n"
+            "#     executor: weather\n"
+            "#     network: true\n"
+            "#     description: Get current weather and forecast\n"
+            "#     parameters:\n"
+            "#       location:\n"
+            "#         type: string\n"
+            "#         description: City name or coordinates\n"
+            "#         required: true\n"
+        )
+        output = output.replace("tools: {}\n", f"tools: {{}}\n{example}", 1)
 
     return output
 
@@ -497,6 +648,7 @@ def init(
     channel: str | None = None,
     bot_token: str | None = None,
     allowed_senders: str | None = None,
+    tools: list[str] | None = None,
     enable_media: bool = False,
     enable_guardian: bool = True,
 ) -> list[str]:
@@ -551,6 +703,7 @@ def init(
                 type=channel or "none",  # type: ignore[arg-type]
                 telegram=telegram_cfg,
             ),
+            tools=tools or [],
             enable_media=enable_media,
             enable_guardian=enable_guardian,
         )
@@ -587,6 +740,10 @@ def init(
     agent_path.write_text(yaml_content, encoding="utf-8")
     lines.append(f"  wrote: {agent_path}")
 
+    # Tool summary
+    if config.tools:
+        lines.append(f"  tools: {', '.join(config.tools)}")
+
     # Next steps
     lines.append("")
     if config.channel.type == "none":
@@ -600,6 +757,10 @@ def init(
     elif config.channel.type == "imessage":
         lines.append("Next steps:")
         lines.append(f"  1. Set IMESSAGE_LISTEN_TO in {paths.agent_config()}")
+        lines.append("  2. Start the daemon: creel daemon start")
+    elif config.channel.type == "whatsapp":
+        lines.append("Next steps:")
+        lines.append(f"  1. Set WHATSAPP_API_URL in {paths.agent_config()}")
         lines.append("  2. Start the daemon: creel daemon start")
 
     return lines

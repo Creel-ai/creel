@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Creel — The AI Agent That Doesn't Trust Its Own Tools</title>
-  <meta name="description" content="Secure, self-hosted personal AI agent framework with per-tool Docker isolation and a Guardian safety pipeline.">
+  <meta name="description" content="Secure, self-hosted personal AI agent framework with 27+ integrations, per-tool Docker isolation, and a Guardian safety pipeline.">
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="assets/creel-logo.jpg">
 </head>
@@ -21,7 +21,7 @@
         <a href="#features">Features</a>
         <a href="#architecture">Architecture</a>
         <a href="#quickstart">Get Started</a>
-        <a href="https://github.com/creel-ai/creel" class="btn btn-sm" target="_blank">GitHub ↗</a>
+        <a href="https://github.com/Creel-ai/creel" class="btn btn-sm" target="_blank">GitHub ↗</a>
       </div>
       <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.nav-links').classList.toggle('open')">☰</button>
     </div>
@@ -32,14 +32,14 @@
     <div class="hero-inner">
       <img src="assets/creel-logo.jpg" alt="Creel logo" class="hero-logo">
       <h1>The only AI agent that doesn't trust its own tools.</h1>
-      <p class="hero-sub">A secure, self-hosted personal AI agent framework. Every tool runs in its own Docker container. Every action passes through a Guardian safety pipeline. You stay in control.</p>
+      <p class="hero-sub">A secure, self-hosted personal AI agent framework with 27+ integrations. Every tool runs in its own Docker container. Every action passes through a Guardian safety pipeline. You stay in control.</p>
       <div class="hero-actions">
         <a href="#quickstart" class="btn btn-primary">Get Started</a>
-        <a href="https://github.com/creel-ai/creel" class="btn btn-outline" target="_blank">View on GitHub</a>
+        <a href="https://github.com/Creel-ai/creel" class="btn btn-outline" target="_blank">View on GitHub</a>
       </div>
       <div class="hero-badges">
-        <img src="https://img.shields.io/github/license/creel-ai/creel?color=%2338bdf8" alt="MIT License">
-        <img src="https://img.shields.io/github/stars/creel-ai/creel?style=social" alt="GitHub Stars">
+        <img src="https://img.shields.io/github/license/Creel-ai/creel?color=%2338bdf8" alt="MIT License">
+        <img src="https://img.shields.io/github/stars/Creel-ai/creel?style=social" alt="GitHub Stars">
       </div>
     </div>
   </section>
@@ -72,6 +72,30 @@
           <div class="feature-icon">📄</div>
           <h3>YAML-Driven Tools</h3>
           <p>Define tools in simple YAML. Specify the container image, permissions, arguments, and safety constraints. No code required to add capabilities.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💬</div>
+          <h3>Multi-Channel Messaging</h3>
+          <p>Communicate via iMessage, Telegram, WhatsApp, BlueBubbles, or webhooks. Plugin-based channel architecture makes it easy to add new integrations.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⏰</div>
+          <h3>Cron &amp; Daemon Mode</h3>
+          <p>Schedule recurring tasks with cron, run as a background daemon with a full REST API, or manage everything from the built-in web dashboard.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3>Sub-Agents</h3>
+          <p>Delegate complex work to specialized sub-agents that run in parallel. Each sub-agent has its own context and tool access, coordinated by the main agent loop.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔌</div>
+          <h3>27+ Integrations</h3>
+          <p>Google Workspace, GitHub, Notion, Apple Notes &amp; Reminders, Things 3, Brave Search, browser automation, shell execution, and more — all containerized.</p>
         </div>
 
       </div>
@@ -133,17 +157,20 @@
 <span class="c-prompt">$</span> brew install pyenv uv age
 
 <span class="c-comment"># Clone and set up</span>
-<span class="c-prompt">$</span> git clone https://github.com/creel-ai/creel.git
+<span class="c-prompt">$</span> git clone https://github.com/Creel-ai/creel.git
 <span class="c-prompt">$</span> cd creel
-<span class="c-prompt">$</span> pyenv install 3.12.12
+<span class="c-prompt">$</span> pyenv install 3.12.11
 <span class="c-prompt">$</span> uv venv && source .venv/bin/activate
 <span class="c-prompt">$</span> uv pip install -e ".[dev]"
 
-<span class="c-comment"># Configure and run</span>
+<span class="c-comment"># Configure and start the daemon</span>
 <span class="c-prompt">$</span> export ANTHROPIC_API_KEY=sk-ant-...
-<span class="c-prompt">$</span> creel chat
+<span class="c-prompt">$</span> creel daemon start
 
-<span class="c-output">🧺 Creel agent ready. Tools loaded: 12. Guardian: active.</span></code></pre>
+<span class="c-output">🧺 Creel daemon running. Tools loaded: 27. Guardian: active.</span>
+
+<span class="c-comment"># Or run a task directly</span>
+<span class="c-prompt">$</span> creel run morning-briefing</code></pre>
       </div>
     </div>
   </section>
@@ -157,7 +184,7 @@
         <span class="dim">· MIT License</span>
       </div>
       <div class="footer-links">
-        <a href="https://github.com/creel-ai/creel" target="_blank">GitHub</a>
+        <a href="https://github.com/Creel-ai/creel" target="_blank">GitHub</a>
         <a href="https://discord.gg/wGym2meFFZ" target="_blank">Discord</a>
         <a href="https://twitter.com/creelai" target="_blank">Twitter</a>
       </div>

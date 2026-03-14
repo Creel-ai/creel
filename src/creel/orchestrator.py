@@ -265,6 +265,7 @@ def _dispatch_executor(name: str, config: ExecutorConfig) -> str:
         "file_ops": _exec_file_ops_inline,
         "github": _exec_github_inline,
         "coding": _exec_coding_inline,
+        "tts": _exec_tts_inline,
     }
 
     # BlueBubbles variants share one handler with different actions.
@@ -824,6 +825,29 @@ def _exec_coding_inline(config: ExecutorConfig) -> str:
             pass
 
     result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
+    return json.dumps(result, indent=2)
+
+
+def _exec_tts_inline(config: ExecutorConfig) -> str:
+    """Run TTS executor inline."""
+    from executors.tts.executor import synthesize
+
+    text = config.args.get("text", "")
+    if not text:
+        raise ValueError("tts executor requires a 'text' argument")
+
+    voice = config.args.get("voice") or None
+    backend = config.args.get("backend") or None
+    output_format = config.args.get("output_format") or None
+    output_path = config.args.get("output_path") or None
+
+    result = synthesize(
+        text,
+        voice=voice,
+        backend=backend,
+        output_format=output_format,
+        output_path=output_path,
+    )
     return json.dumps(result, indent=2)
 
 

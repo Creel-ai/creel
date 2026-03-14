@@ -95,7 +95,8 @@ class TestChatServerInit:
         assert server._memory is not None
         assert server._memory._index is None
 
-    def test_compact_summarize_config(self, tmp_path) -> None:
+    @patch("creel.llm.run_llm", return_value="- Alpha fact\n- Beta fact")
+    def test_compact_summarize_config(self, _mock_llm, tmp_path) -> None:
         """Verify compact_summarize=True triggers extractive summarization."""
         ws = tmp_path / "workspace"
         ws.mkdir()
@@ -125,7 +126,7 @@ class TestChatServerInit:
         ChatServer(agent_def)
 
         lt_content = (ws / "MEMORY.md").read_text()
-        assert "### Compacted:" in lt_content
+        assert "### Summarized:" in lt_content
         assert "- Alpha fact" in lt_content
         assert "- Beta fact" in lt_content
 

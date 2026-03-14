@@ -344,7 +344,7 @@ class TestAgentRunnerKeepAlive:
         with (
             patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)),
             patch("llm.agent_runner.sys.stdout", stdout),
-            patch("llm.agent_runner._get_client"),
+            patch("llm.agent_runner.get_container_provider"),
         ):
             main()
 
@@ -364,7 +364,7 @@ class TestAgentRunnerKeepAlive:
         with (
             patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)),
             patch("llm.agent_runner.sys.stdout", stdout),
-            patch("llm.agent_runner._get_client"),
+            patch("llm.agent_runner.get_container_provider"),
         ):
             main()
 
@@ -384,7 +384,7 @@ class TestAgentRunnerKeepAlive:
         with (
             patch("llm.agent_runner.sys.stdin", StringIO(stdin_data)),
             patch("llm.agent_runner.sys.stdout", stdout),
-            patch("llm.agent_runner._get_client"),
+            patch("llm.agent_runner.get_container_provider"),
         ):
             main()
 
@@ -411,8 +411,7 @@ class TestRunnerKeepAlive:
         stdout = StringIO()
 
         with (
-            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
-            patch("llm.runner.anthropic.Anthropic"),
+            patch("llm.runner.get_container_provider"),
             patch("llm.runner.sys.stdin", StringIO(stdin_data)),
             patch("llm.runner.sys.stdout", stdout),
         ):
@@ -432,8 +431,7 @@ class TestRunnerKeepAlive:
         stdout = StringIO()
 
         with (
-            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
-            patch("llm.runner.anthropic.Anthropic"),
+            patch("llm.runner.get_container_provider"),
             patch("llm.runner.sys.stdin", StringIO(stdin_data)),
             patch("llm.runner.sys.stdout", stdout),
         ):

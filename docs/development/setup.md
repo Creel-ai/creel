@@ -6,7 +6,7 @@ Requires [pyenv](https://github.com/pyenv/pyenv) and [uv](https://github.com/ast
 
 ```bash
 # Install Python 3.12 (.python-version pins this)
-pyenv install 3.12.12
+pyenv install 3.12.11
 
 # Create virtual environment using pyenv's Python
 uv venv
@@ -25,7 +25,7 @@ uv pip install -e ".[guardian]"
 pytest
 ```
 
-Coverage is configured automatically via `pyproject.toml` (`--cov=creel --cov=guardian --cov=bridge --cov-report=term-missing`).
+Coverage is configured automatically via `pyproject.toml` (`--cov=creel --cov=guardian --cov=bridge --cov=executors --cov-report=term-missing`).
 
 ## Building Documentation
 

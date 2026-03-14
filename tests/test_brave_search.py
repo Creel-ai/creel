@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from executors.brave_search.executor import search
 
@@ -116,3 +117,34 @@ def test_search_handles_missing_fields(mock_get):
     results = search("test")
     assert len(results) == 1
     assert results[0]["snippet"] == ""
+
+
+# --- timeout tests ---
+
+
+@patch("executors.brave_search.executor.requests.get")
+def test_search_passes_custom_timeouts(mock_get):
+    """search should pass connect and read timeouts to requests."""
+    mock_get.return_value = _mock_response([])
+    search("test", timeout=30, connect_timeout=10)
+
+    call_kwargs = mock_get.call_args
+    assert call_kwargs.kwargs["timeout"] == (10, 30)
+
+
+@patch("executors.brave_search.executor.requests.get")
+def test_search_timeout_error_raises_runtime_error(mock_get):
+    """search should raise RuntimeError with clear message on timeout."""
+    mock_get.side_effect = requests.exceptions.Timeout("timed out")
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        search("test", timeout=5, connect_timeout=2)
+
+
+@patch("executors.brave_search.executor.requests.get")
+def test_search_connection_error_raises_runtime_error(mock_get):
+    """search should raise RuntimeError with clear message on connection failure."""
+    mock_get.side_effect = requests.exceptions.ConnectionError("refused")
+
+    with pytest.raises(RuntimeError, match="Connection failed"):
+        search("test")

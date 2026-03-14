@@ -145,6 +145,25 @@ quiet_hours:
   timezone: "America/Denver"
 ```
 
+## Rate Limiting
+
+Add a `rate_limits` block under `llm` to cap LLM API usage and prevent runaway costs:
+
+```yaml
+llm:
+  model: claude-sonnet-4-20250514
+  max_tokens: 1024
+  rate_limits:
+    enabled: true
+    requests_per_minute: 30
+    requests_per_hour: 500
+    tokens_per_day: 1000000
+    cost_per_day_usd: 10.00
+    queue_timeout: 30.0
+```
+
+Rate limiting is **disabled by default** — set `enabled: true` to activate it. See [Rate Limiting](rate-limiting.md) for the full configuration reference.
+
 ## Guardian
 
 See [Guardian Security](../architecture/guardian.md) for the full guardian configuration reference.

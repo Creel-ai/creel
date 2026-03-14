@@ -12,6 +12,8 @@ Usage:
     creel daemon install             Install daemon as launchd service
     creel daemon uninstall           Remove daemon launchd service
     creel send "message"             Send one message via daemon API
+    creel doctor                     Check installation health
+    creel doctor --fix               Auto-fix remediable issues
 """
 
 from __future__ import annotations
@@ -259,6 +261,9 @@ def cmd_init(args: argparse.Namespace) -> int:
             return 1
         lines = migrate(repo_root, force=args.force)
     else:
+        parsed_tools = (
+            [t.strip() for t in args.tools.split(",") if t.strip()] if args.tools else None
+        )
         lines = init(
             force=args.force,
             interactive=not args.non_interactive,
@@ -268,6 +273,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             channel=args.channel,
             bot_token=args.bot_token,
             allowed_senders=args.allowed_senders,
+            tools=parsed_tools,
             enable_media=args.enable_media,
             enable_guardian=not args.no_guardian,
         )
@@ -571,6 +577,8 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
             print(f"Error building {channel_type} channel: {e}", file=sys.stderr)
             raise RuntimeError(f"Channel configuration error: {e}") from e
 
+        config_path = args.agent_config or _default_agent_config()
+
         server = ChatServer(
             agent_def,
             use_containers=args.containers,
@@ -580,6 +588,7 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
             agent_def,
             use_containers=args.containers,
             server=server,
+            config_path=config_path,
         )
 
         if not getattr(args, "no_scheduler", False):
@@ -606,6 +615,39 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
         # Start host bridge server if enabled
         if getattr(agent_def, "bridge", None) and agent_def.bridge.enabled:
             _start_bridge_server(agent_def.bridge)
+
+        # Install SIGHUP handler for config reload.
+        # Signal handlers run on the main thread and can interrupt code holding
+        # locks, so we defer the actual reload to a background thread.
+        import signal as _signal
+
+        def _sighup_handler(signum, frame):
+            logger.info("Received SIGHUP — scheduling config reload")
+            t = threading.Thread(
+                target=_deferred_sighup_reload,
+                name="creel-sighup-reload",
+                daemon=True,
+            )
+            t.start()
+
+        def _deferred_sighup_reload():
+            try:
+                result = service.reload_config()
+                logger.info("SIGHUP reload: %s", result.summary())
+            except Exception:
+                logger.exception("SIGHUP config reload failed")
+
+        _signal.signal(_signal.SIGHUP, _sighup_handler)
+
+        # Start file watcher for automatic config reload
+        from creel.daemon.watcher import ConfigWatcher
+
+        watcher = ConfigWatcher(
+            config_path=Path(config_path),
+            on_change=lambda: service.reload_config(),
+        )
+        watcher.start()
+        service._config_watcher = watcher
 
         return service
 
@@ -1050,6 +1092,41 @@ def cmd_daemon_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reload(args: argparse.Namespace) -> int:
+    """Hot-reload daemon config without restarting."""
+    socket_path = _daemon_socket_path(args)
+
+    try:
+        resp = _daemon_request(socket_path, "POST", "/api/config/reload", timeout=10.0)
+    except Exception as e:
+        print(f"Error: Could not reach daemon at {socket_path}: {e}", file=sys.stderr)
+        return 1
+
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.json().get("detail", "")
+        except Exception:
+            detail = resp.text
+        print(f"Reload failed: {detail}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    print(data.get("summary", "Config reloaded."))
+
+    changes = data.get("changes", [])
+    for change in changes:
+        print(f"  - {change['field']}")
+
+    non_reloadable = data.get("non_reloadable", [])
+    if non_reloadable:
+        print("\nNon-reloadable changes (restart required):")
+        for nr in non_reloadable:
+            print(f"  - {nr['field']}: {nr['message']}")
+
+    return 0
+
+
 def cmd_send(args: argparse.Namespace) -> int:
     """Send one message to the running daemon and print the response."""
     socket_path = _daemon_socket_path(args)
@@ -1484,6 +1561,133 @@ def cmd_encrypt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _init_rate_limiter(args: argparse.Namespace) -> None:
+    """Initialize the global rate limiter from agent config."""
+    from creel.models import load_agent_config
+    from creel.rate_limiter import configure_rate_limiter
+
+    try:
+        agent_cfg = load_agent_config(
+            getattr(args, "agent_config", None) or _default_agent_config()
+        )
+    except FileNotFoundError:
+        logger.debug("Agent config not found, skipping rate limiter init")
+        return
+
+    rl = agent_cfg.llm.rate_limits
+    if not rl.enabled:
+        return
+
+    usage_dir = paths.creel_home() / "usage"
+    configure_rate_limiter(
+        requests_per_minute=rl.requests_per_minute,
+        requests_per_hour=rl.requests_per_hour,
+        tokens_per_day=rl.tokens_per_day,
+        cost_per_day_usd=rl.cost_per_day_usd,
+        queue_timeout=rl.queue_timeout,
+        usage_dir=usage_dir,
+    )
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Show current LLM usage statistics."""
+
+    _init_rate_limiter(args)
+
+    from creel.rate_limiter import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    if limiter is None:
+        print("Rate limiting is not enabled. Check agent.yaml (llm.rate_limits.enabled).")
+        return 1
+
+    if getattr(args, "history", False):
+        days = getattr(args, "days", 7)
+        history = limiter.get_usage_history(days=days)
+        print(f"{'Date':<12} {'Requests':>8} {'Tokens':>10} {'Cost (USD)':>10}")
+        print("-" * 44)
+        total_cost = 0.0
+        total_requests = 0
+        total_tokens = 0
+        for day in history:
+            total_cost += day["cost_usd"]
+            total_requests += day["requests"]
+            total_tokens += day["total_tokens"]
+            print(
+                f"{day['date']:<12} {day['requests']:>8} "
+                f"{day['total_tokens']:>10} ${day['cost_usd']:>9.4f}"
+            )
+        print("-" * 44)
+        print(f"{'Total':<12} {total_requests:>8} {total_tokens:>10} ${total_cost:>9.4f}")
+        return 0
+
+    usage = limiter.get_usage()
+    print("Current LLM Usage:")
+    print(
+        f"  Requests (last minute): {usage.requests_last_minute}"
+        f" / {usage.requests_per_minute_limit}"
+    )
+    print(f"  Requests (last hour):   {usage.requests_last_hour} / {usage.requests_per_hour_limit}")
+    print(f"  Tokens (today):         {usage.tokens_today:,} / {usage.tokens_per_day_limit:,}")
+    print(
+        f"  Cost (today):           ${usage.cost_today_usd:.4f}"
+        f" / ${usage.cost_per_day_limit_usd:.2f}"
+    )
+    if usage.override_active:
+        import datetime
+
+        exp = datetime.datetime.fromtimestamp(usage.override_expires_at or 0, tz=datetime.UTC)
+        print(f"  Override active until:  {exp.isoformat()}")
+    return 0
+
+
+def cmd_limits_override(args: argparse.Namespace) -> int:
+    """Temporarily override rate limits."""
+    _init_rate_limiter(args)
+
+    from creel.rate_limiter import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    if limiter is None:
+        print("Rate limiting is not enabled. Check agent.yaml (llm.rate_limits.enabled).")
+        return 1
+
+    duration_str = args.duration
+    # Parse duration string like "1h", "30m", "2h"
+    multipliers = {"s": 1, "m": 60, "h": 3600}
+    unit = duration_str[-1].lower()
+    if unit not in multipliers:
+        print(f"Invalid duration unit '{unit}'. Use s, m, or h (e.g., '1h', '30m').")
+        return 1
+    try:
+        value = float(duration_str[:-1])
+    except ValueError:
+        print(f"Invalid duration value: {duration_str}")
+        return 1
+
+    if value <= 0:
+        print("Duration must be positive.")
+        return 1
+
+    seconds = value * multipliers[unit]
+    limiter.override(seconds)
+    print(f"Rate limits overridden for {duration_str} ({seconds:.0f} seconds).")
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Run installation health checks."""
+    from creel.doctor import run_doctor
+
+    agent_config_path = args.agent_config
+    report = run_doctor(
+        agent_config_path=agent_config_path,
+        fix=args.fix,
+        no_color=args.no_color,
+    )
+    return 1 if report.errors > 0 else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -1537,14 +1741,14 @@ def main() -> int:
     )
     init_parser.add_argument(
         "--provider",
-        choices=["anthropic", "openai", "ollama"],
+        choices=["anthropic", "openai", "google", "ollama"],
         help="LLM provider",
     )
     init_parser.add_argument("--api-key", type=str, help="LLM API key")
     init_parser.add_argument("--model", type=str, help="LLM model name")
     init_parser.add_argument(
         "--channel",
-        choices=["telegram", "imessage", "none"],
+        choices=["telegram", "imessage", "whatsapp", "none"],
         help="Communication channel",
     )
     init_parser.add_argument("--bot-token", type=str, help="Telegram bot token")
@@ -1552,6 +1756,12 @@ def main() -> int:
         "--allowed-senders",
         type=str,
         help="Comma-separated list of allowed sender usernames",
+    )
+    init_parser.add_argument(
+        "--tools",
+        type=str,
+        help="Comma-separated list of tools to enable "
+        "(gmail,calendar,drive,web_search,weather,github,notion,shell)",
     )
     init_parser.add_argument("--enable-media", action="store_true", help="Enable media processing")
     init_parser.add_argument(
@@ -1624,6 +1834,13 @@ def main() -> int:
         default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     )
+
+    # doctor command
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Check Creel installation health and configuration"
+    )
+    doctor_parser.add_argument("--fix", action="store_true", help="Auto-fix remediable issues")
+    doctor_parser.add_argument("--no-color", action="store_true", help="Disable colorized output")
 
     # encrypt command
     encrypt_parser = subparsers.add_parser("encrypt", help="Encrypt a .env file with age")
@@ -1777,6 +1994,15 @@ def main() -> int:
         if action.dest != "run"
     ]
 
+    # reload command
+    reload_parser = subparsers.add_parser("reload", help="Hot-reload daemon config without restart")
+    reload_parser.add_argument(
+        "--socket-path",
+        type=Path,
+        default=None,
+        help="Unix socket path (default: ~/.creel/daemon.sock)",
+    )
+
     # send command
     send_parser = subparsers.add_parser("send", help="Send one message to the running daemon")
     send_parser.add_argument("message", help="Message text")
@@ -1882,6 +2108,35 @@ def main() -> int:
         help="Show last N runs (default: 20)",
     )
 
+    # usage command
+    usage_parser = subparsers.add_parser("usage", help="Show LLM usage statistics")
+    usage_parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Show daily/weekly cost breakdown",
+    )
+    usage_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days for history (default: 7)",
+    )
+
+    # limits command group
+    limits_parser = subparsers.add_parser("limits", help="Manage rate limits")
+    limits_subparsers = limits_parser.add_subparsers(
+        dest="limits_command",
+        metavar="{override}",
+    )
+    limits_override_parser = limits_subparsers.add_parser(
+        "override", help="Temporarily override rate limits"
+    )
+    limits_override_parser.add_argument(
+        "--duration",
+        required=True,
+        help="Override duration (e.g., '1h', '30m', '60s')",
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -1929,6 +2184,15 @@ def main() -> int:
             return 1
         return cron_commands[args.cron_command](args)
 
+    if args.command == "limits":
+        limits_commands = {
+            "override": cmd_limits_override,
+        }
+        if args.limits_command not in limits_commands:
+            limits_parser.print_help()
+            return 1
+        return limits_commands[args.limits_command](args)
+
     commands = {
         "init": cmd_init,
         "run": cmd_run,
@@ -1937,8 +2201,11 @@ def main() -> int:
         "validate": cmd_validate,
         "attach": cmd_attach,
         "audit": cmd_audit,
+        "doctor": cmd_doctor,
         "send": cmd_send,
         "encrypt": cmd_encrypt,
+        "usage": cmd_usage,
+        "reload": cmd_reload,
     }
 
     return commands[args.command](args)

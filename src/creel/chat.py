@@ -251,6 +251,21 @@ class ChatServer:
             result_callback=self._on_subagent_result,
         )
 
+    def update_agent_def(self, agent_def: AgentDefinition) -> None:
+        """Swap the agent definition and update derived references.
+
+        Called by DaemonService during hot-reload. Components that cache
+        config at init time (SessionManager, MemoryManager, ContainerPool)
+        are intentionally left untouched — their settings are either
+        non-reloadable or don't benefit from live swaps.
+        """
+        self._agent_def = agent_def
+        # SubAgentManager holds config refs used when spawning new agents.
+        self._subagent_manager._llm_config = agent_def.llm
+        self._subagent_manager._tools_config = agent_def.tools
+        self._subagent_manager._agent_config = agent_def.agent
+        self._subagent_manager._bridge_config = agent_def.bridge
+
     def handle_message(
         self,
         sender_id: str,
@@ -388,6 +403,11 @@ class ChatServer:
             result.tool_calls_made,
             result.stop_reason,
         )
+
+        # Track token usage for session metadata
+        last_tokens = getattr(result, "last_input_tokens", 0)
+        if isinstance(last_tokens, int) and last_tokens > 0:
+            self._session_mgr.update_token_count(sender_id, last_tokens)
 
         # Handle approval_required — queue the action and notify
         if result.stop_reason == "approval_required" and result.pending_approval:
@@ -607,6 +627,11 @@ class ChatServer:
 
         # Resume the agent loop so the LLM can process the tool output
         result = self._invoke_agent_loop(session.messages, session_state)
+
+        # Track token usage for session metadata
+        last_tokens = getattr(result, "last_input_tokens", 0)
+        if isinstance(last_tokens, int) and last_tokens > 0:
+            self._session_mgr.update_token_count(sender_id, last_tokens)
 
         # If the resumed loop itself hits another approval_required, queue it
         if result.stop_reason == "approval_required" and result.pending_approval:

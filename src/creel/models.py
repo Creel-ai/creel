@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,10 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from guardian.types import GuardianConfig
+
+logger = logging.getLogger(__name__)
+
+_HTTP_TIMEOUT_HARD_LIMIT = 120.0
 
 
 @dataclass
@@ -22,6 +27,40 @@ class SessionState:
 
     sender_id: str = ""
     workspace: str | None = None
+    model_override: str | None = None
+
+
+class HttpConfig(BaseModel):
+    """HTTP request timeout and limit configuration for network executors."""
+
+    timeout: float = Field(default=15.0, gt=0, description="Total request timeout in seconds")
+    connect_timeout: float = Field(default=5.0, gt=0, description="Connection timeout in seconds")
+    max_redirects: int = Field(default=3, ge=0, description="Maximum number of redirects to follow")
+    max_size_mb: float = Field(default=5.0, gt=0, description="Maximum response size in MB")
+
+    @field_validator("timeout")
+    @classmethod
+    def clamp_timeout(cls, v: float) -> float:
+        """Enforce hard upper limit of 120 seconds."""
+        if v > _HTTP_TIMEOUT_HARD_LIMIT:
+            logger.warning(
+                "timeout %ss exceeds hard limit, clamped to %ss", v, _HTTP_TIMEOUT_HARD_LIMIT
+            )
+            return _HTTP_TIMEOUT_HARD_LIMIT
+        return v
+
+    @field_validator("connect_timeout")
+    @classmethod
+    def clamp_connect_timeout(cls, v: float) -> float:
+        """Enforce hard upper limit of 120 seconds."""
+        if v > _HTTP_TIMEOUT_HARD_LIMIT:
+            logger.warning(
+                "connect_timeout %ss exceeds hard limit, clamped to %ss",
+                v,
+                _HTTP_TIMEOUT_HARD_LIMIT,
+            )
+            return _HTTP_TIMEOUT_HARD_LIMIT
+        return v
 
 
 class ExecutorConfig(BaseModel):
@@ -31,6 +70,7 @@ class ExecutorConfig(BaseModel):
     secrets: str | None = None
     args: dict[str, Any] = Field(default_factory=dict)
     timeout: int = 60  # seconds, per-executor configurable
+    http: HttpConfig = Field(default_factory=HttpConfig)
 
     @property
     def image(self) -> str:
@@ -66,13 +106,32 @@ class ContainerPoolConfig(BaseModel):
     max_containers: int = 2
 
 
+class RateLimitConfig(BaseModel):
+    """Rate limiting configuration for LLM API calls."""
+
+    requests_per_minute: int = Field(default=30, ge=1)
+    requests_per_hour: int = Field(default=500, ge=1)
+    tokens_per_day: int = Field(default=1_000_000, ge=1)
+    cost_per_day_usd: float = Field(default=10.00, gt=0)
+    queue_timeout: float = Field(default=30.0, ge=0)
+    enabled: bool = False
+
+
 class LLMConfig(BaseModel):
     """Configuration for the LLM processing step."""
 
+    provider: str = "anthropic"
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 300
     secrets: str | None = None
+    api_base: str | None = None  # Custom endpoint (e.g. Ollama, proxies)
+    region: str | None = None  # AWS region for Bedrock
+    fallback: list[str] = Field(
+        default_factory=list,
+        description="Failover chain of 'provider/model' strings tried on transient errors",
+    )
     container_pool: ContainerPoolConfig = Field(default_factory=ContainerPoolConfig)
+    rate_limits: RateLimitConfig = Field(default_factory=RateLimitConfig)
 
 
 # --- Agent / tool models ---
@@ -115,6 +174,7 @@ class ToolConfig(BaseModel):
     cpus: str = Field(default="0.5", description="Docker --cpus limit")
     timeout: int = Field(default=60, ge=1, description="Executor timeout in seconds")
     cache_ttl: int = Field(default=0, ge=0, description="Cache TTL in seconds (0 = no caching)")
+    http: HttpConfig = Field(default_factory=HttpConfig, description="HTTP request timeouts")
 
     @field_validator("tmpfs_size")
     @classmethod
@@ -195,6 +255,7 @@ class SessionConfig(BaseModel):
     encryption_key: str | None = None  # Fernet key or passphrase for encryption at rest
     tool_cache: ToolCacheConfig = Field(default_factory=ToolCacheConfig)
     context_pruning: ContextPruningConfig = Field(default_factory=ContextPruningConfig)
+    model_override: str | None = None  # Per-session "provider/model" override
 
 
 class QuietHoursConfig(BaseModel):

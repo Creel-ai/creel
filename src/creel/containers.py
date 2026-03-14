@@ -241,14 +241,23 @@ def _is_remote_image(image: str) -> bool:
     return "/" in image.split(":")[0]
 
 
-def _pull_image(image: str) -> str:
-    """Pull a remote image.  Returns the image reference on success."""
+def _pull_image(image: str, *, timeout: int = 300) -> str:
+    """Pull a remote image.  Returns the image reference on success.
+
+    Args:
+        image: Full image reference (e.g. ``ghcr.io/org/name:tag``).
+        timeout: Maximum seconds to wait for the pull (default 300).
+    """
     logger.info("Pulling image %s", image)
-    result = subprocess.run(
-        ["docker", "pull", image],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["docker", "pull", image],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Timed out pulling image {image} after {timeout}s") from exc
     if result.returncode != 0:
         err = result.stderr.strip() if result.stderr else "unknown error"
         raise RuntimeError(f"Failed to pull image {image}: {err[:500]}")

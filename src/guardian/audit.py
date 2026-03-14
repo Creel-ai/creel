@@ -253,6 +253,14 @@ class AuditLogger:
             record["error"] = error[:200]
         self._write(record)
 
+    @staticmethod
+    def _sanitize_url(url: str) -> str:
+        """Strip query string and fragment from a URL to avoid logging sensitive params."""
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
     def log_network_request(
         self,
         *,
@@ -270,7 +278,7 @@ class AuditLogger:
         record: dict = {
             "event": "network_request",
             "ts": datetime.now(UTC).isoformat(),
-            "url": url,
+            "url": self._sanitize_url(url),
             "domain": domain,
             "executor": executor,
             "method": method,
@@ -301,7 +309,7 @@ class AuditLogger:
                 "alert_type": alert_type,
                 "executor": executor,
                 "detail": detail,
-                "url": url,
+                "url": self._sanitize_url(url),
                 "domain": domain,
             }
         )

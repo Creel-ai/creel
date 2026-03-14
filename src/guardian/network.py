@@ -274,11 +274,8 @@ class NetworkMonitor:
 
 def _extract_domain(url: str) -> str:
     """Extract the hostname from a URL."""
-    try:
-        parsed = urlparse(url)
-        return parsed.hostname or ""
-    except Exception:
-        return ""
+    parsed = urlparse(url)
+    return parsed.hostname or ""
 
 
 def _domain_matches(domain: str, pattern: str) -> bool:

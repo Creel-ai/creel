@@ -173,6 +173,7 @@ class ToolConfig(BaseModel):
     memory: str = Field(default="256m", description="Docker --memory limit")
     cpus: str = Field(default="0.5", description="Docker --cpus limit")
     timeout: int = Field(default=60, ge=1, description="Executor timeout in seconds")
+    cache_ttl: int = Field(default=0, ge=0, description="Cache TTL in seconds (0 = no caching)")
     http: HttpConfig = Field(default_factory=HttpConfig, description="HTTP request timeouts")
 
     @field_validator("tmpfs_size")
@@ -214,6 +215,33 @@ class AgentConfig(BaseModel):
     max_turns: int = Field(default=10, ge=1, le=50)
 
 
+class ToolCacheConfig(BaseModel):
+    """Configuration for tool result caching."""
+
+    enabled: bool = False
+    default_ttl: int = Field(default=300, ge=0, description="Default TTL in seconds")
+    max_entries: int = Field(default=256, ge=1, description="Maximum cache entries")
+    tool_ttls: dict[str, int] = Field(
+        default_factory=dict,
+        description="Per-tool TTL overrides in seconds (e.g. {'check_weather': 1800})",
+    )
+
+
+class ContextPruningConfig(BaseModel):
+    """Configuration for context window pruning."""
+
+    enabled: bool = False
+    threshold: float = Field(
+        default=0.80,
+        gt=0,
+        le=1.0,
+        description="Fraction of max_context_tokens at which pruning activates",
+    )
+    min_recent_messages: int = Field(
+        default=4, ge=1, description="Minimum recent messages to always keep"
+    )
+
+
 class SessionConfig(BaseModel):
     """Session storage settings."""
 
@@ -225,6 +253,8 @@ class SessionConfig(BaseModel):
     summary_max_tokens: int = 1024
     max_context_tokens: int = 180_000
     encryption_key: str | None = None  # Fernet key or passphrase for encryption at rest
+    tool_cache: ToolCacheConfig = Field(default_factory=ToolCacheConfig)
+    context_pruning: ContextPruningConfig = Field(default_factory=ContextPruningConfig)
     model_override: str | None = None  # Per-session "provider/model" override
 
 

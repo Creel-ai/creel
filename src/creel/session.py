@@ -448,7 +448,6 @@ class SessionManager:
 
         self._max_history = max_history
         self._ttl_seconds = ttl_hours * 3600 if ttl_hours > 0 else 0
-        self._summarize_on_trim = summarize_on_trim
         self._summarize_fn = summarize_fn
         self._max_context_tokens = max_context_tokens
         self._on_session_archived = on_session_archived
@@ -630,24 +629,28 @@ class SessionManager:
 
     # -- compaction --
 
-    def update_token_count(self, sender_id: str, input_tokens: int) -> None:
-        """Update the session's token count and trigger compaction if needed.
+    def compact(self, sender_id: str) -> None:
+        """Explicitly compact a session, summarizing older messages.
 
-        Called once per LLM turn (not per streaming chunk) with the
-        input_tokens from usage data.  Always persists to disk so that
-        total_tokens metadata stays accurate across restarts.
+        Called by the ``/compact`` command. Requires ``summarize_fn`` to be
+        configured; falls back to simple trimming otherwise.
+        """
+        session = self.get_or_create(sender_id)
+        if len(session.messages) <= 2:
+            return
+        self._compact_with_summary(session)
+        self._save(session)
+
+    def update_token_count(self, sender_id: str, input_tokens: int) -> None:
+        """Record token usage for a session.
+
+        Called once per LLM turn with the input_tokens from usage data.
+        Persists to disk so that total_tokens metadata stays accurate
+        across restarts.
         """
         session = self.get_or_create(sender_id)
         session.token_count = input_tokens
         session.total_tokens += input_tokens
-
-        if (
-            self._summarize_on_trim
-            and session.token_count >= self._max_context_tokens
-            and len(session.messages) > 2
-        ):
-            self._compact_with_summary(session)
-
         self._save(session)
 
     def _compact_with_summary(self, session: Session) -> None:

@@ -8,8 +8,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from creel.context import estimate_messages_tokens, prune_messages
 from creel.llm import call_llm, extract_text
-from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
+from creel.models import (
+    AgentConfig,
+    BridgeConfig,
+    ContextPruningConfig,
+    LLMConfig,
+    SessionState,
+    ToolConfig,
+)
+from creel.tool_cache import ToolResultCache
 from creel.tools import build_tool_definitions, execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -389,6 +398,10 @@ def run_agent_loop(
     session_state: SessionState | None = None,
     cron_manager: object | None = None,
     subagent_manager: object | None = None,
+    tool_cache: ToolResultCache | None = None,
+    context_pruning: ContextPruningConfig | None = None,
+    max_context_tokens: int = 180_000,
+    summarize_fn: Callable[[list[dict]], str] | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -405,6 +418,10 @@ def run_agent_loop(
             tools may be called regardless of global policy.
         cron_manager: Optional CronManager for cron scheduling tool.
         subagent_manager: Optional SubAgentManager for sub-agent tool.
+        tool_cache: Optional ToolResultCache for caching tool results.
+        context_pruning: Optional ContextPruningConfig for automatic pruning.
+        max_context_tokens: Model's maximum context window size.
+        summarize_fn: Optional callback to summarize pruned messages.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -435,9 +452,32 @@ def run_agent_loop(
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
         _ensure_tool_call_integrity(messages)
 
+        # Context pruning — build a pruned copy for the LLM call while
+        # keeping the full history in ``messages`` for on-disk persistence.
+        llm_messages = messages
+        if context_pruning and context_pruning.enabled:
+            estimated = estimate_messages_tokens(messages)
+            threshold_tokens = int(max_context_tokens * context_pruning.threshold)
+            if estimated > threshold_tokens:
+                logger.info(
+                    "Context pruning: %d estimated tokens > %d threshold",
+                    estimated,
+                    threshold_tokens,
+                )
+                pruned, summary = prune_messages(
+                    messages,
+                    max_tokens=max_context_tokens,
+                    threshold=context_pruning.threshold,
+                    summarize_fn=summarize_fn,
+                    min_recent=context_pruning.min_recent_messages,
+                )
+                llm_messages = pruned
+                if summary:
+                    logger.info("Context summary generated (%d chars)", len(summary))
+
         try:
             response = call_llm(
-                messages=messages,
+                messages=llm_messages,
                 config=llm_config,
                 tools=tool_defs if tool_defs else None,
                 system=system_prompt,
@@ -559,26 +599,40 @@ def run_agent_loop(
                         last_input_tokens=last_input_tokens,
                     )
 
-            t0 = time.perf_counter()
-            try:
-                result = execute_tool_call(
-                    tool_name=tool_name,
-                    tool_input=tool_input,
-                    tools_config=tools_config,
-                    use_containers=use_containers,
-                    memory_manager=memory_manager,
-                    bridge_config=bridge_config,
-                    session_state=session_state,
-                    cron_manager=cron_manager,
-                    subagent_manager=subagent_manager,
-                )
+            # Check tool result cache before executing.
+            cached_result = None
+            if tool_cache is not None:
+                cached_result = tool_cache.get(tool_name, tool_input)
+            if cached_result is not None:
+                result = cached_result
                 is_error = False
-                elapsed_ms = (time.perf_counter() - t0) * 1000
-            except Exception as e:
-                logger.exception("Tool %s failed", tool_name)
-                result = f"Error: {e}"
-                is_error = True
-                elapsed_ms = (time.perf_counter() - t0) * 1000
+                elapsed_ms = 0.0
+                logger.info("Tool %s served from cache", tool_name)
+            else:
+                t0 = time.perf_counter()
+                try:
+                    result = execute_tool_call(
+                        tool_name=tool_name,
+                        tool_input=tool_input,
+                        tools_config=tools_config,
+                        use_containers=use_containers,
+                        memory_manager=memory_manager,
+                        bridge_config=bridge_config,
+                        session_state=session_state,
+                        cron_manager=cron_manager,
+                        subagent_manager=subagent_manager,
+                    )
+                    is_error = False
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+                except Exception as e:
+                    logger.exception("Tool %s failed", tool_name)
+                    result = f"Error: {e}"
+                    is_error = True
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+                # Cache successful results only.
+                if tool_cache is not None and not is_error:
+                    tool_cache.put(tool_name, tool_input, result)
 
             # Audit tool execution result
             if guardian is not None and hasattr(guardian, "_audit") and guardian._audit:

@@ -46,8 +46,7 @@ jobs:
 
           # Find changed executor directories
           CHANGED=$(git diff --name-only HEAD~1 HEAD -- src/executors/ \
-            | grep -oP 'src/executors/\K[^/]+' \
-            | grep -v '^__init__\.py$' \
+            | sed -n 's|^src/executors/\([^/]*\)/.*|\1|p' \
             | grep -v '\.py$' \
             | sort -u)
 
@@ -151,8 +150,8 @@ jobs:
           cache-from: type=gha,scope=base
           cache-to: type=gha,mode=max,scope=base
 
-  # Build each executor image
-  build-executor:
+  # Build each executor image (local only), scan, then push
+  build-scan-push:
     needs: [detect-changes, list-executors, build-base]
     runs-on: ubuntu-latest
     strategy:
@@ -188,8 +187,12 @@ jobs:
 
       - name: Patch Dockerfile FROM to use GHCR base
         run: |
+          DOCKERFILE="src/executors/${{ matrix.executor }}/Dockerfile"
+          if ! grep -q 'FROM creel-executor-base:latest' "$DOCKERFILE"; then
+            echo "::warning::Dockerfile does not contain expected FROM line"
+          fi
           sed -i "s|FROM creel-executor-base:latest|FROM ${{ env.IMAGE_PREFIX }}-base:latest|" \
-            "src/executors/${{ matrix.executor }}/Dockerfile"
+            "$DOCKERFILE"
 
       - name: Determine tags
         id: tags
@@ -206,7 +209,36 @@ jobs:
 
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push executor image
+      # Build locally first (no push) for scanning
+      - name: Build executor image (local)
+        uses: docker/build-push-action@v6
+        with:
+          context: src/executors
+          file: src/executors/${{ matrix.executor }}/Dockerfile
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_PREFIX }}-${{ steps.meta.outputs.image_name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.executor }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.executor }}
+
+      # Scan before push — fail on CRITICAL/HIGH vulnerabilities
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ env.IMAGE_PREFIX }}-${{ steps.meta.outputs.image_name }}:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      # Push only after scan passes
+      - name: Push executor image
         uses: docker/build-push-action@v6
         with:
           context: src/executors
@@ -215,38 +247,3 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.executor }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.executor }}
-
-  # Scan images for vulnerabilities
-  scan:
-    needs: [build-executor, list-executors, detect-changes]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        executor: ${{ fromJson(
-          needs.detect-changes.outputs.build_all == 'true'
-            && needs.list-executors.outputs.executors
-            || needs.detect-changes.outputs.executors
-          ) }}
-    steps:
-      - name: Compute image name
-        id: meta
-        run: |
-          IMAGE_NAME=$(echo "${{ matrix.executor }}" | tr '_' '-')
-          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: "${{ env.IMAGE_PREFIX }}-${{ steps.meta.outputs.image_name }}:${{ github.sha }}"
-          format: "sarif"
-          output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH"
-          exit-code: "0"
-
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: "trivy-results.sarif"

@@ -501,7 +501,7 @@ def _auto_pull_images(agent_config_path: Path) -> list[str]:
         return pull_required_images(agent_def)
     except FileNotFoundError:
         return []
-    except Exception as exc:
+    except (ImportError, RuntimeError, OSError) as exc:
         logger.debug("Auto-pull skipped: %s", exc)
         return [f"  skipped image pull ({exc})"]
 

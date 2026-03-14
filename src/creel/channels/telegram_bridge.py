@@ -127,11 +127,16 @@ class HttpTelegramBridge(TelegramBridge):
 
     def send_message(self, chat_id: str, text: str, reply_to_message_id: int | None = None) -> None:
         for chunk in _chunk_text(text, MAX_MESSAGE_LENGTH):
-            params: dict = {"chat_id": chat_id, "text": chunk}
+            params: dict = {"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}
             if reply_to_message_id is not None:
                 params["reply_to_message_id"] = reply_to_message_id
                 reply_to_message_id = None  # only reply to the first chunk
-            self._call("sendMessage", **params)
+            try:
+                self._call("sendMessage", **params)
+            except Exception:
+                # Fall back to plain text if Markdown parsing fails
+                params.pop("parse_mode", None)
+                self._call("sendMessage", **params)
 
     def send_typing(self, chat_id: str) -> None:
         self._call("sendChatAction", chat_id=chat_id, action="typing")

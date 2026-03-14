@@ -559,11 +559,42 @@ def execute_tool_call(
     return _run_executor_inline(cfg.executor, executor_config)
 
 
+_KB_BLOCKED_PATHS = frozenset(
+    {
+        ".ssh",
+        ".age",
+        ".gnupg",
+        ".aws",
+        ".config/gh",
+        ".env",
+        "secrets",
+    }
+)
+
+
+def _is_kb_path_safe(path_str: str) -> bool:
+    """Check that a path doesn't point to sensitive directories."""
+    resolved = os.path.realpath(os.path.expanduser(path_str))
+    home = os.path.expanduser("~")
+    for blocked in _KB_BLOCKED_PATHS:
+        blocked_path = os.path.join(home, blocked)
+        if resolved == blocked_path or resolved.startswith(blocked_path + os.sep):
+            return False
+    # Block well-known system dirs
+    for system_dir in ("/etc", "/var/run", "/proc", "/sys"):
+        if resolved == system_dir or resolved.startswith(system_dir + os.sep):
+            return False
+    return True
+
+
 def _handle_kb_tool(tool_name: str, tool_input: dict, kb_manager: Any) -> str:
     """Handle knowledge base built-in tool calls."""
     if tool_name == "kb_search":
         query = tool_input.get("query", "")
-        top_k = int(tool_input.get("top_k", 5))
+        try:
+            top_k = int(tool_input.get("top_k", 5))
+        except (ValueError, TypeError):
+            top_k = 5
         filter_path = tool_input.get("filter") or None
         results = kb_manager.search(query, top_k=top_k, filter_path=filter_path)
         if not results:
@@ -574,6 +605,8 @@ def _handle_kb_tool(tool_name: str, tool_input: dict, kb_manager: Any) -> str:
         path = tool_input.get("path", "")
         if not path:
             return json.dumps({"error": "path is required"})
+        if not _is_kb_path_safe(path):
+            return json.dumps({"error": f"Refused to index sensitive path: {path}"})
         result = kb_manager.add(path)
         # Remove non-serializable file list detail for cleaner output
         summary = {k: v for k, v in result.items() if k != "files"}

@@ -6,6 +6,7 @@ import hashlib
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -466,7 +467,8 @@ class TestKBToolHandling:
             assert data["results"] == []
             kb.close()
 
-    def test_handle_kb_add(self):
+    @patch("creel.tools._is_kb_path_safe", return_value=True)
+    def test_handle_kb_add(self, _mock_safe):
         from creel.tools import _handle_kb_tool
 
         with tempfile.TemporaryDirectory() as td:

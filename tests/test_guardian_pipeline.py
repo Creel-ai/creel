@@ -26,6 +26,43 @@ from guardian.types import (
 )
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_config(
+    policy_file: Path | None = None,
+    *,
+    pipeline: PipelineConfig | None = None,
+    drift_enabled: bool = False,
+) -> GuardianConfig:
+    """Build a GuardianConfig with all subsystems disabled except as specified."""
+    return GuardianConfig(
+        enabled=True,
+        fast_classifier=FastClassifierConfig(enabled=False),
+        llm_judge=LLMJudgeConfig(enabled=False),
+        policy=PolicyConfig(
+            enabled=policy_file is not None,
+            policy_file=str(policy_file) if policy_file else "",
+        ),
+        audit=AuditConfig(enabled=False),
+        coherence=CoherenceConfig(enabled=False),
+        drift=DriftConfig(enabled=drift_enabled),
+        pipeline=pipeline or PipelineConfig(),
+    )
+
+
+def _make_guardian(
+    policy_file: Path | None = None,
+    *,
+    pipeline: PipelineConfig | None = None,
+    drift_enabled: bool = False,
+) -> Guardian:
+    """Build a Guardian with all subsystems disabled except as specified."""
+    return Guardian(_make_config(policy_file, pipeline=pipeline, drift_enabled=drift_enabled))
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -49,15 +86,9 @@ def policy_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def guardian_config(tmp_path: Path, policy_file: Path) -> GuardianConfig:
-    return GuardianConfig(
-        enabled=True,
-        fast_classifier=FastClassifierConfig(enabled=False),
-        llm_judge=LLMJudgeConfig(enabled=False),
-        policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-        audit=AuditConfig(enabled=False),
-        coherence=CoherenceConfig(enabled=False),
-        drift=DriftConfig(enabled=False),
+def guardian(policy_file: Path) -> Guardian:
+    return _make_guardian(
+        policy_file,
         pipeline=PipelineConfig(
             parallel_checks=["injection_detector", "policy_engine"],
             sequential_checks=["drift_detector"],
@@ -65,11 +96,6 @@ def guardian_config(tmp_path: Path, policy_file: Path) -> GuardianConfig:
             timeout=5.0,
         ),
     )
-
-
-@pytest.fixture
-def guardian(guardian_config: GuardianConfig) -> Guardian:
-    return Guardian(guardian_config)
 
 
 # ---------------------------------------------------------------------------
@@ -152,18 +178,10 @@ class TestPipelineBasic:
 
 class TestParallelExecution:
     @pytest.mark.asyncio
-    async def test_parallel_checks_run_concurrently(
-        self, tmp_path: Path, policy_file: Path
-    ) -> None:
+    async def test_parallel_checks_run_concurrently(self, policy_file: Path) -> None:
         """Verify that parallel checks overlap in time."""
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector", "policy_engine"],
                 sequential_checks=[],
@@ -171,7 +189,6 @@ class TestParallelExecution:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         # Replace checks with slow stubs to measure concurrency
@@ -200,16 +217,10 @@ class TestParallelExecution:
         assert result.total_duration_ms < 180  # generous margin
 
     @pytest.mark.asyncio
-    async def test_no_short_circuit_runs_all(self, tmp_path: Path, policy_file: Path) -> None:
+    async def test_no_short_circuit_runs_all(self, policy_file: Path) -> None:
         """With short_circuit=False, all parallel checks run even if one blocks."""
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector", "policy_engine"],
                 sequential_checks=[],
@@ -217,7 +228,6 @@ class TestParallelExecution:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         ran: list[str] = []
@@ -249,24 +259,18 @@ class TestParallelExecution:
 class TestShortCircuit:
     @pytest.mark.asyncio
     async def test_short_circuit_skips_sequential_on_parallel_block(
-        self, tmp_path: Path, policy_file: Path
+        self, policy_file: Path
     ) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=True),
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector"],
                 sequential_checks=["drift_detector"],
                 short_circuit=True,
                 timeout=5.0,
             ),
+            drift_enabled=True,
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         async def blocking_injection(ctx: PipelineContext) -> CheckResult:
@@ -283,18 +287,10 @@ class TestShortCircuit:
         assert "drift_detector" not in result.results
 
     @pytest.mark.asyncio
-    async def test_short_circuit_cancels_slow_parallel(
-        self, tmp_path: Path, policy_file: Path
-    ) -> None:
+    async def test_short_circuit_cancels_slow_parallel(self, policy_file: Path) -> None:
         """A fast blocking check cancels a slow sibling."""
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector", "policy_engine"],
                 sequential_checks=[],
@@ -302,7 +298,6 @@ class TestShortCircuit:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         async def fast_block(ctx: PipelineContext) -> CheckResult:
@@ -325,17 +320,9 @@ class TestShortCircuit:
         assert elapsed < 1.0  # should not wait for slow_check
 
     @pytest.mark.asyncio
-    async def test_short_circuit_sequential_stops_early(
-        self, tmp_path: Path, policy_file: Path
-    ) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+    async def test_short_circuit_sequential_stops_early(self, policy_file: Path) -> None:
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=[],
                 sequential_checks=["injection_detector", "policy_engine"],
@@ -343,7 +330,6 @@ class TestShortCircuit:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
         ran: list[str] = []
 
@@ -373,15 +359,9 @@ class TestShortCircuit:
 
 class TestTimeout:
     @pytest.mark.asyncio
-    async def test_pipeline_timeout_blocks(self, tmp_path: Path, policy_file: Path) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+    async def test_pipeline_timeout_blocks(self, policy_file: Path) -> None:
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector"],
                 sequential_checks=[],
@@ -389,7 +369,6 @@ class TestTimeout:
                 timeout=0.1,
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         async def slow_check(ctx: PipelineContext) -> CheckResult:
@@ -408,15 +387,9 @@ class TestTimeout:
         assert elapsed < 1.0
 
     @pytest.mark.asyncio
-    async def test_zero_timeout_means_no_limit(self, tmp_path: Path, policy_file: Path) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+    async def test_zero_timeout_means_no_limit(self, policy_file: Path) -> None:
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector"],
                 sequential_checks=[],
@@ -424,7 +397,6 @@ class TestTimeout:
                 timeout=0,  # disabled
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         async def instant_check(ctx: PipelineContext) -> CheckResult:
@@ -445,15 +417,9 @@ class TestTimeout:
 
 class TestErrorHandling:
     @pytest.mark.asyncio
-    async def test_failing_check_does_not_block(self, tmp_path: Path, policy_file: Path) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+    async def test_failing_check_does_not_block(self, policy_file: Path) -> None:
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector", "policy_engine"],
                 sequential_checks=[],
@@ -461,7 +427,6 @@ class TestErrorHandling:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         async def crashing_check(ctx: PipelineContext) -> CheckResult:
@@ -481,15 +446,9 @@ class TestErrorHandling:
         assert result.results["policy_engine"].blocked is False
 
     @pytest.mark.asyncio
-    async def test_failing_sequential_check(self, tmp_path: Path, policy_file: Path) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+    async def test_failing_sequential_check(self, policy_file: Path) -> None:
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=[],
                 sequential_checks=["injection_detector"],
@@ -497,7 +456,6 @@ class TestErrorHandling:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
         pipeline = g._pipeline
 
         async def crashing_check(ctx: PipelineContext) -> CheckResult:
@@ -512,15 +470,9 @@ class TestErrorHandling:
         assert result.results["injection_detector"].error is not None
 
     @pytest.mark.asyncio
-    async def test_unknown_check_names_ignored(self, tmp_path: Path, policy_file: Path) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+    async def test_unknown_check_names_ignored(self, policy_file: Path) -> None:
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["nonexistent_check"],
                 sequential_checks=["also_nonexistent"],
@@ -528,7 +480,6 @@ class TestErrorHandling:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
         ctx = PipelineContext(text="x", tool_name="t", tool_args={})
         result = await g.run_pipeline(ctx)
 
@@ -543,18 +494,10 @@ class TestErrorHandling:
 
 class TestIntegrationWithGuardian:
     @pytest.mark.asyncio
-    async def test_real_injection_screen_via_pipeline(
-        self, tmp_path: Path, policy_file: Path
-    ) -> None:
+    async def test_real_injection_screen_via_pipeline(self, policy_file: Path) -> None:
         """Pipeline delegates to real Guardian.screen_input under the hood."""
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=True, policy_file=str(policy_file)),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+        g = _make_guardian(
+            policy_file,
             pipeline=PipelineConfig(
                 parallel_checks=["injection_detector", "policy_engine"],
                 sequential_checks=[],
@@ -562,7 +505,6 @@ class TestIntegrationWithGuardian:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
 
         # Mock classifier to detect injection
         mock_result = ClassifierResult(
@@ -616,15 +558,8 @@ class TestIntegrationWithGuardian:
 
 class TestCredentialScannerPipeline:
     @pytest.mark.asyncio
-    async def test_credential_detected_blocks(self, tmp_path: Path, policy_file: Path) -> None:
-        config = GuardianConfig(
-            enabled=True,
-            fast_classifier=FastClassifierConfig(enabled=False),
-            llm_judge=LLMJudgeConfig(enabled=False),
-            policy=PolicyConfig(enabled=False),
-            audit=AuditConfig(enabled=False),
-            coherence=CoherenceConfig(enabled=False),
-            drift=DriftConfig(enabled=False),
+    async def test_credential_detected_blocks(self) -> None:
+        g = _make_guardian(
             pipeline=PipelineConfig(
                 parallel_checks=["credential_scanner"],
                 sequential_checks=[],
@@ -632,7 +567,6 @@ class TestCredentialScannerPipeline:
                 timeout=5.0,
             ),
         )
-        g = Guardian(config)
 
         ctx = PipelineContext(
             tool_name="fetch_url",

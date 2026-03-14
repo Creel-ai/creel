@@ -11,7 +11,9 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
+
+from guardian.types import ActionVerdict
 
 if TYPE_CHECKING:
     from guardian.core import Guardian
@@ -66,8 +68,11 @@ class PipelineResult:
 # Pipeline executor
 # ---------------------------------------------------------------------------
 
-# Type alias for an async check function
-CheckFn = Any  # Callable[[PipelineContext], Coroutine[Any, Any, CheckResult]]
+
+# Type alias for an async check function — using a Protocol instead of Any
+# so that static analysis can verify check signatures.
+class CheckFn(Protocol):
+    async def __call__(self, ctx: PipelineContext) -> CheckResult: ...
 
 
 class GuardianPipeline:
@@ -98,6 +103,13 @@ class GuardianPipeline:
         }
 
     # -- individual check wrappers ------------------------------------------
+    # NOTE: check wrappers use ``asyncio.to_thread`` to run synchronous
+    # Guardian methods without blocking the event loop.  When the pipeline
+    # runs parallel checks, multiple threads may invoke Guardian (and its
+    # AuditLogger) concurrently.  Single-line JSONL appends are atomic on
+    # POSIX, but the size-based rotation path in AuditLogger is not
+    # thread-safe.  If audit rotation is enabled alongside parallel checks,
+    # consider adding a lock in AuditLogger._write.
 
     async def _check_injection(self, ctx: PipelineContext) -> CheckResult:
         start = time.monotonic()
@@ -111,8 +123,12 @@ class GuardianPipeline:
         )
 
     async def _check_policy(self, ctx: PipelineContext) -> CheckResult:
-        from guardian.types import ActionVerdict
+        """Check tool action against the policy engine.
 
+        Only DENY verdicts set ``blocked=True``.  REVIEW verdicts are
+        available in ``CheckResult.result`` (an ``ActionDecision``) so
+        callers can implement their own approval flow.
+        """
         start = time.monotonic()
         result = await asyncio.to_thread(
             self._guardian.validate_action, ctx.tool_name, ctx.tool_args
@@ -153,7 +169,7 @@ class GuardianPipeline:
         elapsed = (time.monotonic() - start) * 1000
         return CheckResult(
             name="credential_scanner",
-            blocked=len(result) > 0,
+            blocked=bool(result),
             result=result,
             duration_ms=elapsed,
         )

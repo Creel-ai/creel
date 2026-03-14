@@ -135,7 +135,6 @@ src/
 - `dashboard/` — Web dashboard for monitoring
 - `docs/` — MkDocs documentation site
 - `workspace/` — Runtime workspace with memory files (MEMORY.md, IDENTITY.md, etc.)
-- `tools/` — Tool definitions (e.g., `exec.yaml`)
 - `secrets/` — Encrypted secrets (age-encrypted `.env.enc` files)
 - `agent.yaml` — Global agent configuration (tools, channels, sessions, guardian)
 

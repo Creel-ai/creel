@@ -28,9 +28,6 @@ _HASH_GLOBS = ("Dockerfile", "**/*.py", "**/*.txt")
 _BASE_IMAGE_NAME = "creel-executor-base"
 _BASE_DOCKERFILE = Path("src/executors/base/Dockerfile")
 
-# Default GHCR registry prefix for pre-built executor images
-GHCR_PREFIX = "ghcr.io/creel-ai"
-
 
 class ImageBuildCache:
     """Coordinates Docker image builds, deduplicating concurrent requests.

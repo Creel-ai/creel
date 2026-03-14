@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from creel.containers import (
-    GHCR_PREFIX,
     _ensure_image_from_dockerfile,
     _ensure_image_uncached,
     _is_remote_image,
@@ -255,10 +254,3 @@ class TestToolConfigDockerfile:
         )
         assert tc.dockerfile == "./Dockerfile"
         assert tc.image == "some-image:latest"
-
-
-class TestGHCRPrefix:
-    """Tests for GHCR_PREFIX constant."""
-
-    def test_prefix_value(self) -> None:
-        assert GHCR_PREFIX == "ghcr.io/creel-ai"

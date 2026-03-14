@@ -32,10 +32,38 @@ Scheduled tasks can also use agent mode by setting `mode: agent` in the task YAM
 Sessions are stored as JSON files in `sessions/` (gitignored) and persist conversation history across interactions. Key features:
 
 - **History trimming** — Old messages are removed when the history exceeds `max_history`
-- **Summarization** — When `summarize_on_trim` is enabled, old messages are summarized by the LLM before being trimmed
 - **TTL-based cleanup** — Stale sessions are automatically cleaned up
+- **Full history preservation** — The on-disk session always contains the complete conversation history
 
 See [Agent Configuration](../configuration/agent-config.md) for session settings.
+
+## Context Window Management
+
+Creel uses a two-layer approach to manage the LLM context window:
+
+### Transient Pruning (automatic)
+
+When `context_pruning.enabled` is set, the agent loop automatically prunes a **copy** of the message history before each LLM call. The full history is never modified — pruning only affects what the model sees for that request.
+
+Messages are scored by importance (tool results > user messages > assistant text) with an exponential recency decay. The least important messages are dropped first, and tool-call pairs (assistant `tool_use` + user `tool_result`) are never split. Pruning triggers at 80% of the model's context window and prunes down to 60% to create headroom.
+
+### Persistent Compaction (explicit)
+
+The `/compact` command lets users explicitly summarize older context. Unlike transient pruning, this rewrites the on-disk session — older messages are replaced with an LLM-generated summary. This is useful when a conversation is very long and you want to permanently condense it.
+
+## Commands
+
+The TUI (`creel attach`) and chat mode support these slash commands:
+
+| Command | Description |
+|---------|-------------|
+| `/new` | Start a new session (archives the current one) |
+| `/sessions` | List all sessions |
+| `/resume <id>` | Resume a previous session |
+| `/compact` | Summarize older messages to free up context |
+| `/status` | Show server status |
+| `/model` | Show current model config |
+| `clear` / `/clear` | Clear the active session |
 
 ## Workspace Memory
 
@@ -60,4 +88,4 @@ Creel supports multiple input/output channels:
 
 See [Channels](channels.md) for architecture details.
 
-The TUI (`creel attach`) provides a rich interactive interface with commands like `/help`, `/new`, `/sessions`, and `/resume`.
+The TUI (`creel attach`) provides a rich interactive interface with commands like `/help`, `/new`, `/sessions`, `/resume`, and `/compact`.

@@ -451,7 +451,9 @@ def run_agent_loop(
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
         _ensure_tool_call_integrity(messages)
 
-        # Context pruning — trim messages if approaching token limit.
+        # Context pruning — build a pruned copy for the LLM call while
+        # keeping the full history in ``messages`` for on-disk persistence.
+        llm_messages = messages
         if context_pruning and context_pruning.enabled:
             estimated = estimate_messages_tokens(messages)
             threshold_tokens = int(max_context_tokens * context_pruning.threshold)
@@ -468,13 +470,13 @@ def run_agent_loop(
                     summarize_fn=summarize_fn,
                     min_recent=context_pruning.min_recent_messages,
                 )
-                messages[:] = pruned
+                llm_messages = pruned
                 if summary:
                     logger.info("Context summary generated (%d chars)", len(summary))
 
         try:
             response = call_llm(
-                messages=messages,
+                messages=llm_messages,
                 config=llm_config,
                 tools=tool_defs if tool_defs else None,
                 system=system_prompt,

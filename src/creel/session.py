@@ -95,7 +95,6 @@ class SessionManager:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._max_history = max_history
         self._ttl_seconds = ttl_hours * 3600 if ttl_hours > 0 else 0
-        self._summarize_on_trim = summarize_on_trim
         self._summarize_fn = summarize_fn
         self._max_context_tokens = max_context_tokens
         self._on_session_archived = on_session_archived
@@ -302,21 +301,17 @@ class SessionManager:
 
     # -- compaction --
 
-    def update_token_count(self, sender_id: str, input_tokens: int) -> None:
-        """Update the session's token count and trigger compaction if needed.
+    def compact(self, sender_id: str) -> None:
+        """Explicitly compact a session, summarizing older messages.
 
-        Called after each LLM response with the input_tokens from usage data.
+        Called by the ``/compact`` command. Requires ``summarize_fn`` to be
+        configured; falls back to simple trimming otherwise.
         """
         session = self.get_or_create(sender_id)
-        session.token_count = input_tokens
-
-        if (
-            self._summarize_on_trim
-            and session.token_count >= self._max_context_tokens
-            and len(session.messages) > 2
-        ):
-            self._compact_with_summary(session)
-            self._save(session)
+        if len(session.messages) <= 2:
+            return
+        self._compact_with_summary(session)
+        self._save(session)
 
     def _compact_with_summary(self, session: Session) -> None:
         """Compact older messages into a summary, keeping recent messages."""

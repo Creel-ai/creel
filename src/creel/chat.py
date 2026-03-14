@@ -293,6 +293,10 @@ class ChatServer:
         if stripped.lower() == "/model":
             return self._format_model()
 
+        # Handle /compact — summarize older context to free up the window
+        if stripped.lower() == "/compact":
+            return self._handle_compact(sender_id)
+
         # Handle /resume <id> — resume a session
         if stripped.lower().startswith("/resume"):
             return self._handle_resume(sender_id, stripped)
@@ -384,11 +388,6 @@ class ChatServer:
             result.tool_calls_made,
             result.stop_reason,
         )
-
-        # Update token count for session compaction
-        last_tokens = getattr(result, "last_input_tokens", 0)
-        if isinstance(last_tokens, int) and last_tokens > 0:
-            self._session_mgr.update_token_count(sender_id, last_tokens)
 
         # Handle approval_required — queue the action and notify
         if result.stop_reason == "approval_required" and result.pending_approval:
@@ -609,11 +608,6 @@ class ChatServer:
         # Resume the agent loop so the LLM can process the tool output
         result = self._invoke_agent_loop(session.messages, session_state)
 
-        # Update token count for session compaction
-        last_tokens = getattr(result, "last_input_tokens", 0)
-        if isinstance(last_tokens, int) and last_tokens > 0:
-            self._session_mgr.update_token_count(sender_id, last_tokens)
-
         # If the resumed loop itself hits another approval_required, queue it
         if result.stop_reason == "approval_required" and result.pending_approval:
             pa = result.pending_approval
@@ -741,6 +735,17 @@ class ChatServer:
         lines.append("")
         lines.append("* = active session. Use /resume <id> to switch.")
         return "\n".join(lines)
+
+    def _handle_compact(self, sender_id: str) -> str:
+        """Handle the /compact command — summarize older context."""
+        session = self._session_mgr.get_or_create(sender_id)
+        before = len(session.messages)
+        if before <= 2:
+            return "Nothing to compact — session is too short."
+        self._session_mgr.compact(sender_id)
+        session = self._session_mgr.get_or_create(sender_id)
+        after = len(session.messages)
+        return f"Compacted {before} messages → {after} (summary + recent)."
 
     def _handle_resume(self, sender_id: str, text: str) -> str:
         """Handle the /resume <id> command."""

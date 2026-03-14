@@ -43,6 +43,15 @@ session:
   sessions_dir: sessions
   max_history: 50
   summarize_on_trim: true
+  context_pruning:
+    enabled: true
+    threshold: 0.80
+    min_recent_messages: 4
+  tool_cache:
+    enabled: true
+    default_ttl: 300
+    tool_ttls:
+      check_weather: 1800
 
 workspace:
   path: workspace
@@ -72,13 +81,40 @@ channels:
 
 ## Sessions
 
-Sessions are stored as JSON files in `sessions/` (gitignored) and persist conversation history across interactions. When `summarize_on_trim` is enabled, old messages are summarized before being trimmed.
+Sessions are stored as JSON files in `sessions/` (gitignored) and persist conversation history across interactions.
 
 | Field | Description |
 |-------|-------------|
 | `sessions_dir` | Directory to store session JSON files |
 | `max_history` | Maximum number of messages to keep in history |
-| `summarize_on_trim` | Use LLM to summarize old messages before removal |
+| `summarize_on_trim` | Build a summarize callback for use by `/compact` and context pruning |
+
+### Context Pruning
+
+Context pruning automatically manages the token window during long conversations. When enabled, it runs before each LLM call and **transiently** prunes a copy of the message history — the full history is always preserved on disk.
+
+| Field | Description |
+|-------|-------------|
+| `context_pruning.enabled` | Enable automatic context pruning (default: `false`) |
+| `context_pruning.threshold` | Fraction of `max_context_tokens` at which pruning triggers (default: `0.80`) |
+| `context_pruning.min_recent_messages` | Number of recent messages to always keep (default: `4`) |
+
+When pruning triggers (estimated tokens > 80% of max), it prunes down to 60% to create headroom and avoid re-pruning every turn. Messages are scored by importance (type weight × recency decay) and the least important are dropped first. Tool-call pairs are never split. If `summarize_on_trim` is enabled, pruned messages are summarized and the summary is prepended to the context sent to the LLM.
+
+To explicitly and persistently compact a session, use the `/compact` command in the TUI.
+
+### Tool Result Caching
+
+Tool result caching stores successful tool outputs in memory so repeated identical calls within the TTL window are served instantly. Errors are never cached.
+
+| Field | Description |
+|-------|-------------|
+| `tool_cache.enabled` | Enable tool result caching (default: `false`) |
+| `tool_cache.default_ttl` | Default cache TTL in seconds (default: `300`) |
+| `tool_cache.max_entries` | Maximum cache entries before LRU eviction (default: `256`) |
+| `tool_cache.tool_ttls` | Per-tool TTL overrides (e.g. `check_weather: 1800`) |
+
+Individual tools can also set `cache_ttl` in their tool definition to override the default.
 
 ## Workspace Memory
 

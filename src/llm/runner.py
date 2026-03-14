@@ -35,7 +35,7 @@ def main() -> None:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    model = os.environ.get("MODEL", "claude-sonnet-4-20250514")
+    model = os.environ.get("MODEL", "claude-sonnet-4-6")
     max_tokens = int(os.environ.get("MAX_TOKENS", "300"))
 
     # Try to read a JSON line first (keepalive protocol).

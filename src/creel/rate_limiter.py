@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 # _DEFAULT_PRICING below.
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     # Claude 4 family
-    "claude-sonnet-4-20250514": (3.00, 15.00),
-    "claude-haiku-4-5-20251001": (0.80, 4.00),
-    "claude-opus-4-20250514": (15.00, 75.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5": (0.80, 4.00),
+    "claude-opus-4-6": (15.00, 75.00),
     # Claude 3.5 family
     "claude-3-5-sonnet-20241022": (3.00, 15.00),
     "claude-3-5-haiku-20241022": (0.80, 4.00),

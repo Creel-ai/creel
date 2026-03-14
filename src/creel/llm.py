@@ -194,7 +194,7 @@ def _call_llm_streaming(
 
 def summarize_messages(
     messages: list[dict],
-    model: str = "claude-haiku-4-5-20251001",
+    model: str = "claude-haiku-4-5",
     max_tokens: int = 1024,
     use_container: bool = False,
 ) -> str:

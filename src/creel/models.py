@@ -121,7 +121,7 @@ class LLMConfig(BaseModel):
     """Configuration for the LLM processing step."""
 
     provider: str = "anthropic"
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-sonnet-4-6"
     max_tokens: int = 300
     secrets: str | None = None
     api_base: str | None = None  # Custom endpoint (e.g. Ollama, proxies)
@@ -260,7 +260,7 @@ class SessionConfig(BaseModel):
     max_history: int = 50
     summarize_on_trim: bool = True
     ttl_hours: float = 0  # 0 = no expiry
-    summary_model: str = "claude-haiku-4-5-20251001"
+    summary_model: str = "claude-haiku-4-5"
     summary_max_tokens: int = 1024
     max_context_tokens: int = 180_000
     encryption_key: str | None = None  # Fernet key or passphrase for encryption at rest
@@ -293,7 +293,7 @@ class WorkspaceConfig(BaseModel):
     fts_enabled: bool = True
     recency_half_life_days: float = Field(default=30.0, gt=0)
     compact_summarize: bool = True
-    compact_model: str = "claude-haiku-4-5-20251001"
+    compact_model: str = "claude-haiku-4-5"
     compact_max_tokens: int = Field(default=512, gt=0)
     memory_context_mode: Literal["recent", "relevant"] = "recent"
     memory_context_max_results: int = 20

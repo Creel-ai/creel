@@ -54,7 +54,7 @@ def _run_session(provider: ContainerProvider, start: dict) -> None:
     messages: list[dict] = start["messages"]
     tools: list[dict] = start.get("tools", [])
     system_prompt: str | None = start.get("system")
-    model: str = start.get("model", "claude-sonnet-4-20250514")
+    model: str = start.get("model", "claude-sonnet-4-6")
     max_tokens: int = start.get("max_tokens", 1024)
     max_turns: int = start.get("max_turns", 15)
 

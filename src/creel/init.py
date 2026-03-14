@@ -67,7 +67,7 @@ _PROVIDERS: tuple[ProviderType, ...] = ("anthropic", "openai", "google", "ollama
 _CHANNELS: tuple[ChannelType, ...] = ("telegram", "imessage", "whatsapp", "none")
 
 _DEFAULT_MODELS: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-20250514",
+    "anthropic": "claude-sonnet-4-6",
     "openai": "gpt-4o",
     "google": "gemini-2.0-flash",
     "ollama": "llama3",
@@ -705,7 +705,7 @@ def init(
         config = _run_wizard()
     else:
         # Non-interactive: build from CLI args
-        resolved_model = model or _DEFAULT_MODELS.get(provider, "claude-sonnet-4-20250514")  # type: ignore[arg-type]
+        resolved_model = model or _DEFAULT_MODELS.get(provider, "claude-sonnet-4-6")  # type: ignore[arg-type]
         parsed_senders = (
             [s.strip() for s in allowed_senders.split(",") if s.strip()] if allowed_senders else []
         )

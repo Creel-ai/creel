@@ -1157,7 +1157,7 @@ class OpenClawMigrator:
                 "executors": executors,
                 "prompt": prompt,
                 "output": {"type": "stdout", "to": ""},
-                "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 300},
+                "llm": {"model": "claude-sonnet-4-6", "max_tokens": 300},
             }
             destination = self.tasks_dir / f"{task_name}.yaml"
             content = yaml.safe_dump(task_def, sort_keys=False, allow_unicode=True)

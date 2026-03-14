@@ -11,6 +11,7 @@ from guardian.drift import DriftDetector
 from guardian.fast_classifier import FastClassifier
 from guardian.llm_judge import LLMJudge
 from guardian.network import NetworkMonitor, NetworkVerdict, _extract_domain
+from guardian.pipeline import GuardianPipeline, PipelineContext, PipelineResult
 from guardian.policy import PolicyEngine
 from guardian.types import (
     ActionDecision,
@@ -68,6 +69,8 @@ class Guardian:
         self._network = (
             NetworkMonitor(config.network_policy) if config.network_policy.enabled else None
         )
+        self._pipeline = GuardianPipeline(self, config.pipeline)
+
         logger.info(
             "Guardian initialized (classifier=%s, judge=%s, policy=%s, drift=%s, network=%s)",
             config.fast_classifier.enabled,
@@ -495,3 +498,20 @@ class Guardian:
                     url=url,
                     domain=domain,
                 )
+
+    async def run_pipeline(self, context: PipelineContext) -> PipelineResult:
+        """Run the configured parallel/sequential check pipeline.
+
+        Executes checks defined in ``GuardianConfig.pipeline`` — parallel
+        checks run concurrently, sequential checks run afterwards.  Supports
+        short-circuiting on first block and a pipeline-level timeout.
+
+        Args:
+            context: A :class:`PipelineContext` with the input data that
+                individual checks will read from.
+
+        Returns:
+            A :class:`PipelineResult` indicating whether the input was
+            blocked, which checks ran, and timing information.
+        """
+        return await self._pipeline.run(context)

@@ -363,8 +363,8 @@ def _build_long_conversation(count: int = 20) -> list[dict]:
     return messages
 
 
-def test_compaction_on_token_threshold(tmp_path: Path) -> None:
-    """Compaction should trigger when token_count exceeds max_context_tokens."""
+def test_compact_summarizes_older_messages(tmp_path: Path) -> None:
+    """compact() should summarize older messages and keep recent ones."""
     calls = []
 
     def fake_summarize(messages):
@@ -374,16 +374,13 @@ def test_compaction_on_token_threshold(tmp_path: Path) -> None:
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=200,
-        summarize_on_trim=True,
         summarize_fn=fake_summarize,
-        max_context_tokens=100,
     )
     session = mgr.get_or_create("cli")
     session.messages = _build_long_conversation(10)
     mgr._save(session)
 
-    # Simulate token count exceeding threshold
-    mgr.update_token_count("cli", 150)
+    mgr.compact("cli")
 
     assert len(calls) == 1  # summarize_fn was called
     session = mgr.get_or_create("cli")
@@ -399,16 +396,14 @@ def test_compaction_replaces_old_messages_with_summary(tmp_path: Path) -> None:
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=200,
-        summarize_on_trim=True,
         summarize_fn=fake_summarize,
-        max_context_tokens=100,
     )
     session = mgr.get_or_create("cli")
     session.messages = _build_long_conversation(10)  # 20 messages
     original_count = len(session.messages)
     mgr._save(session)
 
-    mgr.update_token_count("cli", 150)
+    mgr.compact("cli")
 
     session = mgr.get_or_create("cli")
     # Should have summary + approximately half the messages
@@ -427,15 +422,14 @@ def test_compaction_resets_token_count(tmp_path: Path) -> None:
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=200,
-        summarize_on_trim=True,
         summarize_fn=fake_summarize,
-        max_context_tokens=100,
     )
     session = mgr.get_or_create("cli")
     session.messages = _build_long_conversation(10)
+    session.token_count = 150
     mgr._save(session)
 
-    mgr.update_token_count("cli", 150)
+    mgr.compact("cli")
 
     session = mgr.get_or_create("cli")
     assert session.token_count == 0
@@ -450,15 +444,13 @@ def test_compaction_fallback_on_error(tmp_path: Path) -> None:
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=10,
-        summarize_on_trim=True,
         summarize_fn=bad_summarize,
-        max_context_tokens=100,
     )
     session = mgr.get_or_create("cli")
     session.messages = _build_long_conversation(10)  # 20 messages
     mgr._save(session)
 
-    mgr.update_token_count("cli", 150)
+    mgr.compact("cli")
 
     session = mgr.get_or_create("cli")
     # Should have fallen back to trim, no summary message
@@ -467,19 +459,17 @@ def test_compaction_fallback_on_error(tmp_path: Path) -> None:
 
 
 def test_compaction_without_fn_falls_back(tmp_path: Path) -> None:
-    """summarize_on_trim=True but no fn should fall back to trim."""
+    """compact() without summarize_fn should fall back to trim."""
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=10,
-        summarize_on_trim=True,
         summarize_fn=None,
-        max_context_tokens=100,
     )
     session = mgr.get_or_create("cli")
     session.messages = _build_long_conversation(10)  # 20 messages
     mgr._save(session)
 
-    mgr.update_token_count("cli", 150)
+    mgr.compact("cli")
 
     session = mgr.get_or_create("cli")
     assert len(session.messages) <= 10
@@ -496,16 +486,14 @@ def test_incremental_compaction(tmp_path: Path) -> None:
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=200,
-        summarize_on_trim=True,
         summarize_fn=tracking_summarize,
-        max_context_tokens=100,
     )
     session = mgr.get_or_create("cli")
     session.messages = _build_long_conversation(10)
     mgr._save(session)
 
     # First compaction
-    mgr.update_token_count("cli", 150)
+    mgr.compact("cli")
     session = mgr.get_or_create("cli")
     assert "[CONVERSATION SUMMARY]" in session.messages[0]["content"]
 
@@ -518,7 +506,7 @@ def test_incremental_compaction(tmp_path: Path) -> None:
     mgr._save(session)
 
     # Second compaction
-    mgr.update_token_count("cli", 200)
+    mgr.compact("cli")
 
     assert len(call_inputs) == 2
     # Second call's input should include the prior summary message
@@ -536,15 +524,13 @@ def test_summary_and_tokens_persisted_in_json(tmp_path: Path) -> None:
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=200,
-        summarize_on_trim=True,
         summarize_fn=fake_summarize,
-        max_context_tokens=100,
     )
     session = mgr.get_or_create("cli")
     session.messages = _build_long_conversation(10)
     mgr._save(session)
 
-    mgr.update_token_count("cli", 150)
+    mgr.compact("cli")
 
     # Read raw JSON
     files = [f for f in tmp_path.glob("*.json") if f.name != "_active.json"]
@@ -582,9 +568,7 @@ def test_max_history_safety_net(tmp_path: Path) -> None:
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
         max_history=5,
-        summarize_on_trim=True,
         summarize_fn=lambda msgs: "Summary.",
-        max_context_tokens=999_999,  # Very high — won't trigger compaction
     )
 
     for i in range(10):
@@ -638,9 +622,7 @@ def test_on_session_archived_called_on_compaction(tmp_path: Path) -> None:
 
     mgr = SessionManager(
         sessions_dir=str(tmp_path),
-        summarize_on_trim=True,
         summarize_fn=lambda msgs: "Summary of older messages.",
-        max_context_tokens=100,
         on_session_archived=on_archive,
     )
     # Add enough messages to trigger compaction
@@ -648,8 +630,7 @@ def test_on_session_archived_called_on_compaction(tmp_path: Path) -> None:
         mgr.add_user_message("user1", f"Discussion topic number {i} with enough length")
         mgr.add_assistant_response("user1", [{"type": "text", "text": f"Response {i}"}])
 
-    # Trigger compaction via token count
-    mgr.update_token_count("user1", 200)
+    mgr.compact("user1")
 
     assert len(archived) == 1  # compaction archived the older messages
 

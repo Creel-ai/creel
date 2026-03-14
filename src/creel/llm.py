@@ -17,6 +17,7 @@ from creel.providers import (
     _resolve_model_name,
     get_provider_with_fallback,
 )
+from creel.rate_limiter import get_rate_limiter
 
 if TYPE_CHECKING:
     from creel.container_pool import ContainerPool
@@ -48,6 +49,17 @@ def extract_text(message: LLMMessage) -> str:
         if block.type == "text":
             text_parts.append(block.text)
     return "\n".join(text_parts)
+
+
+def _record_usage(message: LLMMessage, model: str) -> None:
+    """Record token usage from an LLM response if rate limiting is active."""
+    limiter = get_rate_limiter()
+    if limiter is not None and message.usage is not None:
+        limiter.record(
+            model=model,
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+        )
 
 
 def _retry_on_transient(fn, *args, **kwargs):
@@ -102,6 +114,11 @@ def call_llm(
     Returns:
         A provider-agnostic LLMMessage object.
     """
+    # Rate limit check (blocks until a slot is available or raises)
+    limiter = get_rate_limiter()
+    if limiter is not None:
+        limiter.check()
+
     effective_model = model_override or config.model
 
     provider = get_provider_with_fallback(
@@ -114,18 +131,24 @@ def call_llm(
     model = _resolve_model_name(effective_model)
 
     if on_text_delta is not None:
-        return _call_llm_streaming(provider, model, config, messages, tools, system, on_text_delta)
-
-    def _do_create():
-        return provider.create(
-            messages=messages,
-            model=model,
-            max_tokens=config.max_tokens,
-            system=system,
-            tools=tools,
+        response = _call_llm_streaming(
+            provider, model, config, messages, tools, system, on_text_delta
         )
+    else:
 
-    return _retry_on_transient(_do_create)
+        def _do_create():
+            return provider.create(
+                messages=messages,
+                model=model,
+                max_tokens=config.max_tokens,
+                system=system,
+                tools=tools,
+            )
+
+        response = _retry_on_transient(_do_create)
+
+    _record_usage(response, effective_model)
+    return response
 
 
 def _call_llm_streaming(
@@ -244,6 +267,11 @@ def run_llm(
     Returns:
         The LLM response text.
     """
+    # Rate limit check — applies to all paths (direct, container, pooled)
+    limiter = get_rate_limiter()
+    if limiter is not None:
+        limiter.check()
+
     if use_container:
         if container_pool is not None and container_pool.enabled:
             return _run_llm_pooled(prompt, config, container_pool)
@@ -270,6 +298,7 @@ def _run_llm_direct(prompt: str, config: LLMConfig) -> str:
         )
 
     message = _retry_on_transient(_do_create)
+    _record_usage(message, config.model)
     return extract_text(message)
 
 

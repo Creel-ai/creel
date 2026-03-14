@@ -634,7 +634,12 @@ def _exec_brave_search_inline(config: ExecutorConfig) -> str:
 
     query = config.args.get("query", "")
     count = int(config.args.get("count", "5"))
-    result = search(query, count)
+    result = search(
+        query,
+        count,
+        timeout=config.http.timeout,
+        connect_timeout=config.http.connect_timeout,
+    )
     return json.dumps(result, indent=2)
 
 
@@ -683,7 +688,14 @@ def _exec_fetch_url_inline(config: ExecutorConfig) -> str:
 
     url = config.args.get("url", "")
     max_chars = int(config.args.get("max_chars", "10000"))
-    result = fetch_url(url, max_chars)
+    result = fetch_url(
+        url,
+        max_chars,
+        timeout=config.http.timeout,
+        connect_timeout=config.http.connect_timeout,
+        max_redirects=config.http.max_redirects,
+        max_size_mb=config.http.max_size_mb,
+    )
     return json.dumps(result, indent=2)
 
 

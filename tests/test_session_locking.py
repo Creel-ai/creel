@@ -57,7 +57,7 @@ def test_save_creates_backup(tmp_path: Path) -> None:
     mgr = SessionManager(sessions_dir=str(tmp_path))
     session = mgr.add_user_message("cli", "First message")
     sid = session.session_id
-    bak_path = tmp_path / f"{sid}.json.bak"
+    bak_path = tmp_path / f"{sid}.bak"
 
     # First save already happened in add_user_message; .bak may or may not
     # exist yet (depends on whether get_or_create also saved).  Save again.
@@ -218,28 +218,37 @@ def test_concurrent_writes_do_not_corrupt(tmp_path: Path) -> None:
 
 
 def test_save_raises_lock_error_on_timeout(tmp_path: Path) -> None:
-    """_save should propagate SessionLockError if lock cannot be acquired."""
+    """Active index write should propagate SessionLockError if lock cannot be acquired.
+
+    Session persistence is now delegated to the store (FileSessionStore),
+    which does not use advisory locking.  Locking is still used for the
+    active session index, so we test that path.
+    """
     mgr = SessionManager(sessions_dir=str(tmp_path))
-    session = mgr.get_or_create("cli")
-
-    # Mock _flock_with_timeout to always raise
-    with patch(
-        "creel.session._flock_with_timeout",
-        side_effect=SessionLockError("lock timeout"),
-    ):
-        with pytest.raises(SessionLockError):
-            mgr.save_session(session)
-
-
-def test_load_raises_lock_error_on_timeout(tmp_path: Path) -> None:
-    """_load should propagate SessionLockError if shared lock fails."""
-    mgr = SessionManager(sessions_dir=str(tmp_path))
-    session = mgr.get_or_create("cli")
-    sid = session.session_id
+    mgr.get_or_create("cli")
 
     with patch(
         "creel.session._flock_with_timeout",
         side_effect=SessionLockError("lock timeout"),
     ):
         with pytest.raises(SessionLockError):
-            mgr.load_session(sid)
+            # new_session writes to the active index via _atomic_write
+            mgr.new_session("cli")
+
+
+def test_load_active_index_handles_lock_error(tmp_path: Path) -> None:
+    """Active index read should gracefully handle a lock timeout.
+
+    _load_active_index catches OSError (parent of SessionLockError) and
+    returns an empty dict, so a lock timeout degrades to "no active session"
+    rather than crashing.
+    """
+    mgr = SessionManager(sessions_dir=str(tmp_path))
+    mgr.get_or_create("cli")
+
+    with patch(
+        "creel.session._flock_with_timeout",
+        side_effect=SessionLockError("lock timeout"),
+    ):
+        result = mgr._load_active_index()
+        assert result == {}, "Lock failure should degrade to empty index"

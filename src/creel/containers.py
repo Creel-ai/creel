@@ -229,9 +229,42 @@ def _ensure_image(image: str) -> str:
     return _image_cache.ensure_image(image)
 
 
-def _ensure_image_uncached(image: str) -> str:
-    """Build the Docker image if it doesn't already exist (no caching).
+def _is_remote_image(image: str) -> bool:
+    """Return True if *image* looks like a remote registry reference.
 
+    Heuristic: contains a ``/`` (e.g. ``ghcr.io/org/name:tag``).
+    Local images like ``executor-weather:latest`` never contain a slash.
+    """
+    return "/" in image.split(":")[0]
+
+
+def _pull_image(image: str, *, timeout: int = 300) -> str:
+    """Pull a remote image.  Returns the image reference on success.
+
+    Args:
+        image: Full image reference (e.g. ``ghcr.io/org/name:tag``).
+        timeout: Maximum seconds to wait for the pull (default 300).
+    """
+    logger.info("Pulling image %s", image)
+    try:
+        result = subprocess.run(
+            ["docker", "pull", image],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Timed out pulling image {image} after {timeout}s") from exc
+    if result.returncode != 0:
+        err = result.stderr.strip() if result.stderr else "unknown error"
+        raise RuntimeError(f"Failed to pull image {image}: {err[:500]}")
+    return image
+
+
+def _ensure_image_uncached(image: str) -> str:
+    """Build or pull the Docker image if it doesn't already exist (no caching).
+
+    For remote images (containing ``/``), pulls from the registry.
     For executor images the tag is derived from a content hash of the
     executor source directory so that code changes automatically trigger
     a rebuild.  Returns the image reference that should be used to run
@@ -241,6 +274,12 @@ def _ensure_image_uncached(image: str) -> str:
       executor-gmail-modify:latest -> -f src/executors/gmail_modify/Dockerfile src/executors/
       llm-runner:latest            -> src/llm/
     """
+    # Remote registry images — always pull to pick up security patches.
+    # The :latest tag can change upstream (e.g. weekly rebuilds), so
+    # relying on a local cache would leave stale images in place.
+    if _is_remote_image(image):
+        return _pull_image(image)
+
     base = image.split(":")[0]
 
     if base.startswith("executor-"):
@@ -298,6 +337,36 @@ def _ensure_image_uncached(image: str) -> str:
     return image
 
 
+def _ensure_image_from_dockerfile(dockerfile_path: str, image_tag: str) -> str:
+    """Build a Docker image from a custom Dockerfile path.
+
+    Used when a tool specifies ``dockerfile:`` instead of ``image:``.
+    Returns the image reference.
+
+    Note: the build context is the Dockerfile's parent directory, so
+    ``COPY`` instructions can only reference files alongside the
+    Dockerfile — not the broader ``src/executors/`` tree.
+    """
+    dockerfile = Path(dockerfile_path)
+    if not dockerfile.exists():
+        raise FileNotFoundError(f"Custom Dockerfile not found: {dockerfile}")
+
+    # Check if image already exists
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", image_tag],
+        capture_output=True,
+    )
+    if inspect.returncode == 0:
+        return image_tag
+
+    _build_image(
+        tags=[image_tag],
+        dockerfile=dockerfile,
+        context=dockerfile.parent,
+    )
+    return image_tag
+
+
 def _build_image(
     tags: list[str],
     dockerfile: Path,
@@ -327,25 +396,59 @@ def collect_required_images(agent_def: AgentDefinition) -> list[str]:
     Uses the same naming convention as :pyattr:`ExecutorConfig.image`:
     ``executor-{name}:latest`` (underscores → hyphens).
     ``ToolConfig.image`` overrides the derived name when set.
+    ``ToolConfig.dockerfile`` means the image will be built locally from
+    a custom Dockerfile — it is included with a ``custom-`` prefix.
     The ``llm-runner:latest`` image is included when tools are present
     (agent mode requires the containerised LLM runner).
     The shared base image (``creel-executor-base:latest``) is included
-    when any executor images are present.
+    when any local executor images are present (not needed for pre-built
+    registry images).
     """
     images: set[str] = set()
-    has_executor_images = False
+    has_local_executor_images = False
     for _tool_name, tool_config in agent_def.tools.items():
-        if tool_config.image:
+        if tool_config.dockerfile:
+            # Custom Dockerfile — tag derived from tool name
+            image = f"custom-{tool_config.executor.replace('_', '-')}:latest"
+            images.add(image)
+        elif tool_config.image:
             images.add(tool_config.image)
+            # Custom image overrides (local or remote) don't need the base
         else:
             image = f"executor-{tool_config.executor.replace('_', '-')}:latest"
             images.add(image)
-            has_executor_images = True
+            has_local_executor_images = True
     if agent_def.tools:
         images.add("llm-runner:latest")
-    if has_executor_images and _BASE_DOCKERFILE.exists():
+    if has_local_executor_images and _BASE_DOCKERFILE.exists():
         images.add(f"{_BASE_IMAGE_NAME}:latest")
     return sorted(images)
+
+
+def pull_required_images(agent_def: AgentDefinition) -> list[str]:
+    """Pull all pre-built images required by an agent definition.
+
+    Only pulls remote/registry images (those containing ``/``).
+    Returns a list of status messages for display.
+
+    Used by ``creel init`` to pre-fetch GHCR images so executors are
+    ready to run without a first-use download delay.
+    """
+    images = collect_required_images(agent_def)
+    remote = [img for img in images if _is_remote_image(img)]
+
+    if not remote:
+        return ["  No remote images to pull."]
+
+    messages: list[str] = []
+    for img in remote:
+        try:
+            _pull_image(img)
+            messages.append(f"  pulled: {img}")
+        except RuntimeError as exc:
+            messages.append(f"  warning: failed to pull {img} ({exc})")
+
+    return messages
 
 
 def prebuild_images(agent_def: AgentDefinition) -> list[threading.Thread]:
@@ -418,9 +521,13 @@ def _run_executor_container(
                 f"run `gh auth login` to authenticate first"
             )
 
-    # Determine image to use - tool config overrides executor config
-    image = tool_config.image if (tool_config and tool_config.image) else config.image
-    image = _ensure_image(image)
+    # Determine image to use - dockerfile > image override > executor default
+    if tool_config and tool_config.dockerfile:
+        custom_tag = f"custom-{config.name.replace('_', '-')}:latest"
+        image = _ensure_image_from_dockerfile(tool_config.dockerfile, custom_tag)
+    else:
+        image = tool_config.image if (tool_config and tool_config.image) else config.image
+        image = _ensure_image(image)
 
     env_vars: dict[str, str] = {}
 

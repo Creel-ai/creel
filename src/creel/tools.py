@@ -566,11 +566,17 @@ _KB_BLOCKED_PATHS = frozenset(
         ".age",
         ".gnupg",
         ".aws",
+        ".kube",
+        ".docker",
         ".config/gh",
+        ".config/gcloud",
         ".env",
         "secrets",
+        ".local/share/keyrings",
     }
 )
+
+_KB_BLOCKED_SYSTEM_DIRS = frozenset({"/etc", "/var/run", "/var/tmp", "/proc", "/sys", "/tmp"})
 
 
 def _is_kb_path_safe(path_str: str) -> bool:
@@ -581,11 +587,18 @@ def _is_kb_path_safe(path_str: str) -> bool:
         blocked_path = os.path.join(home, blocked)
         if resolved == blocked_path or resolved.startswith(blocked_path + os.sep):
             return False
-    # Block well-known system dirs
-    for system_dir in ("/etc", "/var/run", "/proc", "/sys"):
+    for system_dir in _KB_BLOCKED_SYSTEM_DIRS:
         if resolved == system_dir or resolved.startswith(system_dir + os.sep):
             return False
     return True
+
+
+def _redact_source_path(source: str) -> str:
+    """Replace absolute home prefix with ~ for LLM-facing output."""
+    home = os.path.expanduser("~")
+    if source.startswith(home):
+        return "~" + source[len(home) :]
+    return source
 
 
 def _handle_kb_tool(tool_name: str, tool_input: dict, kb_manager: Any) -> str:
@@ -600,6 +613,9 @@ def _handle_kb_tool(tool_name: str, tool_input: dict, kb_manager: Any) -> str:
         results = kb_manager.search(query, top_k=top_k, filter_path=filter_path)
         if not results:
             return json.dumps({"results": [], "message": f"No results found for '{query}'."})
+        # Redact absolute paths before returning to LLM
+        for r in results:
+            r["source"] = _redact_source_path(r["source"])
         return json.dumps({"results": results, "count": len(results)}, indent=2)
 
     if tool_name == "kb_add":
@@ -609,7 +625,6 @@ def _handle_kb_tool(tool_name: str, tool_input: dict, kb_manager: Any) -> str:
         if not _is_kb_path_safe(path):
             return json.dumps({"error": f"Refused to index sensitive path: {path}"})
         result = kb_manager.add(path)
-        # Remove non-serializable file list detail for cleaner output
         summary = {k: v for k, v in result.items() if k != "files"}
         summary["files_indexed"] = result.get("files", [])
         return json.dumps(summary, indent=2)
@@ -618,6 +633,9 @@ def _handle_kb_tool(tool_name: str, tool_input: dict, kb_manager: Any) -> str:
         docs = kb_manager.list_documents()
         if not docs:
             return json.dumps({"documents": [], "message": "Knowledge base is empty."})
+        # Redact paths
+        for d in docs:
+            d["path"] = _redact_source_path(d["path"])
         return json.dumps({"documents": docs, "count": len(docs)}, indent=2)
 
     if tool_name == "kb_stats":

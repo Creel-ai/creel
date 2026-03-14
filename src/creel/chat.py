@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -194,8 +195,8 @@ class ChatServer:
                 if kb_config.auto_index:
                     self._kb.reindex_auto_paths(kb_config.auto_index)
                 logger.info("Knowledge base enabled (db: %s)", kb_db_path)
-            except Exception:
-                logger.warning("Failed to initialize knowledge base", exc_info=True)
+            except (sqlite3.Error, OSError):
+                logger.error("Failed to initialize knowledge base", exc_info=True)
 
         # Per-sender session state (e.g. workspace path for file_ops)
         self._session_states: dict[str, SessionState] = {}

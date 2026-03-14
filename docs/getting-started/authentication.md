@@ -41,7 +41,7 @@ age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
 
 # Encrypt your credentials
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > secrets/anthropic.env
-./scripts/encrypt-secret.sh secrets/anthropic.env
+creel encrypt secrets/anthropic.env
 rm secrets/anthropic.env   # always delete the plaintext
 ```
 

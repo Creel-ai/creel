@@ -1,6 +1,6 @@
 # Weather
 
-Uses [wttr.in](https://wttr.in) — no API key required.
+Uses [Open-Meteo](https://open-meteo.com/) geocoding and weather API — no API key required.
 
 ## Configuration
 

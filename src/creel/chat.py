@@ -20,6 +20,7 @@ from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
 from creel.session import SessionManager
 from creel.subagents import SubAgentManager
+from creel.tool_cache import ToolResultCache
 from creel.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,24 @@ class ChatServer:
             max_context_tokens=agent_def.session.max_context_tokens,
             on_session_archived=on_session_archived,
         )
+        self._summarize_fn = summarize_fn
+
+        # Initialize tool result cache from config.
+        cache_cfg = agent_def.session.tool_cache
+        # Build per-tool TTL overrides from both config sources:
+        # 1. session.tool_cache.tool_ttls (explicit mapping)
+        # 2. Individual tool cache_ttl fields
+        merged_ttls = dict(cache_cfg.tool_ttls)
+        for tool_name, tool_cfg in agent_def.tools.items():
+            if tool_cfg.cache_ttl > 0 and tool_name not in merged_ttls:
+                merged_ttls[tool_name] = tool_cfg.cache_ttl
+        self._tool_cache: ToolResultCache | None = None
+        if cache_cfg.enabled:
+            self._tool_cache = ToolResultCache(
+                tool_ttls=merged_ttls,
+                default_ttl=cache_cfg.default_ttl,
+                max_entries=cache_cfg.max_entries,
+            )
 
         # Build memory compaction summarize callback.
         # NOTE: This callback fires only during __init__ (via compact_daily_files),
@@ -232,6 +251,21 @@ class ChatServer:
             result_callback=self._on_subagent_result,
         )
 
+    def update_agent_def(self, agent_def: AgentDefinition) -> None:
+        """Swap the agent definition and update derived references.
+
+        Called by DaemonService during hot-reload. Components that cache
+        config at init time (SessionManager, MemoryManager, ContainerPool)
+        are intentionally left untouched — their settings are either
+        non-reloadable or don't benefit from live swaps.
+        """
+        self._agent_def = agent_def
+        # SubAgentManager holds config refs used when spawning new agents.
+        self._subagent_manager._llm_config = agent_def.llm
+        self._subagent_manager._tools_config = agent_def.tools
+        self._subagent_manager._agent_config = agent_def.agent
+        self._subagent_manager._bridge_config = agent_def.bridge
+
     def handle_message(
         self,
         sender_id: str,
@@ -273,6 +307,10 @@ class ChatServer:
         # Handle /model — show current model config
         if stripped.lower() == "/model":
             return self._format_model()
+
+        # Handle /compact — summarize older context to free up the window
+        if stripped.lower() == "/compact":
+            return self._handle_compact(sender_id)
 
         # Handle /resume <id> — resume a session
         if stripped.lower().startswith("/resume"):
@@ -366,7 +404,7 @@ class ChatServer:
             result.stop_reason,
         )
 
-        # Update token count for session compaction
+        # Track token usage for session metadata
         last_tokens = getattr(result, "last_input_tokens", 0)
         if isinstance(last_tokens, int) and last_tokens > 0:
             self._session_mgr.update_token_count(sender_id, last_tokens)
@@ -515,6 +553,10 @@ class ChatServer:
             session_state=session_state,
             cron_manager=self._cron_manager,
             subagent_manager=self._subagent_manager,
+            tool_cache=self._tool_cache,
+            context_pruning=self._agent_def.session.context_pruning,
+            max_context_tokens=self._agent_def.session.max_context_tokens,
+            summarize_fn=self._summarize_fn,
         )
 
     def _handle_approval_response(
@@ -586,7 +628,7 @@ class ChatServer:
         # Resume the agent loop so the LLM can process the tool output
         result = self._invoke_agent_loop(session.messages, session_state)
 
-        # Update token count for session compaction
+        # Track token usage for session metadata
         last_tokens = getattr(result, "last_input_tokens", 0)
         if isinstance(last_tokens, int) and last_tokens > 0:
             self._session_mgr.update_token_count(sender_id, last_tokens)
@@ -718,6 +760,17 @@ class ChatServer:
         lines.append("")
         lines.append("* = active session. Use /resume <id> to switch.")
         return "\n".join(lines)
+
+    def _handle_compact(self, sender_id: str) -> str:
+        """Handle the /compact command — summarize older context."""
+        session = self._session_mgr.get_or_create(sender_id)
+        before = len(session.messages)
+        if before <= 2:
+            return "Nothing to compact — session is too short."
+        self._session_mgr.compact(sender_id)
+        session = self._session_mgr.get_or_create(sender_id)
+        after = len(session.messages)
+        return f"Compacted {before} messages → {after} (summary + recent)."
 
     def _handle_resume(self, sender_id: str, text: str) -> str:
         """Handle the /resume <id> command."""

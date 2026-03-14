@@ -6,7 +6,7 @@ Get Creel running in 5 minutes. By the end you'll have a personal AI agent respo
 
 | Tool | What it's for | Install |
 |------|--------------|---------|
-| Python 3.12+ | Runtime | `pyenv install 3.12` |
+| Python 3.12+ | Runtime | `pyenv install 3.12.11` |
 | [uv](https://github.com/astral-sh/uv) | Fast package manager | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | [age](https://github.com/FiloSottile/age) | Secrets encryption | `brew install age` |
 | Docker | Container isolation (optional) | [docker.com](https://docs.docker.com/get-docker/) |
@@ -14,7 +14,7 @@ Get Creel running in 5 minutes. By the end you'll have a personal AI agent respo
 ## 1. Clone and install
 
 ```bash
-git clone https://github.com/creel-ai/creel.git
+git clone https://github.com/Creel-ai/creel.git
 cd creel
 
 # Create virtualenv and install

@@ -342,6 +342,10 @@ def _ensure_image_from_dockerfile(dockerfile_path: str, image_tag: str) -> str:
 
     Used when a tool specifies ``dockerfile:`` instead of ``image:``.
     Returns the image reference.
+
+    Note: the build context is the Dockerfile's parent directory, so
+    ``COPY`` instructions can only reference files alongside the
+    Dockerfile — not the broader ``src/executors/`` tree.
     """
     dockerfile = Path(dockerfile_path)
     if not dockerfile.exists():

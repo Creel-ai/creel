@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import signal
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from creel.models import AgentDefinition
@@ -111,18 +112,63 @@ async def update_config(req: ConfigUpdateRequest) -> dict[str, Any]:
     }
 
 
-@router.post("/apply", status_code=202)
-async def apply_config() -> dict[str, str]:
-    """Signal the daemon to restart and pick up config changes."""
-    # Send SIGHUP to the current process to trigger a graceful restart.
-    # In practice, the daemon runner (uvicorn) or a process manager handles this.
-    # If SIGHUP is not appropriate, the frontend can simply instruct the user to restart.
-    try:
-        os.kill(os.getpid(), signal.SIGHUP)
-    except OSError:
-        pass  # SIGHUP may not be supported on all platforms
+@router.post("/reload")
+async def reload_config(request: Request) -> dict[str, Any]:
+    """Hot-reload agent config from disk without restarting the daemon."""
+    service = request.app.state.service
+    result = await asyncio.to_thread(service.reload_config)
 
-    return {"status": "restart_requested"}
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.error or "Reload failed")
+
+    response: dict[str, Any] = {
+        "status": "reloaded" if result.changes else "unchanged",
+        "summary": result.summary(),
+        "changes": [
+            {"field": c.field, "old": str(c.old_value)[:200], "new": str(c.new_value)[:200]}
+            for c in result.changes
+        ],
+    }
+    if result.non_reloadable:
+        response["non_reloadable"] = [
+            {"field": c.field, "message": "Requires restart"} for c in result.non_reloadable
+        ]
+
+    return response
+
+
+@router.post("/apply", status_code=202)
+async def apply_config(request: Request) -> dict[str, Any]:
+    """Apply config changes — hot-reload first, fall back to SIGHUP restart.
+
+    Attempts a hot-reload. If there are non-reloadable changes, also sends
+    SIGHUP so the daemon restarts to pick those up.
+    """
+    service = request.app.state.service
+    result = await asyncio.to_thread(service.reload_config)
+
+    if not result.success:
+        # Reload failed — fall back to restart signal
+        try:
+            os.kill(os.getpid(), signal.SIGHUP)
+        except OSError:
+            pass
+        return {"status": "restart_requested", "reason": result.error}
+
+    response: dict[str, Any] = {
+        "status": "reloaded" if result.changes else "unchanged",
+        "summary": result.summary(),
+    }
+
+    if result.non_reloadable:
+        try:
+            os.kill(os.getpid(), signal.SIGHUP)
+        except OSError:
+            pass
+        response["status"] = "restart_requested"
+        response["reason"] = "Non-reloadable changes require restart"
+
+    return response
 
 
 @router.get("/schema")

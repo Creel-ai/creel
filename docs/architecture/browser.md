@@ -1,6 +1,6 @@
 # Browser Tool
 
-Interactive web browsing via Playwright CDP. Supports two modes: **managed** (isolated headless Chromium in Docker) and **relay** (user's existing Chrome with logged-in sessions).
+Interactive web browsing via Playwright CDP. Supports three modes: **managed** (isolated headless Chromium in Docker), **relay** (user's existing Chrome with logged-in sessions), and **native** (local Chrome/Chromium subprocess).
 
 ## Architecture
 
@@ -21,7 +21,7 @@ flowchart TD
     end
 
     subgraph managed["Managed Mode"]
-        docker["Docker Container\nheadless Chromium\n--cap-drop=ALL\n--read-only\n--memory=512m"]
+        docker["Docker Container\nheadless Chromium\n--cap-drop=ALL\n--read-only\n--memory=1024m"]
     end
 
     subgraph relay_mode["Relay Mode"]
@@ -61,7 +61,18 @@ browser_open(mode="managed")
   → returns session_id
 ```
 
-Container security matches Creel's other executors: `--cap-drop=ALL`, `--read-only`, `--memory=512m`, `--cpus=1.0`.
+Container security matches Creel's other executors: `--cap-drop=ALL`, `--read-only`, `--memory=1024m`, `--cpus=1.0`.
+
+### Native
+
+Bridge launches a local Chrome/Chromium subprocess with `--headless` and `--remote-debugging-port`. No Docker required — useful for development or when Docker isn't available.
+
+```
+browser_open(mode="native")
+  → bridge spawns local Chrome with headless flags
+  → Playwright connects via CDP
+  → returns session_id
+```
 
 ### Relay
 
@@ -179,7 +190,7 @@ stateDiagram-v2
 # agent.yaml
 browser:
   enabled: true
-  default_mode: managed       # "managed" | "relay"
+  default_mode: managed       # "managed" | "relay" | "native"
   cdp_url: "http://localhost:9222"  # for relay mode
   max_sessions: 3
   session_timeout_minutes: 10

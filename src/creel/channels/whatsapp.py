@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from creel.channels.base import Channel
+from creel.channels.mixins import HealthCheckMixin, RetryMixin
 from creel.channels.webhook import WebhookChannelMixin
 from creel.channels.whatsapp_bridge import (
     HttpWhatsAppBridge,
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class WhatsAppChannel(WebhookChannelMixin, Channel):
+class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel):
     """WhatsApp messaging channel.
 
     Supports two operating modes:
@@ -105,7 +106,9 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
 
             except Exception:
                 consecutive_errors += 1
-                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
+                backoff = self._calculate_backoff(
+                    self._poll_interval, consecutive_errors, max_backoff
+                )
                 logger.exception(
                     "Error polling WhatsApp (consecutive=%d, backoff=%.1fs)",
                     consecutive_errors,
@@ -202,12 +205,7 @@ class WhatsAppChannel(WebhookChannelMixin, Channel):
     # --- Health ---
 
     def health_check(self) -> dict[str, Any]:
-        bridge_health = self._bridge.health()
-        return {
-            "healthy": not self._stop_requested and bridge_health.get("healthy", False),
-            "mode": self._mode,
-            "bridge": bridge_health,
-        }
+        return self._bridge_health()
 
 
 def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Channel]]:

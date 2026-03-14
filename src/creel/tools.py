@@ -547,6 +547,7 @@ def execute_tool_call(
         secrets=cfg.secrets,
         args=string_args,
         timeout=cfg.timeout,
+        http=cfg.http,
     )
 
     logger.info("Executing tool %s (executor: %s)", tool_name, cfg.executor)

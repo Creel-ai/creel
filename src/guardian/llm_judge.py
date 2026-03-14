@@ -31,10 +31,7 @@ manipulation attempts."""
 class LLMJudge:
     """LLM-based prompt-injection judge using Haiku.
 
-    Reuses ``creel.llm._get_client()`` — no separate credentials needed.
-    On any failure (timeout, parse error, API error), falls through with
-    ``is_injection=False`` and a warning.
-
+    Uses the provider abstraction to support multiple LLM backends.
     When ``uncertain_only`` is set in config, the judge only runs when the
     fast classifier's confidence falls in the uncertain range (between
     ``uncertain_low`` and ``uncertain_high``). This saves cost by skipping
@@ -72,6 +69,17 @@ class LLMJudge:
 
         return self._config.uncertain_low <= classifier_confidence <= self._config.uncertain_high
 
+    def _get_provider(self):
+        """Get the LLM provider for the judge."""
+        from creel.providers import build_provider
+        from creel.providers.base import _resolve_model_name, _resolve_provider_name
+
+        provider_name = _resolve_provider_name(
+            self._config.model,
+            self._config.provider or "anthropic",
+        )
+        return build_provider(provider_name), _resolve_model_name(self._config.model)
+
     def judge(self, text: str) -> ClassifierResult | None:
         """Evaluate text for prompt injection using the LLM judge.
 
@@ -82,11 +90,9 @@ class LLMJudge:
 
         t0 = time.perf_counter()
         try:
-            from creel.llm import _get_client
-
-            client = _get_client()
-            response = client.messages.create(
-                model=self._config.model,
+            provider, model = self._get_provider()
+            response = provider.create(
+                model=model,
                 max_tokens=self._config.max_tokens,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": text}],
@@ -97,9 +103,9 @@ class LLMJudge:
             # Track usage
             self._total_calls += 1
             self._total_latency_ms += elapsed_ms
-            if hasattr(response, "usage"):
-                self._total_input_tokens += getattr(response.usage, "input_tokens", 0)
-                self._total_output_tokens += getattr(response.usage, "output_tokens", 0)
+            if response.usage:
+                self._total_input_tokens += response.usage.input_tokens
+                self._total_output_tokens += response.usage.output_tokens
 
             # Extract text from response
             raw_text = ""
@@ -114,8 +120,8 @@ class LLMJudge:
                 result.get("is_injection", False),
                 result.get("confidence", 0.0),
                 elapsed_ms,
-                getattr(response.usage, "input_tokens", 0) if hasattr(response, "usage") else 0,
-                getattr(response.usage, "output_tokens", 0) if hasattr(response, "usage") else 0,
+                response.usage.input_tokens if response.usage else 0,
+                response.usage.output_tokens if response.usage else 0,
             )
 
             return ClassifierResult(

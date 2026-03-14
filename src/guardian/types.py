@@ -68,6 +68,7 @@ class LLMJudgeConfig(BaseModel):
     """Configuration for the LLM-based judge (Haiku)."""
 
     enabled: bool = True  # enabled by default for security
+    provider: str | None = None  # None = inherit from main LLM config
     model: str = "claude-haiku-4-5-20251001"
     max_tokens: int = 256
     timeout: float = 3.0
@@ -96,6 +97,7 @@ class CoherenceConfig(BaseModel):
     """Configuration for the action coherence checker."""
 
     enabled: bool = False  # off by default — opt-in
+    provider: str | None = None  # None = inherit from main LLM config
     model: str = "claude-haiku-4-5-20251001"
     max_tokens: int = 256
     timeout: float = 3.0
@@ -120,6 +122,31 @@ class ReviewConfig(BaseModel):
     max_pending_age_hours: int = 24
 
 
+class PipelineConfig(BaseModel):
+    """Configuration for parallel/sequential pipeline execution.
+
+    Checks listed in ``parallel_checks`` run concurrently via asyncio.
+    Checks in ``sequential_checks`` run one-at-a-time *after* the parallel
+    phase completes.  When ``short_circuit`` is True the pipeline cancels
+    remaining checks as soon as any check blocks.
+    """
+
+    parallel_checks: list[str] = Field(
+        default_factory=lambda: [
+            "injection_detector",
+            "policy_engine",
+            "coherence_checker",
+        ]
+    )
+    sequential_checks: list[str] = Field(
+        default_factory=lambda: [
+            "drift_detector",
+        ]
+    )
+    short_circuit: bool = True
+    timeout: float = 5.0  # max seconds for the entire pipeline
+
+
 class GuardianConfig(BaseModel):
     """Top-level guardian configuration."""
 
@@ -132,3 +159,4 @@ class GuardianConfig(BaseModel):
     coherence: CoherenceConfig = Field(default_factory=CoherenceConfig)
     drift: DriftConfig = Field(default_factory=DriftConfig)
     review: ReviewConfig = Field(default_factory=ReviewConfig)
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)

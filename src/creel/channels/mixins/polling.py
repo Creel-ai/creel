@@ -1,13 +1,13 @@
-"""Reusable mixins that eliminate boilerplate in channel implementations."""
+"""PollingChannelMixin — standard polling loop with backoff."""
 
 from __future__ import annotations
 
 import logging
 import time
 from abc import abstractmethod
-from typing import Any
 
 from creel.channels.base import IncomingMessage, LegacyCallback
+from creel.channels.mixins.retry import RetryMixin
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +72,8 @@ class PollingChannelMixin:
 
             except Exception:
                 consecutive_errors += 1
-                backoff = min(
-                    self._poll_interval * (2**consecutive_errors),
-                    self._max_backoff,
+                backoff = RetryMixin._calculate_backoff(
+                    self._poll_interval, consecutive_errors, self._max_backoff
                 )
                 logger.exception(
                     "%s poll error (consecutive=%d, backoff=%.1fs)",
@@ -88,25 +87,3 @@ class PollingChannelMixin:
 
             if not self._stop_requested:
                 time.sleep(self._poll_interval)
-
-
-class BridgeClientMixin:
-    """Mixin for channels that delegate I/O to a bridge server.
-
-    Provides standard health-check aggregation that combines channel state
-    with bridge health.
-    """
-
-    _stop_requested: bool = False
-    _mode: str = "polling"
-
-    def _bridge_health_check(self) -> dict[str, Any]:
-        """Return health info combining channel and bridge status."""
-        bridge = getattr(self, "_bridge", None)
-        bridge_health = bridge.health() if bridge and hasattr(bridge, "health") else {}
-        return {
-            "channel": type(self).__name__,
-            "healthy": not self._stop_requested and bridge_health.get("healthy", False),
-            "mode": self._mode,
-            "bridge": bridge_health,
-        }

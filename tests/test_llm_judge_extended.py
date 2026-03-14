@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from creel.providers import LLMMessage, TextBlock, Usage
 from guardian.llm_judge import LLMJudge
 from guardian.types import LLMJudgeConfig
 
@@ -26,17 +27,12 @@ def uncertain_config() -> LLMJudgeConfig:
     )
 
 
-def _mock_response(text: str, input_tokens: int = 100, output_tokens: int = 50) -> MagicMock:
-    block = MagicMock()
-    block.type = "text"
-    block.text = text
-    usage = MagicMock()
-    usage.input_tokens = input_tokens
-    usage.output_tokens = output_tokens
-    response = MagicMock()
-    response.content = [block]
-    response.usage = usage
-    return response
+def _mock_llm_response(text: str, input_tokens: int = 100, output_tokens: int = 50) -> LLMMessage:
+    return LLMMessage(
+        content=[TextBlock(text=text)],
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
 
 
 class TestShouldRun:
@@ -74,97 +70,91 @@ class TestShouldRun:
 
 
 class TestJudgeParsing:
-    @patch("creel.llm._get_client")
+    @patch("creel.providers.build_provider")
     def test_json_with_extra_whitespace(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+        self, mock_build: MagicMock, config: LLMJudgeConfig
     ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '  \n{"is_injection": false, "confidence": 0.2, "reasoning": "Normal"}\n  '
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("hello")
         assert result is not None
         assert result.is_injection is False
 
-    @patch("creel.llm._get_client")
-    def test_missing_reasoning_field(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
-    ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+    @patch("creel.providers.build_provider")
+    def test_missing_reasoning_field(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '{"is_injection": true, "confidence": 0.9}'
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
         assert result is not None
         assert result.is_injection is True
         assert result.reasoning == ""
 
-    @patch("creel.llm._get_client")
+    @patch("creel.providers.build_provider")
     def test_missing_confidence_defaults_zero(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+        self, mock_build: MagicMock, config: LLMJudgeConfig
     ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response('{"is_injection": false}')
-        mock_get_client.return_value = mock_client
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response('{"is_injection": false}')
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
         assert result is not None
         assert result.confidence == 0.0
 
-    @patch("creel.llm._get_client")
+    @patch("creel.providers.build_provider")
     def test_missing_is_injection_defaults_false(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+        self, mock_build: MagicMock, config: LLMJudgeConfig
     ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '{"confidence": 0.5, "reasoning": "unclear"}'
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
         assert result is not None
         assert result.is_injection is False
 
-    @patch("creel.llm._get_client")
+    @patch("creel.providers.build_provider")
     def test_empty_response_falls_through(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
+        self, mock_build: MagicMock, config: LLMJudgeConfig
     ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response("")
-        mock_get_client.return_value = mock_client
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response("")
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
         assert result is not None
         assert result.is_injection is False
         assert "failed" in result.reasoning.lower()
 
-    @patch("creel.llm._get_client")
-    def test_json_wrapped_in_markdown(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
-    ) -> None:
+    @patch("creel.providers.build_provider")
+    def test_json_wrapped_in_markdown(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
         """If the LLM wraps JSON in ```json blocks, parsing should fail gracefully."""
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '```json\n{"is_injection": true, "confidence": 0.95}\n```'
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
         # This will fail JSON parsing and fall through
         assert result is not None
         assert result.is_injection is False
 
-    @patch("creel.llm._get_client")
-    def test_timeout_falls_through(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
-    ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.side_effect = TimeoutError("API timeout")
-        mock_get_client.return_value = mock_client
+    @patch("creel.providers.build_provider")
+    def test_timeout_falls_through(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
+        mock_provider = MagicMock()
+        mock_provider.create.side_effect = TimeoutError("API timeout")
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
         assert result is not None
@@ -172,17 +162,15 @@ class TestJudgeParsing:
 
 
 class TestUsageTracking:
-    @patch("creel.llm._get_client")
-    def test_usage_stats_accumulate(
-        self, mock_get_client: MagicMock, config: LLMJudgeConfig
-    ) -> None:
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = _mock_response(
+    @patch("creel.providers.build_provider")
+    def test_usage_stats_accumulate(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
+        mock_provider = MagicMock()
+        mock_provider.create.return_value = _mock_llm_response(
             '{"is_injection": false, "confidence": 0.1, "reasoning": "ok"}',
             input_tokens=150,
             output_tokens=30,
         )
-        mock_get_client.return_value = mock_client
+        mock_build.return_value = mock_provider
         judge = LLMJudge(config)
 
         judge.judge("test1")

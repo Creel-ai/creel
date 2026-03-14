@@ -72,6 +72,17 @@ class TestDomainMatches:
     def test_no_match(self):
         assert _domain_matches("example.com", "other.com") is False
 
+    def test_wildcard_enforces_dot_boundary(self):
+        """Ensure *.googleapis.com does NOT match evilgoogleapis.com."""
+        assert _domain_matches("evilgoogleapis.com", "*.googleapis.com") is False
+
+    def test_wildcard_does_not_match_bare_domain(self):
+        """*.example.com should not match example.com itself."""
+        assert _domain_matches("example.com", "*.example.com") is False
+
+    def test_deep_subdomain(self):
+        assert _domain_matches("a.b.c.googleapis.com", "*.googleapis.com") is True
+
 
 # ---------------------------------------------------------------------------
 # NetworkMonitor.check_domain
@@ -167,36 +178,36 @@ class TestCheckResponseSize:
 
 
 # ---------------------------------------------------------------------------
-# NetworkMonitor.check_rate_limit
+# NetworkMonitor.consume_rate_slot
 # ---------------------------------------------------------------------------
 
 
-class TestCheckRateLimit:
+class TestConsumeRateSlot:
     def test_within_limit(self):
         m = _make_monitor(rate_limit_per_minute=10)
         for _ in range(10):
-            v = m.check_rate_limit("test_executor")
+            v = m.consume_rate_slot("test_executor")
             assert v.allowed is True
 
     def test_exceeds_limit(self):
         m = _make_monitor(rate_limit_per_minute=5)
         for _ in range(5):
-            v = m.check_rate_limit("test_executor")
+            v = m.consume_rate_slot("test_executor")
             assert v.allowed is True
         # 6th request should be denied
-        v = m.check_rate_limit("test_executor")
+        v = m.consume_rate_slot("test_executor")
         assert v.allowed is False
         assert "rate limit" in v.reason
 
     def test_separate_executors(self):
         m = _make_monitor(rate_limit_per_minute=2)
-        m.check_rate_limit("exec_a")
-        m.check_rate_limit("exec_a")
+        m.consume_rate_slot("exec_a")
+        m.consume_rate_slot("exec_a")
         # exec_a is at limit
-        v = m.check_rate_limit("exec_a")
+        v = m.consume_rate_slot("exec_a")
         assert v.allowed is False
         # exec_b should still be fine
-        v = m.check_rate_limit("exec_b")
+        v = m.consume_rate_slot("exec_b")
         assert v.allowed is True
 
 

@@ -10,7 +10,7 @@ from guardian.credential_scanner import CredentialMatch, scan_for_credentials
 from guardian.drift import DriftDetector
 from guardian.fast_classifier import FastClassifier
 from guardian.llm_judge import LLMJudge
-from guardian.network import NetworkMonitor, NetworkVerdict
+from guardian.network import NetworkMonitor, NetworkVerdict, _extract_domain
 from guardian.policy import PolicyEngine
 from guardian.types import (
     ActionDecision,
@@ -401,6 +401,8 @@ class Guardian:
         """Check an outbound network request against the network policy.
 
         If the network monitor is disabled, all requests are allowed.
+        NetworkMonitor handles in-memory logging; this method handles
+        JSONL audit logging only.
         """
         if not self._network:
             return NetworkVerdict(allowed=True)
@@ -433,9 +435,6 @@ class Guardian:
                     url=url,
                     domain=domain,
                 )
-            elif verdict.domain and self._network.config.alert_on_unknown:
-                # Check if domain is "unknown" (not in allowlist but allowlist is empty)
-                pass  # Already handled by check_domain logic
 
         if not verdict.allowed:
             logger.warning(
@@ -459,7 +458,8 @@ class Guardian:
     ) -> None:
         """Record a completed network response and audit-log it.
 
-        Alerts on oversized responses.
+        Alerts on oversized responses. NetworkMonitor handles in-memory
+        logging; this method handles JSONL audit logging only.
         """
         if not self._network:
             return
@@ -473,13 +473,7 @@ class Guardian:
             status_code=status_code,
         )
 
-        domain = ""
-        from urllib.parse import urlparse
-
-        try:
-            domain = urlparse(url).hostname or ""
-        except Exception:
-            pass
+        domain = _extract_domain(url)
 
         if self._audit:
             self._audit.log_network_request(

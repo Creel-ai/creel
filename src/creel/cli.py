@@ -1559,8 +1559,12 @@ def cmd_network_policy(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_network_allow(args: argparse.Namespace) -> int:
-    """Check if a domain would be allowed by the current network policy."""
+def _check_network_domain(args: argparse.Namespace, *, check_blocked: bool) -> int:
+    """Shared helper for 'creel network allow' and 'creel network block'.
+
+    The domain check is protocol-agnostic — HTTPS is used only to
+    construct a valid URL for the domain parser.
+    """
     from guardian.network import NetworkMonitor
 
     try:
@@ -1573,44 +1577,35 @@ def cmd_network_allow(args: argparse.Namespace) -> int:
         return 1
 
     if not agent_def.guardian or not agent_def.guardian.network_policy.enabled:
-        print(f"Network policy disabled — '{args.domain}' would be allowed (no policy active)")
+        qualifier = "not be blocked" if check_blocked else "be allowed"
+        print(f"Network policy disabled — '{args.domain}' would {qualifier} (no policy active)")
         return 0
 
     monitor = NetworkMonitor(agent_def.guardian.network_policy)
     url = f"https://{args.domain}/"
     verdict = monitor.check_domain(url)
-    if verdict.allowed:
-        print(f"ALLOWED: {args.domain}")
+
+    if check_blocked:
+        if not verdict.allowed:
+            print(f"BLOCKED: {args.domain} — {verdict.reason}")
+        else:
+            print(f"NOT BLOCKED: {args.domain} (would be allowed)")
     else:
-        print(f"DENIED: {args.domain} — {verdict.reason}")
+        if verdict.allowed:
+            print(f"ALLOWED: {args.domain}")
+        else:
+            print(f"DENIED: {args.domain} — {verdict.reason}")
     return 0
+
+
+def cmd_network_allow(args: argparse.Namespace) -> int:
+    """Check if a domain would be allowed by the current network policy."""
+    return _check_network_domain(args, check_blocked=False)
 
 
 def cmd_network_block(args: argparse.Namespace) -> int:
     """Check if a domain would be blocked by the current network policy."""
-    from guardian.network import NetworkMonitor
-
-    try:
-        agent_def = _load_agent_def(args)
-    except FileNotFoundError:
-        print(
-            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
-            file=sys.stderr,
-        )
-        return 1
-
-    if not agent_def.guardian or not agent_def.guardian.network_policy.enabled:
-        print(f"Network policy disabled — '{args.domain}' would not be blocked (no policy active)")
-        return 0
-
-    monitor = NetworkMonitor(agent_def.guardian.network_policy)
-    url = f"https://{args.domain}/"
-    verdict = monitor.check_domain(url)
-    if not verdict.allowed:
-        print(f"BLOCKED: {args.domain} — {verdict.reason}")
-    else:
-        print(f"NOT BLOCKED: {args.domain} (would be allowed)")
-    return 0
+    return _check_network_domain(args, check_blocked=True)
 
 
 def cmd_encrypt(args: argparse.Namespace) -> int:

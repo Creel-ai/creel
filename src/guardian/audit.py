@@ -275,10 +275,9 @@ class AuditLogger:
             "executor": executor,
             "method": method,
             "request_size_bytes": request_size_bytes,
+            "response_size_bytes": response_size_bytes,
             "blocked": blocked,
         }
-        if response_size_bytes:
-            record["response_size_bytes"] = response_size_bytes
         if status_code is not None:
             record["status_code"] = status_code
         if block_reason:

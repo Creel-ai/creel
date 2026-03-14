@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
@@ -13,20 +12,7 @@ from guardian.types import NetworkPolicyConfig
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class NetworkRequest:
-    """Metadata for a single outbound HTTP request."""
-
-    url: str
-    domain: str
-    method: str = "GET"
-    request_size_bytes: int = 0
-    response_size_bytes: int = 0
-    status_code: int | None = None
-    executor: str = ""
-    blocked: bool = False
-    block_reason: str = ""
+_MAX_REQUEST_LOG_SIZE = 10_000
 
 
 @dataclass
@@ -57,7 +43,7 @@ class NetworkMonitor:
     def __init__(self, config: NetworkPolicyConfig) -> None:
         self._config = config
         self._rate_buckets: dict[str, _RateBucket] = defaultdict(_RateBucket)
-        self._request_log: list[dict] = []
+        self._request_log: deque[dict] = deque(maxlen=_MAX_REQUEST_LOG_SIZE)
 
     @property
     def config(self) -> NetworkPolicyConfig:
@@ -132,7 +118,7 @@ class NetworkMonitor:
             )
         return NetworkVerdict(allowed=True)
 
-    def check_rate_limit(self, executor: str) -> NetworkVerdict:
+    def consume_rate_slot(self, executor: str) -> NetworkVerdict:
         """Check per-executor rate limiting (sliding 60-second window)."""
         now = time.monotonic()
         bucket = self._rate_buckets[executor]
@@ -194,7 +180,7 @@ class NetworkMonitor:
             return size_verdict
 
         # Rate limit check
-        rate_verdict = self.check_rate_limit(executor)
+        rate_verdict = self.consume_rate_slot(executor)
         if not rate_verdict.allowed:
             self._log_request(
                 url=url,
@@ -296,9 +282,14 @@ def _extract_domain(url: str) -> str:
 
 
 def _domain_matches(domain: str, pattern: str) -> bool:
-    """Check if a domain matches a glob pattern.
+    """Check if a domain matches a pattern with proper subdomain boundaries.
 
-    Supports patterns like ``*.googleapis.com``, ``api.openai.com``,
-    or ``*.pastebin.com``.
+    Supports ``*.googleapis.com`` (any subdomain of googleapis.com)
+    and exact matches like ``api.openai.com``.  Unlike fnmatch, the
+    wildcard prefix enforces a dot boundary so ``evilgoogleapis.com``
+    does NOT match ``*.googleapis.com``.
     """
-    return fnmatch.fnmatch(domain, pattern)
+    if pattern.startswith("*."):
+        suffix = pattern[1:]  # e.g. ".googleapis.com"
+        return domain.endswith(suffix) and domain != suffix[1:]
+    return domain == pattern

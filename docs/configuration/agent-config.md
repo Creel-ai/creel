@@ -99,7 +99,19 @@ Context pruning automatically manages the token window during long conversations
 | `context_pruning.threshold` | Fraction of `max_context_tokens` at which pruning triggers (default: `0.80`) |
 | `context_pruning.min_recent_messages` | Number of recent messages to always keep (default: `4`) |
 
-When pruning triggers (estimated tokens > 80% of max), it prunes down to 60% to create headroom and avoid re-pruning every turn. Messages are scored by importance (type weight × recency decay) and the least important are dropped first. Tool-call pairs are never split. If `summarize_on_trim` is enabled, pruned messages are summarized and the summary is prepended to the context sent to the LLM.
+When pruning triggers (estimated tokens > 80% of max), it prunes down to 60% to create headroom and avoid re-pruning every turn. Messages are scored by importance and the least important are dropped first. Tool-call pairs are never split. If `summarize_on_trim` is enabled, pruned messages are summarized and the summary is prepended to the context sent to the LLM.
+
+**Importance scoring.** Each message is scored as `importance = base_weight × recency`:
+
+| Message type | Base weight | Rationale |
+|---|---|---|
+| Tool results | 2.0 | Factual data the model needs to reason about |
+| Tool use (assistant) | 1.8 | Records what was called and with what args |
+| User text | 1.5 | User intent and questions |
+| Assistant text | 1.0 | Lowest priority — can be regenerated |
+| Conversation summaries | ∞ | Never pruned |
+
+Recency uses exponential decay with a half-life of 8 messages: `recency = 0.5 ^ (distance_from_end / 8)`. A message 8 positions from the end gets a 0.5× multiplier; 16 positions back gets 0.25×. This means recent messages of any type are kept, while among older messages, tool results and user text survive longer than assistant prose.
 
 To explicitly and persistently compact a session, use the `/compact` command in the TUI.
 

@@ -45,7 +45,7 @@ Creel uses a two-layer approach to manage the LLM context window:
 
 When `context_pruning.enabled` is set, the agent loop automatically prunes a **copy** of the message history before each LLM call. The full history is never modified — pruning only affects what the model sees for that request.
 
-Messages are scored by importance (tool results > user messages > assistant text) with an exponential recency decay. The least important messages are dropped first, and tool-call pairs (assistant `tool_use` + user `tool_result`) are never split. Pruning triggers at 80% of the model's context window and prunes down to 60% to create headroom.
+Each message is scored as `base_weight × recency_decay`. Base weights prioritize tool results (2.0) over user text (1.5) over assistant text (1.0). Recency uses exponential decay with a half-life of 8 messages — recent messages of any type are kept, while older assistant prose is pruned before older tool results. Conversation summaries are never pruned. Tool-call pairs (assistant `tool_use` + user `tool_result`) are never split. Pruning triggers at 80% of the model's context window and prunes down to 60% to create headroom. See [Agent Configuration](../configuration/agent-config.md#context-pruning) for the full scoring table.
 
 ### Persistent Compaction (explicit)
 

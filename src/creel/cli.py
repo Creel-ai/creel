@@ -1557,6 +1557,120 @@ def cmd_encrypt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _init_rate_limiter(args: argparse.Namespace) -> None:
+    """Initialize the global rate limiter from agent config."""
+    from creel.models import load_agent_config
+    from creel.rate_limiter import configure_rate_limiter
+
+    try:
+        agent_cfg = load_agent_config(
+            getattr(args, "agent_config", None) or _default_agent_config()
+        )
+    except FileNotFoundError:
+        logger.debug("Agent config not found, skipping rate limiter init")
+        return
+
+    rl = agent_cfg.llm.rate_limits
+    if not rl.enabled:
+        return
+
+    usage_dir = paths.creel_home() / "usage"
+    configure_rate_limiter(
+        requests_per_minute=rl.requests_per_minute,
+        requests_per_hour=rl.requests_per_hour,
+        tokens_per_day=rl.tokens_per_day,
+        cost_per_day_usd=rl.cost_per_day_usd,
+        queue_timeout=rl.queue_timeout,
+        usage_dir=usage_dir,
+    )
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Show current LLM usage statistics."""
+
+    _init_rate_limiter(args)
+
+    from creel.rate_limiter import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    if limiter is None:
+        print("Rate limiting is not enabled. Check agent.yaml (llm.rate_limits.enabled).")
+        return 1
+
+    if getattr(args, "history", False):
+        days = getattr(args, "days", 7)
+        history = limiter.get_usage_history(days=days)
+        print(f"{'Date':<12} {'Requests':>8} {'Tokens':>10} {'Cost (USD)':>10}")
+        print("-" * 44)
+        total_cost = 0.0
+        total_requests = 0
+        total_tokens = 0
+        for day in history:
+            total_cost += day["cost_usd"]
+            total_requests += day["requests"]
+            total_tokens += day["total_tokens"]
+            print(
+                f"{day['date']:<12} {day['requests']:>8} "
+                f"{day['total_tokens']:>10} ${day['cost_usd']:>9.4f}"
+            )
+        print("-" * 44)
+        print(f"{'Total':<12} {total_requests:>8} {total_tokens:>10} ${total_cost:>9.4f}")
+        return 0
+
+    usage = limiter.get_usage()
+    print("Current LLM Usage:")
+    print(
+        f"  Requests (last minute): {usage.requests_last_minute}"
+        f" / {usage.requests_per_minute_limit}"
+    )
+    print(f"  Requests (last hour):   {usage.requests_last_hour} / {usage.requests_per_hour_limit}")
+    print(f"  Tokens (today):         {usage.tokens_today:,} / {usage.tokens_per_day_limit:,}")
+    print(
+        f"  Cost (today):           ${usage.cost_today_usd:.4f}"
+        f" / ${usage.cost_per_day_limit_usd:.2f}"
+    )
+    if usage.override_active:
+        import datetime
+
+        exp = datetime.datetime.fromtimestamp(usage.override_expires_at or 0, tz=datetime.UTC)
+        print(f"  Override active until:  {exp.isoformat()}")
+    return 0
+
+
+def cmd_limits_override(args: argparse.Namespace) -> int:
+    """Temporarily override rate limits."""
+    _init_rate_limiter(args)
+
+    from creel.rate_limiter import get_rate_limiter
+
+    limiter = get_rate_limiter()
+    if limiter is None:
+        print("Rate limiting is not enabled. Check agent.yaml (llm.rate_limits.enabled).")
+        return 1
+
+    duration_str = args.duration
+    # Parse duration string like "1h", "30m", "2h"
+    multipliers = {"s": 1, "m": 60, "h": 3600}
+    unit = duration_str[-1].lower()
+    if unit not in multipliers:
+        print(f"Invalid duration unit '{unit}'. Use s, m, or h (e.g., '1h', '30m').")
+        return 1
+    try:
+        value = float(duration_str[:-1])
+    except ValueError:
+        print(f"Invalid duration value: {duration_str}")
+        return 1
+
+    if value <= 0:
+        print("Duration must be positive.")
+        return 1
+
+    seconds = value * multipliers[unit]
+    limiter.override(seconds)
+    print(f"Rate limits overridden for {duration_str} ({seconds:.0f} seconds).")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Run installation health checks."""
     from creel.doctor import run_doctor
@@ -1984,6 +2098,35 @@ def main() -> int:
         help="Show last N runs (default: 20)",
     )
 
+    # usage command
+    usage_parser = subparsers.add_parser("usage", help="Show LLM usage statistics")
+    usage_parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Show daily/weekly cost breakdown",
+    )
+    usage_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days for history (default: 7)",
+    )
+
+    # limits command group
+    limits_parser = subparsers.add_parser("limits", help="Manage rate limits")
+    limits_subparsers = limits_parser.add_subparsers(
+        dest="limits_command",
+        metavar="{override}",
+    )
+    limits_override_parser = limits_subparsers.add_parser(
+        "override", help="Temporarily override rate limits"
+    )
+    limits_override_parser.add_argument(
+        "--duration",
+        required=True,
+        help="Override duration (e.g., '1h', '30m', '60s')",
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -2031,6 +2174,15 @@ def main() -> int:
             return 1
         return cron_commands[args.cron_command](args)
 
+    if args.command == "limits":
+        limits_commands = {
+            "override": cmd_limits_override,
+        }
+        if args.limits_command not in limits_commands:
+            limits_parser.print_help()
+            return 1
+        return limits_commands[args.limits_command](args)
+
     commands = {
         "init": cmd_init,
         "run": cmd_run,
@@ -2042,6 +2194,7 @@ def main() -> int:
         "doctor": cmd_doctor,
         "send": cmd_send,
         "encrypt": cmd_encrypt,
+        "usage": cmd_usage,
         "reload": cmd_reload,
     }
 

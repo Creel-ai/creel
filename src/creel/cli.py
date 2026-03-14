@@ -1489,6 +1489,12 @@ def _get_kb(args: argparse.Namespace) -> KnowledgeBase:
 
 def cmd_kb_add(args: argparse.Namespace) -> int:
     """Add a file or directory to the knowledge base."""
+    from creel.tools import _is_kb_path_safe
+
+    if not _is_kb_path_safe(args.path):
+        print(f"Error: refused to index sensitive path: {args.path}", file=sys.stderr)
+        return 1
+
     kb = _get_kb(args)
     try:
         result = kb.add(args.path)

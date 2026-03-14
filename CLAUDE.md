@@ -137,7 +137,6 @@ src/
 - `workspace/` — Runtime workspace with memory files (MEMORY.md, IDENTITY.md, etc.)
 - `tools/` — Tool definitions (e.g., `exec.yaml`)
 - `secrets/` — Encrypted secrets (age-encrypted `.env.enc` files)
-- `docker/` — Docker configurations (WhatsApp bridge)
 - `agent.yaml` — Global agent configuration (tools, channels, sessions, guardian)
 
 ## Entry Points

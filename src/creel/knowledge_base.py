@@ -32,6 +32,18 @@ logger = logging.getLogger(__name__)
 # Maximum file size to index (50 MB) — prevents OOM on large files
 _MAX_FILE_SIZE = 50 * 1024 * 1024
 
+# Maximum files per add() call to prevent runaway indexing
+_MAX_FILES_PER_ADD = 10_000
+
+# Maximum query length in characters
+_MAX_QUERY_LENGTH = 10_000
+
+
+def _escape_like(value: str) -> str:
+    """Escape SQL LIKE wildcards (%, _) in a value."""
+    return value.replace("%", r"\%").replace("_", r"\_")
+
+
 # File extensions we know how to ingest
 _TEXT_EXTENSIONS = frozenset(
     {
@@ -440,6 +452,7 @@ class KnowledgeBase:
         """Index all supported files in a directory."""
         resolved_root = dir_path.resolve()
         pattern = "**/*" if recursive else "*"
+        file_count = 0
         for file_path in sorted(dir_path.glob(pattern)):
             if not file_path.is_file() or not _is_supported_file(file_path):
                 continue
@@ -449,9 +462,17 @@ class KnowledgeBase:
                 resolved = file_path.resolve(strict=True)
             except OSError:
                 continue
-            if not str(resolved).startswith(str(resolved_root)):
+            if not resolved.is_relative_to(resolved_root):
                 logger.debug("Skipping symlink outside root: %s -> %s", file_path, resolved)
                 continue
+            file_count += 1
+            if file_count > _MAX_FILES_PER_ADD:
+                logger.warning(
+                    "Stopping indexing: exceeded %d file limit in %s",
+                    _MAX_FILES_PER_ADD,
+                    dir_path,
+                )
+                break
             self._index_file(resolved, stats)
 
     def _index_file(self, file_path: Path, stats: dict[str, Any]) -> None:
@@ -625,6 +646,10 @@ class KnowledgeBase:
         if not query.strip():
             return []
 
+        # Truncate excessively long queries to prevent memory issues
+        if len(query) > _MAX_QUERY_LENGTH:
+            query = query[:_MAX_QUERY_LENGTH]
+
         # Try vector search if embedder is available
         embedder = self._get_embedder()
         if embedder is not None:
@@ -660,10 +685,10 @@ class KnowledgeBase:
             "JOIN kb_chunks c ON c.id = e.chunk_id "
             "JOIN kb_documents d ON c.doc_id = d.id"
         )
-        params: list = []
+        params: list[str] = []
         if filter_path:
-            sql += " WHERE d.path LIKE ?"
-            params.append(f"{filter_path}%")
+            sql += r" WHERE d.path LIKE ? ESCAPE '\'"
+            params.append(f"{_escape_like(filter_path)}%")
 
         rows = self._conn.execute(sql, params).fetchall()
         if not rows:
@@ -708,8 +733,8 @@ class KnowledgeBase:
             params: list[str | int] = [safe_query]
 
             if filter_path:
-                sql += "AND f.source LIKE ? "
-                params.append(f"{filter_path}%")
+                sql += r"AND f.source LIKE ? ESCAPE '\' "
+                params.append(f"{_escape_like(filter_path)}%")
 
             sql += "ORDER BY bm25(kb_fts) LIMIT ?"
             params.append(top_k)

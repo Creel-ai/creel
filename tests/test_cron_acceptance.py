@@ -679,7 +679,7 @@ class TestExecutionModes:
             payload=Payload(
                 kind="agentTurn",
                 message="test",
-                model="claude-opus-4-20250514",
+                model="claude-opus-4-6",
             ),
             delivery=Delivery(mode="none"),
         )
@@ -693,7 +693,7 @@ class TestExecutionModes:
         llm_config = call_kwargs.kwargs.get("llm_config") or call_kwargs[1].get("llm_config")
         if llm_config is None:
             llm_config = call_kwargs[0][1]
-        assert llm_config.model == "claude-opus-4-20250514"
+        assert llm_config.model == "claude-opus-4-6"
 
 
 # =============================================================================

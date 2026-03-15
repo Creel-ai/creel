@@ -262,7 +262,7 @@ class TestCmdCronAdd:
             at=None,
             message="Do something",
             system_event=None,
-            model="claude-opus-4-20250514",
+            model="claude-opus-4-6",
             timeout_seconds=60,
             target="isolated",
             delivery_mode="none",
@@ -276,7 +276,7 @@ class TestCmdCronAdd:
 
         store = _make_store(tmp_path)
         jobs = store.list()
-        assert jobs[0].payload.model == "claude-opus-4-20250514"
+        assert jobs[0].payload.model == "claude-opus-4-6"
         assert jobs[0].payload.timeout_seconds == 60
 
     def test_add_disabled(self, tmp_path: Path, capsys) -> None:

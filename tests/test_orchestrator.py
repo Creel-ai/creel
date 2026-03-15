@@ -30,7 +30,7 @@ def _make_task(tmp_path: Path, **overrides) -> Path:
         },
         "prompt": "Date: {date}\nWeather: {weather}",
         "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
     }
     task.update(overrides)
     path = tmp_path / f"{task['name']}.yaml"
@@ -93,7 +93,7 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
         },
         "prompt": "Date: {date}\nEmails: {gmail_readonly}",
         "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
     }
     path = tmp_path / "gmail_test.yaml"
     path.write_text(yaml.dump(task))
@@ -432,7 +432,7 @@ class TestAgentMode:
         task_path = _make_task(
             tmp_path,
             llm={
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "max_tokens": 100,
                 "secrets": str(enc_path),
             },
@@ -720,7 +720,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nSheet data: {google_sheets}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "sheets_test.yaml"
         path.write_text(yaml.dump(task))
@@ -751,7 +751,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nDocument: {google_docs}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "docs_test.yaml"
         path.write_text(yaml.dump(task))
@@ -784,7 +784,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nPresentation: {google_slides}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "slides_test.yaml"
         path.write_text(yaml.dump(task))
@@ -817,7 +817,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nDocument: {google_docs}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "docs_fail_test.yaml"
         path.write_text(yaml.dump(task))

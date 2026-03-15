@@ -134,7 +134,7 @@ class TestLoadAgentDef:
     def test_loads_config(self, tmp_path: Path, cli_args) -> None:
         config = {
             "system_prompt": "test prompt",
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         config_path = tmp_path / "agent.yaml"
         config_path.write_text(yaml.dump(config))

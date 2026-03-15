@@ -170,7 +170,7 @@ class TestWizard:
         agent_yaml = tmp_path / "home" / "agent.yaml"
         assert agent_yaml.exists()
         config = yaml.safe_load(agent_yaml.read_text())
-        assert config["llm"]["model"] == "claude-sonnet-4-20250514"
+        assert config["llm"]["model"] == "claude-sonnet-4-6"
         assert "channels" not in config
         assert any("wrote" in line and "agent.yaml" in line for line in lines)
 
@@ -399,13 +399,13 @@ class TestNonInteractiveInit:
             interactive=False,
             provider="anthropic",
             api_key="sk-ant-test",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
 
         agent_yaml = tmp_path / "home" / "agent.yaml"
         assert agent_yaml.exists()
         config = yaml.safe_load(agent_yaml.read_text())
-        assert config["llm"]["model"] == "claude-sonnet-4-20250514"
+        assert config["llm"]["model"] == "claude-sonnet-4-6"
         assert config["llm"]["secrets"] == "secrets/anthropic.env.enc"
         assert any("agent.yaml" in line for line in lines)
 
@@ -535,7 +535,7 @@ class TestNonInteractiveInit:
 class TestGenerateAgentYaml:
     def _make_config(self, **overrides) -> InitConfig:
         defaults = dict(
-            llm=InitLLMConfig(provider="anthropic", model="claude-sonnet-4-20250514"),
+            llm=InitLLMConfig(provider="anthropic", model="claude-sonnet-4-6"),
             channel=InitChannelConfig(type="none"),
             enable_media=False,
             enable_guardian=True,
@@ -547,7 +547,7 @@ class TestGenerateAgentYaml:
         config = self._make_config()
         content = _generate_agent_yaml(config, {})
         doc = yaml.safe_load(content)
-        assert doc["llm"]["model"] == "claude-sonnet-4-20250514"
+        assert doc["llm"]["model"] == "claude-sonnet-4-6"
         assert "system_prompt" in doc
         assert "channels" not in doc
 
@@ -630,7 +630,7 @@ class TestGenerateAgentYaml:
         content = _generate_agent_yaml(config, {})
         doc = yaml.safe_load(content)
         agent_def = AgentDefinition(**doc)
-        assert agent_def.llm.model == "claude-sonnet-4-20250514"
+        assert agent_def.llm.model == "claude-sonnet-4-6"
 
 
 # ---------------------------------------------------------------------------

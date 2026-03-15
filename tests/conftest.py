@@ -65,7 +65,7 @@ def minimal_agent_def(tmp_sessions_dir: str) -> AgentDefinition:
     """Create a minimal AgentDefinition for testing."""
     return AgentDefinition(
         system_prompt="You are a helpful assistant.",
-        llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
+        llm=LLMConfig(model="claude-sonnet-4-6", max_tokens=100),
         agent=AgentConfig(max_turns=5),
         session=SessionConfig(sessions_dir=tmp_sessions_dir, max_history=50),
         workspace=WorkspaceConfig(path="/tmp/nonexistent-workspace"),
@@ -141,7 +141,7 @@ def sample_task_yaml(tmp_path: Path):
             },
             "prompt": "Date: {date}\nWeather: {weather}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         task.update(overrides)
         tasks_dir = tmp_path / "tasks"

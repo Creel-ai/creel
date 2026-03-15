@@ -11,7 +11,7 @@ from creel.providers import LLMMessage, TextBlock, Usage
 
 
 def _make_config() -> LLMConfig:
-    return LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100)
+    return LLMConfig(model="claude-sonnet-4-6", max_tokens=100)
 
 
 def _mock_llm_message(text: str = "Hello world") -> LLMMessage:

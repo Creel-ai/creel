@@ -20,7 +20,7 @@ from creel.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
 
 
 def _make_llm_config() -> LLMConfig:
-    return LLMConfig(model="claude-sonnet-4-20250514", max_tokens=1024)
+    return LLMConfig(model="claude-sonnet-4-6", max_tokens=1024)
 
 
 def _make_tools() -> dict[str, ToolConfig]:
@@ -81,10 +81,10 @@ class TestSubAgentModels:
 
     def test_config_custom(self):
         cfg = SubAgentConfig(
-            task="build it", label="builder", model="claude-haiku-4-5-20251001", timeout_seconds=60
+            task="build it", label="builder", model="claude-haiku-4-5", timeout_seconds=60
         )
         assert cfg.label == "builder"
-        assert cfg.model == "claude-haiku-4-5-20251001"
+        assert cfg.model == "claude-haiku-4-5"
         assert cfg.timeout_seconds == 60
 
     def test_config_timeout_bounds(self):
@@ -341,11 +341,11 @@ class TestSubAgentManager:
         mock_loop.side_effect = capture_loop
         manager = _make_manager()
 
-        manager.spawn(SubAgentConfig(task="x", model="claude-haiku-4-5-20251001"))
+        manager.spawn(SubAgentConfig(task="x", model="claude-haiku-4-5"))
         time.sleep(0.2)
 
         assert captured_config.get("llm_config") is not None
-        assert captured_config["llm_config"].model == "claude-haiku-4-5-20251001"
+        assert captured_config["llm_config"].model == "claude-haiku-4-5"
 
     @patch("creel.agent.run_agent_loop")
     def test_result_truncated_at_2000_chars(self, mock_loop):

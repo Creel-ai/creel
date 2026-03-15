@@ -68,8 +68,8 @@ class TestPayload:
         assert p.kind == "systemEvent"
 
     def test_with_model_override(self):
-        p = Payload(message="summarize", model="claude-haiku-4-5-20251001")
-        assert p.model == "claude-haiku-4-5-20251001"
+        p = Payload(message="summarize", model="claude-haiku-4-5")
+        assert p.model == "claude-haiku-4-5"
 
 
 # --- Delivery ---
@@ -160,7 +160,7 @@ class TestCronJob:
             payload=Payload(
                 kind="agentTurn",
                 message="Summarize overnight emails and today's calendar.",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 timeout_seconds=120,
             ),
             delivery=Delivery(mode="announce", channel="whatsapp"),
@@ -168,7 +168,7 @@ class TestCronJob:
         )
         assert job.delivery.mode == "announce"
         assert job.delivery.channel == "whatsapp"
-        assert job.payload.model == "claude-sonnet-4-20250514"
+        assert job.payload.model == "claude-sonnet-4-6"
 
     def test_one_shot_job(self):
         job = CronJob(

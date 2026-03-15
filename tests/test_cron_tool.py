@@ -246,10 +246,10 @@ class TestActionAdd:
             schedule_kind="cron",
             schedule_expr="0 8 * * *",
             message="Analyze data",
-            model="claude-opus-4-20250514",
+            model="claude-opus-4-6",
         )
         assert result["status"] == "created"
-        assert mgr.store.list()[0].payload.model == "claude-opus-4-20250514"
+        assert mgr.store.list()[0].payload.model == "claude-opus-4-6"
 
     def test_add_with_announce_delivery(self, tmp_path: Path) -> None:
         mgr = _make_manager(tmp_path)

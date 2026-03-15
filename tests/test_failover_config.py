@@ -26,7 +26,7 @@ class TestLLMConfigFallback:
         config = LLMConfig(
             **{
                 "provider": "anthropic",
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "max_tokens": 4096,
                 "fallback": ["openai/gpt-4o"],
             }
@@ -198,7 +198,7 @@ class TestCallLLMModelOverride:
         )
         mock_get_provider.return_value = mock_provider
 
-        config = LLMConfig(provider="anthropic", model="claude-sonnet-4-20250514")
+        config = LLMConfig(provider="anthropic", model="claude-sonnet-4-6")
         call_llm(
             messages=[{"role": "user", "content": "hi"}],
             config=config,
@@ -221,14 +221,14 @@ class TestCallLLMModelOverride:
         )
         mock_get_provider.return_value = mock_provider
 
-        config = LLMConfig(provider="anthropic", model="claude-sonnet-4-20250514")
+        config = LLMConfig(provider="anthropic", model="claude-sonnet-4-6")
         call_llm(
             messages=[{"role": "user", "content": "hi"}],
             config=config,
         )
 
         call_kwargs = mock_get_provider.call_args[1]
-        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+        assert call_kwargs["model"] == "claude-sonnet-4-6"
 
     @patch("creel.llm.get_provider_with_fallback")
     def test_fallback_passed_to_provider(self, mock_get_provider):
@@ -244,7 +244,7 @@ class TestCallLLMModelOverride:
 
         config = LLMConfig(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o", "ollama/llama3.2"],
         )
         call_llm(

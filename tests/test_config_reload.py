@@ -38,7 +38,7 @@ from creel.models import (
 def _make_agent_def(**overrides) -> AgentDefinition:
     defaults = dict(
         system_prompt="You are a helpful assistant.",
-        llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
+        llm=LLMConfig(model="claude-sonnet-4-6", max_tokens=100),
         agent=AgentConfig(max_turns=5),
         session=SessionConfig(sessions_dir="/tmp/test-sessions", max_history=50),
         workspace=WorkspaceConfig(path="/tmp/test-workspace"),
@@ -57,7 +57,7 @@ def config_a() -> AgentDefinition:
 def config_b() -> AgentDefinition:
     return _make_agent_def(
         system_prompt="You are a different assistant.",
-        llm=LLMConfig(model="claude-haiku-4-5-20251001", max_tokens=200),
+        llm=LLMConfig(model="claude-haiku-4-5", max_tokens=200),
     )
 
 

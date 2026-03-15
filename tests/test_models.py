@@ -31,7 +31,7 @@ def valid_task_yaml(tmp_path: Path) -> Path:
         },
         "prompt": "Today is {date}. Weather: {weather}",
         "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
     }
     path = tmp_path / "test_task.yaml"
     path.write_text(yaml.dump(task))
@@ -46,7 +46,7 @@ def test_load_valid_task(valid_task_yaml: Path) -> None:
     assert task.executors["weather"].name == "weather"
     assert task.executors["weather"].image == "executor-weather:latest"
     assert task.output.type == "stdout"
-    assert task.llm.model == "claude-sonnet-4-20250514"
+    assert task.llm.model == "claude-sonnet-4-6"
 
 
 def test_load_task_file_not_found() -> None:
@@ -93,7 +93,7 @@ def test_default_llm_config(tmp_path: Path) -> None:
     path = tmp_path / "defaults.yaml"
     path.write_text(yaml.dump(task))
     loaded = load_task(path)
-    assert loaded.llm.model == "claude-sonnet-4-20250514"
+    assert loaded.llm.model == "claude-sonnet-4-6"
     assert loaded.llm.max_tokens == 300
 
 
@@ -251,7 +251,7 @@ def test_load_agent_config(tmp_path: Path) -> None:
                 },
             },
         },
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 1024},
+        "llm": {"model": "claude-sonnet-4-6", "max_tokens": 1024},
         "agent": {"max_turns": 15},
         "session": {"sessions_dir": "sessions", "max_history": 50},
     }

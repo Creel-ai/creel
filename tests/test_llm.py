@@ -26,7 +26,7 @@ from creel.providers.anthropic import _CLAUDE_CODE_SYSTEM_PREFIX
 
 
 def _make_config(**overrides) -> LLMConfig:
-    defaults = {"model": "claude-sonnet-4-20250514", "max_tokens": 100}
+    defaults = {"model": "claude-sonnet-4-6", "max_tokens": 100}
     defaults.update(overrides)
     return LLMConfig(**defaults)
 

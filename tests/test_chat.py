@@ -23,7 +23,7 @@ def _make_agent_def(tmp_path: Path, **overrides) -> AgentDefinition:
 
     defaults = dict(
         system_prompt="You are a test assistant.",
-        llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
+        llm=LLMConfig(model="claude-sonnet-4-6", max_tokens=100),
         agent=AgentConfig(max_turns=3),
         session=SessionConfig(
             sessions_dir=str(sessions_dir),
@@ -169,7 +169,7 @@ class TestChatServerInit:
         assert "Beta fact" in prompt
         # Verify config flows through (model matches compact_model default)
         config_arg = call_args[0][1]
-        assert config_arg.model == "claude-haiku-4-5-20251001"
+        assert config_arg.model == "claude-haiku-4-5"
 
         lt_content = (ws / "MEMORY.md").read_text()
         assert "### Summarized:" in lt_content

@@ -1842,6 +1842,288 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if report.errors > 0 else 0
 
 
+# ---------------------------------------------------------------------------
+# monitor subcommands
+# ---------------------------------------------------------------------------
+
+
+def _monitor_store(args: argparse.Namespace):
+    """Create a MonitorStore from default or overridden paths."""
+    from creel.monitors.store import MonitorStore
+
+    mon_dir = Path(getattr(args, "monitors_dir", paths.monitors_dir()))
+    return MonitorStore(
+        monitors_path=mon_dir / "monitors.json",
+        runs_path=mon_dir / "runs.json",
+        alerts_path=mon_dir / "alerts.json",
+    )
+
+
+def cmd_monitor_list(args: argparse.Namespace) -> int:
+    """List all monitors."""
+    store = _monitor_store(args)
+    monitors = store.list()
+
+    if not monitors:
+        print("No monitors configured.")
+        return 0
+
+    print(f"{'ID':<14} {'Name':<28} {'Schedule':<18} {'Level':<8} {'Enabled'}")
+    print("-" * 80)
+    for mon in monitors:
+        sched_str = _format_schedule(mon.schedule)
+        enabled = "yes" if mon.enabled else "no"
+        print(f"{mon.id:<14} {mon.name:<28} {sched_str:<18} {mon.alert_level.value:<8} {enabled}")
+
+    print(f"\n{len(monitors)} monitor(s).")
+    return 0
+
+
+def cmd_monitor_add(args: argparse.Namespace) -> int:
+    """Add a new monitor."""
+    from creel.cron.models import Delivery, Schedule
+    from creel.monitors.models import AlertLevel, Monitor, QuietHours
+
+    store = _monitor_store(args)
+    tz = getattr(args, "tz", "UTC") or "UTC"
+
+    # Schedule
+    cron_expr = getattr(args, "cron", None)
+    every = getattr(args, "every", None)
+    if cron_expr:
+        schedule = Schedule(kind="cron", expr=cron_expr, tz=tz)
+    elif every:
+        schedule = Schedule(kind="every", expr=str(every), tz=tz)
+    else:
+        print("Error: must specify --cron or --every", file=sys.stderr)
+        return 1
+
+    # Delivery
+    delivery_channel = getattr(args, "delivery_channel", None)
+    delivery_url = getattr(args, "delivery_url", None)
+    if delivery_channel:
+        delivery = Delivery(mode="announce", channel=delivery_channel)
+    elif delivery_url:
+        delivery = Delivery(mode="webhook", url=delivery_url)
+    else:
+        delivery = Delivery(mode="none")
+
+    # Alert level
+    level_str = getattr(args, "alert_level", "notice") or "notice"
+    try:
+        alert_level = AlertLevel(level_str)
+    except ValueError:
+        print(f"Error: invalid alert level '{level_str}'", file=sys.stderr)
+        return 1
+
+    # Quiet hours
+    quiet_hours = None
+    qh_str = getattr(args, "quiet_hours", None)
+    if qh_str:
+        try:
+            start, end = qh_str.split("-")
+            quiet_hours = QuietHours(start=start.strip(), end=end.strip(), timezone=tz)
+        except (ValueError, IndexError):
+            print(
+                "Error: --quiet-hours must be 'HH:MM-HH:MM' format",
+                file=sys.stderr,
+            )
+            return 1
+
+    try:
+        monitor = Monitor(
+            name=args.name,
+            description=getattr(args, "description", "") or "",
+            schedule=schedule,
+            executor=args.executor,
+            prompt=args.prompt,
+            delivery=delivery,
+            alert_level=alert_level,
+            quiet_hours=quiet_hours,
+            cooldown_seconds=getattr(args, "cooldown", 3600) or 3600,
+            enabled=not getattr(args, "disabled", False),
+        )
+        store.add(monitor)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Created monitor '{monitor.name}' ({monitor.id}).")
+    return 0
+
+
+def cmd_monitor_add_template(args: argparse.Namespace) -> int:
+    """Add a monitor from a built-in template."""
+    from creel.cron.models import Delivery
+    from creel.monitors.templates import create_from_template
+
+    store = _monitor_store(args)
+
+    delivery_channel = getattr(args, "delivery_channel", None)
+    delivery_url = getattr(args, "delivery_url", None)
+    if delivery_channel:
+        delivery = Delivery(mode="announce", channel=delivery_channel)
+    elif delivery_url:
+        delivery = Delivery(mode="webhook", url=delivery_url)
+    else:
+        delivery = None
+
+    tz = getattr(args, "tz", None)
+
+    try:
+        monitor = create_from_template(
+            args.template_name,
+            delivery=delivery,
+            quiet_hours_tz=tz,
+        )
+        store.add(monitor)
+    except KeyError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Created monitor '{monitor.name}' ({monitor.id}) from template '{args.template_name}'.")
+    return 0
+
+
+def cmd_monitor_templates(args: argparse.Namespace) -> int:
+    """List available monitor templates."""
+    from creel.monitors.templates import TEMPLATES
+
+    if not TEMPLATES:
+        print("No templates available.")
+        return 0
+
+    for name, tmpl in TEMPLATES.items():
+        print(f"  {name:<22} {tmpl.get('description', '')}")
+
+    print(f"\n{len(TEMPLATES)} template(s). Use 'creel monitor add-template <name>' to create.")
+    return 0
+
+
+def cmd_monitor_enable(args: argparse.Namespace) -> int:
+    """Enable a monitor."""
+    store = _monitor_store(args)
+    try:
+        mon = store.update(args.monitor_id, enabled=True)
+    except KeyError:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+    print(f"Enabled monitor '{mon.name}' ({mon.id}).")
+    return 0
+
+
+def cmd_monitor_disable(args: argparse.Namespace) -> int:
+    """Disable a monitor."""
+    store = _monitor_store(args)
+    try:
+        mon = store.update(args.monitor_id, enabled=False)
+    except KeyError:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+    print(f"Disabled monitor '{mon.name}' ({mon.id}).")
+    return 0
+
+
+def cmd_monitor_remove(args: argparse.Namespace) -> int:
+    """Remove a monitor."""
+    store = _monitor_store(args)
+    try:
+        mon = store.remove(args.monitor_id)
+    except KeyError:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+    print(f"Removed monitor '{mon.name}' ({mon.id}).")
+    return 0
+
+
+def cmd_monitor_run(args: argparse.Namespace) -> int:
+    """Trigger a monitor check immediately."""
+    from creel.monitors.manager import MonitorManager
+    from creel.monitors.models import MonitorRunStatus
+
+    store = _monitor_store(args)
+    mon = store.get(args.monitor_id)
+    if mon is None:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+
+    def cli_executor(monitor):
+        """Simple CLI executor that prints the prompt and returns None (no alert)."""
+        print(f"[Check] {monitor.prompt}")
+        return None
+
+    manager = MonitorManager(store=store, executor=cli_executor)
+
+    print(f"Running monitor '{mon.name}' ({args.monitor_id})...")
+    record = manager.trigger_monitor(args.monitor_id)
+
+    status_icons = {
+        MonitorRunStatus.OK: "OK (nothing to report)",
+        MonitorRunStatus.ALERTED: "ALERTED",
+        MonitorRunStatus.SUPPRESSED: f"SUPPRESSED ({record.suppressed_reason})",
+        MonitorRunStatus.FAILURE: f"FAILED: {record.error}",
+    }
+    print(f"Result: {status_icons.get(record.status, record.status)}")
+    return 1 if record.status == MonitorRunStatus.FAILURE else 0
+
+
+def cmd_monitor_history(args: argparse.Namespace) -> int:
+    """Show alert and run history for a monitor."""
+    store = _monitor_store(args)
+    mon = store.get(args.monitor_id)
+    if mon is None:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+
+    show_type = getattr(args, "type", "all") or "all"
+    tail = getattr(args, "tail", 20)
+
+    if show_type in ("all", "runs"):
+        runs = store.get_runs(args.monitor_id)
+        if tail and tail < len(runs):
+            runs = runs[-tail:]
+
+        if runs:
+            print(f"Run history for '{mon.name}':")
+            print(f"{'Started':<28} {'Status':<12} {'Level':<8} {'Detail'}")
+            print("-" * 75)
+            for run in runs:
+                detail = ""
+                if run.suppressed_reason:
+                    detail = f"suppressed: {run.suppressed_reason}"
+                elif run.error:
+                    detail = run.error
+                level = run.alert_level.value if run.alert_level else ""
+                print(f"{run.started_at:<28} {run.status.value:<12} {level:<8} {detail}")
+            print(f"\n{len(runs)} run(s) shown.")
+        else:
+            print(f"No runs recorded for '{mon.name}'.")
+
+    if show_type in ("all", "alerts"):
+        alerts = store.get_alerts(args.monitor_id)
+        if tail and tail < len(alerts):
+            alerts = alerts[-tail:]
+
+        if alerts:
+            if show_type == "all":
+                print()
+            print(f"Alert history for '{mon.name}':")
+            print(f"{'Timestamp':<28} {'Level':<8} {'Delivered':<10} {'Message'}")
+            print("-" * 80)
+            for alert in alerts:
+                delivered = "yes" if alert.delivered else f"no ({alert.suppressed_reason})"
+                msg = alert.message[:50] + "..." if len(alert.message) > 50 else alert.message
+                print(f"{alert.timestamp:<28} {alert.level.value:<8} {delivered:<10} {msg}")
+            print(f"\n{len(alerts)} alert(s) shown.")
+        else:
+            print(f"No alerts recorded for '{mon.name}'.")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -2325,6 +2607,86 @@ def main() -> int:
         help="Override duration (e.g., '1h', '30m', '60s')",
     )
 
+    # monitor command group
+    monitor_parser = subparsers.add_parser("monitor", help="Manage proactive monitors and alerts")
+    monitor_subparsers = monitor_parser.add_subparsers(
+        dest="monitor_command",
+        metavar="{list,add,add-template,templates,enable,disable,remove,run,history}",
+    )
+
+    # monitor list
+    monitor_subparsers.add_parser("list", help="List all monitors")
+
+    # monitor add
+    mon_add_parser = monitor_subparsers.add_parser("add", help="Add a new monitor")
+    mon_add_parser.add_argument("--name", required=True, help="Monitor name")
+    mon_add_parser.add_argument(
+        "--executor", required=True, help="Executor name (e.g., gmail_readonly)"
+    )
+    mon_add_parser.add_argument("--prompt", required=True, help="What to check for")
+    mon_add_parser.add_argument("--cron", help="Cron expression (e.g., '*/15 * * * *')")
+    mon_add_parser.add_argument("--every", type=int, help="Check interval in seconds")
+    mon_add_parser.add_argument("--delivery-channel", help="Channel for alert delivery")
+    mon_add_parser.add_argument("--delivery-url", help="Webhook URL for alert delivery")
+    mon_add_parser.add_argument(
+        "--alert-level",
+        choices=["info", "notice", "urgent"],
+        default="notice",
+        help="Alert severity level (default: notice)",
+    )
+    mon_add_parser.add_argument("--quiet-hours", help="Quiet hours range (e.g., '23:00-07:00')")
+    mon_add_parser.add_argument(
+        "--cooldown", type=int, default=3600, help="Dedup cooldown in seconds (default: 3600)"
+    )
+    mon_add_parser.add_argument("--description", help="Monitor description")
+    mon_add_parser.add_argument("--tz", default="UTC", help="Timezone (default: UTC)")
+    mon_add_parser.add_argument(
+        "--disabled", action="store_true", help="Create monitor in disabled state"
+    )
+
+    # monitor add-template
+    mon_tmpl_parser = monitor_subparsers.add_parser(
+        "add-template", help="Add a monitor from a built-in template"
+    )
+    mon_tmpl_parser.add_argument("template_name", help="Template name")
+    mon_tmpl_parser.add_argument("--delivery-channel", help="Channel for alert delivery")
+    mon_tmpl_parser.add_argument("--delivery-url", help="Webhook URL for alert delivery")
+    mon_tmpl_parser.add_argument("--tz", help="Timezone for quiet hours")
+
+    # monitor templates
+    monitor_subparsers.add_parser("templates", help="List available monitor templates")
+
+    # monitor enable
+    mon_enable_parser = monitor_subparsers.add_parser("enable", help="Enable a monitor")
+    mon_enable_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor disable
+    mon_disable_parser = monitor_subparsers.add_parser("disable", help="Disable a monitor")
+    mon_disable_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor remove
+    mon_remove_parser = monitor_subparsers.add_parser("remove", help="Remove a monitor")
+    mon_remove_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor run
+    mon_run_parser = monitor_subparsers.add_parser(
+        "run", help="Trigger a monitor check immediately"
+    )
+    mon_run_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor history
+    mon_history_parser = monitor_subparsers.add_parser("history", help="Show run and alert history")
+    mon_history_parser.add_argument("monitor_id", help="Monitor ID")
+    mon_history_parser.add_argument(
+        "--type",
+        choices=["all", "runs", "alerts"],
+        default="all",
+        help="History type to show (default: all)",
+    )
+    mon_history_parser.add_argument(
+        "--tail", type=int, default=20, help="Show last N entries (default: 20)"
+    )
+
     args = parser.parse_args()
 
     # Set up logging
@@ -2394,6 +2756,23 @@ def main() -> int:
             limits_parser.print_help()
             return 1
         return limits_commands[args.limits_command](args)
+
+    if args.command == "monitor":
+        monitor_commands = {
+            "list": cmd_monitor_list,
+            "add": cmd_monitor_add,
+            "add-template": cmd_monitor_add_template,
+            "templates": cmd_monitor_templates,
+            "enable": cmd_monitor_enable,
+            "disable": cmd_monitor_disable,
+            "remove": cmd_monitor_remove,
+            "run": cmd_monitor_run,
+            "history": cmd_monitor_history,
+        }
+        if args.monitor_command not in monitor_commands:
+            monitor_parser.print_help()
+            return 1
+        return monitor_commands[args.monitor_command](args)
 
     commands = {
         "init": cmd_init,

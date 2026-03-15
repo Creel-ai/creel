@@ -8,8 +8,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from creel.context import estimate_messages_tokens, prune_messages
 from creel.llm import call_llm, extract_text
-from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
+from creel.models import (
+    AgentConfig,
+    BridgeConfig,
+    ContextPruningConfig,
+    LLMConfig,
+    SessionState,
+    ToolConfig,
+)
+from creel.tool_cache import ToolResultCache
 from creel.tools import build_tool_definitions, execute_tool_call
 
 logger = logging.getLogger(__name__)
@@ -389,6 +398,11 @@ def run_agent_loop(
     session_state: SessionState | None = None,
     cron_manager: object | None = None,
     subagent_manager: object | None = None,
+    kb_manager: object | None = None,
+    tool_cache: ToolResultCache | None = None,
+    context_pruning: ContextPruningConfig | None = None,
+    max_context_tokens: int = 180_000,
+    summarize_fn: Callable[[list[dict]], str] | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -405,6 +419,10 @@ def run_agent_loop(
             tools may be called regardless of global policy.
         cron_manager: Optional CronManager for cron scheduling tool.
         subagent_manager: Optional SubAgentManager for sub-agent tool.
+        tool_cache: Optional ToolResultCache for caching tool results.
+        context_pruning: Optional ContextPruningConfig for automatic pruning.
+        max_context_tokens: Model's maximum context window size.
+        summarize_fn: Optional callback to summarize pruned messages.
 
     Returns:
         AgentResult with the final response and execution metadata.
@@ -420,6 +438,7 @@ def run_agent_loop(
             include_workspace_tools=include_workspace,
             include_cron_tools=cron_manager is not None,
             include_subagent_tool=subagent_manager is not None,
+            include_kb_tools=kb_manager is not None,
         )
         if tools_config
         else []
@@ -428,19 +447,44 @@ def run_agent_loop(
     tool_calls_made = 0
     tool_history: list[dict] = []
     last_input_tokens = 0
+    _model_override = session_state.model_override if session_state else None
 
     for _turn in range(agent_config.max_turns):
         turns_used += 1
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
         _ensure_tool_call_integrity(messages)
 
+        # Context pruning — build a pruned copy for the LLM call while
+        # keeping the full history in ``messages`` for on-disk persistence.
+        llm_messages = messages
+        if context_pruning and context_pruning.enabled:
+            estimated = estimate_messages_tokens(messages)
+            threshold_tokens = int(max_context_tokens * context_pruning.threshold)
+            if estimated > threshold_tokens:
+                logger.info(
+                    "Context pruning: %d estimated tokens > %d threshold",
+                    estimated,
+                    threshold_tokens,
+                )
+                pruned, summary = prune_messages(
+                    messages,
+                    max_tokens=max_context_tokens,
+                    threshold=context_pruning.threshold,
+                    summarize_fn=summarize_fn,
+                    min_recent=context_pruning.min_recent_messages,
+                )
+                llm_messages = pruned
+                if summary:
+                    logger.info("Context summary generated (%d chars)", len(summary))
+
         try:
             response = call_llm(
-                messages=messages,
+                messages=llm_messages,
                 config=llm_config,
                 tools=tool_defs if tool_defs else None,
                 system=system_prompt,
                 on_text_delta=on_text_delta,
+                model_override=_model_override,
             )
         except Exception as e:
             logger.exception("LLM call failed on turn %d", turns_used)
@@ -557,26 +601,41 @@ def run_agent_loop(
                         last_input_tokens=last_input_tokens,
                     )
 
-            t0 = time.perf_counter()
-            try:
-                result = execute_tool_call(
-                    tool_name=tool_name,
-                    tool_input=tool_input,
-                    tools_config=tools_config,
-                    use_containers=use_containers,
-                    memory_manager=memory_manager,
-                    bridge_config=bridge_config,
-                    session_state=session_state,
-                    cron_manager=cron_manager,
-                    subagent_manager=subagent_manager,
-                )
+            # Check tool result cache before executing.
+            cached_result = None
+            if tool_cache is not None:
+                cached_result = tool_cache.get(tool_name, tool_input)
+            if cached_result is not None:
+                result = cached_result
                 is_error = False
-                elapsed_ms = (time.perf_counter() - t0) * 1000
-            except Exception as e:
-                logger.exception("Tool %s failed", tool_name)
-                result = f"Error: {e}"
-                is_error = True
-                elapsed_ms = (time.perf_counter() - t0) * 1000
+                elapsed_ms = 0.0
+                logger.info("Tool %s served from cache", tool_name)
+            else:
+                t0 = time.perf_counter()
+                try:
+                    result = execute_tool_call(
+                        tool_name=tool_name,
+                        tool_input=tool_input,
+                        tools_config=tools_config,
+                        use_containers=use_containers,
+                        memory_manager=memory_manager,
+                        bridge_config=bridge_config,
+                        session_state=session_state,
+                        cron_manager=cron_manager,
+                        subagent_manager=subagent_manager,
+                        kb_manager=kb_manager,
+                    )
+                    is_error = False
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+                except Exception as e:
+                    logger.exception("Tool %s failed", tool_name)
+                    result = f"Error: {e}"
+                    is_error = True
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+                # Cache successful results only.
+                if tool_cache is not None and not is_error:
+                    tool_cache.put(tool_name, tool_input, result)
 
             # Audit tool execution result
             if guardian is not None and hasattr(guardian, "_audit") and guardian._audit:
@@ -697,6 +756,7 @@ def run_agent_loop(
             config=llm_config,
             tools=None,
             system=system_prompt,
+            model_override=_model_override,
         )
         text = extract_text(response)
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
@@ -717,18 +777,28 @@ def run_agent_loop(
 
 
 def _serialize_content(content: list) -> list[dict]:
-    """Serialize Anthropic content blocks to dicts for message history."""
+    """Serialize LLM content blocks to dicts for message history.
+
+    Handles both provider-agnostic dataclass blocks (TextBlock, ToolUseBlock)
+    and dict blocks. The attribute access pattern is the same for both since
+    our dataclasses use the same field names as the Anthropic SDK objects.
+    """
     serialized = []
     for block in content:
-        if block.type == "text":
-            serialized.append({"type": "text", "text": block.text})
-        elif block.type == "tool_use":
+        block_type = block.type if hasattr(block, "type") else block.get("type")
+        if block_type == "text":
+            text = block.text if hasattr(block, "text") else block.get("text", "")
+            serialized.append({"type": "text", "text": text})
+        elif block_type == "tool_use":
+            block_id = block.id if hasattr(block, "id") else block.get("id", "")
+            name = block.name if hasattr(block, "name") else block.get("name", "")
+            inp = block.input if hasattr(block, "input") else block.get("input", {})
             serialized.append(
                 {
                     "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
+                    "id": block_id,
+                    "name": name,
+                    "input": inp,
                 }
             )
     return serialized

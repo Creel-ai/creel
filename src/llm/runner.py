@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Containerized LLM runner.
 
-Reads a prompt from stdin, calls the Anthropic API, and prints the response to stdout.
-Configured via environment variables: ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY, MODEL, MAX_TOKENS.
+Reads a prompt from stdin, calls the configured LLM provider, and prints
+the response to stdout.  Configured via environment variables:
+
+- ``PROVIDER``: LLM provider name (anthropic, openai, bedrock, ollama).
+  Defaults to ``anthropic``.
+- ``MODEL``, ``MAX_TOKENS``: model identifier and token limit.
+- Provider-specific credentials (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
 """
 
 from __future__ import annotations
@@ -11,31 +16,23 @@ import json
 import os
 import sys
 
-import anthropic
+# Ensure _provider is importable whether we're running as a script inside
+# the container (/app/) or imported as a module on the host (src/llm/).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-_OAUTH_HEADERS = {
-    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-    "user-agent": "claude-cli/2.1.2 (external, cli)",
-    "x-app": "cli",
-}
-
-_CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+from _provider import (  # noqa: E402
+    CLAUDE_CODE_SYSTEM_PREFIX,
+    AnthropicContainerProvider,
+    ContainerProvider,
+    get_container_provider,
+)
 
 
 def main() -> None:
-    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-
-    if auth_token:
-        headers = _OAUTH_HEADERS if "sk-ant-oat" in auth_token else {}
-        client = anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
-    elif api_key:
-        client = anthropic.Anthropic(api_key=api_key)
-    else:
-        print(
-            "Error: Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY",
-            file=sys.stderr,
-        )
+    try:
+        provider = get_container_provider()
+    except (RuntimeError, ImportError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     model = os.environ.get("MODEL", "claude-sonnet-4-20250514")
@@ -54,17 +51,12 @@ def main() -> None:
     try:
         msg = json.loads(first_line)
         if isinstance(msg, dict) and "type" in msg:
-            _run_keepalive(client, model, max_tokens, auth_token, msg)
+            _run_keepalive(provider, model, max_tokens, msg)
             return
     except (json.JSONDecodeError, ValueError):
         pass
 
     # Legacy mode: first line is the start of a raw prompt.
-    # Read the rest of stdin and combine. The readline()/read() split is
-    # intentional for backward compatibility: the first line was already
-    # consumed to detect JSON protocol mode, so we recombine it with any
-    # remaining input. Single-line prompts (no trailing newline) produce
-    # empty `rest`, handled by the ternary.
     rest = sys.stdin.read()
     prompt = (first_line + "\n" + rest).strip() if rest else first_line
 
@@ -72,19 +64,20 @@ def main() -> None:
         print("Error: No prompt provided on stdin", file=sys.stderr)
         sys.exit(1)
 
-    create_kwargs: dict = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if auth_token and "sk-ant-oat" in auth_token:
-        create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
+    system = None
+    if isinstance(provider, AnthropicContainerProvider) and provider.uses_oauth:
+        system = CLAUDE_CODE_SYSTEM_PREFIX
 
-    message = client.messages.create(**create_kwargs)
+    response = provider.create(
+        messages=[{"role": "user", "content": prompt}],
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+    )
 
-    for block in message.content:
-        if block.type == "text":
-            print(block.text)
+    for block in response.content:
+        if block.get("type") == "text":
+            print(block["text"])
 
 
 def _send(obj: dict) -> None:
@@ -102,13 +95,14 @@ def _recv() -> dict:
 
 
 def _run_keepalive(
-    client: anthropic.Anthropic,
+    provider: ContainerProvider,
     model: str,
     max_tokens: int,
-    auth_token: str | None,
     first_msg: dict,
 ) -> None:
     """Run in keepalive mode: process JSON-line requests in a loop."""
+    # Determine if we should inject the OAuth system prefix
+    inject_system = isinstance(provider, AnthropicContainerProvider) and provider.uses_oauth
 
     def _handle(msg: dict) -> bool:
         """Handle a single message. Returns False to exit."""
@@ -130,20 +124,19 @@ def _run_keepalive(
             req_model = msg.get("model", model)
             req_max_tokens = msg.get("max_tokens", max_tokens)
 
-            create_kwargs: dict = {
-                "model": req_model,
-                "max_tokens": req_max_tokens,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-            if auth_token and "sk-ant-oat" in auth_token:
-                create_kwargs["system"] = _CLAUDE_CODE_SYSTEM_PREFIX
+            system = CLAUDE_CODE_SYSTEM_PREFIX if inject_system else None
 
             try:
-                message = client.messages.create(**create_kwargs)
+                response = provider.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=req_model,
+                    max_tokens=req_max_tokens,
+                    system=system,
+                )
                 text_parts = []
-                for block in message.content:
-                    if block.type == "text":
-                        text_parts.append(block.text)
+                for block in response.content:
+                    if block.get("type") == "text":
+                        text_parts.append(block["text"])
                 _send({"type": "response", "text": "\n".join(text_parts)})
             except Exception as e:
                 _send({"type": "error", "message": str(e)})

@@ -54,7 +54,7 @@ docker run --rm <image> <args>
 
 ```bash
 # Start bridge
-python3 runner.py bridge &
+creel daemon start &
 
 # Hit endpoint
 curl -s -X POST http://localhost:8099/<tool>/<action> \
@@ -77,8 +77,8 @@ python3 -c "from creel.models import load_task; t = load_task('agent.yaml'); pri
 ### CLI Commands
 
 ```bash
-python3 runner.py --help
-python3 runner.py <new_command> --help
+creel --help
+creel <new_command> --help
 ```
 
 ## 5. Error Paths (required for new features)

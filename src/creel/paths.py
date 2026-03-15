@@ -43,6 +43,10 @@ def cron_dir() -> Path:
     return creel_home() / "cron"
 
 
+def monitors_dir() -> Path:
+    return creel_home() / "monitors"
+
+
 def audit_log() -> Path:
     return creel_home() / "guardian_audit.jsonl"
 

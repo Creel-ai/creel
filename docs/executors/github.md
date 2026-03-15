@@ -15,7 +15,7 @@ cat > secrets/github.env <<'EOF'
 GH_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxx
 EOF
 
-./scripts/encrypt-secret.sh secrets/github.env
+creel encrypt secrets/github.env
 ```
 
 The script produces `secrets/github.env.enc` and deletes the plaintext file.
@@ -81,7 +81,7 @@ The executor enforces a built-in allowlist (see `src/executors/github/executor.p
 
 ### Always allowed (read-only)
 
-`issue list`, `issue view`, `pr list`, `pr view`, `run list`, `run view`, `run watch`, `search code`, `search issues`, `search prs`
+`issue list`, `issue view`, `pr list`, `pr view`, `pr diff`, `pr checks`, `run list`, `run view`, `run watch`, `search code`, `search issues`, `search prs`
 
 ### Require review (write operations)
 
@@ -91,7 +91,7 @@ These are also gated by Guardian policy rules in `policies/default.yaml`.
 
 ### Always blocked (destructive)
 
-`repo delete`, `issue delete`, `pr merge --admin`, and `api` calls using `DELETE` or `PUT` methods.
+`repo delete`, `issue delete`, `pr merge --admin`, and `api` calls using `DELETE`, `PUT`, or `PATCH` methods.
 
 ## Policy
 

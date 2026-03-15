@@ -595,6 +595,29 @@ tools:
         type: string
         description: "Number of results (default: 5, max: 20)"
 
+  # Text-to-Speech
+  synthesize_speech:
+    executor: tts
+    network: true
+    description: "Convert text to speech audio using TTS"
+    parameters:
+      text:
+        type: string
+        description: "Text to convert to speech (max 5000 chars)"
+        required: true
+      voice:
+        type: string
+        description: "Voice name (e.g. nova, alloy, shimmer for OpenAI; Rachel for ElevenLabs)"
+      backend:
+        type: string
+        description: "TTS backend: openai, elevenlabs, or local"
+      output_format:
+        type: string
+        description: "Audio format: mp3, wav, ogg (default: mp3)"
+      output_path:
+        type: string
+        description: "Custom output file path (optional)"
+
   notion_api:
     executor: notion
     secrets: secrets/notion_read.env.enc
@@ -1137,6 +1160,13 @@ llm:
     enabled: false
     idle_timeout_seconds: 300
     max_containers: 2
+  rate_limits:
+    requests_per_minute: 30
+    requests_per_hour: 500
+    tokens_per_day: 1000000
+    cost_per_day_usd: 10.00
+    queue_timeout: 30.0
+    enabled: true
 
 agent:
   max_turns: 15
@@ -1173,6 +1203,17 @@ workspace:
   compact_after_days: 7
   max_daily_entries: 50
   max_long_term_lines: 500
+
+knowledge_base:
+  enabled: true
+  store: sqlite
+  embedding_model: all-MiniLM-L6-v2
+  chunk_size: 512
+  chunk_overlap: 50
+  auto_index: []
+  # auto_index:
+  #   - ~/Documents/notes/
+  #   - ~/projects/docs/
 
 media:
   enabled: true

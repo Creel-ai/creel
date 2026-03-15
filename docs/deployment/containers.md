@@ -1,6 +1,6 @@
 # Container Mode
 
-For production use, executors and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with all commands — scheduled tasks, one-off runs, and agent mode (chat, listen, serve).
+For production use, executors and the LLM runner execute in isolated Docker containers with restricted capabilities. The `--containers` flag works with run and schedule commands.
 
 ## Building Container Images
 
@@ -25,15 +25,10 @@ docker build -t llm-runner:latest llm/
 
 ```bash
 # Run a task with containers
-./runner.py --containers run morning_briefing
-
-# Agent mode with containerized executors
-./runner.py --containers chat
-./runner.py --containers listen
-./runner.py --containers serve
+creel run morning_briefing --containers
 
 # Scheduler with containers
-./runner.py --containers schedule
+creel schedule --containers
 ```
 
 ## Security Flags

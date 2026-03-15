@@ -15,21 +15,45 @@ import requests
 
 BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search"
 
+# Default HTTP settings
+DEFAULT_TIMEOUT = 15.0
+DEFAULT_CONNECT_TIMEOUT = 5.0
 
-def search(query: str, count: int = 5) -> list[dict]:
-    """Search the web using Brave Search API."""
+
+def search(
+    query: str,
+    count: int = 5,
+    *,
+    timeout: float = DEFAULT_TIMEOUT,
+    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
+) -> list[dict]:
+    """Search the web using Brave Search API.
+
+    Args:
+        query: Search query string.
+        count: Number of results (1-20).
+        timeout: Total request timeout in seconds (hard limit: 120s).
+        connect_timeout: Connection timeout in seconds (hard limit: 120s).
+    """
     api_key = os.environ.get("BRAVE_API_KEY", "")
     if not api_key:
         raise RuntimeError("BRAVE_API_KEY is not set")
 
     count = max(1, min(count, 20))
 
-    resp = requests.get(
-        BRAVE_API_URL,
-        headers={"X-Subscription-Token": api_key},
-        params={"q": query, "count": count},  # type: ignore[arg-type]
-        timeout=15,
-    )
+    try:
+        resp = requests.get(
+            BRAVE_API_URL,
+            headers={"X-Subscription-Token": api_key},
+            params={"q": query, "count": count},  # type: ignore[arg-type]
+            timeout=(connect_timeout, timeout),
+        )
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError("Connection failed: could not connect to Brave Search API") from e
+    except requests.exceptions.Timeout as e:
+        raise RuntimeError(
+            f"Brave Search request timed out after {timeout}s (connect timeout: {connect_timeout}s)"
+        ) from e
     resp.raise_for_status()
     data = resp.json()
 

@@ -16,7 +16,12 @@ creel <command> [options]
 | `daemon ...` | Manage daemon lifecycle (`start`, `stop`, `status`, `install`, `uninstall`) |
 | `attach` | Attach TUI client to running daemon |
 | `send <message>` | Send one message via daemon API |
+| `usage` | Show current LLM usage against rate limits |
+| `limits override` | Temporarily bypass rate limits |
+| `doctor` | Check system health and dependencies |
+| `reload` | Reload agent configuration without restarting |
 | `audit` | Query the guardian audit log |
+| `monitor ...` | Manage proactive monitors and alerts |
 
 ## Global Options
 
@@ -100,6 +105,82 @@ By default, `creel init` launches an interactive wizard that validates credentia
 | Option | Description |
 |--------|-------------|
 | `--dry` | Render prompt only, skip LLM and output |
+
+## Usage Options
+
+```bash
+creel usage [options]
+```
+
+Shows current LLM usage against configured rate limits.
+
+| Option | Description |
+|--------|-------------|
+| `--history` | Show usage history by day |
+| `--days N` | Number of days to show in history (default: 7) |
+
+Example output:
+
+```
+Current LLM Usage:
+  Requests (last minute): 3 / 30
+  Requests (last hour):   47 / 500
+  Tokens (today):         125,430 / 1,000,000
+  Cost (today):           $0.4821 / $10.00
+```
+
+## Limits Override
+
+```bash
+creel limits override --duration <DURATION>
+```
+
+Temporarily bypass all rate limits. Duration accepts `h`, `m`, or `s` suffixes (e.g., `1h`, `30m`, `60s`).
+
+!!! warning
+    Overrides disable **all** rate limits for the specified duration. Cost caps will not be enforced.
+
+## Monitor Commands
+
+```bash
+creel monitor <subcommand> [options]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all monitors |
+| `add` | Add a new monitor |
+| `add-template <name>` | Add a monitor from a built-in template |
+| `templates` | List available templates |
+| `enable <id>` | Enable a monitor |
+| `disable <id>` | Disable a monitor |
+| `remove <id>` | Remove a monitor |
+| `run <id>` | Trigger a monitor check immediately |
+| `history <id>` | Show run and alert history |
+
+### Monitor Add Options
+
+| Option | Description |
+|--------|-------------|
+| `--name NAME` | Monitor name (required) |
+| `--executor NAME` | Executor to use (required) |
+| `--prompt TEXT` | What to check for (required) |
+| `--cron EXPR` | Cron expression (e.g., `*/15 * * * *`) |
+| `--every N` | Check interval in seconds |
+| `--delivery-channel NAME` | Channel for alert delivery |
+| `--delivery-url URL` | Webhook URL for alert delivery |
+| `--alert-level LEVEL` | `info`, `notice`, or `urgent` (default: `notice`) |
+| `--quiet-hours RANGE` | Quiet hours range (e.g., `23:00-07:00`) |
+| `--cooldown N` | Dedup cooldown in seconds (default: `3600`) |
+| `--tz TIMEZONE` | Timezone (default: `UTC`) |
+| `--disabled` | Create in disabled state |
+
+### Monitor History Options
+
+| Option | Description |
+|--------|-------------|
+| `--type TYPE` | `all`, `runs`, or `alerts` (default: `all`) |
+| `--tail N` | Show last N entries (default: `20`) |
 
 ## Audit Options
 

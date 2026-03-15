@@ -23,6 +23,7 @@ allow:
   - github
   - web_search
   - fetch_url
+  - synthesize_speech
   # File operations (read-only)
   - read_file
   - list_files

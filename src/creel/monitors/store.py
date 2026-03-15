@@ -6,9 +6,10 @@ import builtins
 import json
 import logging
 import os
+import stat
 import tempfile
 import threading
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from creel import paths
@@ -159,9 +160,11 @@ class MonitorStore:
                     continue
                 try:
                     ts = datetime.fromisoformat(a.timestamp)
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=UTC)
                     if ts >= since:
                         result.append(a.fingerprint)
-                except ValueError:
+                except (ValueError, TypeError):
                     continue
             return result
 
@@ -225,25 +228,37 @@ class MonitorStore:
             )
 
     def _save_monitors(self) -> None:
-        self._monitors_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_dir(self._monitors_path.parent)
         data = [m.model_dump() for m in self._monitors.values()]
         self._atomic_write(self._monitors_path, json.dumps(data, indent=2) + "\n")
 
     def _save_runs(self) -> None:
-        self._runs_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_dir(self._runs_path.parent)
         data = {mid: [r.model_dump() for r in records] for mid, records in self._runs.items()}
         self._atomic_write(self._runs_path, json.dumps(data, indent=2) + "\n")
 
     def _save_alerts(self) -> None:
-        self._alerts_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_dir(self._alerts_path.parent)
         data = {mid: [a.model_dump() for a in records] for mid, records in self._alerts.items()}
         self._atomic_write(self._alerts_path, json.dumps(data, indent=2) + "\n")
 
     @staticmethod
+    def _ensure_dir(directory: Path) -> None:
+        """Create the store directory with owner-only permissions (0700)."""
+        directory.mkdir(parents=True, exist_ok=True)
+        directory.chmod(stat.S_IRWXU)
+
+    @staticmethod
     def _atomic_write(path: Path, content: str) -> None:
-        """Write content to a file atomically via temp file + rename."""
+        """Write content to a file atomically via temp file + rename.
+
+        Files are created with owner-only read/write (0600) to protect
+        potentially sensitive monitor output (email content, calendar
+        details, system health data).
+        """
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:
+            os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)
             with os.fdopen(fd, "w") as f:
                 f.write(content)
                 f.flush()

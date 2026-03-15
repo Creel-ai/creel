@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -349,3 +351,41 @@ class TestMonitorStorePersistence:
             alerts_path=tmp_path / "alerts.json",
         )
         assert store.list() == []
+
+
+# ---------------------------------------------------------------------------
+# File permissions
+# ---------------------------------------------------------------------------
+
+
+class TestMonitorStorePermissions:
+    def test_store_directory_is_owner_only(self, tmp_path) -> None:
+        store_dir = tmp_path / "monitors"
+        store = MonitorStore(
+            monitors_path=store_dir / "monitors.json",
+            runs_path=store_dir / "runs.json",
+            alerts_path=store_dir / "alerts.json",
+        )
+        mon = _make_monitor()
+        store.add(mon)
+
+        dir_mode = os.stat(store_dir).st_mode
+        assert dir_mode & stat.S_IRWXU == stat.S_IRWXU  # owner has rwx
+        assert dir_mode & stat.S_IRWXG == 0  # group has nothing
+        assert dir_mode & stat.S_IRWXO == 0  # others have nothing
+
+    def test_store_files_are_owner_only(self, tmp_path) -> None:
+        store_dir = tmp_path / "monitors"
+        store = MonitorStore(
+            monitors_path=store_dir / "monitors.json",
+            runs_path=store_dir / "runs.json",
+            alerts_path=store_dir / "alerts.json",
+        )
+        mon = _make_monitor()
+        store.add(mon)
+
+        file_mode = os.stat(store_dir / "monitors.json").st_mode
+        assert file_mode & stat.S_IRUSR  # owner can read
+        assert file_mode & stat.S_IWUSR  # owner can write
+        assert file_mode & stat.S_IRGRP == 0  # group cannot read
+        assert file_mode & stat.S_IROTH == 0  # others cannot read

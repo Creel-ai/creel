@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from creel.cron.models import Delivery, Schedule
 
@@ -128,12 +128,6 @@ class Monitor(BaseModel):
     enabled: bool = True
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
-
-    @model_validator(mode="after")
-    def validate_delivery_for_sending(self) -> Monitor:
-        if self.alert_level != AlertLevel.INFO and self.delivery.mode == "none":
-            pass  # Allow — user may configure delivery later
-        return self
 
 
 class MonitorRunStatus(enum.StrEnum):

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from creel.cron.models import Delivery, Schedule
 from creel.monitors.models import AlertLevel, Monitor, QuietHours
 
-TEMPLATES: dict[str, dict] = {
+TEMPLATES: dict[str, dict[str, Any]] = {
     "urgent_email": {
         "name": "Urgent Email Monitor",
         "description": "Check for urgent unread emails that need immediate attention",

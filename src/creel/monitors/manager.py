@@ -53,10 +53,12 @@ class MonitorManager:
         store: MonitorStore,
         executor: MonitorExecutorFn | None = None,
         channel_send: ChannelSendFn | None = None,
+        allowed_executors: set[str] | None = None,
     ) -> None:
         self._store = store
         self._executor = executor
         self._channel_send = channel_send
+        self._allowed_executors = allowed_executors
         self._scheduler = BackgroundScheduler()
 
     @property
@@ -84,9 +86,11 @@ class MonitorManager:
                     )
 
         self._scheduler.start()
+        enabled_count = sum(1 for m in monitors if m.enabled)
         logger.info(
-            "MonitorManager started with %d monitors",
+            "MonitorManager started with %d monitors (%d enabled)",
             len(monitors),
+            enabled_count,
         )
 
     def shutdown(self, wait: bool = True) -> None:
@@ -97,8 +101,17 @@ class MonitorManager:
 
     # -- CRUD --
 
+    def _validate_executor(self, monitor: Monitor) -> None:
+        """Reject monitors that reference executors not in the allowlist."""
+        if self._allowed_executors is not None and monitor.executor not in self._allowed_executors:
+            raise ValueError(
+                f"Executor '{monitor.executor}' is not in the allowed set: "
+                f"{sorted(self._allowed_executors)}"
+            )
+
     def add_monitor(self, monitor: Monitor) -> Monitor:
         """Add a new monitor and schedule it if enabled."""
+        self._validate_executor(monitor)
         self._store.add(monitor)
         if monitor.enabled and self._scheduler.running:
             try:
@@ -116,6 +129,12 @@ class MonitorManager:
 
     def update_monitor(self, monitor_id: str, **fields: Any) -> Monitor:
         """Update fields on a monitor and reschedule."""
+        if "executor" in fields and self._allowed_executors is not None:
+            if fields["executor"] not in self._allowed_executors:
+                raise ValueError(
+                    f"Executor '{fields['executor']}' is not in the allowed set: "
+                    f"{sorted(self._allowed_executors)}"
+                )
         updated = self._store.update(monitor_id, **fields)
         self._unschedule_monitor(monitor_id)
         if updated.enabled and self._scheduler.running:
@@ -254,7 +273,35 @@ class MonitorManager:
             return record
 
         # Step 4: Deliver the alert
-        self._deliver_alert(monitor, alert_text)
+        try:
+            delivered = self._deliver_alert(monitor, alert_text)
+        except Exception as exc:
+            logger.exception(
+                "Alert delivery failed for monitor '%s' (%s)", monitor.name, monitor.id
+            )
+            exc_type = type(exc).__name__
+            alert_record = AlertRecord(
+                monitor_id=monitor.id,
+                timestamp=now_iso(),
+                level=monitor.alert_level,
+                fingerprint=fp,
+                message=alert_text,
+                delivered=False,
+                suppressed_reason=f"delivery_error: {exc_type}",
+            )
+            self._store.add_alert(alert_record)
+
+            record = MonitorRunRecord(
+                monitor_id=monitor.id,
+                started_at=started_at,
+                ended_at=now_iso(),
+                status=MonitorRunStatus.FAILURE,
+                alert_level=monitor.alert_level,
+                alert_fingerprint=fp,
+                error=f"Delivery failed: {exc_type}",
+            )
+            self._store.add_run(record)
+            return record
 
         alert_record = AlertRecord(
             monitor_id=monitor.id,
@@ -262,7 +309,7 @@ class MonitorManager:
             level=monitor.alert_level,
             fingerprint=fp,
             message=alert_text,
-            delivered=True,
+            delivered=delivered,
         )
         self._store.add_alert(alert_record)
 
@@ -300,13 +347,16 @@ class MonitorManager:
 
         return None
 
-    def _deliver_alert(self, monitor: Monitor, alert_text: str) -> None:
-        """Send alert via the configured delivery method."""
+    def _deliver_alert(self, monitor: Monitor, alert_text: str) -> bool:
+        """Send alert via the configured delivery method.
+
+        Returns True if the alert was actually sent, False otherwise.
+        """
         delivery = monitor.delivery
 
         if delivery.mode == "none":
             logger.debug("Monitor '%s' delivery is 'none' — skipping send", monitor.name)
-            return
+            return False
 
         prefix = f"[{monitor.alert_level.value.upper()}] {monitor.name}"
         full_message = f"{prefix}\n{alert_text}"
@@ -316,17 +366,19 @@ class MonitorManager:
                 logger.error(
                     "Cannot deliver alert for '%s': no channel_send callback", monitor.name
                 )
-                return
+                return False
             channel = delivery.channel
             if channel is None:
                 logger.error("No channel configured for monitor '%s'", monitor.name)
-                return
+                return False
             try:
                 self._channel_send(channel, full_message)
                 logger.info("Delivered alert for '%s' to channel '%s'", monitor.name, channel)
+                return True
             except Exception:
                 if delivery.best_effort:
                     logger.exception("Alert delivery failed for '%s' — best_effort", monitor.name)
+                    return False
                 else:
                     raise
 
@@ -336,7 +388,7 @@ class MonitorManager:
             url = delivery.url
             if url is None:
                 logger.error("No webhook URL for monitor '%s'", monitor.name)
-                return
+                return False
             payload = {
                 "monitor_id": monitor.id,
                 "monitor_name": monitor.name,
@@ -347,8 +399,12 @@ class MonitorManager:
                 resp = httpx.post(url, json=payload, timeout=30, follow_redirects=False)
                 resp.raise_for_status()
                 logger.info("Delivered alert for '%s' to webhook %s", monitor.name, url)
+                return True
             except Exception:
                 if delivery.best_effort:
                     logger.exception("Webhook delivery failed for '%s'", monitor.name)
+                    return False
                 else:
                     raise
+
+        return False

@@ -82,6 +82,35 @@ class TestMonitorManagerCRUD:
         with pytest.raises(KeyError):
             mgr.trigger_monitor("nonexistent")
 
+    def test_add_disallowed_executor_rejected(self, tmp_path) -> None:
+        store = _make_store(tmp_path)
+        mgr = MonitorManager(store=store, allowed_executors={"gmail_readonly", "gcal"})
+        mon = _make_monitor(executor="exec")
+        with pytest.raises(ValueError, match="not in the allowed set"):
+            mgr.add_monitor(mon)
+
+    def test_add_allowed_executor_accepted(self, tmp_path) -> None:
+        store = _make_store(tmp_path)
+        mgr = MonitorManager(store=store, allowed_executors={"gmail_readonly", "gcal"})
+        mon = _make_monitor(executor="gmail_readonly")
+        mgr.add_monitor(mon)
+        assert mgr.get_monitor(mon.id) is not None
+
+    def test_no_allowlist_allows_all(self, tmp_path) -> None:
+        store = _make_store(tmp_path)
+        mgr = MonitorManager(store=store)
+        mon = _make_monitor(executor="exec")
+        mgr.add_monitor(mon)
+        assert mgr.get_monitor(mon.id) is not None
+
+    def test_update_disallowed_executor_rejected(self, tmp_path) -> None:
+        store = _make_store(tmp_path)
+        mgr = MonitorManager(store=store, allowed_executors={"gmail_readonly", "gcal"})
+        mon = _make_monitor(executor="gmail_readonly")
+        mgr.add_monitor(mon)
+        with pytest.raises(ValueError, match="not in the allowed set"):
+            mgr.update_monitor(mon.id, executor="exec")
+
 
 # ---------------------------------------------------------------------------
 # Execution — OK (nothing to report)
@@ -165,6 +194,7 @@ class TestMonitorExecutionAlert:
 
         alerts = store.get_alerts(mon.id)
         assert len(alerts) == 1
+        assert alerts[0].delivered is False
 
 
 # ---------------------------------------------------------------------------
@@ -392,9 +422,60 @@ class TestMonitorDelivery:
         )
         mgr.add_monitor(mon)
 
-        # Should not raise, just log error
+        # Should not raise, just log error — but alert marked as not delivered
         record = mgr.trigger_monitor(mon.id)
         assert record.status == MonitorRunStatus.ALERTED
+
+        alerts = store.get_alerts(mon.id)
+        assert len(alerts) == 1
+        assert alerts[0].delivered is False
+
+    def test_delivery_failure_records_run(self, tmp_path) -> None:
+        store = _make_store(tmp_path)
+        channel_send = MagicMock(side_effect=RuntimeError("connection refused"))
+
+        def executor(mon: Monitor) -> str | None:
+            return "Alert"
+
+        mgr = MonitorManager(store=store, executor=executor, channel_send=channel_send)
+        mon = _make_monitor(
+            alert_level=AlertLevel.URGENT,
+            delivery=Delivery(mode="announce", channel="telegram", best_effort=False),
+        )
+        mgr.add_monitor(mon)
+
+        # Non-best-effort delivery failure should record a FAILURE run, not crash
+        record = mgr.trigger_monitor(mon.id)
+        assert record.status == MonitorRunStatus.FAILURE
+        assert "Delivery failed: RuntimeError" == record.error
+
+        # Alert should be recorded as not delivered with sanitized reason
+        alerts = store.get_alerts(mon.id)
+        assert len(alerts) == 1
+        assert alerts[0].delivered is False
+        assert alerts[0].suppressed_reason == "delivery_error: RuntimeError"
+
+    def test_best_effort_delivery_failure_still_alerts(self, tmp_path) -> None:
+        store = _make_store(tmp_path)
+        channel_send = MagicMock(side_effect=RuntimeError("timeout"))
+
+        def executor(mon: Monitor) -> str | None:
+            return "Alert"
+
+        mgr = MonitorManager(store=store, executor=executor, channel_send=channel_send)
+        mon = _make_monitor(
+            alert_level=AlertLevel.URGENT,
+            delivery=Delivery(mode="announce", channel="telegram", best_effort=True),
+        )
+        mgr.add_monitor(mon)
+
+        # best_effort delivery failure should still record ALERTED with delivered=False
+        record = mgr.trigger_monitor(mon.id)
+        assert record.status == MonitorRunStatus.ALERTED
+
+        alerts = store.get_alerts(mon.id)
+        assert len(alerts) == 1
+        assert alerts[0].delivered is False
 
 
 # ---------------------------------------------------------------------------

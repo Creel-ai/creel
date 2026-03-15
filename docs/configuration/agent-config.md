@@ -176,6 +176,21 @@ llm:
 
 Rate limiting is **disabled by default** — set `enabled: true` to activate it. See [Rate Limiting](rate-limiting.md) for the full configuration reference.
 
+## Monitors
+
+Define proactive monitors that run on a schedule and alert you when conditions are met. See [Monitors](monitors.md) for the full reference.
+
+```yaml
+monitors:
+  urgent_emails:
+    executor: gmail_readonly
+    prompt: "Check for urgent unread emails. If none, respond with empty string."
+    schedule: "*/15 * * * *"
+    delivery: telegram
+    alert_level: urgent
+    cooldown_seconds: 1800
+```
+
 ## Guardian
 
 See [Guardian Security](../architecture/guardian.md) for the full guardian configuration reference.

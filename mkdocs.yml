@@ -44,6 +44,7 @@ nav:
   - Configuration:
     - Task Definitions: configuration/tasks.md
     - Agent Configuration: configuration/agent-config.md
+    - Monitors: configuration/monitors.md
     - Rate Limiting: configuration/rate-limiting.md
     - Secrets Management: configuration/secrets.md
   - Executors:

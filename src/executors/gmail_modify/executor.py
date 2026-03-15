@@ -164,7 +164,11 @@ def main() -> None:
 
     if not action:
         print(
-            json.dumps({"error": "ACTION is required (modify, trash, delete, batch_modify, batch_trash, batch_delete)"}),
+            json.dumps(
+                {
+                    "error": "ACTION is required (modify, trash, delete, batch_modify, batch_trash, batch_delete)"
+                }
+            ),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -176,7 +180,9 @@ def main() -> None:
         message_ids = _parse_ids(message_ids_raw) or _parse_ids(message_id)
         if not message_ids:
             print(
-                json.dumps({"error": "MESSAGE_IDS is required for batch actions (comma-separated)"}),
+                json.dumps(
+                    {"error": "MESSAGE_IDS is required for batch actions (comma-separated)"}
+                ),
                 file=sys.stderr,
             )
             sys.exit(1)

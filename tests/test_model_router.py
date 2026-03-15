@@ -289,9 +289,7 @@ class TestGetProviderWithFallback:
     def test_no_fallback_returns_plain_provider(self):
         from creel.providers import get_provider_with_fallback
 
-        provider = get_provider_with_fallback(
-            provider="anthropic", model="claude-sonnet-4-6"
-        )
+        provider = get_provider_with_fallback(provider="anthropic", model="claude-sonnet-4-6")
         assert not isinstance(provider, ModelRouter)
 
     def test_with_fallback_returns_router(self):

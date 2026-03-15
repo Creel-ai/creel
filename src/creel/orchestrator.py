@@ -393,7 +393,9 @@ def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
         ids = [mid.strip() for mid in ids_raw.split(",") if mid.strip()]
         result = batch_delete(ids)
     else:
-        raise ValueError(f"gmail_modify: unknown action '{action}' (use modify/trash/delete/batch_modify/batch_trash/batch_delete)")
+        raise ValueError(
+            f"gmail_modify: unknown action '{action}' (use modify/trash/delete/batch_modify/batch_trash/batch_delete)"
+        )
 
     return json.dumps(result, indent=2)
 

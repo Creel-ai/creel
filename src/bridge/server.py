@@ -258,7 +258,7 @@ class GitPushRequest(BaseModel):
 class ExecRequest(BaseModel):
     """Request for spawning a command on the host."""
 
-    command: str = Field(min_length=1)
+    command: str = Field(min_length=1, max_length=65536)
     background: bool = False
     workdir: str | None = None
     timeout: int = Field(default=300, le=3600)
@@ -279,7 +279,7 @@ class ProcessActionRequest(BaseModel):
     action: str = Field(pattern=r"^(log|poll|write|kill)$")
     limit: int = Field(default=100, le=5000)
     offset: int = Field(default=0, ge=0)
-    data: str | None = None
+    data: str | None = Field(default=None, max_length=1_048_576)  # 1 MB
 
 
 class IMessageRecentRequest(BaseModel):
@@ -428,7 +428,7 @@ async def lifespan(app: FastAPI):
         token = os.environ.get(env_var)
         if not token:
             token = secrets.token_urlsafe(32)
-            logger.info("Generated %s bridge token: %s", scope.lower(), token)
+            logger.info("Generated %s bridge token: %s...", scope.lower(), token[:8])
             logger.warning(
                 "Consider setting %s environment variable to persist this token", env_var
             )

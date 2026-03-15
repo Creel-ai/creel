@@ -13,7 +13,7 @@ from creel.models import ExecutorConfig
 class TestHostExecExecutor:
     """Test the host_exec executor functions."""
 
-    @patch("executors.host_exec.executor.requests")
+    @patch("executors.host_exec.executor.httpx")
     def test_host_exec_foreground(self, mock_requests):
         from executors.host_exec.executor import host_exec
 
@@ -41,7 +41,7 @@ class TestHostExecExecutor:
         assert result["status"] == "exited"
         assert result["exit_code"] == 0
 
-    @patch("executors.host_exec.executor.requests")
+    @patch("executors.host_exec.executor.httpx")
     def test_host_exec_background(self, mock_requests):
         from executors.host_exec.executor import host_exec
 
@@ -66,7 +66,7 @@ class TestHostExecExecutor:
         assert result["status"] == "running"
         assert result["session_id"] == "sleep-1"
 
-    @patch("executors.host_exec.executor.requests")
+    @patch("executors.host_exec.executor.httpx")
     def test_host_process_poll(self, mock_requests):
         from executors.host_exec.executor import host_process
 
@@ -90,7 +90,7 @@ class TestHostExecExecutor:
         assert result["ok"] is True
         assert result["status"] == "running"
 
-    @patch("executors.host_exec.executor.requests")
+    @patch("executors.host_exec.executor.httpx")
     def test_host_process_log(self, mock_requests):
         from executors.host_exec.executor import host_process
 
@@ -113,7 +113,7 @@ class TestHostExecExecutor:
         assert result["ok"] is True
         assert len(result["lines"]) == 2
 
-    @patch("executors.host_exec.executor.requests")
+    @patch("executors.host_exec.executor.httpx")
     def test_host_sessions(self, mock_requests):
         from executors.host_exec.executor import host_sessions
 

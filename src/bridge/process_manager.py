@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -24,6 +25,67 @@ DEFAULT_MAX_SESSIONS = 10
 DEFAULT_MAX_AGE_HOURS = 4
 DEFAULT_TIMEOUT = 300  # 5 minutes for foreground commands
 DEFAULT_CLEANUP_INTERVAL = 1800  # 30 minutes
+DEFAULT_MAX_OUTPUT_BYTES = 50 * 1024 * 1024  # 50 MB cap for foreground output
+
+# Minimal set of env vars inherited by spawned processes (C2 fix).
+_SAFE_ENV_VARS = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "TERM",
+        "TMPDIR",
+        "TZ",
+    }
+)
+_SAFE_ENV_PREFIXES = ("LC_",)
+
+# Env var names that callers are never allowed to set (C3 fix).
+_BLOCKED_ENV_VARS = frozenset(
+    {
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "BASH_ENV",
+        "ENV",
+        "CDPATH",
+        "PYTHONSTARTUP",
+        "PYTHONPATH",
+        "NODE_OPTIONS",
+        "PERL5OPT",
+        "RUBYOPT",
+        "BRIDGE_TOKEN_EXEC",
+        "BRIDGE_TOKEN_NOTES",
+        "BRIDGE_TOKEN_REMINDERS",
+        "BRIDGE_TOKEN_THINGS",
+        "BRIDGE_TOKEN_IMESSAGE",
+        "BRIDGE_TOKEN_BROWSER",
+        "BRIDGE_TOKEN_GIT",
+    }
+)
+_BLOCKED_ENV_PREFIXES = ("BRIDGE_TOKEN_", "BASH_FUNC_")
+
+# Command patterns that are unconditionally rejected (C1 fix — defense-in-depth).
+_BLOCKED_COMMAND_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\brm\s+.*-\s*[rR].*-\s*[fF]|rm\s+.*-\s*[fF].*-\s*[rR]|\brm\s+-rf\b"),
+    re.compile(r"\bmkfs\b"),
+    re.compile(r"\bdd\b.*\bof\s*=\s*/dev/"),
+    re.compile(r">\s*/dev/sd[a-z]|>\s*/dev/nvme"),
+    re.compile(r"\b:(){ :|:& };:\b"),  # fork bomb
+    re.compile(r"\bchmod\s+.*777\s+/"),
+    re.compile(r"\bchown\s+.*-R\s+.*\s+/(?:etc|usr|var|bin|sbin|lib|boot)\b"),
+    re.compile(r"\bcurl\b.*\|\s*(?:ba)?sh\b"),
+    re.compile(r"\bwget\b.*\|\s*(?:ba)?sh\b"),
+    re.compile(r"/dev/tcp/|/dev/udp/"),  # reverse shells
+    re.compile(r"\bnc\b.*-[el]|\bncat\b.*-[el]"),  # bind shells
+    re.compile(r"\bsudo\b"),
+    re.compile(r"\bsu\s+-?\s*root\b|\bsu\s*$"),
+]
 
 
 @dataclass
@@ -117,6 +179,39 @@ class ProcessManager:
             f"Working directory {workdir} is not under any allowed prefix: {self.allowed_workdirs}"
         )
 
+    @staticmethod
+    def _validate_command(command: str) -> None:
+        """Reject commands matching known-dangerous patterns (C1 defense-in-depth)."""
+        for pattern in _BLOCKED_COMMAND_PATTERNS:
+            if pattern.search(command):
+                raise ValueError(
+                    f"Command rejected by safety filter: matches blocked pattern {pattern.pattern!r}"
+                )
+
+    @staticmethod
+    def _validate_caller_env(env: dict[str, str]) -> None:
+        """Reject caller-supplied env vars that could subvert process security (C3)."""
+        for key in env:
+            upper = key.upper()
+            if upper in _BLOCKED_ENV_VARS:
+                raise ValueError(f"Environment variable {key!r} is blocked for security reasons")
+            for prefix in _BLOCKED_ENV_PREFIXES:
+                if upper.startswith(prefix):
+                    raise ValueError(
+                        f"Environment variable {key!r} is blocked for security reasons"
+                    )
+
+    @staticmethod
+    def _build_safe_env(caller_env: dict[str, str] | None) -> dict[str, str]:
+        """Build a minimal process env from allowed host vars + caller overrides (C2)."""
+        safe: dict[str, str] = {}
+        for key, value in os.environ.items():
+            if key in _SAFE_ENV_VARS or any(key.startswith(p) for p in _SAFE_ENV_PREFIXES):
+                safe[key] = value
+        if caller_env:
+            safe.update(caller_env)
+        return safe
+
     def _start_cleanup_thread(self, interval: int) -> threading.Thread:
         """Start a daemon thread that periodically calls cleanup_stale()."""
 
@@ -182,6 +277,13 @@ class ProcessManager:
         if not command or not command.strip():
             raise ValueError("Command must not be empty")
 
+        # C1: reject known-dangerous commands
+        self._validate_command(command)
+
+        # C3: reject dangerous caller-supplied env vars
+        if env:
+            self._validate_caller_env(env)
+
         # Validate workdir
         if workdir:
             if not os.path.isabs(workdir):
@@ -199,10 +301,8 @@ class ProcessManager:
                     "Kill an existing session first."
                 )
 
-        # Build environment
-        proc_env = os.environ.copy()
-        if env:
-            proc_env.update(env)
+        # C2: build minimal environment instead of inheriting everything
+        proc_env = self._build_safe_env(env)
 
         session_id = self._generate_session_id(command)
 
@@ -402,16 +502,24 @@ class ProcessManager:
 
         return {"session_id": session_id, "written": len(data)}
 
+    _ALLOWED_SIGNALS = frozenset({signal.SIGTERM, signal.SIGKILL})
+
     def kill(self, session_id: str, sig: int = signal.SIGTERM) -> dict[str, Any]:
         """Kill a process by session ID.
 
         Args:
             session_id: Session identifier.
-            sig: Signal to send (default SIGTERM).
+            sig: Signal to send (default SIGTERM). Only SIGTERM and SIGKILL are allowed.
 
         Returns:
             Status dict.
         """
+        if sig not in self._ALLOWED_SIGNALS:
+            raise ValueError(
+                f"Signal {sig} not allowed. Use SIGTERM ({signal.SIGTERM}) "
+                f"or SIGKILL ({signal.SIGKILL})."
+            )
+
         session = self._get_session(session_id)
         self._refresh_status(session)
 

@@ -628,7 +628,8 @@ class ChatServer:
         # Inject a context reminder so the LLM remembers what it was doing
         # before the approval interruption.
         last_text = self._extract_last_assistant_text(session.messages)
-        tool_status = f"failed with: {tool_result}" if is_error else "succeeded"
+        tool_error_summary = str(tool_result)[:200] if is_error else ""
+        tool_status = f"failed with: {tool_error_summary}" if is_error else "succeeded"
         reminder = (
             f"[System: Resuming after tool approval]\n"
             f"Your tool `{pending.tool_name}` was approved and {tool_status}.\n"
@@ -641,8 +642,11 @@ class ChatServer:
         reminder += "Continue your original plan. Do not start over."
         self._inject_context_reminder(session.messages, reminder)
 
-        # Resume the agent loop so the LLM can process the tool output
-        result = self._invoke_agent_loop(session.messages, session_state, user_message=reminder)
+        # Resume the agent loop so the LLM can process the tool output.
+        # Don't pass reminder as user_message — it's used for memory relevance
+        # search in _build_system_prompt, and the reminder text would retrieve
+        # irrelevant memories.
+        result = self._invoke_agent_loop(session.messages, session_state)
 
         # Track token usage for session metadata
         last_tokens = getattr(result, "last_input_tokens", 0)

@@ -361,8 +361,91 @@ class TestApprovalResumeContext:
         assert "failed with:" in reminder
         assert "SMTP timeout" in reminder
 
-    def test_agent_loop_called_with_reminder_as_user_message(self, tmp_path) -> None:
-        """_invoke_agent_loop receives user_message=reminder for prompt building."""
+    def test_long_error_truncated_in_reminder(self, tmp_path) -> None:
+        """Long error messages are truncated to 200 chars in the reminder."""
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        server._approval_queue.add(
+            sender_id="user1",
+            tool_name="gmail_send",
+            tool_input={},
+            reason="review",
+            tool_use_id="tool_trunc",
+        )
+
+        session = server._session_mgr.get_or_create("user1")
+        session.messages.extend(
+            [
+                {"role": "user", "content": "send email"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tool_trunc",
+                            "name": "gmail_send",
+                            "input": {},
+                        },
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "tool_trunc",
+                            "content": "Awaiting approval",
+                            "is_error": True,
+                        },
+                    ],
+                },
+            ]
+        )
+        server._session_mgr.save_session(session)
+
+        resume_result = AgentResult(
+            text="Failed.",
+            turns_used=1,
+            tool_calls_made=0,
+            stop_reason="end_turn",
+        )
+
+        captured = {}
+
+        def capture(messages, *args, **kwargs):
+            captured["msgs"] = [m.copy() for m in messages]
+            return resume_result
+
+        long_error = "x" * 500
+        with (
+            patch(
+                "creel.chat.execute_tool_call",
+                side_effect=RuntimeError(long_error),
+            ),
+            patch("creel.chat.run_agent_loop", side_effect=capture),
+        ):
+            server.handle_message("user1", "y")
+
+        last_user = captured["msgs"][-1]
+        text_blocks = [b for b in last_user["content"] if b.get("type") == "text"]
+        reminder = text_blocks[-1]["text"]
+        assert "failed with:" in reminder
+        # The error portion should be truncated — full "Error: " + 500 x's = 507 chars,
+        # but only the first 200 chars of the stringified result should appear.
+        # The reminder template adds a trailing "." after tool_status, so strip it.
+        error_part = reminder.split("failed with: ")[1].split("\n")[0].rstrip(".")
+        assert len(error_part) <= 200
+        # Verify it was actually truncated (original is 507 chars)
+        assert len(error_part) < 507
+
+    def test_agent_loop_not_called_with_reminder_as_user_message(self, tmp_path) -> None:
+        """_invoke_agent_loop should NOT receive the reminder as user_message.
+
+        The reminder is injected into session messages directly. Passing it
+        as user_message would pollute memory relevance search with reminder
+        text instead of the user's original intent.
+        """
         agent_def = _make_agent_def(tmp_path)
         server = ChatServer(agent_def)
 
@@ -414,8 +497,8 @@ class TestApprovalResumeContext:
 
         mock_invoke.assert_called_once()
         kwargs = mock_invoke.call_args
-        user_msg = kwargs.kwargs.get("user_message") or kwargs[1].get("user_message", "")
-        assert "[System: Resuming after tool approval]" in user_msg
+        user_msg = kwargs.kwargs.get("user_message")
+        assert user_msg is None
 
     def test_no_prior_assistant_text_uses_simple_reminder(self, tmp_path) -> None:
         """When no assistant text is found, the reminder is simpler."""

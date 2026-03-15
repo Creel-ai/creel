@@ -17,13 +17,10 @@ import os
 import select
 import struct
 import termios
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +66,7 @@ class InteractiveSession:
 
 # Global session registry
 _sessions: dict[str, InteractiveSession] = {}
+_sessions_lock = threading.Lock()
 
 
 def _set_terminal_size(fd: int, cols: int, rows: int) -> None:

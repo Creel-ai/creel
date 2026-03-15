@@ -707,7 +707,7 @@ tools:
     parameters:
       action:
         type: string
-        description: "Action: start, send_input, read_output, resize, close, info, list_sessions"
+        description: "Action: start, send_input, read_output, resize, close, info, list_sessions, get_io_log"
         required: true
       command:
         type: string

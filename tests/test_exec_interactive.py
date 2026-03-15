@@ -890,6 +890,16 @@ class TestPolicyRules:
         assert "*| bash*" in patterns
         assert "*:(){ :|:& };:*" in patterns
 
+    def test_bash_i_deny_pattern(self) -> None:
+        import yaml
+
+        with open("policies/default.yaml") as f:
+            policy = yaml.safe_load(f)
+
+        exec_interactive_deny = [r for r in policy["deny_when"] if r["tool"] == "exec_interactive"]
+        patterns = {r["pattern"] for r in exec_interactive_deny}
+        assert "*bash -i*" in patterns, "exec_interactive must deny 'bash -i' (reverse shell)"
+
     def test_exec_interactive_review_patterns(self) -> None:
         import yaml
 
@@ -902,3 +912,35 @@ class TestPolicyRules:
         patterns = {r["pattern"] for r in exec_interactive_review}
         assert "*sudo*" in patterns
         assert "*env*KEY*" in patterns
+
+
+class TestContainerDispatch:
+    """Tests that exec_interactive routes through containers when enabled."""
+
+    @patch("creel.tools._run_interactive_via_container")
+    def test_container_mode_routes_to_session_manager(self, mock_run) -> None:
+        import json
+
+        from creel.models import ToolConfig
+        from creel.tools import execute_tool_call
+
+        mock_run.return_value = json.dumps({"success": True, "session_id": "test123"})
+
+        tool_cfg = ToolConfig(
+            executor="exec_interactive",
+            description="test",
+            parameters={},
+            network=True,
+        )
+        tools_config = {"exec_interactive": tool_cfg}
+
+        result = execute_tool_call(
+            "exec_interactive",
+            {"action": "start", "command": "bash"},
+            tools_config,
+            use_containers=True,
+        )
+
+        mock_run.assert_called_once()
+        parsed = json.loads(result)
+        assert parsed["success"] is True

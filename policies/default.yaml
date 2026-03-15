@@ -168,6 +168,9 @@ deny_when:
     pattern: "*/dev/udp/*"
   - tool: exec_interactive
     arg: command
+    pattern: "*bash -i*"
+  - tool: exec_interactive
+    arg: command
     pattern: "*nc -e*"
   - tool: exec_interactive
     arg: command

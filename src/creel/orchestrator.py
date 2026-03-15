@@ -882,6 +882,8 @@ def _exec_host_exec_inline(config: ExecutorConfig) -> str:
     timeout = int(config.args.get("timeout", "300"))
     env_json = config.args.get("env") or None
     env = json.loads(env_json) if isinstance(env_json, str) else env_json
+    if env is not None and not isinstance(env, dict):
+        raise ValueError(f"host_exec 'env' must be a JSON object, got {type(env).__name__}")
 
     result = host_exec(command, background=background, workdir=workdir, timeout=timeout, env=env)
     return json.dumps(result, indent=2)

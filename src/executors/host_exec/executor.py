@@ -21,7 +21,7 @@ def call_bridge(
     data: dict[str, Any] | None = None,
     method: str = "POST",
     timeout: int = 600,
-) -> dict:
+) -> dict[str, Any]:
     """Make an HTTP call to the bridge server.
 
     Args:

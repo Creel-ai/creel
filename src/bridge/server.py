@@ -428,7 +428,7 @@ async def lifespan(app: FastAPI):
         token = os.environ.get(env_var)
         if not token:
             token = secrets.token_urlsafe(32)
-            logger.info("Generated %s bridge token: %s...", scope.lower(), token[:8])
+            logger.info("Generated %s bridge token (prefix): %s...", scope.lower(), token[:8])
             logger.warning(
                 "Consider setting %s environment variable to persist this token", env_var
             )
@@ -1042,6 +1042,9 @@ async def process_action(
         elif body.action == "kill":
             result = pm.kill(body.session_id)
             return {"ok": True, **result}
+
+        else:
+            return {"ok": False, "error": f"Unknown action: {body.action}"}
 
     except KeyError as e:
         return {"ok": False, "error": str(e)}

@@ -577,15 +577,10 @@ class TestCommandBlocklist:
 class TestSafeEnvironment:
     """Test C2: minimal environment inheritance."""
 
-    def test_bridge_tokens_not_inherited(self, pm):
-        import os
-
-        os.environ["BRIDGE_TOKEN_EXEC"] = "secret-token"
-        try:
-            result = pm.spawn("env", background=False, timeout=5)
-            assert "BRIDGE_TOKEN_EXEC" not in result["stdout"]
-        finally:
-            del os.environ["BRIDGE_TOKEN_EXEC"]
+    def test_bridge_tokens_not_inherited(self, pm, monkeypatch):
+        monkeypatch.setenv("BRIDGE_TOKEN_EXEC", "secret-token")
+        result = pm.spawn("env", background=False, timeout=5)
+        assert "BRIDGE_TOKEN_EXEC" not in result["stdout"]
 
     def test_path_is_inherited(self, pm):
         result = pm.spawn("env", background=False, timeout=5)

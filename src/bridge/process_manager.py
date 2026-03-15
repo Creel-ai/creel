@@ -25,7 +25,6 @@ DEFAULT_MAX_SESSIONS = 10
 DEFAULT_MAX_AGE_HOURS = 4
 DEFAULT_TIMEOUT = 300  # 5 minutes for foreground commands
 DEFAULT_CLEANUP_INTERVAL = 1800  # 30 minutes
-DEFAULT_MAX_OUTPUT_BYTES = 50 * 1024 * 1024  # 50 MB cap for foreground output
 
 # Minimal set of env vars inherited by spawned processes (C2 fix).
 _SAFE_ENV_VARS = frozenset(
@@ -72,11 +71,12 @@ _BLOCKED_ENV_PREFIXES = ("BRIDGE_TOKEN_", "BASH_FUNC_")
 
 # Command patterns that are unconditionally rejected (C1 fix — defense-in-depth).
 _BLOCKED_COMMAND_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"\brm\s+.*-\s*[rR].*-\s*[fF]|rm\s+.*-\s*[fF].*-\s*[rR]|\brm\s+-rf\b"),
+    # rm with recursive+force in any flag style (-rf, -fr, --recursive, --force)
+    re.compile(r"\brm\s+.*(?:-\w*r\w*f|-\w*f\w*r|--recursive|--force)", re.IGNORECASE),
     re.compile(r"\bmkfs\b"),
     re.compile(r"\bdd\b.*\bof\s*=\s*/dev/"),
     re.compile(r">\s*/dev/sd[a-z]|>\s*/dev/nvme"),
-    re.compile(r"\b:(){ :|:& };:\b"),  # fork bomb
+    re.compile(r":\(\)\s*\{.*:\s*\|\s*:.*&.*\}\s*;\s*:"),  # fork bomb variants
     re.compile(r"\bchmod\s+.*777\s+/"),
     re.compile(r"\bchown\s+.*-R\s+.*\s+/(?:etc|usr|var|bin|sbin|lib|boot)\b"),
     re.compile(r"\bcurl\b.*\|\s*(?:ba)?sh\b"),
@@ -84,7 +84,7 @@ _BLOCKED_COMMAND_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"/dev/tcp/|/dev/udp/"),  # reverse shells
     re.compile(r"\bnc\b.*-[el]|\bncat\b.*-[el]"),  # bind shells
     re.compile(r"\bsudo\b"),
-    re.compile(r"\bsu\s+-?\s*root\b|\bsu\s*$"),
+    re.compile(r"(?:^|\s|[;&|])su\s+-?\s*root\b|(?:^|\s|[;&|])su\s*$"),
 ]
 
 
@@ -104,7 +104,8 @@ class ProcessSession:
     status: str = "running"  # running | exited | killed | timeout
     exit_code: int | None = None
     output_lines: int = 0
-    _combined_buffer: deque[str] = field(default_factory=lambda: deque(maxlen=DEFAULT_BUFFER_LINES))
+    _output_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    combined_buffer: deque[str] = field(default_factory=lambda: deque(maxlen=DEFAULT_BUFFER_LINES))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize session info for API responses."""
@@ -140,6 +141,7 @@ class ProcessManager:
         self.allowed_workdirs = allowed_workdirs
         self._sessions: dict[str, ProcessSession] = {}
         self._counters: dict[str, int] = {}
+        self._pending_spawns: int = 0
         self._lock = threading.Lock()
         self._cleanup_stop = threading.Event()
         self._cleanup_thread = self._start_cleanup_thread(cleanup_interval)
@@ -244,8 +246,9 @@ class ProcessManager:
                     stripped = line.rstrip("\n")
                     buffer.append(stripped)
                     combined.append(f"[{prefix}] {stripped}")
-                    session.output_lines += 1
-                    session.last_output_at = datetime.now(UTC)
+                    with session._output_lock:
+                        session.output_lines += 1
+                        session.last_output_at = datetime.now(UTC)
             except (ValueError, OSError):
                 # Stream closed
                 pass
@@ -292,14 +295,16 @@ class ProcessManager:
                 raise ValueError(f"Working directory does not exist: {workdir}")
             self._validate_workdir(workdir)
 
-        # Check session limit
+        # Check session limit — reserve a slot for background spawns (TOCTOU fix)
         with self._lock:
             active = sum(1 for s in self._sessions.values() if s.status == "running")
-            if active >= self.max_sessions:
+            if active + self._pending_spawns >= self.max_sessions:
                 raise RuntimeError(
                     f"Maximum concurrent sessions ({self.max_sessions}) reached. "
                     "Kill an existing session first."
                 )
+            if background:
+                self._pending_spawns += 1
 
         # C2: build minimal environment instead of inheriting everything
         proc_env = self._build_safe_env(env)
@@ -309,7 +314,12 @@ class ProcessManager:
         if not background:
             return self._run_foreground(command, workdir, timeout, proc_env, session_id)
 
-        return self._run_background(command, workdir, proc_env, session_id, timeout)
+        try:
+            return self._run_background(command, workdir, proc_env, session_id, timeout)
+        except Exception:
+            with self._lock:
+                self._pending_spawns -= 1
+            raise
 
     def _run_foreground(
         self,
@@ -377,15 +387,15 @@ class ProcessManager:
             process=process,
             stdout_buffer=deque(maxlen=self.buffer_lines),
             stderr_buffer=deque(maxlen=self.buffer_lines),
-            _combined_buffer=deque(maxlen=self.buffer_lines),
+            combined_buffer=deque(maxlen=self.buffer_lines),
         )
 
         # Start reader threads
         self._start_reader_thread(
-            process.stdout, session.stdout_buffer, session._combined_buffer, "out", session
+            process.stdout, session.stdout_buffer, session.combined_buffer, "out", session
         )
         self._start_reader_thread(
-            process.stderr, session.stderr_buffer, session._combined_buffer, "err", session
+            process.stderr, session.stderr_buffer, session.combined_buffer, "err", session
         )
 
         # Start a watchdog thread for timeout
@@ -394,6 +404,7 @@ class ProcessManager:
 
         with self._lock:
             self._sessions[session_id] = session
+            self._pending_spawns -= 1
 
         logger.info(
             "Spawned background process: %s (pid=%d, session=%s)",
@@ -469,7 +480,7 @@ class ProcessManager:
         """
         session = self._get_session(session_id)
         self._refresh_status(session)
-        lines = list(session._combined_buffer)
+        lines = list(session.combined_buffer)
         return lines[offset : offset + limit]
 
     def write(self, session_id: str, data: str) -> dict[str, Any]:

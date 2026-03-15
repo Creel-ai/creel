@@ -14,7 +14,7 @@ class TestHostExecExecutor:
     """Test the host_exec executor functions."""
 
     @patch("executors.host_exec.executor.httpx")
-    def test_host_exec_foreground(self, mock_requests):
+    def test_host_exec_foreground(self, mock_httpx):
         from executors.host_exec.executor import host_exec
 
         mock_response = MagicMock()
@@ -28,7 +28,7 @@ class TestHostExecExecutor:
             "stderr": "",
         }
         mock_response.raise_for_status = MagicMock()
-        mock_requests.post.return_value = mock_response
+        mock_httpx.post.return_value = mock_response
 
         with (
             patch.dict(
@@ -42,7 +42,7 @@ class TestHostExecExecutor:
         assert result["exit_code"] == 0
 
     @patch("executors.host_exec.executor.httpx")
-    def test_host_exec_background(self, mock_requests):
+    def test_host_exec_background(self, mock_httpx):
         from executors.host_exec.executor import host_exec
 
         mock_response = MagicMock()
@@ -53,7 +53,7 @@ class TestHostExecExecutor:
             "status": "running",
         }
         mock_response.raise_for_status = MagicMock()
-        mock_requests.post.return_value = mock_response
+        mock_httpx.post.return_value = mock_response
 
         with (
             patch.dict(
@@ -67,7 +67,7 @@ class TestHostExecExecutor:
         assert result["session_id"] == "sleep-1"
 
     @patch("executors.host_exec.executor.httpx")
-    def test_host_process_poll(self, mock_requests):
+    def test_host_process_poll(self, mock_httpx):
         from executors.host_exec.executor import host_process
 
         mock_response = MagicMock()
@@ -78,7 +78,7 @@ class TestHostExecExecutor:
             "pid": 12345,
         }
         mock_response.raise_for_status = MagicMock()
-        mock_requests.post.return_value = mock_response
+        mock_httpx.post.return_value = mock_response
 
         with (
             patch.dict(
@@ -91,7 +91,7 @@ class TestHostExecExecutor:
         assert result["status"] == "running"
 
     @patch("executors.host_exec.executor.httpx")
-    def test_host_process_log(self, mock_requests):
+    def test_host_process_log(self, mock_httpx):
         from executors.host_exec.executor import host_process
 
         mock_response = MagicMock()
@@ -101,7 +101,7 @@ class TestHostExecExecutor:
             "lines": ["[out] hello", "[out] world"],
         }
         mock_response.raise_for_status = MagicMock()
-        mock_requests.post.return_value = mock_response
+        mock_httpx.post.return_value = mock_response
 
         with (
             patch.dict(
@@ -114,7 +114,7 @@ class TestHostExecExecutor:
         assert len(result["lines"]) == 2
 
     @patch("executors.host_exec.executor.httpx")
-    def test_host_sessions(self, mock_requests):
+    def test_host_sessions(self, mock_httpx):
         from executors.host_exec.executor import host_sessions
 
         mock_response = MagicMock()
@@ -126,7 +126,7 @@ class TestHostExecExecutor:
             ],
         }
         mock_response.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_response
+        mock_httpx.get.return_value = mock_response
 
         with (
             patch.dict(

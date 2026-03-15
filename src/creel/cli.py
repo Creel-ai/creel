@@ -34,9 +34,12 @@ import socket as _socket
 import sys
 import threading
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from creel import paths
+
+if TYPE_CHECKING:
+    from creel.knowledge_base import KnowledgeBase
 from creel.models import load_all_tasks, load_task
 from creel.orchestrator import run_task
 from creel.scheduler import start_scheduler
@@ -1459,6 +1462,157 @@ def cmd_cron_runs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _get_kb(args: argparse.Namespace) -> KnowledgeBase:
+    """Create a KnowledgeBase instance from agent config."""
+    from creel.knowledge_base import KnowledgeBase
+
+    try:
+        agent_def = _load_agent_def(args)
+        kb_config = agent_def.knowledge_base
+        workspace = Path(agent_def.workspace.path)
+        db_path = kb_config.db_path or str(workspace / ".kb_index.sqlite")
+    except FileNotFoundError:
+        db_path = "workspace/.kb_index.sqlite"
+        kb_config = None
+
+    chunk_size = kb_config.chunk_size if kb_config else 512
+    chunk_overlap = kb_config.chunk_overlap if kb_config else 50
+    embedding_model = kb_config.embedding_model if kb_config else "all-MiniLM-L6-v2"
+
+    return KnowledgeBase(
+        db_path=db_path,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        embedding_model=embedding_model,
+    )
+
+
+def cmd_kb_add(args: argparse.Namespace) -> int:
+    """Add a file or directory to the knowledge base."""
+    from creel.tools import _is_kb_path_safe
+
+    if not _is_kb_path_safe(args.path):
+        print(f"Error: refused to index sensitive path: {args.path}", file=sys.stderr)
+        return 1
+
+    kb = _get_kb(args)
+    try:
+        result = kb.add(args.path)
+        added = result["added"]
+        updated = result["updated"]
+        skipped = result["skipped"]
+        errors = result["errors"]
+
+        if added or updated:
+            files = result.get("files", [])
+            if files:
+                for f in files:
+                    print(f"  indexed: {f}")
+            print(f"\nAdded: {added}  Updated: {updated}  Skipped: {skipped}  Errors: {errors}")
+        elif errors:
+            print(f"Errors: {errors}  (no files indexed)")
+            return 1
+        else:
+            print("No new files to index.")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_search(args: argparse.Namespace) -> int:
+    """Search the knowledge base."""
+    kb = _get_kb(args)
+    try:
+        results = kb.search(args.query, top_k=args.top_k)
+        if not results:
+            print(f"No results found for '{args.query}'.")
+            return 0
+
+        for i, r in enumerate(results, 1):
+            source = r["source"]
+            title = r["title"]
+            score = r["score"]
+            content = r["content"]
+            # Truncate long content for display
+            if len(content) > 300:
+                content = content[:300] + "..."
+            print(f"\n--- Result {i} (score: {score:.4f}) ---")
+            print(f"Source: {source}")
+            print(f"Title: {title}")
+            print(content)
+
+        print(f"\n{len(results)} result(s) found.")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_list(args: argparse.Namespace) -> int:
+    """List indexed documents."""
+    kb = _get_kb(args)
+    try:
+        docs = kb.list_documents()
+        if not docs:
+            print("Knowledge base is empty.")
+            return 0
+
+        for doc in docs:
+            chunks = doc["chunks"]
+            size = doc["size"]
+            title = doc["title"]
+            path = doc["path"]
+            print(f"  {title}  ({chunks} chunks, {size} bytes)")
+            print(f"    {path}")
+
+        print(f"\n{len(docs)} document(s) indexed.")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_remove(args: argparse.Namespace) -> int:
+    """Remove a document from the knowledge base."""
+    kb = _get_kb(args)
+    try:
+        result = kb.remove(args.path)
+        if result["removed"]:
+            print(f"Removed: {result['path']}")
+        else:
+            print(f"Not found: {result.get('error', result['path'])}")
+            return 1
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_rebuild(args: argparse.Namespace) -> int:
+    """Rebuild the knowledge base index."""
+    kb = _get_kb(args)
+    try:
+        print("Rebuilding knowledge base index...")
+        result = kb.rebuild()
+        added = result.get("added", 0)
+        errors = result.get("errors", 0)
+        print(f"Rebuilt: {added} document(s) re-indexed, {errors} error(s).")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_stats(args: argparse.Namespace) -> int:
+    """Show knowledge base statistics."""
+    kb = _get_kb(args)
+    try:
+        s = kb.stats()
+        print(f"Documents:   {s['documents']}")
+        print(f"Chunks:      {s['chunks']}")
+        print(f"Total size:  {s['total_size']} bytes")
+        print(f"DB size:     {s['db_size']} bytes")
+        return 0
+    finally:
+        kb.close()
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Query the guardian audit log."""
 
@@ -2108,6 +2262,40 @@ def main() -> int:
         help="Show last N runs (default: 20)",
     )
 
+    # kb command group (knowledge base)
+    kb_parser = subparsers.add_parser("kb", help="Manage the knowledge base")
+    kb_subparsers = kb_parser.add_subparsers(
+        dest="kb_command",
+        metavar="{add,search,list,remove,rebuild,stats}",
+    )
+
+    # kb add
+    kb_add_parser = kb_subparsers.add_parser("add", help="Index a file or directory")
+    kb_add_parser.add_argument("path", help="Path to file or directory to index")
+
+    # kb search
+    kb_search_parser = kb_subparsers.add_parser("search", help="Search the knowledge base")
+    kb_search_parser.add_argument("query", help="Search query")
+    kb_search_parser.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help="Max results to return (default: 5)",
+    )
+
+    # kb list
+    kb_subparsers.add_parser("list", help="List indexed documents")
+
+    # kb remove
+    kb_remove_parser = kb_subparsers.add_parser("remove", help="Remove a document from the index")
+    kb_remove_parser.add_argument("path", help="Path of document to remove")
+
+    # kb rebuild
+    kb_subparsers.add_parser("rebuild", help="Rebuild the entire index")
+
+    # kb stats
+    kb_subparsers.add_parser("stats", help="Show knowledge base statistics")
+
     # usage command
     usage_parser = subparsers.add_parser("usage", help="Show LLM usage statistics")
     usage_parser.add_argument(
@@ -2183,6 +2371,20 @@ def main() -> int:
             cron_parser.print_help()
             return 1
         return cron_commands[args.cron_command](args)
+
+    if args.command == "kb":
+        kb_commands = {
+            "add": cmd_kb_add,
+            "search": cmd_kb_search,
+            "list": cmd_kb_list,
+            "remove": cmd_kb_remove,
+            "rebuild": cmd_kb_rebuild,
+            "stats": cmd_kb_stats,
+        }
+        if args.kb_command not in kb_commands:
+            kb_parser.print_help()
+            return 1
+        return kb_commands[args.kb_command](args)
 
     if args.command == "limits":
         limits_commands = {

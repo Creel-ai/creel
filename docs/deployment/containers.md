@@ -17,6 +17,7 @@ docker build -t executor-drive-write:latest executors/drive_write/
 docker build -t executor-bluebubbles:latest executors/bluebubbles/
 docker build -t executor-brave-search:latest executors/brave_search/
 docker build -t executor-fetch-url:latest executors/fetch_url/
+docker build -t executor-exec-interactive:latest -f executors/exec_interactive/Dockerfile executors/
 docker build -t llm-runner:latest llm/
 ```
 
@@ -40,6 +41,10 @@ Containers run with:
 - Memory and CPU limits (`256m`, `0.5` CPU)
 - 60-second timeout
 - Only the secrets each container needs
+
+## Interactive Sessions
+
+The `exec_interactive` executor uses a one-container-per-session model. Each `start` action creates a new container; subsequent actions route to it by session ID; `close` tears it down. These containers have network access enabled (for SSH, package managers, etc.) and a 5-minute timeout instead of the default 60 seconds.
 
 ## Agent Mode + Containers
 

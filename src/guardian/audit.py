@@ -231,6 +231,61 @@ class AuditLogger:
             }
         )
 
+    def log_interactive_io(
+        self,
+        *,
+        session_id: str,
+        tool_name: str,
+        direction: str,
+        data_length: int,
+        data_hash: str,
+    ) -> None:
+        """Log an interactive session I/O event.
+
+        Records the direction (input/output), data length, and hash
+        of the data — never raw content for privacy.
+        """
+        self._write(
+            {
+                "event": "interactive_io",
+                "ts": datetime.now(UTC).isoformat(),
+                "session_id": session_id,
+                "tool_name": tool_name,
+                "direction": direction,
+                "data_length": data_length,
+                "data_hash": data_hash,
+            }
+        )
+
+    def log_interactive_session(
+        self,
+        *,
+        session_id: str,
+        tool_name: str,
+        action: str,
+        command_hash: str | None = None,
+        exit_code: int | None = None,
+        duration_s: float | None = None,
+        io_summary: dict | None = None,
+    ) -> None:
+        """Log an interactive session lifecycle event (start/close)."""
+        record: dict = {
+            "event": "interactive_session",
+            "ts": datetime.now(UTC).isoformat(),
+            "session_id": session_id,
+            "tool_name": tool_name,
+            "action": action,
+        }
+        if command_hash is not None:
+            record["command_hash"] = command_hash
+        if exit_code is not None:
+            record["exit_code"] = exit_code
+        if duration_s is not None:
+            record["duration_s"] = round(duration_s, 1)
+        if io_summary is not None:
+            record["io_summary"] = io_summary
+        self._write(record)
+
     def log_tool_result(
         self,
         *,
@@ -252,6 +307,67 @@ class AuditLogger:
         if error:
             record["error"] = error[:200]
         self._write(record)
+
+    @staticmethod
+    def _sanitize_url(url: str) -> str:
+        """Strip query string and fragment from a URL to avoid logging sensitive params."""
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(url)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
+    def log_network_request(
+        self,
+        *,
+        url: str,
+        domain: str,
+        executor: str,
+        method: str,
+        request_size_bytes: int = 0,
+        response_size_bytes: int = 0,
+        status_code: int | None = None,
+        blocked: bool = False,
+        block_reason: str = "",
+    ) -> None:
+        """Log a network request event."""
+        record: dict = {
+            "event": "network_request",
+            "ts": datetime.now(UTC).isoformat(),
+            "url": self._sanitize_url(url),
+            "domain": domain,
+            "executor": executor,
+            "method": method,
+            "request_size_bytes": request_size_bytes,
+            "response_size_bytes": response_size_bytes,
+            "blocked": blocked,
+        }
+        if status_code is not None:
+            record["status_code"] = status_code
+        if block_reason:
+            record["block_reason"] = block_reason
+        self._write(record)
+
+    def log_network_alert(
+        self,
+        *,
+        alert_type: str,
+        executor: str,
+        detail: str,
+        url: str = "",
+        domain: str = "",
+    ) -> None:
+        """Log a network security alert (large payload, unknown domain, rate limit)."""
+        self._write(
+            {
+                "event": "network_alert",
+                "ts": datetime.now(UTC).isoformat(),
+                "alert_type": alert_type,
+                "executor": executor,
+                "detail": detail,
+                "url": self._sanitize_url(url),
+                "domain": domain,
+            }
+        )
 
 
 def read_audit_log(

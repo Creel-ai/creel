@@ -34,9 +34,12 @@ import socket as _socket
 import sys
 import threading
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from creel import paths
+
+if TYPE_CHECKING:
+    from creel.knowledge_base import KnowledgeBase
 from creel.models import load_all_tasks, load_task
 from creel.orchestrator import run_task
 from creel.scheduler import start_scheduler
@@ -1459,6 +1462,157 @@ def cmd_cron_runs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _get_kb(args: argparse.Namespace) -> KnowledgeBase:
+    """Create a KnowledgeBase instance from agent config."""
+    from creel.knowledge_base import KnowledgeBase
+
+    try:
+        agent_def = _load_agent_def(args)
+        kb_config = agent_def.knowledge_base
+        workspace = Path(agent_def.workspace.path)
+        db_path = kb_config.db_path or str(workspace / ".kb_index.sqlite")
+    except FileNotFoundError:
+        db_path = "workspace/.kb_index.sqlite"
+        kb_config = None
+
+    chunk_size = kb_config.chunk_size if kb_config else 512
+    chunk_overlap = kb_config.chunk_overlap if kb_config else 50
+    embedding_model = kb_config.embedding_model if kb_config else "all-MiniLM-L6-v2"
+
+    return KnowledgeBase(
+        db_path=db_path,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        embedding_model=embedding_model,
+    )
+
+
+def cmd_kb_add(args: argparse.Namespace) -> int:
+    """Add a file or directory to the knowledge base."""
+    from creel.tools import _is_kb_path_safe
+
+    if not _is_kb_path_safe(args.path):
+        print(f"Error: refused to index sensitive path: {args.path}", file=sys.stderr)
+        return 1
+
+    kb = _get_kb(args)
+    try:
+        result = kb.add(args.path)
+        added = result["added"]
+        updated = result["updated"]
+        skipped = result["skipped"]
+        errors = result["errors"]
+
+        if added or updated:
+            files = result.get("files", [])
+            if files:
+                for f in files:
+                    print(f"  indexed: {f}")
+            print(f"\nAdded: {added}  Updated: {updated}  Skipped: {skipped}  Errors: {errors}")
+        elif errors:
+            print(f"Errors: {errors}  (no files indexed)")
+            return 1
+        else:
+            print("No new files to index.")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_search(args: argparse.Namespace) -> int:
+    """Search the knowledge base."""
+    kb = _get_kb(args)
+    try:
+        results = kb.search(args.query, top_k=args.top_k)
+        if not results:
+            print(f"No results found for '{args.query}'.")
+            return 0
+
+        for i, r in enumerate(results, 1):
+            source = r["source"]
+            title = r["title"]
+            score = r["score"]
+            content = r["content"]
+            # Truncate long content for display
+            if len(content) > 300:
+                content = content[:300] + "..."
+            print(f"\n--- Result {i} (score: {score:.4f}) ---")
+            print(f"Source: {source}")
+            print(f"Title: {title}")
+            print(content)
+
+        print(f"\n{len(results)} result(s) found.")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_list(args: argparse.Namespace) -> int:
+    """List indexed documents."""
+    kb = _get_kb(args)
+    try:
+        docs = kb.list_documents()
+        if not docs:
+            print("Knowledge base is empty.")
+            return 0
+
+        for doc in docs:
+            chunks = doc["chunks"]
+            size = doc["size"]
+            title = doc["title"]
+            path = doc["path"]
+            print(f"  {title}  ({chunks} chunks, {size} bytes)")
+            print(f"    {path}")
+
+        print(f"\n{len(docs)} document(s) indexed.")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_remove(args: argparse.Namespace) -> int:
+    """Remove a document from the knowledge base."""
+    kb = _get_kb(args)
+    try:
+        result = kb.remove(args.path)
+        if result["removed"]:
+            print(f"Removed: {result['path']}")
+        else:
+            print(f"Not found: {result.get('error', result['path'])}")
+            return 1
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_rebuild(args: argparse.Namespace) -> int:
+    """Rebuild the knowledge base index."""
+    kb = _get_kb(args)
+    try:
+        print("Rebuilding knowledge base index...")
+        result = kb.rebuild()
+        added = result.get("added", 0)
+        errors = result.get("errors", 0)
+        print(f"Rebuilt: {added} document(s) re-indexed, {errors} error(s).")
+        return 0
+    finally:
+        kb.close()
+
+
+def cmd_kb_stats(args: argparse.Namespace) -> int:
+    """Show knowledge base statistics."""
+    kb = _get_kb(args)
+    try:
+        s = kb.stats()
+        print(f"Documents:   {s['documents']}")
+        print(f"Chunks:      {s['chunks']}")
+        print(f"Total size:  {s['total_size']} bytes")
+        print(f"DB size:     {s['db_size']} bytes")
+        return 0
+    finally:
+        kb.close()
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Query the guardian audit log."""
 
@@ -1530,6 +1684,159 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     print(f"\n{len(entries)} entries shown.")
     return 0
+
+
+def cmd_network(args: argparse.Namespace) -> int:
+    """Dispatch network subcommands."""
+    network_commands = {
+        "log": cmd_network_log,
+        "policy": cmd_network_policy,
+        "allow": cmd_network_allow,
+        "block": cmd_network_block,
+    }
+    subcmd = getattr(args, "network_command", None)
+    if subcmd not in network_commands:
+        print("Usage: creel network {log,policy,allow,block}")
+        return 1
+    return network_commands[subcmd](args)
+
+
+def cmd_network_log(args: argparse.Namespace) -> int:
+    """Show recent network request audit entries."""
+    from guardian.audit import read_audit_log
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    log_file = (
+        agent_def.guardian.audit.log_file
+        if (agent_def.guardian and agent_def.guardian.audit.log_file)
+        else str(paths.audit_log())
+    )
+    tail = 0 if getattr(args, "all", False) else getattr(args, "tail", 20)
+
+    entries = read_audit_log(
+        log_file,
+        tail=tail,
+        event_filter="network_request",
+        tool_filter=getattr(args, "executor", None),
+    )
+
+    if not entries:
+        print("No network log entries found.")
+        return 0
+
+    for entry in entries:
+        ts = entry.get("ts", "?")
+        if len(ts) > 19:
+            ts = ts[:19]
+        domain = entry.get("domain", "?")
+        executor = entry.get("executor", "?")
+        blocked = entry.get("blocked", False)
+        method = entry.get("method", "?")
+        status = entry.get("status_code", "")
+        reason = entry.get("block_reason", "")
+        icon = "BLOCKED" if blocked else "OK"
+        status_str = f" [{status}]" if status else ""
+        reason_str = f" ({reason})" if reason else ""
+        print(f"[{ts}] {icon} {method} {domain} executor={executor}{status_str}{reason_str}")
+
+    print(f"\n{len(entries)} entries shown.")
+    return 0
+
+
+def cmd_network_policy(args: argparse.Namespace) -> int:
+    """Show current network policy configuration."""
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not agent_def.guardian or not agent_def.guardian.network_policy.enabled:
+        print("Network policy: disabled")
+        return 0
+
+    np = agent_def.guardian.network_policy
+    print("Network policy: enabled")
+    print(f"  Max request size:  {np.max_request_size_mb} MB")
+    print(f"  Max response size: {np.max_response_size_mb} MB")
+    print(f"  Rate limit:        {np.rate_limit_per_minute} req/min per executor")
+    print(f"  Alert on unknown:  {np.alert_on_unknown}")
+
+    if np.allowed_domains:
+        print(f"\n  Allowed domains ({len(np.allowed_domains)}):")
+        for d in np.allowed_domains:
+            print(f"    + {d}")
+    else:
+        print("\n  Allowed domains: (none — permissive mode)")
+
+    if np.blocked_domains:
+        print(f"\n  Blocked domains ({len(np.blocked_domains)}):")
+        for d in np.blocked_domains:
+            print(f"    - {d}")
+    else:
+        print("\n  Blocked domains: (none)")
+
+    return 0
+
+
+def _check_network_domain(args: argparse.Namespace, *, check_blocked: bool) -> int:
+    """Shared helper for 'creel network allow' and 'creel network block'.
+
+    The domain check is protocol-agnostic — HTTPS is used only to
+    construct a valid URL for the domain parser.
+    """
+    from guardian.network import NetworkMonitor
+
+    try:
+        agent_def = _load_agent_def(args)
+    except FileNotFoundError:
+        print(
+            f"Error: Agent config not found at {args.agent_config or _default_agent_config()}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not agent_def.guardian or not agent_def.guardian.network_policy.enabled:
+        qualifier = "not be blocked" if check_blocked else "be allowed"
+        print(f"Network policy disabled — '{args.domain}' would {qualifier} (no policy active)")
+        return 0
+
+    monitor = NetworkMonitor(agent_def.guardian.network_policy)
+    url = f"https://{args.domain}/"
+    verdict = monitor.check_domain(url)
+
+    if check_blocked:
+        if not verdict.allowed:
+            print(f"BLOCKED: {args.domain} — {verdict.reason}")
+        else:
+            print(f"NOT BLOCKED: {args.domain} (would be allowed)")
+    else:
+        if verdict.allowed:
+            print(f"ALLOWED: {args.domain}")
+        else:
+            print(f"DENIED: {args.domain} — {verdict.reason}")
+    return 0
+
+
+def cmd_network_allow(args: argparse.Namespace) -> int:
+    """Check if a domain would be allowed by the current network policy."""
+    return _check_network_domain(args, check_blocked=False)
+
+
+def cmd_network_block(args: argparse.Namespace) -> int:
+    """Check if a domain would be blocked by the current network policy."""
+    return _check_network_domain(args, check_blocked=True)
 
 
 def cmd_encrypt(args: argparse.Namespace) -> int:
@@ -1688,6 +1995,288 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if report.errors > 0 else 0
 
 
+# ---------------------------------------------------------------------------
+# monitor subcommands
+# ---------------------------------------------------------------------------
+
+
+def _monitor_store(args: argparse.Namespace):
+    """Create a MonitorStore from default or overridden paths."""
+    from creel.monitors.store import MonitorStore
+
+    mon_dir = Path(getattr(args, "monitors_dir", paths.monitors_dir()))
+    return MonitorStore(
+        monitors_path=mon_dir / "monitors.json",
+        runs_path=mon_dir / "runs.json",
+        alerts_path=mon_dir / "alerts.json",
+    )
+
+
+def cmd_monitor_list(args: argparse.Namespace) -> int:
+    """List all monitors."""
+    store = _monitor_store(args)
+    monitors = store.list()
+
+    if not monitors:
+        print("No monitors configured.")
+        return 0
+
+    print(f"{'ID':<14} {'Name':<28} {'Schedule':<18} {'Level':<8} {'Enabled'}")
+    print("-" * 80)
+    for mon in monitors:
+        sched_str = _format_schedule(mon.schedule)
+        enabled = "yes" if mon.enabled else "no"
+        print(f"{mon.id:<14} {mon.name:<28} {sched_str:<18} {mon.alert_level.value:<8} {enabled}")
+
+    print(f"\n{len(monitors)} monitor(s).")
+    return 0
+
+
+def cmd_monitor_add(args: argparse.Namespace) -> int:
+    """Add a new monitor."""
+    from creel.cron.models import Delivery, Schedule
+    from creel.monitors.models import AlertLevel, Monitor, QuietHours
+
+    store = _monitor_store(args)
+    tz = getattr(args, "tz", "UTC") or "UTC"
+
+    # Schedule
+    cron_expr = getattr(args, "cron", None)
+    every = getattr(args, "every", None)
+    if cron_expr:
+        schedule = Schedule(kind="cron", expr=cron_expr, tz=tz)
+    elif every:
+        schedule = Schedule(kind="every", expr=str(every), tz=tz)
+    else:
+        print("Error: must specify --cron or --every", file=sys.stderr)
+        return 1
+
+    # Delivery
+    delivery_channel = getattr(args, "delivery_channel", None)
+    delivery_url = getattr(args, "delivery_url", None)
+    if delivery_channel:
+        delivery = Delivery(mode="announce", channel=delivery_channel)
+    elif delivery_url:
+        delivery = Delivery(mode="webhook", url=delivery_url)
+    else:
+        delivery = Delivery(mode="none")
+
+    # Alert level
+    level_str = getattr(args, "alert_level", "notice") or "notice"
+    try:
+        alert_level = AlertLevel(level_str)
+    except ValueError:
+        print(f"Error: invalid alert level '{level_str}'", file=sys.stderr)
+        return 1
+
+    # Quiet hours
+    quiet_hours = None
+    qh_str = getattr(args, "quiet_hours", None)
+    if qh_str:
+        try:
+            start, end = qh_str.split("-")
+            quiet_hours = QuietHours(start=start.strip(), end=end.strip(), timezone=tz)
+        except (ValueError, IndexError):
+            print(
+                "Error: --quiet-hours must be 'HH:MM-HH:MM' format",
+                file=sys.stderr,
+            )
+            return 1
+
+    try:
+        monitor = Monitor(
+            name=args.name,
+            description=getattr(args, "description", "") or "",
+            schedule=schedule,
+            executor=args.executor,
+            prompt=args.prompt,
+            delivery=delivery,
+            alert_level=alert_level,
+            quiet_hours=quiet_hours,
+            cooldown_seconds=getattr(args, "cooldown", 3600) or 3600,
+            enabled=not getattr(args, "disabled", False),
+        )
+        store.add(monitor)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Created monitor '{monitor.name}' ({monitor.id}).")
+    return 0
+
+
+def cmd_monitor_add_template(args: argparse.Namespace) -> int:
+    """Add a monitor from a built-in template."""
+    from creel.cron.models import Delivery
+    from creel.monitors.templates import create_from_template
+
+    store = _monitor_store(args)
+
+    delivery_channel = getattr(args, "delivery_channel", None)
+    delivery_url = getattr(args, "delivery_url", None)
+    if delivery_channel:
+        delivery = Delivery(mode="announce", channel=delivery_channel)
+    elif delivery_url:
+        delivery = Delivery(mode="webhook", url=delivery_url)
+    else:
+        delivery = None
+
+    tz = getattr(args, "tz", None)
+
+    try:
+        monitor = create_from_template(
+            args.template_name,
+            delivery=delivery,
+            quiet_hours_tz=tz,
+        )
+        store.add(monitor)
+    except KeyError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Created monitor '{monitor.name}' ({monitor.id}) from template '{args.template_name}'.")
+    return 0
+
+
+def cmd_monitor_templates(args: argparse.Namespace) -> int:
+    """List available monitor templates."""
+    from creel.monitors.templates import TEMPLATES
+
+    if not TEMPLATES:
+        print("No templates available.")
+        return 0
+
+    for name, tmpl in TEMPLATES.items():
+        print(f"  {name:<22} {tmpl.get('description', '')}")
+
+    print(f"\n{len(TEMPLATES)} template(s). Use 'creel monitor add-template <name>' to create.")
+    return 0
+
+
+def cmd_monitor_enable(args: argparse.Namespace) -> int:
+    """Enable a monitor."""
+    store = _monitor_store(args)
+    try:
+        mon = store.update(args.monitor_id, enabled=True)
+    except KeyError:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+    print(f"Enabled monitor '{mon.name}' ({mon.id}).")
+    return 0
+
+
+def cmd_monitor_disable(args: argparse.Namespace) -> int:
+    """Disable a monitor."""
+    store = _monitor_store(args)
+    try:
+        mon = store.update(args.monitor_id, enabled=False)
+    except KeyError:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+    print(f"Disabled monitor '{mon.name}' ({mon.id}).")
+    return 0
+
+
+def cmd_monitor_remove(args: argparse.Namespace) -> int:
+    """Remove a monitor."""
+    store = _monitor_store(args)
+    try:
+        mon = store.remove(args.monitor_id)
+    except KeyError:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+    print(f"Removed monitor '{mon.name}' ({mon.id}).")
+    return 0
+
+
+def cmd_monitor_run(args: argparse.Namespace) -> int:
+    """Trigger a monitor check immediately."""
+    from creel.monitors.manager import MonitorManager
+    from creel.monitors.models import MonitorRunStatus
+
+    store = _monitor_store(args)
+    mon = store.get(args.monitor_id)
+    if mon is None:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+
+    def cli_executor(monitor):
+        """Simple CLI executor that prints the prompt and returns None (no alert)."""
+        print(f"[Check] {monitor.prompt}")
+        return None
+
+    manager = MonitorManager(store=store, executor=cli_executor)
+
+    print(f"Running monitor '{mon.name}' ({args.monitor_id})...")
+    record = manager.trigger_monitor(args.monitor_id)
+
+    status_icons = {
+        MonitorRunStatus.OK: "OK (nothing to report)",
+        MonitorRunStatus.ALERTED: "ALERTED",
+        MonitorRunStatus.SUPPRESSED: f"SUPPRESSED ({record.suppressed_reason})",
+        MonitorRunStatus.FAILURE: f"FAILED: {record.error}",
+    }
+    print(f"Result: {status_icons.get(record.status, record.status)}")
+    return 1 if record.status == MonitorRunStatus.FAILURE else 0
+
+
+def cmd_monitor_history(args: argparse.Namespace) -> int:
+    """Show alert and run history for a monitor."""
+    store = _monitor_store(args)
+    mon = store.get(args.monitor_id)
+    if mon is None:
+        print(f"Error: Monitor '{args.monitor_id}' not found", file=sys.stderr)
+        return 1
+
+    show_type = getattr(args, "type", "all") or "all"
+    tail = getattr(args, "tail", 20)
+
+    if show_type in ("all", "runs"):
+        runs = store.get_runs(args.monitor_id)
+        if tail and tail < len(runs):
+            runs = runs[-tail:]
+
+        if runs:
+            print(f"Run history for '{mon.name}':")
+            print(f"{'Started':<28} {'Status':<12} {'Level':<8} {'Detail'}")
+            print("-" * 75)
+            for run in runs:
+                detail = ""
+                if run.suppressed_reason:
+                    detail = f"suppressed: {run.suppressed_reason}"
+                elif run.error:
+                    detail = run.error
+                level = run.alert_level.value if run.alert_level else ""
+                print(f"{run.started_at:<28} {run.status.value:<12} {level:<8} {detail}")
+            print(f"\n{len(runs)} run(s) shown.")
+        else:
+            print(f"No runs recorded for '{mon.name}'.")
+
+    if show_type in ("all", "alerts"):
+        alerts = store.get_alerts(args.monitor_id)
+        if tail and tail < len(alerts):
+            alerts = alerts[-tail:]
+
+        if alerts:
+            if show_type == "all":
+                print()
+            print(f"Alert history for '{mon.name}':")
+            print(f"{'Timestamp':<28} {'Level':<8} {'Delivered':<10} {'Message'}")
+            print("-" * 80)
+            for alert in alerts:
+                delivered = "yes" if alert.delivered else f"no ({alert.suppressed_reason})"
+                msg = alert.message[:50] + "..." if len(alert.message) > 50 else alert.message
+                print(f"{alert.timestamp:<28} {alert.level.value:<8} {delivered:<10} {msg}")
+            print(f"\n{len(alerts)} alert(s) shown.")
+        else:
+            print(f"No alerts recorded for '{mon.name}'.")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="creel",
@@ -1834,6 +2423,38 @@ def main() -> int:
         default=None,
         help="Show entries since date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
     )
+
+    # network command group
+    network_parser = subparsers.add_parser(
+        "network", help="Network traffic monitoring and policy management"
+    )
+    network_subparsers = network_parser.add_subparsers(
+        dest="network_command",
+        metavar="{log,policy,allow,block}",
+    )
+
+    network_log_parser = network_subparsers.add_parser("log", help="Show network request audit log")
+    network_log_parser.add_argument(
+        "--tail", type=int, default=20, help="Show last N entries (default: 20)"
+    )
+    network_log_parser.add_argument(
+        "--all", action="store_true", help="Show all entries (no tail limit)"
+    )
+    network_log_parser.add_argument(
+        "--executor", type=str, default=None, help="Filter by executor name"
+    )
+
+    network_subparsers.add_parser("policy", help="Show current network policy configuration")
+
+    network_allow_parser = network_subparsers.add_parser(
+        "allow", help="Check if a domain is allowed by the network policy"
+    )
+    network_allow_parser.add_argument("domain", help="Domain to check (e.g. api.example.com)")
+
+    network_block_parser = network_subparsers.add_parser(
+        "block", help="Check if a domain is blocked by the network policy"
+    )
+    network_block_parser.add_argument("domain", help="Domain to check (e.g. evil.example.com)")
 
     # doctor command
     doctor_parser = subparsers.add_parser(
@@ -2108,6 +2729,40 @@ def main() -> int:
         help="Show last N runs (default: 20)",
     )
 
+    # kb command group (knowledge base)
+    kb_parser = subparsers.add_parser("kb", help="Manage the knowledge base")
+    kb_subparsers = kb_parser.add_subparsers(
+        dest="kb_command",
+        metavar="{add,search,list,remove,rebuild,stats}",
+    )
+
+    # kb add
+    kb_add_parser = kb_subparsers.add_parser("add", help="Index a file or directory")
+    kb_add_parser.add_argument("path", help="Path to file or directory to index")
+
+    # kb search
+    kb_search_parser = kb_subparsers.add_parser("search", help="Search the knowledge base")
+    kb_search_parser.add_argument("query", help="Search query")
+    kb_search_parser.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help="Max results to return (default: 5)",
+    )
+
+    # kb list
+    kb_subparsers.add_parser("list", help="List indexed documents")
+
+    # kb remove
+    kb_remove_parser = kb_subparsers.add_parser("remove", help="Remove a document from the index")
+    kb_remove_parser.add_argument("path", help="Path of document to remove")
+
+    # kb rebuild
+    kb_subparsers.add_parser("rebuild", help="Rebuild the entire index")
+
+    # kb stats
+    kb_subparsers.add_parser("stats", help="Show knowledge base statistics")
+
     # usage command
     usage_parser = subparsers.add_parser("usage", help="Show LLM usage statistics")
     usage_parser.add_argument(
@@ -2135,6 +2790,86 @@ def main() -> int:
         "--duration",
         required=True,
         help="Override duration (e.g., '1h', '30m', '60s')",
+    )
+
+    # monitor command group
+    monitor_parser = subparsers.add_parser("monitor", help="Manage proactive monitors and alerts")
+    monitor_subparsers = monitor_parser.add_subparsers(
+        dest="monitor_command",
+        metavar="{list,add,add-template,templates,enable,disable,remove,run,history}",
+    )
+
+    # monitor list
+    monitor_subparsers.add_parser("list", help="List all monitors")
+
+    # monitor add
+    mon_add_parser = monitor_subparsers.add_parser("add", help="Add a new monitor")
+    mon_add_parser.add_argument("--name", required=True, help="Monitor name")
+    mon_add_parser.add_argument(
+        "--executor", required=True, help="Executor name (e.g., gmail_readonly)"
+    )
+    mon_add_parser.add_argument("--prompt", required=True, help="What to check for")
+    mon_add_parser.add_argument("--cron", help="Cron expression (e.g., '*/15 * * * *')")
+    mon_add_parser.add_argument("--every", type=int, help="Check interval in seconds")
+    mon_add_parser.add_argument("--delivery-channel", help="Channel for alert delivery")
+    mon_add_parser.add_argument("--delivery-url", help="Webhook URL for alert delivery")
+    mon_add_parser.add_argument(
+        "--alert-level",
+        choices=["info", "notice", "urgent"],
+        default="notice",
+        help="Alert severity level (default: notice)",
+    )
+    mon_add_parser.add_argument("--quiet-hours", help="Quiet hours range (e.g., '23:00-07:00')")
+    mon_add_parser.add_argument(
+        "--cooldown", type=int, default=3600, help="Dedup cooldown in seconds (default: 3600)"
+    )
+    mon_add_parser.add_argument("--description", help="Monitor description")
+    mon_add_parser.add_argument("--tz", default="UTC", help="Timezone (default: UTC)")
+    mon_add_parser.add_argument(
+        "--disabled", action="store_true", help="Create monitor in disabled state"
+    )
+
+    # monitor add-template
+    mon_tmpl_parser = monitor_subparsers.add_parser(
+        "add-template", help="Add a monitor from a built-in template"
+    )
+    mon_tmpl_parser.add_argument("template_name", help="Template name")
+    mon_tmpl_parser.add_argument("--delivery-channel", help="Channel for alert delivery")
+    mon_tmpl_parser.add_argument("--delivery-url", help="Webhook URL for alert delivery")
+    mon_tmpl_parser.add_argument("--tz", help="Timezone for quiet hours")
+
+    # monitor templates
+    monitor_subparsers.add_parser("templates", help="List available monitor templates")
+
+    # monitor enable
+    mon_enable_parser = monitor_subparsers.add_parser("enable", help="Enable a monitor")
+    mon_enable_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor disable
+    mon_disable_parser = monitor_subparsers.add_parser("disable", help="Disable a monitor")
+    mon_disable_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor remove
+    mon_remove_parser = monitor_subparsers.add_parser("remove", help="Remove a monitor")
+    mon_remove_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor run
+    mon_run_parser = monitor_subparsers.add_parser(
+        "run", help="Trigger a monitor check immediately"
+    )
+    mon_run_parser.add_argument("monitor_id", help="Monitor ID")
+
+    # monitor history
+    mon_history_parser = monitor_subparsers.add_parser("history", help="Show run and alert history")
+    mon_history_parser.add_argument("monitor_id", help="Monitor ID")
+    mon_history_parser.add_argument(
+        "--type",
+        choices=["all", "runs", "alerts"],
+        default="all",
+        help="History type to show (default: all)",
+    )
+    mon_history_parser.add_argument(
+        "--tail", type=int, default=20, help="Show last N entries (default: 20)"
     )
 
     args = parser.parse_args()
@@ -2184,6 +2919,23 @@ def main() -> int:
             return 1
         return cron_commands[args.cron_command](args)
 
+    if args.command == "network":
+        return cmd_network(args)
+
+    if args.command == "kb":
+        kb_commands = {
+            "add": cmd_kb_add,
+            "search": cmd_kb_search,
+            "list": cmd_kb_list,
+            "remove": cmd_kb_remove,
+            "rebuild": cmd_kb_rebuild,
+            "stats": cmd_kb_stats,
+        }
+        if args.kb_command not in kb_commands:
+            kb_parser.print_help()
+            return 1
+        return kb_commands[args.kb_command](args)
+
     if args.command == "limits":
         limits_commands = {
             "override": cmd_limits_override,
@@ -2192,6 +2944,23 @@ def main() -> int:
             limits_parser.print_help()
             return 1
         return limits_commands[args.limits_command](args)
+
+    if args.command == "monitor":
+        monitor_commands = {
+            "list": cmd_monitor_list,
+            "add": cmd_monitor_add,
+            "add-template": cmd_monitor_add_template,
+            "templates": cmd_monitor_templates,
+            "enable": cmd_monitor_enable,
+            "disable": cmd_monitor_disable,
+            "remove": cmd_monitor_remove,
+            "run": cmd_monitor_run,
+            "history": cmd_monitor_history,
+        }
+        if args.monitor_command not in monitor_commands:
+            monitor_parser.print_help()
+            return 1
+        return monitor_commands[args.monitor_command](args)
 
     commands = {
         "init": cmd_init,

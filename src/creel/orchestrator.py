@@ -265,6 +265,7 @@ def _dispatch_executor(name: str, config: ExecutorConfig) -> str:
         "fetch_url": _exec_fetch_url_inline,
         "browser": _exec_browser_inline,
         "exec": _exec_exec_inline,
+        "exec_interactive": _exec_interactive_inline,
         "file_ops": _exec_file_ops_inline,
         "github": _exec_github_inline,
         "coding": _exec_coding_inline,
@@ -772,6 +773,74 @@ def _exec_exec_inline(config: ExecutorConfig) -> str:
         raise ValueError("exec executor requires a 'command' argument")
 
     result = run_command(command, workdir)
+    return json.dumps(result, indent=2)
+
+
+def _exec_interactive_inline(config: ExecutorConfig) -> str:
+    """Run exec_interactive executor inline."""
+    from executors.exec_interactive.executor import (
+        close_session,
+        get_io_log,
+        get_session_info,
+        list_sessions,
+        read_output,
+        resize_terminal,
+        send_input,
+        start_session,
+    )
+
+    action = config.args.get("action", "")
+
+    if action == "start":
+        command = config.args.get("command", "")
+        if not command:
+            raise ValueError("exec_interactive 'start' requires a 'command' argument")
+        timeout = int(config.args.get("timeout", "300"))
+        cols = int(config.args.get("cols", "120"))
+        rows = int(config.args.get("rows", "40"))
+        result = start_session(command, timeout=timeout, cols=cols, rows=rows)
+    elif action == "send_input":
+        session_id = config.args.get("session_id", "")
+        data = config.args.get("input", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'send_input' requires 'session_id'")
+        result = send_input(session_id, data)
+    elif action == "read_output":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'read_output' requires 'session_id'")
+        read_timeout = float(config.args.get("read_timeout", "10"))
+        result = read_output(session_id, timeout=read_timeout)
+    elif action == "resize":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'resize' requires 'session_id'")
+        cols = int(config.args.get("cols", "120"))
+        rows = int(config.args.get("rows", "40"))
+        result = resize_terminal(session_id, cols, rows)
+    elif action == "close":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'close' requires 'session_id'")
+        result = close_session(session_id)
+    elif action == "info":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'info' requires 'session_id'")
+        result = get_session_info(session_id)
+    elif action == "list_sessions":
+        result = list_sessions()
+    elif action == "get_io_log":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'get_io_log' requires 'session_id'")
+        result = get_io_log(session_id)
+    else:
+        raise ValueError(
+            f"exec_interactive: unknown action '{action}' "
+            "(use start/send_input/read_output/resize/close/info/list_sessions)"
+        )
+
     return json.dumps(result, indent=2)
 
 

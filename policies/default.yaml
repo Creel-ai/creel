@@ -72,6 +72,8 @@ review:
   # Host exec (command execution and process management on host)
   - host_exec
   - host_process
+  # Interactive PTY sessions (requires explicit approval)
+  - exec_interactive
 
 deny:
   - delete_*
@@ -215,6 +217,70 @@ deny_when:
     arg: command
     pattern: "*chmod 777*"
   - tool: host_exec
+    arg: command
+    pattern: "*chmod -R 777*"
+  # Interactive PTY: block same dangerous patterns as exec
+  - tool: exec_interactive
+    arg: command
+    pattern: "*rm -rf*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*rm -fr*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*mkfs*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*dd if=*of=/dev/*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*>/dev/tcp/*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*/dev/udp/*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*bash -i*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*nc -e*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*ncat -e*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*| bash*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*| sh*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*|bash*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*|sh*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*curl*|*sh*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*wget*|*sh*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*$(curl*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*$(wget*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*:(){ :|:& };:*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*crontab*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*chmod 777*"
+  - tool: exec_interactive
     arg: command
     pattern: "*chmod -R 777*"
   # Coding tool: block same dangerous patterns as exec
@@ -451,6 +517,31 @@ review_when:
   - tool: host_exec
     arg: command
     pattern: "*zip*|*curl*"
+  # Interactive PTY: flag risky but legitimate commands for review
+  - tool: exec_interactive
+    arg: command
+    pattern: "*env*KEY*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*env*SECRET*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*env*TOKEN*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*env*PASSWORD*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*git push --force*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*git push -f*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*git reset --hard*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*sudo*"
   # Coding tool: flag risky but legitimate commands for review
   - tool: coding
     arg: command

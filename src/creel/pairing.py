@@ -110,7 +110,7 @@ class PairingSession:
         return asdict(self)
 
 
-def _generate_totp_code(secret: str, step: int | None = None) -> str:
+def generate_totp_code(secret: str, step: int | None = None) -> str:
     """Generate a TOTP code using HMAC-SHA1.
 
     Implements RFC 6238 TOTP without external dependencies.
@@ -131,7 +131,7 @@ def verify_totp(secret: str, code: str) -> bool:
     """Verify a TOTP code with ±1 window tolerance."""
     current_step = int(time.time()) // _TOTP_STEP_SECONDS
     for offset in range(-_TOTP_VALID_WINDOW, _TOTP_VALID_WINDOW + 1):
-        expected = _generate_totp_code(secret, current_step + offset)
+        expected = generate_totp_code(secret, current_step + offset)
         if hmac.compare_digest(expected, code):
             return True
     return False

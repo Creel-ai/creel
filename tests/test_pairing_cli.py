@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from creel.pairing import PairingManager, _generate_totp_code
+from creel.pairing import PairingManager, generate_totp_code
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ class TestCmdPairList:
 
         # Create a paired device
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         manager.complete_pairing(
             session.session_id, totp_code, "TestPhone", capabilities=["camera"]
         )
@@ -95,7 +95,7 @@ class TestCmdPairRemove:
         from creel.cli import cmd_pair_remove
 
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone")
         assert device is not None
 
@@ -124,7 +124,7 @@ class TestCmdPairTest:
         from creel.cli import cmd_pair_test
 
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone")
         assert device is not None
 
@@ -136,7 +136,7 @@ class TestCmdPairTest:
         assert result == 0
         output = captured.getvalue()
         assert "Phone" in output
-        assert "reachable" in output
+        assert "record found" in output
 
     def test_test_not_found(self, pairing_dir: Path) -> None:
         from creel.cli import cmd_pair_test

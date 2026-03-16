@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from creel.daemon.api_pairing import create_pairing_routes
-from creel.pairing import PairingManager, _generate_totp_code
+from creel.pairing import PairingManager, generate_totp_code
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ class TestCompleteEndpoint:
         gen_resp = client.post("/api/pairing/generate")
         session_data = gen_resp.json()
 
-        totp_code = _generate_totp_code(session_data["totp_secret"])
+        totp_code = generate_totp_code(session_data["totp_secret"])
 
         resp = client.post(
             "/api/pairing/complete",
@@ -118,7 +118,7 @@ class TestDevicesEndpoint:
         # Pair a device
         gen_resp = client.post("/api/pairing/generate")
         session_data = gen_resp.json()
-        totp_code = _generate_totp_code(session_data["totp_secret"])
+        totp_code = generate_totp_code(session_data["totp_secret"])
         client.post(
             "/api/pairing/complete",
             json={
@@ -137,7 +137,7 @@ class TestDevicesEndpoint:
     def test_get_device(self, client: TestClient) -> None:
         gen_resp = client.post("/api/pairing/generate")
         session_data = gen_resp.json()
-        totp_code = _generate_totp_code(session_data["totp_secret"])
+        totp_code = generate_totp_code(session_data["totp_secret"])
         pair_resp = client.post(
             "/api/pairing/complete",
             json={
@@ -159,7 +159,7 @@ class TestDevicesEndpoint:
     def test_delete_device(self, client: TestClient) -> None:
         gen_resp = client.post("/api/pairing/generate")
         session_data = gen_resp.json()
-        totp_code = _generate_totp_code(session_data["totp_secret"])
+        totp_code = generate_totp_code(session_data["totp_secret"])
         pair_resp = client.post(
             "/api/pairing/complete",
             json={

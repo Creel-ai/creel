@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -114,7 +115,10 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
 
     @http.get("/devices/{device_id}", response_model=DeviceResponse)
     async def api_get_device(device_id: str) -> DeviceResponse:
-        device = await asyncio.to_thread(manager.get_device, device_id)
+        try:
+            device = await asyncio.to_thread(manager.get_device, device_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid device ID format") from None
         if device is None:
             raise HTTPException(status_code=404, detail="Device not found")
         return DeviceResponse(
@@ -128,7 +132,10 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
 
     @http.delete("/devices/{device_id}")
     async def api_remove_device(device_id: str) -> dict[str, bool]:
-        removed = await asyncio.to_thread(manager.remove_device, device_id)
+        try:
+            removed = await asyncio.to_thread(manager.remove_device, device_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid device ID format") from None
         if not removed:
             raise HTTPException(status_code=404, detail="Device not found")
         return {"removed": True}
@@ -146,7 +153,9 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
         # Auth via query-param token (same pattern as logs WebSocket)
         expected_token = getattr(websocket.app.state, "dashboard_token", None)
         client_token = websocket.query_params.get("token")
-        if expected_token and (not client_token or client_token != expected_token):
+        if expected_token and (
+            not client_token or not hmac.compare_digest(client_token, expected_token)
+        ):
             await websocket.close(code=4401, reason="unauthorized")
             return
 

@@ -67,12 +67,11 @@ def _mount_pairing_routes(app: FastAPI, auth_deps: list) -> None:
     Creates a ``PairingManager`` stored on ``app.state`` and binds the
     pairing API routers.
     """
-    import os
-
+    from creel import paths
     from creel.daemon.api_pairing import create_pairing_routes
     from creel.pairing import PairingManager
 
-    pairing_dir = Path(os.environ.get("CREEL_HOME", str(Path.home() / ".creel"))) / "pairing"
+    pairing_dir = paths.creel_home() / "pairing"
     manager = PairingManager(pairing_dir)
     app.state.pairing_manager = manager
 

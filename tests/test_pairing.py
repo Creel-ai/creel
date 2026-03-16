@@ -14,7 +14,7 @@ from creel.pairing import (
     PairingManager,
     PairingSession,
     PairingStatus,
-    _generate_totp_code,
+    generate_totp_code,
     verify_totp,
 )
 
@@ -37,23 +37,23 @@ def manager(pairing_dir: Path) -> PairingManager:
 class TestTOTP:
     def test_generate_totp_code_deterministic(self) -> None:
         """Same secret and step produce the same code."""
-        code1 = _generate_totp_code("test-secret", step=1000)
-        code2 = _generate_totp_code("test-secret", step=1000)
+        code1 = generate_totp_code("test-secret", step=1000)
+        code2 = generate_totp_code("test-secret", step=1000)
         assert code1 == code2
 
     def test_generate_totp_code_length(self) -> None:
-        code = _generate_totp_code("secret", step=42)
+        code = generate_totp_code("secret", step=42)
         assert len(code) == 6
         assert code.isdigit()
 
     def test_generate_totp_code_different_steps(self) -> None:
-        code1 = _generate_totp_code("secret", step=1)
-        code2 = _generate_totp_code("secret", step=9999)
+        code1 = generate_totp_code("secret", step=1)
+        code2 = generate_totp_code("secret", step=9999)
         assert code1 != code2
 
     def test_verify_totp_current_step(self) -> None:
         secret = "test-secret-123"
-        code = _generate_totp_code(secret)
+        code = generate_totp_code(secret)
         assert verify_totp(secret, code) is True
 
     def test_verify_totp_wrong_code(self) -> None:
@@ -64,7 +64,7 @@ class TestTOTP:
         secret = "window-test"
         current_step = int(time.time()) // 30
         # Generate code for previous step
-        code = _generate_totp_code(secret, step=current_step - 1)
+        code = generate_totp_code(secret, step=current_step - 1)
         assert verify_totp(secret, code) is True
 
 
@@ -165,7 +165,7 @@ class TestPairingManager:
 
     def test_complete_pairing_success(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(
             session.session_id,
             totp_code,
@@ -199,7 +199,7 @@ class TestPairingManager:
     def test_complete_pairing_expired_session(self, manager: PairingManager) -> None:
         session = manager.generate_pairing(timeout_seconds=0)
         time.sleep(0.01)
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(
             session.session_id,
             totp_code,
@@ -213,7 +213,7 @@ class TestPairingManager:
 
     def test_complete_pairing_already_paired(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         manager.complete_pairing(session.session_id, totp_code, "Phone1")
         # Second attempt should fail (not pending anymore)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone2")
@@ -226,7 +226,7 @@ class TestDeviceManagement:
 
     def test_list_devices_after_pairing(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         manager.complete_pairing(session.session_id, totp_code, "Phone")
         devices = manager.list_devices()
         assert len(devices) == 1
@@ -234,7 +234,7 @@ class TestDeviceManagement:
 
     def test_get_device(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone")
         assert device is not None
         fetched = manager.get_device(device.id)
@@ -246,7 +246,7 @@ class TestDeviceManagement:
 
     def test_remove_device(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone")
         assert device is not None
         assert manager.remove_device(device.id) is True
@@ -257,7 +257,7 @@ class TestDeviceManagement:
 
     def test_update_last_seen(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone")
         assert device is not None
         original_last_seen = device.last_seen
@@ -272,14 +272,14 @@ class TestDeviceManagement:
 
     def test_verify_device_token_valid(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone")
         assert device is not None
         assert manager.verify_device_token(device.id, device.auth_token) is True
 
     def test_verify_device_token_invalid(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        totp_code = _generate_totp_code(session.totp_secret)
+        totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(session.session_id, totp_code, "Phone")
         assert device is not None
         assert manager.verify_device_token(device.id, "wrong-token") is False

@@ -1490,7 +1490,7 @@ def _default_pairing_dir() -> Path:
 
 def cmd_pair_generate(args: argparse.Namespace) -> int:
     """Generate a new device pairing code."""
-    from creel.pairing import PairingManager, _generate_totp_code
+    from creel.pairing import PairingManager, generate_totp_code
 
     manager = PairingManager(_default_pairing_dir())
     session = manager.generate_pairing(timeout_seconds=args.timeout)
@@ -1501,9 +1501,10 @@ def cmd_pair_generate(args: argparse.Namespace) -> int:
     print(f"  Session: {session.session_id}")
     print()
     # Show the current TOTP code so the user can verify manually
-    totp = _generate_totp_code(session.totp_secret)
+    totp = generate_totp_code(session.totp_secret)
     print(f"  TOTP verification code: {totp}")
-    print(f"  TOTP secret: {session.totp_secret}")
+    if getattr(args, "verbose", False):
+        print(f"  TOTP secret: {session.totp_secret}")
     print()
     print(f"  Expires in {args.timeout} seconds.")
     print()
@@ -1524,9 +1525,9 @@ def cmd_pair_list(args: argparse.Namespace) -> int:
 
     print(f"{'ID':<34} {'Name':<20} {'Type':<10} {'Last Seen':<20} {'Capabilities'}")
     print("-" * 110)
-    for d in devices:
-        import datetime
+    import datetime
 
+    for d in devices:
         last_seen = datetime.datetime.fromtimestamp(d.last_seen).strftime("%Y-%m-%d %H:%M:%S")
         caps = ", ".join(d.capabilities) if d.capabilities else "(none)"
         print(f"{d.id:<34} {d.name:<20} {d.device_type:<10} {last_seen:<20} {caps}")
@@ -1561,9 +1562,8 @@ def cmd_pair_test(args: argparse.Namespace) -> int:
     print(f"Device: {device.name} ({device.device_type})")
     print(f"Capabilities: {', '.join(device.capabilities) or '(none)'}")
     print(f"Auth token present: {'yes' if device.auth_token else 'no'}")
-    # Update last_seen as a lightweight connectivity check
     manager.update_last_seen(args.device_id)
-    print("Status: reachable (last_seen updated)")
+    print("Status: record found (last_seen updated)")
     return 0
 
 

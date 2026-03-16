@@ -707,7 +707,7 @@ tools:
   # Shell exec
   exec:
     executor: exec
-    description: "Run shell commands in a sandboxed environment"
+    description: "Run a single shell command and return its output. Use this for one-shot commands (ls, grep, curl, etc.) that don't need ongoing interaction. For interactive programs (REPLs, SSH, editors), use exec_interactive instead."
     parameters:
       command:
         type: string
@@ -720,6 +720,39 @@ tools:
       - path: ~/.creel/workspace
         mode: rw
     network: false
+
+  # Interactive/PTY exec — SSH, REPLs, editors, etc.
+  exec_interactive:
+    executor: exec_interactive
+    description: "Start and manage interactive terminal sessions. Use this for programs that need ongoing input/output (SSH, Python/Node REPLs, psql, vim, htop). Supports a session lifecycle: start a session, send input, read output, and close when done. For one-shot commands, use exec instead."
+    network: true
+    timeout: 300
+    parameters:
+      action:
+        type: string
+        description: "Action: start, send_input, read_output, resize, close, info, list_sessions, get_io_log"
+        required: true
+      command:
+        type: string
+        description: "Shell command to run in PTY (required for 'start' action)"
+      session_id:
+        type: string
+        description: "Session ID (required for send_input, read_output, resize, close, info)"
+      input:
+        type: string
+        description: "Input to send to the session (for 'send_input' action, include \\n for Enter)"
+      timeout:
+        type: number
+        description: "Hard timeout in seconds (for 'start' action, default 300)"
+      cols:
+        type: number
+        description: "Terminal width in columns (default 120)"
+      rows:
+        type: number
+        description: "Terminal height in rows (default 40)"
+      read_timeout:
+        type: number
+        description: "How long to wait for output in seconds (for 'read_output', default 10)"
 
   # Coding / dev environment
   coding:

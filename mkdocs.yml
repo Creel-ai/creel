@@ -58,6 +58,7 @@ nav:
     - Notion: executors/notion.md
     - Web Search & Fetch: executors/web.md
     - Shell Exec: executors/exec.md
+    - Interactive Shell Exec: executors/exec-interactive.md
   - Deployment:
     - Container Mode: deployment/containers.md
     - Host Bridge: deployment/host-bridge.md

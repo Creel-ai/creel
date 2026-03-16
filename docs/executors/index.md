@@ -21,11 +21,12 @@ Executors are isolated, stateless data fetchers that run with minimal credential
 | coding | Host filesystem (scoped) | LLM, other credentials |
 | file_ops | Host filesystem (scoped) | LLM, other credentials |
 | [exec](exec.md) | Host filesystem (scoped) | LLM, other credentials |
+| [exec_interactive](exec-interactive.md) | Network access (SSH, REPLs) | LLM, other credentials |
 
 ## How Executors Run
 
 - **Development**: Executors run as subprocesses with secrets injected as environment variables
-- **Production**: Each executor runs in its own Docker container with `--read-only`, `--cap-drop=ALL`, memory/CPU limits, and a 60-second timeout
+- **Production**: Each executor runs in its own Docker container with `--read-only`, `--cap-drop=ALL`, memory/CPU limits, and a 60-second timeout. The `exec_interactive` executor uses one container per session with a 5-minute timeout
 
 See [Container Mode](../deployment/containers.md) for production deployment details.
 

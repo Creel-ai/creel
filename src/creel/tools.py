@@ -556,6 +556,9 @@ def execute_tool_call(
         # Route coding executor through warm container pool when available
         if cfg.executor == "coding" and container_pool is not None and container_pool.enabled:
             return _run_coding_via_pool(container_pool, executor_config, cfg)
+        # Route exec_interactive through per-session container manager
+        if cfg.executor == "exec_interactive":
+            return _run_interactive_via_container(executor_config, cfg)
         return _run_executor_container(executor_config, cfg, bridge_config)
     return _run_executor_inline(cfg.executor, executor_config)
 
@@ -713,3 +716,17 @@ def _run_coding_via_pool(
     except Exception:
         pool.discard(container)
         raise
+
+
+def _run_interactive_via_container(
+    executor_config: ExecutorConfig,
+    tool_config: ToolConfig,
+) -> str:
+    """Execute an interactive PTY action via a per-session Docker container.
+
+    Each ``start`` action spins up a new container; subsequent actions
+    route to the container by session_id; ``close`` tears it down.
+    """
+    from creel.interactive_sessions import get_session_manager
+
+    return get_session_manager().execute(executor_config, tool_config)

@@ -25,6 +25,7 @@ DEFAULT_MAX_SESSIONS = 10
 DEFAULT_MAX_AGE_HOURS = 4
 DEFAULT_TIMEOUT = 300  # 5 minutes for foreground commands
 DEFAULT_CLEANUP_INTERVAL = 1800  # 30 minutes
+_MAX_FOREGROUND_OUTPUT = 10 * 1024 * 1024  # 10 MB per stream
 
 # Minimal set of env vars inherited by spawned processes (C2 fix).
 _SAFE_ENV_VARS = frozenset(
@@ -321,6 +322,26 @@ class ProcessManager:
                 self._pending_spawns -= 1
             raise
 
+    @staticmethod
+    def _read_capped(stream: Any, max_bytes: int) -> tuple[str, bool]:
+        """Read from a byte stream up to *max_bytes*; discard the rest.
+
+        Returns:
+            (decoded_text, was_truncated)
+        """
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            if total < max_bytes:
+                keep = min(len(chunk), max_bytes - total)
+                chunks.append(chunk[:keep])
+            total += len(chunk)
+        text = b"".join(chunks).decode(errors="replace")
+        return text, total > max_bytes
+
     def _run_foreground(
         self,
         command: str,
@@ -329,36 +350,73 @@ class ProcessManager:
         env: dict[str, str],
         session_id: str,
     ) -> dict[str, Any]:
-        """Run a command in the foreground, blocking until completion."""
+        """Run a command in the foreground, blocking until completion.
+
+        Uses Popen with threaded readers capped at _MAX_FOREGROUND_OUTPUT
+        per stream to prevent unbounded memory growth (H3).
+        """
+        process = subprocess.Popen(
+            ["bash", "-c", command],
+            cwd=workdir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False,
+            env=env,
+        )
+
+        results: dict[str, tuple[str, bool]] = {}
+
+        def _read_out() -> None:
+            results["stdout"] = self._read_capped(process.stdout, _MAX_FOREGROUND_OUTPUT)
+
+        def _read_err() -> None:
+            results["stderr"] = self._read_capped(process.stderr, _MAX_FOREGROUND_OUTPUT)
+
+        tout = threading.Thread(target=_read_out, daemon=True)
+        terr = threading.Thread(target=_read_err, daemon=True)
+        tout.start()
+        terr.start()
+
+        timed_out = False
         try:
-            result = subprocess.run(
-                ["bash", "-c", command],
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=env,
-            )
-            return {
-                "session_id": session_id,
-                "command": command,
-                "background": False,
-                "status": "exited",
-                "exit_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            }
-        except subprocess.TimeoutExpired as e:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            timed_out = True
+
+        tout.join(timeout=5)
+        terr.join(timeout=5)
+
+        stdout, stdout_trunc = results.get("stdout", ("", False))
+        stderr, stderr_trunc = results.get("stderr", ("", False))
+
+        if stdout_trunc:
+            stdout += "\n...[output truncated at 10MB]"
+        if stderr_trunc:
+            stderr += "\n...[output truncated at 10MB]"
+
+        if timed_out:
             return {
                 "session_id": session_id,
                 "command": command,
                 "background": False,
                 "status": "timeout",
                 "exit_code": -1,
-                "stdout": e.stdout if isinstance(e.stdout, str) else (e.stdout or b"").decode(),
-                "stderr": e.stderr if isinstance(e.stderr, str) else (e.stderr or b"").decode(),
+                "stdout": stdout,
+                "stderr": stderr,
                 "error": f"Command timed out after {timeout}s",
             }
+
+        return {
+            "session_id": session_id,
+            "command": command,
+            "background": False,
+            "status": "exited",
+            "exit_code": process.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
 
     def _run_background(
         self,
@@ -588,12 +646,13 @@ class ProcessManager:
 
         for sid in stale_ids:
             try:
-                session = self._sessions.get(sid)
-                if session and session.process.poll() is None:
+                with self._lock:
+                    session = self._sessions.pop(sid, None)
+                if session is None:
+                    continue
+                if session.process.poll() is None:
                     session.process.kill()
                     session.process.wait(timeout=5)
-                with self._lock:
-                    self._sessions.pop(sid, None)
                 cleaned += 1
                 logger.info("Cleaned up stale session %s", sid)
             except Exception:
@@ -616,18 +675,19 @@ class ProcessManager:
             self._cleanup_thread.join(timeout=5)
 
         with self._lock:
-            session_ids = list(self._sessions.keys())
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
 
-        for sid in session_ids:
+        for session in sessions:
             try:
-                session = self._sessions.get(sid)
-                if session and session.process.poll() is None:
+                if session.process.poll() is None:
                     session.process.kill()
                     session.process.wait(timeout=5)
             except Exception:
-                logger.warning("Failed to kill session %s during shutdown", sid, exc_info=True)
+                logger.warning(
+                    "Failed to kill session %s during shutdown",
+                    session.session_id,
+                    exc_info=True,
+                )
 
-        with self._lock:
-            self._sessions.clear()
-
-        logger.info("ProcessManager shut down, killed %d sessions", len(session_ids))
+        logger.info("ProcessManager shut down, killed %d sessions", len(sessions))

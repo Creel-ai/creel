@@ -82,8 +82,8 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
             session.session_id,
             req.totp_code,
             req.device_name,
-            req.device_type,
-            req.capabilities,
+            req.device_type.value,
+            [c.value for c in req.capabilities],
         )
         if device is None:
             raise HTTPException(status_code=403, detail="Pairing verification failed")

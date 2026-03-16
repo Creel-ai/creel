@@ -74,14 +74,16 @@ class ApprovalQueue:
 
     def get_pending(self, sender_id: str) -> PendingAction | None:
         """Get the most recent pending action for a sender."""
+        pending = self.get_all_pending(sender_id)
+        return pending[0] if pending else None
+
+    def get_all_pending(self, sender_id: str) -> list[PendingAction]:
+        """Get all pending actions for a sender, most recent first."""
         pending = [
             a for a in self._actions.values() if a.sender_id == sender_id and a.status == "pending"
         ]
-        if not pending:
-            return None
-        # Most recent first
         pending.sort(key=lambda a: a.created_at, reverse=True)
-        return pending[0]
+        return pending
 
     def resolve(self, action_id: str, approved: bool) -> None:
         action = self._actions.get(action_id)

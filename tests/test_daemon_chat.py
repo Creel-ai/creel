@@ -16,7 +16,7 @@ class _StubChatServer:
     """Minimal stub that echoes messages for testing."""
 
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir))
         self._guardian = None
         self._cron_manager = None
 

@@ -70,7 +70,7 @@ class _StubChatServer:
     """Minimal chat-server shape for testing event injection."""
 
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir))
         self._guardian = None
         self.injected_events: list[tuple[str, str]] = []
 

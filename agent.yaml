@@ -1140,7 +1140,6 @@ agent:
 
 session:
   sessions_dir: sessions
-  max_history: 50
   summarize_on_trim: true
 
 bridge:

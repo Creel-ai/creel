@@ -241,7 +241,7 @@ class ToolCacheConfig(BaseModel):
 class ContextPruningConfig(BaseModel):
     """Configuration for context window pruning."""
 
-    enabled: bool = False
+    enabled: bool = True
     threshold: float = Field(
         default=0.80,
         gt=0,
@@ -257,7 +257,6 @@ class SessionConfig(BaseModel):
     """Session storage settings."""
 
     sessions_dir: str = "sessions"
-    max_history: int = 50
     summarize_on_trim: bool = True
     ttl_hours: float = 0  # 0 = no expiry
     summary_model: str = "claude-haiku-4-5-20251001"

@@ -108,7 +108,6 @@ class ChatServer:
 
         self._session_mgr = SessionManager(
             sessions_dir=agent_def.session.sessions_dir,
-            max_history=agent_def.session.max_history,
             ttl_hours=agent_def.session.ttl_hours,
             summarize_on_trim=agent_def.session.summarize_on_trim,
             summarize_fn=summarize_fn,
@@ -318,11 +317,11 @@ class ChatServer:
 
         # Check for pending approval response BEFORE normal processing
         if stripped.lower() in _APPROVE_WORDS | _DENY_WORDS:
-            pending = self._approval_queue.get_pending(sender_id)
-            if pending is not None:
+            pending_actions = self._approval_queue.get_all_pending(sender_id)
+            if pending_actions:
                 return self._handle_approval_response(
                     sender_id,
-                    pending,
+                    pending_actions,
                     stripped.lower() in _APPROVE_WORDS,
                 )
 
@@ -334,13 +333,10 @@ class ChatServer:
                 return screen_result.rejection_message
 
         # Do not start a new LLM turn while an approval is pending.
-        pending = self._approval_queue.get_pending(sender_id)
-        if pending is not None:
-            self._send_approval_request(sender_id, pending)
-            return (
-                f"⏳ Approval still pending for `{pending.tool_name}`. "
-                "Reply Y to approve or N to deny."
-            )
+        pending_actions = self._approval_queue.get_all_pending(sender_id)
+        if pending_actions:
+            tool_names = ", ".join(f"`{a.tool_name}`" for a in pending_actions)
+            return f"⏳ Approval still pending for {tool_names}. Reply Y to approve or N to deny."
 
         # Process media attachments (voice transcription + image vision)
         text, image_content_blocks = self._process_attachments(
@@ -409,18 +405,17 @@ class ChatServer:
         if isinstance(last_tokens, int) and last_tokens > 0:
             self._session_mgr.update_token_count(sender_id, last_tokens)
 
-        # Handle approval_required — queue the action and notify
-        if result.stop_reason == "approval_required" and result.pending_approval:
-            pa = result.pending_approval
-            action = self._approval_queue.add(
-                sender_id=sender_id,
-                tool_name=pa.tool_name,
-                tool_input=pa.tool_input,
-                reason=pa.reason,
-                tool_use_id=pa.tool_use_id,
-            )
-            self._send_approval_request(sender_id, action)
-            # Save session state
+        # Handle approval_required — queue all pending actions and notify
+        if result.stop_reason == "approval_required" and result.pending_approvals:
+            for pa in result.pending_approvals:
+                self._approval_queue.add(
+                    sender_id=sender_id,
+                    tool_name=pa.tool_name,
+                    tool_input=pa.tool_input,
+                    reason=pa.reason,
+                    tool_use_id=pa.tool_use_id,
+                )
+            self._send_batch_approval_request(sender_id, result.pending_approvals)
             self._session_mgr.save_session(session)
             return "⏳ Waiting for your approval to proceed."
 
@@ -499,6 +494,42 @@ class ChatServer:
         else:
             logger.info("Approval request (no reply channel): %s", msg)
 
+    def _send_batch_approval_request(self, sender_id: str, pending_approvals) -> None:
+        """Send a batch approval request listing all tools that need approval."""
+        if should_suppress(self._agent_def.quiet_hours, urgent=False):
+            logger.info("Approval request suppressed due to quiet hours")
+            return
+
+        tool_sections = []
+        for pa in pending_approvals:
+            args_lines = []
+            tool_input = pa.tool_input if hasattr(pa, "tool_input") else {}
+            for k, v in tool_input.items():
+                v_str = str(v)
+                if len(v_str) > 80:
+                    v_str = v_str[:77] + "..."
+                args_lines.append(f"    {k}: {v_str}")
+            args_summary = "\n".join(args_lines) if args_lines else "    (none)"
+            tool_name = pa.tool_name if hasattr(pa, "tool_name") else pa.tool_name
+            reason = pa.reason if hasattr(pa, "reason") else ""
+            tool_sections.append(f"  🔧 {tool_name}\n{args_summary}\n  📝 {reason}")
+
+        tools_list = "\n\n".join(tool_sections)
+        count = len(pending_approvals)
+        msg = (
+            f"⚠️ {count} action{'s' if count > 1 else ''} require approval:\n\n"
+            f"{tools_list}\n\n"
+            f"Reply **Y** to approve all or **N** to deny all."
+        )
+
+        if self._reply_channel:
+            try:
+                self._reply_channel.send(sender_id, msg)
+            except Exception:
+                logger.exception("Failed to send approval request via channel")
+        else:
+            logger.info("Approval request (no reply channel): %s", msg)
+
     def _invoke_agent_loop(
         self,
         messages: list[dict],
@@ -562,90 +593,69 @@ class ChatServer:
     def _handle_approval_response(
         self,
         sender_id: str,
-        pending,
+        pending_actions: list,
         approved: bool,
     ) -> str:
-        """Resolve a pending action, execute if approved, and resume the agent loop."""
-        self._approval_queue.resolve(pending.id, approved)
+        """Resolve all pending actions, execute if approved, and resume the agent loop."""
+        for pa in pending_actions:
+            self._approval_queue.resolve(pa.id, approved)
 
         session = self._session_mgr.get_or_create(sender_id)
 
         if not approved:
-            # Patch the synthetic tool_result with a denial message instead of
-            # injecting a separate user message (which would create consecutive
-            # user-role messages and break the Anthropic API contract).
-            if pending.tool_use_id:
-                if not self._patch_tool_result(
-                    session.messages,
-                    pending.tool_use_id,
-                    f"Action denied by user: {pending.policy_reason}",
-                    is_error=True,
-                ):
-                    logger.warning(
-                        "Could not patch tool_result for %s (tool_use_id=%s)",
-                        pending.tool_name,
-                        pending.tool_use_id,
-                    )
+            denied_names = []
+            for pa in pending_actions:
+                if pa.tool_use_id:
+                    if not self._patch_tool_result(
+                        session.messages,
+                        pa.tool_use_id,
+                        f"Action denied by user: {pa.policy_reason}",
+                        is_error=True,
+                    ):
+                        logger.warning(
+                            "Could not patch tool_result for %s (tool_use_id=%s)",
+                            pa.tool_name,
+                            pa.tool_use_id,
+                        )
+                denied_names.append(pa.tool_name)
             self._session_mgr.save_session(session)
-            return f"❌ Action denied: {pending.tool_name}"
+            return f"❌ Actions denied: {', '.join(denied_names)}"
 
-        # Execute the approved tool
+        # Execute all approved tools and patch their results
         session_state = self._session_states.setdefault(
             sender_id,
             SessionState(sender_id=sender_id),
         )
-        is_error = False
-        try:
-            tool_result = execute_tool_call(
-                tool_name=pending.tool_name,
-                tool_input=pending.tool_input,
-                tools_config=self._agent_def.tools,
-                use_containers=self._use_containers,
-                memory_manager=self._memory,
-                bridge_config=self._agent_def.bridge,
-                session_state=session_state,
-                cron_manager=self._cron_manager,
-                subagent_manager=self._subagent_manager,
-            )
-        except Exception as e:
-            logger.exception("Tool execution failed after approval")
-            tool_result = f"Error: {e}"
-            is_error = True
-
-        # Patch the session messages: replace the synthetic error tool_result
-        # (matching pending.tool_use_id) with the real execution result so
-        # the LLM sees the actual output when we resume the agent loop.
-        if pending.tool_use_id:
-            if not self._patch_tool_result(
-                session.messages, pending.tool_use_id, tool_result, is_error
-            ):
-                logger.warning(
-                    "Could not patch tool_result for %s (tool_use_id=%s)",
-                    pending.tool_name,
-                    pending.tool_use_id,
+        for pa in pending_actions:
+            is_error = False
+            try:
+                tool_result = execute_tool_call(
+                    tool_name=pa.tool_name,
+                    tool_input=pa.tool_input,
+                    tools_config=self._agent_def.tools,
+                    use_containers=self._use_containers,
+                    memory_manager=self._memory,
+                    bridge_config=self._agent_def.bridge,
+                    session_state=session_state,
+                    cron_manager=self._cron_manager,
+                    subagent_manager=self._subagent_manager,
                 )
+            except Exception as e:
+                logger.exception("Tool execution failed after approval: %s", pa.tool_name)
+                tool_result = f"Error: {e}"
+                is_error = True
 
-        # Inject a context reminder so the LLM remembers what it was doing
-        # before the approval interruption.
-        last_text = self._extract_last_assistant_text(session.messages)
-        tool_error_summary = str(tool_result)[:200] if is_error else ""
-        tool_status = f"failed with: {tool_error_summary}" if is_error else "succeeded"
-        reminder = (
-            f"[System: Resuming after tool approval]\n"
-            f"Your tool `{pending.tool_name}` was approved and {tool_status}.\n"
-        )
-        if last_text:
-            truncated = last_text[:500]
-            reminder += (
-                f"Your previous response before the interruption was:\n---\n{truncated}\n---\n"
-            )
-        reminder += "Continue your original plan. Do not start over."
-        self._inject_context_reminder(session.messages, reminder)
+            if pa.tool_use_id:
+                if not self._patch_tool_result(
+                    session.messages, pa.tool_use_id, tool_result, is_error
+                ):
+                    logger.warning(
+                        "Could not patch tool_result for %s (tool_use_id=%s)",
+                        pa.tool_name,
+                        pa.tool_use_id,
+                    )
 
-        # Resume the agent loop so the LLM can process the tool output.
-        # Don't pass reminder as user_message — it's used for memory relevance
-        # search in _build_system_prompt, and the reminder text would retrieve
-        # irrelevant memories.
+        # Resume the agent loop so the LLM can process the tool outputs
         result = self._invoke_agent_loop(session.messages, session_state)
 
         # Track token usage for session metadata
@@ -654,16 +664,16 @@ class ChatServer:
             self._session_mgr.update_token_count(sender_id, last_tokens)
 
         # If the resumed loop itself hits another approval_required, queue it
-        if result.stop_reason == "approval_required" and result.pending_approval:
-            pa = result.pending_approval
-            action = self._approval_queue.add(
-                sender_id=sender_id,
-                tool_name=pa.tool_name,
-                tool_input=pa.tool_input,
-                reason=pa.reason,
-                tool_use_id=pa.tool_use_id,
-            )
-            self._send_approval_request(sender_id, action)
+        if result.stop_reason == "approval_required" and result.pending_approvals:
+            for pa in result.pending_approvals:
+                self._approval_queue.add(
+                    sender_id=sender_id,
+                    tool_name=pa.tool_name,
+                    tool_input=pa.tool_input,
+                    reason=pa.reason,
+                    tool_use_id=pa.tool_use_id,
+                )
+            self._send_batch_approval_request(sender_id, result.pending_approvals)
             self._session_mgr.save_session(session)
             return "⏳ Waiting for your approval to proceed."
 
@@ -698,48 +708,6 @@ class ChatServer:
                     block["is_error"] = is_error
                     return True
         return False
-
-    @staticmethod
-    def _extract_last_assistant_text(messages: list[dict]) -> str | None:
-        """Walk backwards through messages to find the last assistant text.
-
-        Skips assistant messages that only contain tool_use blocks (no text).
-        """
-        for msg in reversed(messages):
-            if msg.get("role") != "assistant":
-                continue
-            content = msg.get("content")
-            if isinstance(content, str) and content.strip():
-                return content.strip()
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        text = block.get("text", "").strip()
-                        if text:
-                            return text
-        return None
-
-    @staticmethod
-    def _inject_context_reminder(messages: list[dict], reminder: str) -> None:
-        """Inject a context reminder into session messages.
-
-        Appends a text block to the last user message to avoid consecutive
-        user messages (which the Anthropic API rejects). Falls back to
-        adding a new user message if the last message is not user-role.
-        """
-        if messages and messages[-1].get("role") == "user":
-            content = messages[-1].get("content")
-            if isinstance(content, list):
-                content.append({"type": "text", "text": reminder})
-            elif isinstance(content, str):
-                messages[-1]["content"] = [
-                    {"type": "text", "text": content},
-                    {"type": "text", "text": reminder},
-                ]
-            else:
-                messages.append({"role": "user", "content": reminder})
-        else:
-            messages.append({"role": "user", "content": reminder})
 
     def _send_reply(
         self, sender_id: str, msg: str, proactive: bool = False, urgent: bool = False

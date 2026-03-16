@@ -176,7 +176,6 @@ def test_agent_config_bounds() -> None:
 def test_session_config_defaults() -> None:
     cfg = SessionConfig()
     assert cfg.sessions_dir == "sessions"
-    assert cfg.max_history == 50
 
 
 def test_task_definition_mode_default(tmp_path: Path) -> None:
@@ -253,7 +252,7 @@ def test_load_agent_config(tmp_path: Path) -> None:
         },
         "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 1024},
         "agent": {"max_turns": 15},
-        "session": {"sessions_dir": "sessions", "max_history": 50},
+        "session": {"sessions_dir": "sessions"},
     }
     path = tmp_path / "agent.yaml"
     path.write_text(yaml.dump(config))

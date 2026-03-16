@@ -181,7 +181,7 @@ def test_concurrent_writes_do_not_corrupt(tmp_path: Path) -> None:
     is that the file is never corrupted (always valid JSON with the expected
     schema).
     """
-    mgr = SessionManager(sessions_dir=str(tmp_path), max_history=200)
+    mgr = SessionManager(sessions_dir=str(tmp_path))
     session = mgr.get_or_create("cli")
     sid = session.session_id
     errors: list[Exception] = []

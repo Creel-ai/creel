@@ -123,7 +123,6 @@ class TestChatServerAttachmentsParam:
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),
-                max_history=50,
                 summarize_on_trim=False,
             ),
             workspace=WorkspaceConfig(path=str(tmp_path / "ws")),
@@ -136,7 +135,7 @@ class TestChatServerAttachmentsParam:
         mock_result.turns_used = 1
         mock_result.tool_calls_made = 0
         mock_result.stop_reason = "end_turn"
-        mock_result.pending_approval = None
+        mock_result.pending_approvals = []
         mock_result.last_input_tokens = 0
 
         att = Attachment(type=AttachmentType.IMAGE, file_path=Path("/tmp/test.jpg"))
@@ -169,7 +168,6 @@ class TestChatServerAttachmentsParam:
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),
-                max_history=50,
                 summarize_on_trim=False,
             ),
             workspace=WorkspaceConfig(path=str(tmp_path / "ws")),
@@ -182,7 +180,7 @@ class TestChatServerAttachmentsParam:
         mock_result.turns_used = 1
         mock_result.tool_calls_made = 0
         mock_result.stop_reason = "end_turn"
-        mock_result.pending_approval = None
+        mock_result.pending_approvals = []
         mock_result.last_input_tokens = 0
 
         with patch("creel.chat.run_agent_loop", return_value=mock_result):

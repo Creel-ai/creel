@@ -707,7 +707,7 @@ tools:
   # Shell exec
   exec:
     executor: exec
-    description: "Run shell commands in a sandboxed environment"
+    description: "Run a single shell command and return its output. Use this for one-shot commands (ls, grep, curl, etc.) that don't need ongoing interaction. For interactive programs (REPLs, SSH, editors), use exec_interactive instead."
     parameters:
       command:
         type: string
@@ -724,7 +724,7 @@ tools:
   # Interactive/PTY exec — SSH, REPLs, editors, etc.
   exec_interactive:
     executor: exec_interactive
-    description: "Start and manage interactive terminal sessions (SSH, REPLs, etc.)"
+    description: "Start and manage interactive terminal sessions. Use this for programs that need ongoing input/output (SSH, Python/Node REPLs, psql, vim, htop). Supports a session lifecycle: start a session, send input, read output, and close when done. For one-shot commands, use exec instead."
     network: true
     timeout: 300
     parameters:

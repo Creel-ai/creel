@@ -74,6 +74,8 @@ _BLOCKED_ENV_PREFIXES = ("BRIDGE_TOKEN_", "BASH_FUNC_")
 _BLOCKED_COMMAND_PATTERNS: list[re.Pattern[str]] = [
     # rm with recursive+force in any flag style (-rf, -fr, --recursive, --force)
     re.compile(r"\brm\s+.*(?:-\w*r\w*f|-\w*f\w*r|--recursive|--force)", re.IGNORECASE),
+    # rm with separated short flags: rm -r -f, rm -f -r
+    re.compile(r"\brm\s+.*-r\b.*-f\b|\brm\s+.*-f\b.*-r\b", re.IGNORECASE),
     re.compile(r"\bmkfs\b"),
     re.compile(r"\bdd\b.*\bof\s*=\s*/dev/"),
     re.compile(r">\s*/dev/sd[a-z]|>\s*/dev/nvme"),
@@ -187,9 +189,7 @@ class ProcessManager:
         """Reject commands matching known-dangerous patterns (C1 defense-in-depth)."""
         for pattern in _BLOCKED_COMMAND_PATTERNS:
             if pattern.search(command):
-                raise ValueError(
-                    f"Command rejected by safety filter: matches blocked pattern {pattern.pattern!r}"
-                )
+                raise ValueError("Command rejected by safety filter")
 
     @staticmethod
     def _validate_caller_env(env: dict[str, str]) -> None:
@@ -362,6 +362,7 @@ class ProcessManager:
             stderr=subprocess.PIPE,
             text=False,
             env=env,
+            start_new_session=True,
         )
 
         results: dict[str, tuple[str, bool]] = {}
@@ -381,7 +382,8 @@ class ProcessManager:
         try:
             process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            process.kill()
+            # Kill entire process group to avoid orphaned children
+            os.killpg(process.pid, signal.SIGKILL)
             process.wait()
             timed_out = True
 
@@ -435,6 +437,7 @@ class ProcessManager:
             stdin=subprocess.PIPE,
             text=True,
             env=env,
+            start_new_session=True,
         )
 
         session = ProcessSession(
@@ -497,7 +500,7 @@ class ProcessManager:
                     timeout,
                 )
                 try:
-                    session.process.kill()
+                    os.killpg(session.pid, signal.SIGKILL)
                     session.status = "timeout"
                 except OSError:
                     pass
@@ -600,12 +603,14 @@ class ProcessManager:
             }
 
         try:
-            session.process.send_signal(sig)
+            # Signal the entire process group to avoid orphaned children
+            os.killpg(session.pid, sig)
             # Give it a moment to exit
             try:
                 session.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                session.process.kill()
+                os.killpg(session.pid, signal.SIGKILL)
+                session.process.wait(timeout=5)
             session.status = "killed"
             session.exit_code = session.process.returncode
         except OSError as e:
@@ -651,7 +656,7 @@ class ProcessManager:
                 if session is None:
                     continue
                 if session.process.poll() is None:
-                    session.process.kill()
+                    os.killpg(session.pid, signal.SIGKILL)
                     session.process.wait(timeout=5)
                 cleaned += 1
                 logger.info("Cleaned up stale session %s", sid)
@@ -681,7 +686,7 @@ class ProcessManager:
         for session in sessions:
             try:
                 if session.process.poll() is None:
-                    session.process.kill()
+                    os.killpg(session.pid, signal.SIGKILL)
                     session.process.wait(timeout=5)
             except Exception:
                 logger.warning(

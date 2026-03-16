@@ -39,6 +39,10 @@ class JobExecutor:
         self._channel_send = channel_send
         self._use_containers = use_containers
 
+    def update_agent_def(self, agent_def: AgentDefinition) -> None:
+        """Swap the agent definition reference for hot-reload."""
+        self._agent_def = agent_def
+
     def __call__(self, job: CronJob) -> None:
         """Execute a job based on its target mode."""
         if job.target == "main":

@@ -20,10 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from creel.channels.message import Attachment, AttachmentType, IncomingMessage
-from creel.channels.telegram import (
-    TelegramChannel,
-    _telegram_file_type_to_attachment,
-)
+from creel.channels.telegram import TelegramChannel
 from creel.channels.telegram_bridge import (
     TelegramMedia,
     TelegramMessage,
@@ -239,23 +236,28 @@ class TestExtractMedia:
 
 
 class TestAttachmentTypeMapping:
+    """Verify TelegramChannel._platform_type_map via _classify_platform_type."""
+
+    def _classify(self, platform_type: str) -> AttachmentType:
+        return TelegramChannel._platform_type_map.get(platform_type, AttachmentType.FILE)
+
     def test_photo_maps_to_image(self):
-        assert _telegram_file_type_to_attachment("photo") == AttachmentType.IMAGE
+        assert self._classify("photo") == AttachmentType.IMAGE
 
     def test_voice_maps_to_voice(self):
-        assert _telegram_file_type_to_attachment("voice") == AttachmentType.VOICE
+        assert self._classify("voice") == AttachmentType.VOICE
 
     def test_audio_maps_to_audio(self):
-        assert _telegram_file_type_to_attachment("audio") == AttachmentType.AUDIO
+        assert self._classify("audio") == AttachmentType.AUDIO
 
     def test_video_maps_to_video(self):
-        assert _telegram_file_type_to_attachment("video") == AttachmentType.VIDEO
+        assert self._classify("video") == AttachmentType.VIDEO
 
     def test_document_maps_to_file(self):
-        assert _telegram_file_type_to_attachment("document") == AttachmentType.FILE
+        assert self._classify("document") == AttachmentType.FILE
 
     def test_unknown_maps_to_file(self):
-        assert _telegram_file_type_to_attachment("sticker") == AttachmentType.FILE
+        assert self._classify("sticker") == AttachmentType.FILE
 
 
 # ---------------------------------------------------------------------------

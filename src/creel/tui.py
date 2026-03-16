@@ -7,19 +7,20 @@ import queue
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypedDict, runtime_checkable
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widget import Widget
-from textual.widgets import Button, Footer, Header, RichLog, Static, TextArea
+from textual.widgets import Button, Footer, Header, OptionList, RichLog, Static, TextArea
 
 
 @runtime_checkable
@@ -67,7 +68,9 @@ _HELP_TEXT = """\
 
 [bold]Shortcuts:[/bold]
   [cyan]ctrl+n[/cyan]        New session
-  [cyan]ctrl+c[/cyan]        Quit
+  [cyan]ctrl+s[/cyan]        Switch session
+  [cyan]ctrl+l[/cyan]        Clear display
+  [cyan]ctrl+c/d[/cyan]      Quit
   [cyan]enter[/cyan]         Send message
   [cyan]shift+enter[/cyan]   New line
 
@@ -75,6 +78,9 @@ _HELP_TEXT = """\
   Hold [cyan]shift[/cyan] and drag to select/copy text
   Use [cyan]↑[/cyan]/[cyan]↓[/cyan] to recall previous messages\
 """
+
+# Syntax highlighting theme for code blocks in Markdown rendering
+_CODE_THEME = "monokai"
 
 
 class _QueueLogHandler(logging.Handler):
@@ -125,8 +131,73 @@ class ConfirmBar(Widget):
         self.remove()
 
 
+class ToolCallPanel(Static):
+    """Panel showing active and recently completed tool calls."""
+
+    DEFAULT_CSS = """
+    ToolCallPanel {
+        dock: bottom;
+        height: auto;
+        max-height: 4;
+        background: $surface;
+        color: $text-muted;
+        padding: 0 2;
+        display: none;
+    }
+    ToolCallPanel.visible {
+        display: block;
+    }
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__("", **kwargs)
+        self._active: dict[str, str] = {}  # call_id -> tool_name
+        self._completed: list[str] = []  # tool_names (recent)
+        self._hide_timer: Timer | None = None
+
+    def add_tool_call(self, call_id: str, tool_name: str) -> None:
+        """Register a tool call as active (shows spinner indicator)."""
+        self._active[call_id] = tool_name
+        self.add_class("visible")
+        self._render_panel()
+
+    def complete_tool_call(self, call_id: str) -> None:
+        """Mark a tool call as completed (shows checkmark)."""
+        name = self._active.pop(call_id, "unknown")
+        self._completed.append(name)
+        # Keep only last 3 completed
+        self._completed = self._completed[-3:]
+        self._render_panel()
+        if not self._active:
+            if self._hide_timer is not None:
+                self._hide_timer.stop()
+            self._hide_timer = self.set_timer(2.0, self._auto_hide)
+
+    def clear_tools(self) -> None:
+        """Remove all tool call indicators."""
+        self._active.clear()
+        self._completed.clear()
+        self.remove_class("visible")
+        self.update("")
+
+    def _auto_hide(self) -> None:
+        self._hide_timer = None
+        if not self._active:
+            self.remove_class("visible")
+            self._completed.clear()
+            self.update("")
+
+    def _render_panel(self) -> None:
+        parts: list[str] = []
+        for name in self._active.values():
+            parts.append(f"[bold yellow]\u27f3[/bold yellow] {name}")
+        for name in self._completed:
+            parts.append(f"[bold green]\u2713[/bold green] [dim]{name}[/dim]")
+        self.update("  ".join(parts) if parts else "")
+
+
 class StatusBar(Static):
-    """Always-visible status bar showing model, thinking state, and message count."""
+    """Always-visible status bar showing model, thinking state, tokens, and session."""
 
     DEFAULT_CSS = """
     StatusBar {
@@ -141,8 +212,13 @@ class StatusBar(Static):
     model_name: reactive[str] = reactive("", init=False)
     is_thinking: reactive[bool] = reactive(False, init=False)
     message_count: reactive[int] = reactive(0, init=False)
+    token_count: reactive[int] = reactive(0, init=False)
+    session_name: reactive[str] = reactive("", init=False)
+    # connection_status is available for external callers but not rendered by default
+    # until it's wired to actual connectivity checks.
+    connection_status: reactive[str] = reactive("", init=False)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__("", **kwargs)
         self._think_start: float = 0.0
         self._refresh_timer: Timer | None = None
@@ -170,6 +246,15 @@ class StatusBar(Static):
     def watch_message_count(self) -> None:
         self._render_bar()
 
+    def watch_token_count(self) -> None:
+        self._render_bar()
+
+    def watch_session_name(self) -> None:
+        self._render_bar()
+
+    def watch_connection_status(self) -> None:
+        self._render_bar()
+
     def _render_bar(self) -> None:
         parts: list[str] = []
         if self.model_name:
@@ -177,12 +262,78 @@ class StatusBar(Static):
 
         if self.is_thinking:
             elapsed = int(time.monotonic() - self._think_start)
-            parts.append(f"● Thinking... ({elapsed}s)")
+            parts.append(f"\u25cf Thinking... ({elapsed}s)")
         else:
-            parts.append("● Ready")
+            parts.append("\u25cf Ready")
+
+        if self.token_count:
+            parts.append(f"{self.token_count} tokens")
 
         parts.append(f"{self.message_count} msgs")
+
+        if self.session_name:
+            parts.append(self.session_name)
+
+        if self.connection_status:
+            parts.append(self.connection_status)
+
         self.update("  ".join(parts))
+
+
+class SessionInfo(TypedDict, total=False):
+    """Shape of session dicts passed to SessionSwitcher."""
+
+    session_id: str
+    title: str
+    message_count: int
+
+
+class SessionSwitcher(ModalScreen[str]):
+    """Modal screen for switching between sessions."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    DEFAULT_CSS = """
+    SessionSwitcher {
+        align: center middle;
+    }
+    #session-switcher-box {
+        width: 70;
+        max-height: 20;
+        border: tall $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #session-switcher-box > Static {
+        margin-bottom: 1;
+    }
+    """
+
+    def __init__(self, sessions: list[SessionInfo]) -> None:
+        super().__init__()
+        self._sessions = sessions
+        self._session_ids: list[str] = [str(s.get("session_id", "")) for s in sessions]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="session-switcher-box"):
+            yield Static(
+                "[bold]Switch Session[/bold]  (\u2191\u2193 select, Enter switch, Esc cancel)",
+                markup=True,
+            )
+            options: list[str] = []
+            for s in self._sessions:
+                sid = str(s.get("session_id", ""))[:12]
+                title = str(s.get("title") or "(untitled)")
+                count = int(s.get("message_count", 0) or 0)
+                options.append(f"{sid}  {title}  ({count} msgs)")
+            yield OptionList(*options, id="session-options")
+
+    @on(OptionList.OptionSelected)
+    def _on_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(self._session_ids[event.option_index])
+
+    def action_cancel(self) -> None:
+        self.dismiss("")
 
 
 class ChatInput(TextArea):
@@ -206,7 +357,7 @@ class ChatInput(TextArea):
             super().__init__()
             self.text = text
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(
             show_line_numbers=False,
             soft_wrap=True,
@@ -216,7 +367,7 @@ class ChatInput(TextArea):
         self._history_index: int = -1
         self._draft: str = ""
 
-    async def _on_key(self, event) -> None:
+    async def _on_key(self, event: Any) -> None:
         """Handle enter, shift+enter, and arrow keys."""
         if event.key == "enter":
             text = self.text.strip()
@@ -272,7 +423,10 @@ class ChatApp(App):
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
+        Binding("ctrl+d", "quit", "Quit", show=False),
         Binding("ctrl+n", "new_session", "New Session"),
+        Binding("ctrl+s", "switch_session", "Switch"),
+        Binding("ctrl+l", "clear_display", "Clear"),
     ]
 
     CSS = """
@@ -321,6 +475,7 @@ class ChatApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield RichLog(id="chat-log", markup=True, wrap=True, auto_scroll=True)
+        yield ToolCallPanel(id="tool-panel")
         yield StatusBar(id="status-bar")
         yield ChatInput(id="chat-input")
         yield Footer()
@@ -340,7 +495,7 @@ class ChatApp(App):
         guardian_status = "active" if self._guardian_active else "inactive"
         log.write(
             Text.from_markup(
-                f"[bold bright_red]🧺 Creel agent ready.[/bold bright_red] "
+                f"[bold bright_red]\U0001f9fa Creel agent ready.[/bold bright_red] "
                 f"Tools loaded: {self._tool_count}. "
                 f"Guardian: {guardian_status}."
             )
@@ -445,6 +600,15 @@ class ChatApp(App):
                         self._update_streaming,
                         "".join(self._streaming_chunks),
                     )
+            elif event_type == "tool_start":
+                call_id = str(payload.get("call_id", ""))
+                tool_name = str(payload.get("tool_name", "tool"))
+                if call_id:
+                    self.call_from_thread(self._on_tool_start, call_id, tool_name)
+            elif event_type == "tool_end":
+                call_id = str(payload.get("call_id", ""))
+                if call_id:
+                    self.call_from_thread(self._on_tool_end, call_id)
             elif event_type == "final":
                 final_text = str(payload.get("text", ""))
             elif event_type == "error":
@@ -476,6 +640,12 @@ class ChatApp(App):
     def _hide_status(self) -> None:
         self.query_one("#status-bar", StatusBar).stop_thinking()
 
+    def _on_tool_start(self, call_id: str, tool_name: str) -> None:
+        self.query_one("#tool-panel", ToolCallPanel).add_tool_call(call_id, tool_name)
+
+    def _on_tool_end(self, call_id: str) -> None:
+        self.query_one("#tool-panel", ToolCallPanel).complete_tool_call(call_id)
+
     def _start_streaming(self) -> None:
         """Mount a temporary Static widget as a streaming buffer."""
         buf = Static("", id="streaming-buffer", markup=True)
@@ -501,11 +671,13 @@ class ChatApp(App):
         else:
             buf.remove()
         self._append_response(final_text)
+        # Clear tool panel after response completes
+        self.query_one("#tool-panel", ToolCallPanel).clear_tools()
 
     def _append_response(self, text: str) -> None:
         log = self.query_one("#chat-log", RichLog)
         log.write(Text("Assistant:", style="bold green"))
-        log.write(RichMarkdown(text))
+        log.write(RichMarkdown(text, code_theme=_CODE_THEME))
         log.write("")
         bar = self.query_one("#status-bar", StatusBar)
         bar.message_count += 1
@@ -532,22 +704,40 @@ class ChatApp(App):
             elif role == "assistant":
                 if isinstance(content, str):
                     text = content
+                    tool_uses: list[dict] = []
                 elif isinstance(content, list):
                     text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
+                    tool_uses = [b for b in content if b.get("type") == "tool_use"]
                 else:
                     continue
+                # Show tool calls from this assistant turn
+                for tu in tool_uses:
+                    name = tu.get("name", "tool")
+                    log.write(f"[bold yellow]\u27f3[/bold yellow] [dim]Tool call:[/dim] {name}")
                 if text:
                     log.write(Text("Assistant:", style="bold green"))
-                    log.write(RichMarkdown(text))
+                    log.write(RichMarkdown(text, code_theme=_CODE_THEME))
                     log.write("")
                     count += 1
 
         bar.message_count = count
+        self._sync_session_status(session)
+
+    def _sync_session_status(self, session: Any) -> None:
+        """Update status bar with session metadata."""
+        bar = self.query_one("#status-bar", StatusBar)
+        token_count = getattr(session, "token_count", 0)
+        if token_count:
+            bar.token_count = token_count
+        title = getattr(session, "title", "") or ""
+        if title:
+            bar.session_name = title
 
     def _update_subtitle(self) -> None:
         session = self._get_or_create_session()
         title = session.title or "(new session)"
         self.sub_title = f"Session {session.session_id}: {title}"
+        self._sync_session_status(session)
 
     def action_new_session(self) -> None:
         session = self._new_session()
@@ -556,12 +746,50 @@ class ChatApp(App):
         log.write(f"[dim]Started new session {session.session_id}.[/dim]")
         bar = self.query_one("#status-bar", StatusBar)
         bar.message_count = 0
+        bar.token_count = 0
+        bar.session_name = ""
         self._update_subtitle()
 
-    def _get_or_create_session(self):
+    def action_switch_session(self) -> None:
+        """Open the session switcher modal."""
+        list_fn = getattr(self._server, "list_sessions", None)
+        if not callable(list_fn):
+            self.notify("Session switching not available for this backend.", timeout=3)
+            return
+
+        sessions = list_fn(self._sender_id)
+        if not sessions:
+            self.notify("No sessions found.", timeout=3)
+            return
+
+        self.push_screen(SessionSwitcher(sessions), callback=self._on_session_selected)
+
+    def _on_session_selected(self, session_id: str | None) -> None:
+        if not session_id:
+            return
+        # Resume the selected session via the backend
+        resume_fn = getattr(self._server, "resume_session", None)
+        if not callable(resume_fn):
+            self.notify("Session resume not supported by this backend.", timeout=3)
+            return
+        resume_fn(self._sender_id, session_id)
+
+        log = self.query_one("#chat-log", RichLog)
+        log.clear()
+        self._replay_history()
+        self._update_subtitle()
+        self.notify(f"Switched to session {session_id[:12]}.", timeout=3)
+
+    def action_clear_display(self) -> None:
+        """Clear the chat display (keeps session history)."""
+        log = self.query_one("#chat-log", RichLog)
+        log.clear()
+        log.write("[dim]Display cleared. Session history preserved.[/dim]")
+
+    def _get_or_create_session(self) -> Any:
         return self._server.get_or_create_session(self._sender_id)
 
-    def _new_session(self):
+    def _new_session(self) -> Any:
         return self._server.new_session(self._sender_id)
 
     def action_quit(self) -> None:  # type: ignore[override]
@@ -570,7 +798,7 @@ class ChatApp(App):
         self.exit()
 
 
-def _make_tui_confirm_fn(app: ChatApp):
+def _make_tui_confirm_fn(app: ChatApp) -> Callable[[str, dict, str], bool]:
     """Create a confirm_fn that bridges a worker thread to the TUI.
 
     Returns a callable suitable for ChatServer(confirm_fn=...).
@@ -585,13 +813,13 @@ def _make_tui_confirm_fn(app: ChatApp):
             subject = tool_input.get("subject")
             if subject:
                 header = (
-                    f"[bold yellow]⚠ Guardian review:[/bold yellow] "
-                    f'[bold]{tool_name}[/bold] — "{subject}"\n'
+                    f"[bold yellow]\u26a0 Guardian review:[/bold yellow] "
+                    f'[bold]{tool_name}[/bold] \u2014 "{subject}"\n'
                     f"  Input: {tool_input}"
                 )
             else:
                 header = (
-                    f"[bold yellow]⚠ Guardian review:[/bold yellow] "
+                    f"[bold yellow]\u26a0 Guardian review:[/bold yellow] "
                     f"[bold]{tool_name}[/bold]({tool_input})"
                 )
             log.write(f"{header}\n  Reason: {reason}")

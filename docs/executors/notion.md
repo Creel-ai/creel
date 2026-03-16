@@ -1,6 +1,6 @@
 # Notion
 
-## Read-only (`notion_api`)
+## Read-only (`notion`)
 
 Read-only Notion API access for searching workspace content, reading a page, and querying a database.
 
@@ -14,7 +14,7 @@ NOTION_API_KEY=secret_xxx
 NOTION_VERSION=2022-06-28
 EOF
 
-./scripts/encrypt-secret.sh secrets/notion_read.env
+creel encrypt secrets/notion_read.env
 ```
 
 `NOTION_VERSION` is optional and defaults to `2022-06-28`.
@@ -30,7 +30,7 @@ EOF
 ### Configuration
 
 ```yaml
-notion_api:
+notion:
   executor: notion
   secrets: secrets/notion_read.env.enc
   args:
@@ -69,7 +69,7 @@ NOTION_API_KEY=secret_xxx
 NOTION_VERSION=2022-06-28
 EOF
 
-./scripts/encrypt-secret.sh secrets/notion_write.env
+creel encrypt secrets/notion_write.env
 ```
 
 The token can be the same integration token as the read executor, or a separate one with write permissions.

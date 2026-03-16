@@ -44,6 +44,8 @@ nav:
   - Configuration:
     - Task Definitions: configuration/tasks.md
     - Agent Configuration: configuration/agent-config.md
+    - Monitors: configuration/monitors.md
+    - Rate Limiting: configuration/rate-limiting.md
     - Secrets Management: configuration/secrets.md
   - Executors:
     - Overview: executors/index.md
@@ -56,6 +58,7 @@ nav:
     - Notion: executors/notion.md
     - Web Search & Fetch: executors/web.md
     - Shell Exec: executors/exec.md
+    - Interactive Shell Exec: executors/exec-interactive.md
   - Deployment:
     - Container Mode: deployment/containers.md
     - Host Bridge: deployment/host-bridge.md

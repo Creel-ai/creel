@@ -12,6 +12,96 @@ import pytest
 
 from tests.injection_fixtures import ALL_BENIGN, ALL_INJECTIONS
 
+REQUIRED_ATTACK_CATEGORIES = {
+    "direct_override",
+    "indirect",
+    "jailbreak",
+    "roleplay",
+    "encoding",
+    "multilingual",
+    "context_manipulation",
+    "data_exfiltration",
+    "multi_turn",
+    "tool_abuse",
+}
+
+# Keywords used by the mock classifier to detect injections.
+# Kept at module level for readability and potential reuse.
+MOCK_INJECTION_SIGNALS = [
+    # Direct override signals
+    "ignore",
+    "override",
+    "disregard",
+    "forget",
+    "cancel",
+    "system prompt",
+    "new instruction",
+    "developer mode",
+    # Jailbreak signals
+    "dan ",
+    "do anything now",
+    "no restrictions",
+    "reveal",
+    "bypass",
+    "disable",
+    "dump",
+    "jailbreak",
+    "unfiltered",
+    # Multilingual ignore words
+    "前の指示",
+    "ignorez",
+    "ignoriere",
+    "ignora",
+    "무시",
+    "игнорируйте",
+    "无视",
+    "abaikan",
+    # Security signals
+    "pwned",
+    "[inst]",
+    "[system]",
+    "hacker",
+    "attacker",
+    "exfiltrate",
+    "credentials",
+    "env vars",
+    # Context manipulation signals
+    "im_start",
+    "system message",
+    "begin system",
+    "end system",
+    "sys_prompt",
+    "hidden instruction",
+    "admin privileges",
+    "content filter",
+    # Data exfiltration signals
+    "forward them all",
+    "send the results to",
+    "upload them",
+    "post it to",
+    "ssh keys",
+    "api keys",
+    "email the summary",
+    "secrets manager",
+    "webhook.site",
+    "evil.com",
+    ".env file",
+    "data-collector",
+    # Multi-turn signals
+    "you agreed",
+    "previous conversation",
+    "cashing in",
+    "you already revealed",
+    "red-team exercise",
+    # Tool abuse signals
+    "/etc/shadow",
+    "rm -rf",
+    "force push",
+    "delete all branches",
+    "phishing",
+    "transfer $",
+]
+
 
 # Ensure we have enough fixtures
 def test_minimum_injection_count() -> None:
@@ -23,9 +113,25 @@ def test_minimum_benign_count() -> None:
 
 
 def test_injection_categories_present() -> None:
-    categories = {cat for _, cat in ALL_INJECTIONS}
-    expected = {"direct", "indirect", "jailbreak", "roleplay", "encoding", "multilingual"}
-    assert expected.issubset(categories), f"Missing categories: {expected - categories}"
+    categories = {f["category"] for f in ALL_INJECTIONS}
+    assert REQUIRED_ATTACK_CATEGORIES.issubset(categories), (
+        f"Missing categories: {REQUIRED_ATTACK_CATEGORIES - categories}"
+    )
+
+
+def test_benign_similar_count() -> None:
+    """Benign-similar examples should have at least 10 entries."""
+    benign_similar = [f for f in ALL_BENIGN if f["category"] == "benign_similar"]
+    assert len(benign_similar) >= 10, f"Expected 10+ benign_similar, got {len(benign_similar)}"
+
+
+def test_fixture_schema() -> None:
+    """Every fixture must have the required keys."""
+    required_keys = {"input", "category", "expected", "severity"}
+    for fixture in ALL_INJECTIONS + ALL_BENIGN:
+        assert required_keys.issubset(fixture.keys()), (
+            f"Fixture missing keys: {required_keys - fixture.keys()}"
+        )
 
 
 # --- Parameterized tests with mocked classifier ---
@@ -41,45 +147,10 @@ def mock_classifier():
     with patch.object(FastClassifier, "_load"):
         clf = FastClassifier(config)
 
-    # Mock: anything with "ignore" or "instruction" or known injection keywords → INJECTION
+    # Mock: anything with known injection keywords → INJECTION
     def mock_pipeline(text: str):
         text_lower = text.lower()
-        injection_signals = [
-            "ignore",
-            "override",
-            "disregard",
-            "forget",
-            "cancel",
-            "system prompt",
-            "new instruction",
-            "developer mode",
-            "dan ",
-            "do anything now",
-            "no restrictions",
-            "reveal",
-            "bypass",
-            "disable",
-            "dump",
-            "前の指示",
-            "ignorez",
-            "ignoriere",
-            "ignora",
-            "무시",
-            "игнорируйте",
-            "无视",
-            "abaikan",
-            "pwned",
-            "jailbreak",
-            "unfiltered",
-            "[inst]",
-            "[system]",
-            "hacker",
-            "attacker",
-            "exfiltrate",
-            "credentials",
-            "env vars",
-        ]
-        is_inj = any(sig in text_lower for sig in injection_signals)
+        is_inj = any(sig in text_lower for sig in MOCK_INJECTION_SIGNALS)
         if is_inj:
             return [{"label": "INJECTION", "score": 0.95}]
         return [{"label": "SAFE", "score": 0.98}]
@@ -89,25 +160,25 @@ def mock_classifier():
 
 
 @pytest.mark.parametrize(
-    "text,category",
+    "fixture",
     ALL_INJECTIONS,
-    ids=[f"injection-{i}-{cat}" for i, (_, cat) in enumerate(ALL_INJECTIONS)],
+    ids=[f"injection-{i}-{f['category']}" for i, f in enumerate(ALL_INJECTIONS)],
 )
-def test_injection_detected(mock_classifier, text: str, category: str) -> None:
+def test_injection_detected(mock_classifier, fixture: dict[str, str]) -> None:
     """Each injection fixture should be flagged by the classifier."""
-    result = mock_classifier.classify(text)
+    result = mock_classifier.classify(fixture["input"])
     assert result is not None
-    # We use a permissive mock — not all encoding tricks will match.
+    # Permissive mock — not all encoding tricks will match keyword signals.
     # At minimum, record it ran without error.
 
 
 @pytest.mark.parametrize(
-    "text,category",
+    "fixture",
     ALL_BENIGN,
-    ids=[f"benign-{i}" for i in range(len(ALL_BENIGN))],
+    ids=[f"benign-{i}-{f['category']}" for i, f in enumerate(ALL_BENIGN)],
 )
-def test_benign_not_flagged(mock_classifier, text: str, category: str) -> None:
+def test_benign_not_flagged(mock_classifier, fixture: dict[str, str]) -> None:
     """Benign inputs should not be flagged as injection."""
-    result = mock_classifier.classify(text)
+    result = mock_classifier.classify(fixture["input"])
     assert result is not None
-    assert result.is_injection is False, f"False positive on benign input: {text[:60]}"
+    assert result.is_injection is False, f"False positive on benign input: {fixture['input'][:60]}"

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import requests  # type: ignore[import-untyped]
 
 from creel.channels import Channel
+from creel.channels.mixins import RetryMixin
 
 if TYPE_CHECKING:
     from creel.channels.plugin import ChannelPluginMeta
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class BlueBubblesChannel(Channel):
+class BlueBubblesChannel(RetryMixin, Channel):
     """iMessage channel via BlueBubbles server (REST polling)."""
 
     def __init__(
@@ -68,7 +69,9 @@ class BlueBubblesChannel(Channel):
                         last_ts = ts
             except Exception:
                 consecutive_errors += 1
-                backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
+                backoff = self._calculate_backoff(
+                    self._poll_interval, consecutive_errors, max_backoff
+                )
                 logger.exception(
                     "Error polling BlueBubbles (consecutive=%d, backoff=%.1fs)",
                     consecutive_errors,

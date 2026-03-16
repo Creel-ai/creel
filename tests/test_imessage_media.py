@@ -32,6 +32,9 @@ from tests.helpers.imessage_db import (
 class TestQueryAttachments:
     """Test the SQL query that fetches attachments for a message."""
 
+    def _channel(self) -> IMessageChannel:
+        return IMessageChannel(allowed_senders=["test@example.com"])
+
     def test_no_attachments(self, tmp_path: Path) -> None:
         db_path = tmp_path / "chat.db"
         _create_chat_db(db_path)
@@ -39,7 +42,7 @@ class TestQueryAttachments:
         _insert_message(db_path, 1, "hello", handle_id=1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert attachments == []
@@ -65,7 +68,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, message_id=1, attachment_id=1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert len(attachments) == 1
@@ -95,7 +98,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, message_id=1, attachment_id=1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert len(attachments) == 1
@@ -122,7 +125,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, message_id=1, attachment_id=1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert len(attachments) == 1
@@ -147,7 +150,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, message_id=1, attachment_id=1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert len(attachments) == 1
@@ -170,7 +173,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, message_id=1, attachment_id=1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert len(attachments) == 1
@@ -200,7 +203,7 @@ class TestQueryAttachments:
             _link_attachment(db_path, message_id=1, attachment_id=1)
 
             conn = sqlite3.connect(str(db_path))
-            attachments = IMessageChannel._query_attachments(conn, 1)
+            attachments = self._channel()._query_attachments(conn, 1)
             conn.close()
 
             assert len(attachments) == 1
@@ -225,7 +228,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, 1, 2)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert len(attachments) == 2
@@ -242,7 +245,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, 1, 1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert attachments == []
@@ -260,7 +263,7 @@ class TestQueryAttachments:
         _link_attachment(db_path, 1, 1)
 
         conn = sqlite3.connect(str(db_path))
-        attachments = IMessageChannel._query_attachments(conn, 1)
+        attachments = self._channel()._query_attachments(conn, 1)
         conn.close()
 
         assert len(attachments) == 1

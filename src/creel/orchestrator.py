@@ -262,9 +262,11 @@ def _dispatch_executor(name: str, config: ExecutorConfig) -> str:
         "fetch_url": _exec_fetch_url_inline,
         "browser": _exec_browser_inline,
         "exec": _exec_exec_inline,
+        "exec_interactive": _exec_interactive_inline,
         "file_ops": _exec_file_ops_inline,
         "github": _exec_github_inline,
         "coding": _exec_coding_inline,
+        "tts": _exec_tts_inline,
     }
 
     # BlueBubbles variants share one handler with different actions.
@@ -633,7 +635,12 @@ def _exec_brave_search_inline(config: ExecutorConfig) -> str:
 
     query = config.args.get("query", "")
     count = int(config.args.get("count", "5"))
-    result = search(query, count)
+    result = search(
+        query,
+        count,
+        timeout=config.http.timeout,
+        connect_timeout=config.http.connect_timeout,
+    )
     return json.dumps(result, indent=2)
 
 
@@ -682,7 +689,14 @@ def _exec_fetch_url_inline(config: ExecutorConfig) -> str:
 
     url = config.args.get("url", "")
     max_chars = int(config.args.get("max_chars", "10000"))
-    result = fetch_url(url, max_chars)
+    result = fetch_url(
+        url,
+        max_chars,
+        timeout=config.http.timeout,
+        connect_timeout=config.http.connect_timeout,
+        max_redirects=config.http.max_redirects,
+        max_size_mb=config.http.max_size_mb,
+    )
     return json.dumps(result, indent=2)
 
 
@@ -756,6 +770,74 @@ def _exec_exec_inline(config: ExecutorConfig) -> str:
     return json.dumps(result, indent=2)
 
 
+def _exec_interactive_inline(config: ExecutorConfig) -> str:
+    """Run exec_interactive executor inline."""
+    from executors.exec_interactive.executor import (
+        close_session,
+        get_io_log,
+        get_session_info,
+        list_sessions,
+        read_output,
+        resize_terminal,
+        send_input,
+        start_session,
+    )
+
+    action = config.args.get("action", "")
+
+    if action == "start":
+        command = config.args.get("command", "")
+        if not command:
+            raise ValueError("exec_interactive 'start' requires a 'command' argument")
+        timeout = int(config.args.get("timeout", "300"))
+        cols = int(config.args.get("cols", "120"))
+        rows = int(config.args.get("rows", "40"))
+        result = start_session(command, timeout=timeout, cols=cols, rows=rows)
+    elif action == "send_input":
+        session_id = config.args.get("session_id", "")
+        data = config.args.get("input", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'send_input' requires 'session_id'")
+        result = send_input(session_id, data)
+    elif action == "read_output":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'read_output' requires 'session_id'")
+        read_timeout = float(config.args.get("read_timeout", "10"))
+        result = read_output(session_id, timeout=read_timeout)
+    elif action == "resize":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'resize' requires 'session_id'")
+        cols = int(config.args.get("cols", "120"))
+        rows = int(config.args.get("rows", "40"))
+        result = resize_terminal(session_id, cols, rows)
+    elif action == "close":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'close' requires 'session_id'")
+        result = close_session(session_id)
+    elif action == "info":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'info' requires 'session_id'")
+        result = get_session_info(session_id)
+    elif action == "list_sessions":
+        result = list_sessions()
+    elif action == "get_io_log":
+        session_id = config.args.get("session_id", "")
+        if not session_id:
+            raise ValueError("exec_interactive 'get_io_log' requires 'session_id'")
+        result = get_io_log(session_id)
+    else:
+        raise ValueError(
+            f"exec_interactive: unknown action '{action}' "
+            "(use start/send_input/read_output/resize/close/info/list_sessions)"
+        )
+
+    return json.dumps(result, indent=2)
+
+
 def _exec_file_ops_inline(config: ExecutorConfig) -> str:
     """Run file_ops executor inline."""
     from executors.file_ops.executor import ACTIONS
@@ -824,6 +906,29 @@ def _exec_coding_inline(config: ExecutorConfig) -> str:
             pass
 
     result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
+    return json.dumps(result, indent=2)
+
+
+def _exec_tts_inline(config: ExecutorConfig) -> str:
+    """Run TTS executor inline."""
+    from executors.tts.executor import synthesize
+
+    text = config.args.get("text", "")
+    if not text:
+        raise ValueError("tts executor requires a 'text' argument")
+
+    voice = config.args.get("voice") or None
+    backend = config.args.get("backend") or None
+    output_format = config.args.get("output_format") or None
+    output_path = config.args.get("output_path") or None
+
+    result = synthesize(
+        text,
+        voice=voice,
+        backend=backend,
+        output_format=output_format,
+        output_path=output_path,
+    )
     return json.dumps(result, indent=2)
 
 

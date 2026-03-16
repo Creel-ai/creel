@@ -15,6 +15,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from creel.daemon.api_auth import ensure_dashboard_token, require_dashboard_token
+from creel.daemon.api_chat import router as chat_router
+from creel.daemon.api_chat import ws_router as chat_ws_router
 from creel.daemon.api_config import router as config_router
 from creel.daemon.api_cron import router as cron_router
 from creel.daemon.api_dashboard import router as dashboard_router
@@ -301,6 +303,10 @@ def create_daemon_app(
     # Mount device pairing routes
     _mount_pairing_routes(app, _auth_deps)
 
+    # Chat UI — no auth required (local-only by default)
+    app.include_router(chat_router)
+    app.include_router(chat_ws_router)  # WebSocket — handles its own optional auth
+
     # Serve the dashboard SPA if the built static files are present
     _mount_dashboard(app)
 
@@ -326,8 +332,8 @@ def _mount_dashboard(app: FastAPI) -> None:
 
     # SPA fallback: any GET request that isn't an API/v1/health route
     # gets index.html so client-side routing works.
-    backend_prefixes = ("api/", "v1/", "health/", "docs/", "redoc/")
-    backend_exact = {"api", "v1", "health", "docs", "redoc", "openapi.json"}
+    backend_prefixes = ("api/", "v1/", "health/", "docs/", "redoc/", "chat/")
+    backend_exact = {"api", "v1", "health", "docs", "redoc", "chat", "openapi.json"}
 
     @app.get("/{full_path:path}")
     async def _spa_fallback(full_path: str) -> FileResponse:

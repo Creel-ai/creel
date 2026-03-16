@@ -159,6 +159,12 @@ class PairingManager:
         self._sessions_dir = self._dir / "sessions"
         self._devices_dir.mkdir(parents=True, exist_ok=True)
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
+        # Restrict directory permissions — device files contain auth tokens
+        for d in (self._dir, self._devices_dir, self._sessions_dir):
+            try:
+                d.chmod(0o700)
+            except OSError:
+                pass
         self._lock = threading.Lock()
 
     # --- Pairing session lifecycle ---
@@ -181,9 +187,9 @@ class PairingManager:
         )
         self._save_session(session)
         logger.info(
-            "Generated pairing session %s (code=%s, expires in %ds)",
+            "Generated pairing session %s (code=%s****, expires in %ds)",
             session.session_id,
-            session.pairing_code,
+            session.pairing_code[:4],
             timeout_seconds,
         )
         return session
@@ -197,7 +203,7 @@ class PairingManager:
         with self._lock:
             for session in self._list_sessions():
                 if (
-                    session.pairing_code == code
+                    hmac.compare_digest(session.pairing_code, code)
                     and session.status == PairingStatus.PENDING.value
                     and not session.is_expired
                 ):
@@ -320,6 +326,10 @@ class PairingManager:
     def _save_device(self, device: PairedDevice) -> None:
         path = self._device_path(device.id)
         path.write_text(json.dumps(device.to_dict(), indent=2), encoding="utf-8")
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
 
     def _save_session(self, session: PairingSession) -> None:
         path = self._session_path(session.session_id)

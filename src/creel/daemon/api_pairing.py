@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from creel.pairing import (
+    DeviceCapability,
     DeviceType,
     PairingManager,
     PairingStatus,
@@ -32,8 +33,8 @@ class CompletePairingRequest(BaseModel):
     pairing_code: str = Field(min_length=1, max_length=16)
     totp_code: str = Field(min_length=6, max_length=6)
     device_name: str = Field(min_length=1, max_length=128)
-    device_type: str = DeviceType.OTHER.value
-    capabilities: list[str] = Field(default_factory=list)
+    device_type: DeviceType = DeviceType.OTHER
+    capabilities: list[DeviceCapability] = Field(default_factory=list)
 
 
 class DeviceResponse(BaseModel):

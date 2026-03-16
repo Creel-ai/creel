@@ -31,6 +31,7 @@ flowchart TD
 | 2 | LLM judge | Secondary Haiku-based check (disabled by default) |
 | 3 | Policy engine | `fnmatch` rules in `policies/default.yaml` map tool names to allow/review/deny |
 | 4 | Coherence check | LLM-based check that tool calls match the user's original intent (catches prompt injection causing unrelated actions) |
+| 5 | Network policy | Domain allowlist/blocklist, request/response size limits, and per-executor rate limiting for outbound HTTP requests |
 
 ## Policy Rules
 
@@ -52,6 +53,83 @@ Deny wins over review, review wins over allow. Unknown tools default to review. 
 ## Human-in-the-Loop Review
 
 Tools matching `review` rules prompt the user for approval before executing. In the TUI, this appears as an inline confirmation dialog. A configurable timeout (default 60s) denies the action if no response is received.
+
+## Network Policy
+
+The network policy monitors and controls outbound HTTP requests made by executors. When enabled, every executor network call is checked against domain, size, and rate limits before it executes.
+
+```mermaid
+flowchart LR
+    E["Executor HTTP request"] --> D{"Domain\nallowed?"}
+    D -- blocked --> DENY["Deny + audit log"]
+    D -- allowed --> S{"Size\nwithin limit?"}
+    S -- too large --> DENY
+    S -- ok --> R{"Rate limit\nok?"}
+    R -- exceeded --> DENY
+    R -- ok --> ALLOW["Allow + audit log"]
+```
+
+### Domain Matching
+
+Domains are matched using suffix-based rules with proper subdomain boundaries:
+
+- `*.googleapis.com` matches `storage.googleapis.com` and `a.b.googleapis.com`
+- `*.googleapis.com` does **not** match `evilgoogleapis.com` or `googleapis.com` itself
+- Exact patterns like `api.openai.com` match only that domain
+
+Evaluation order:
+
+1. **Blocked domains** — if matched, deny immediately
+2. **Allowed domains** — if the list is non-empty and matched, allow
+3. If allowed list is non-empty and not matched, deny (unknown domain)
+4. If allowed list is empty, allow (permissive mode)
+
+### Configuration
+
+```yaml
+guardian:
+  network_policy:
+    enabled: true
+    allowed_domains:
+      - "*.googleapis.com"
+      - "api.openai.com"
+      - "api.anthropic.com"
+    blocked_domains:
+      - "*.pastebin.com"
+      - "*.ngrok.io"
+    max_request_size_mb: 10     # max outbound request body
+    max_response_size_mb: 50    # alert on oversized responses
+    rate_limit_per_minute: 100  # per-executor sliding window
+    alert_on_unknown: true      # log unknown domains
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Enable network monitoring |
+| `allowed_domains` | `[]` | Domain allowlist (empty = permissive) |
+| `blocked_domains` | `[]` | Domain blocklist (checked first) |
+| `max_request_size_mb` | `10` | Max request body size in MB |
+| `max_response_size_mb` | `50` | Max response body size in MB |
+| `rate_limit_per_minute` | `100` | Per-executor request limit (60s sliding window) |
+| `alert_on_unknown` | `true` | Log alerts for unknown domains |
+
+!!! warning
+    When `allowed_domains` is empty, all non-blocked domains are permitted. Add an allowlist to restrict executors to known API endpoints only.
+
+### Audit
+
+Network requests are logged to `guardian_audit.jsonl` as `network_request` events. Blocked requests and oversized responses generate additional `network_alert` events. URLs are sanitized (query strings and fragments stripped) before logging to prevent sensitive parameters from being persisted.
+
+Use the CLI to inspect network logs:
+
+```bash
+creel network log              # last 20 network requests
+creel network log --tail 50    # last 50
+creel network log --executor gmail_readonly
+creel network policy           # show current policy
+creel network allow api.openai.com   # test if a domain is allowed
+creel network block evil.com         # test if a domain is blocked
+```
 
 ## Audit Logging
 
@@ -81,4 +159,6 @@ guardian:
   audit:
     enabled: true
     log_file: guardian_audit.jsonl
+  network_policy:
+    enabled: false
 ```

@@ -32,7 +32,7 @@ from creel.models import (
     LLMConfig,
     SafetyConfig,
     SessionState,
-    ToolConfig,
+    SkillOverride,
 )
 from creel.tools import build_tool_definitions, execute_tool_call
 from guardian.types import ActionVerdict
@@ -98,7 +98,8 @@ def _get_llm_env_vars(llm_config: LLMConfig | None = None) -> dict[str, str]:
 def run_agent_loop_container(
     messages: list[dict],
     llm_config: LLMConfig,
-    tools_config: dict[str, ToolConfig],
+    registry: Any,
+    skill_overrides: dict[str, SkillOverride],
     agent_config: AgentConfig,
     system_prompt: str | None = None,
     use_containers: bool = False,
@@ -124,17 +125,12 @@ def run_agent_loop_container(
     _ensure_image(_IMAGE)
 
     include_memory = memory_manager is not None
-    include_workspace = bool(
-        tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
-    )
-    tool_defs = (
-        build_tool_definitions(
-            tools_config,
-            include_memory_tools=include_memory,
-            include_workspace_tools=include_workspace,
-        )
-        if tools_config
-        else []
+    include_workspace = "file_ops" in skill_overrides
+    tool_defs = build_tool_definitions(
+        registry,
+        skill_overrides,
+        include_memory_tools=include_memory,
+        include_workspace_tools=include_workspace,
     )
 
     # Build the start message
@@ -156,7 +152,8 @@ def run_agent_loop_container(
             container_pool,
             start_msg,
             messages,
-            tools_config,
+            registry,
+            skill_overrides,
             use_containers,
             guardian,
             confirm_action,
@@ -171,7 +168,8 @@ def run_agent_loop_container(
     return _run_cold_start(
         start_msg,
         messages,
-        tools_config,
+        registry,
+        skill_overrides,
         use_containers,
         guardian,
         confirm_action,
@@ -187,7 +185,8 @@ def _run_with_pool(
     pool: ContainerPool,
     start_msg: dict,
     messages: list[dict],
-    tools_config: dict[str, ToolConfig],
+    registry: Any,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool,
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
@@ -210,7 +209,8 @@ def _run_with_pool(
             container,
             start_msg,
             messages,
-            tools_config,
+            registry,
+            skill_overrides,
             use_containers,
             guardian,
             confirm_action,
@@ -241,7 +241,8 @@ def _run_with_pool(
 def _run_cold_start(
     start_msg: dict,
     messages: list[dict],
-    tools_config: dict[str, ToolConfig],
+    registry: Any,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool,
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
@@ -282,7 +283,8 @@ def _run_cold_start(
                 proc,
                 start_msg,
                 messages,
-                tools_config,
+                registry,
+                skill_overrides,
                 use_containers,
                 guardian,
                 confirm_action,
@@ -329,7 +331,8 @@ def _run_protocol(
     proc: subprocess.Popen[str],
     start_msg: dict,
     messages: list[dict],
-    tools_config: dict[str, ToolConfig],
+    registry: Any,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool,
     guardian: Any | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
@@ -386,7 +389,8 @@ def _run_protocol(
         elif msg_type == "tool_request":
             results, pending_result = _handle_tool_request(
                 msg["calls"],
-                tools_config,
+                registry,
+                skill_overrides,
                 use_containers,
                 guardian,
                 confirm_action,
@@ -424,7 +428,8 @@ def _run_protocol_pooled(
     container: ManagedContainer,
     start_msg: dict,
     messages: list[dict],
-    tools_config: dict[str, ToolConfig],
+    registry: Any,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool,
     guardian: object | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
@@ -478,7 +483,8 @@ def _run_protocol_pooled(
         elif msg_type == "tool_request":
             results, pending_result = _handle_tool_request(
                 msg["calls"],
-                tools_config,
+                registry,
+                skill_overrides,
                 use_containers,
                 guardian,
                 confirm_action,
@@ -509,7 +515,8 @@ def _run_protocol_pooled(
 
 def _handle_tool_request(
     calls: list[dict],
-    tools_config: dict[str, ToolConfig],
+    registry: Any,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool,
     guardian: Any | None,
     confirm_action: Callable[[str, dict, str], bool] | None,
@@ -536,10 +543,12 @@ def _handle_tool_request(
         if safety_config and safety_config.destructive_blocklist.enabled:
             from creel.safety import check_destructive_blocklist
 
+            _skill_entry = registry.get_tool(tool_name) if registry else None
+            _executor_id = _skill_entry[1].meta.id if _skill_entry else None
             blocklist_match = check_destructive_blocklist(
                 tool_name,
                 tool_input,
-                tools_config,
+                _executor_id,
                 safety_config.destructive_blocklist,
             )
             if blocklist_match is not None:
@@ -727,7 +736,8 @@ def _handle_tool_request(
             result = execute_tool_call(
                 tool_name=tool_name,
                 tool_input=tool_input,
-                tools_config=tools_config,
+                registry=registry,
+                skill_overrides=skill_overrides,
                 use_containers=use_containers,
                 memory_manager=memory_manager,
                 bridge_config=bridge_config,
@@ -753,13 +763,17 @@ def _handle_tool_request(
             )
 
         # Screen executor output for injection
-        tool_cfg = tools_config.get(tool_name)
-        if (
-            not is_error
-            and guardian is not None
-            and tool_cfg is not None
-            and tool_cfg.classify_output
-        ):
+        _classify = False
+        _skill_result = registry.get_tool(tool_name)
+        if _skill_result is not None:
+            _so = skill_overrides.get(_skill_result[1].meta.id)
+            if _so is not None:
+                _classify = _so.classify_output or False
+                if _so.tools and tool_name in _so.tools:
+                    _tool_ov = _so.tools[tool_name]
+                    if _tool_ov.classify_output is not None:
+                        _classify = _tool_ov.classify_output
+        if not is_error and guardian is not None and _classify:
             screen_result = guardian.screen_tool_result(tool_name, result)
             if screen_result.blocked:
                 logger.warning(

@@ -15,7 +15,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from creel.models import DestructiveBlocklistConfig, ToolConfig
+from creel.models import DestructiveBlocklistConfig
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class BlocklistMatch:
 def check_destructive_blocklist(
     tool_name: str,
     tool_input: dict,
-    tools_config: dict[str, ToolConfig],
+    executor_id: str | None,
     config: DestructiveBlocklistConfig,
 ) -> BlocklistMatch | None:
     """Check whether a tool call matches the destructive command blocklist.
@@ -103,13 +103,15 @@ def check_destructive_blocklist(
     Returns a ``BlocklistMatch`` if the command matches a blocked pattern,
     or ``None`` if the command is safe / not applicable.
 
-    Only tools whose executor is in ``_HOST_EXEC_TOOLS`` are checked.
+    Args:
+        tool_name: The tool being called.
+        tool_input: The tool's input arguments.
+        executor_id: The skill/executor ID (e.g. "exec", "coding").
+            If ``None``, the tool is skipped.
+        config: Blocklist configuration.
     """
-    # Look up executor — skip non-host-exec tools
-    tool_cfg = tools_config.get(tool_name)
-    if tool_cfg is None:
-        return None
-    if tool_cfg.executor not in _HOST_EXEC_TOOLS:
+    # Skip tools whose executor is not a host-exec tool
+    if executor_id is None or executor_id not in _HOST_EXEC_TOOLS:
         return None
 
     # Extract the command string from tool input

@@ -156,12 +156,12 @@ def _load_config(
     )
 
     # Check sub-configs
-    if config.tools:
+    if config.skills:
         results.append(
             CheckResult(
                 status="pass",
-                label="Tools defined",
-                message=f"{len(config.tools)} tool(s) configured",
+                label="Skills defined",
+                message=f"{len(config.skills)} skill(s) configured",
             )
         )
     else:
@@ -245,18 +245,18 @@ def check_executors(config: AgentDefinition | None) -> list[CheckResult]:
         )
         return results
 
-    if not config.tools:
+    if not config.skills:
         results.append(
             CheckResult(
                 status="warn",
                 label="Executors",
-                message="No tools configured",
+                message="No skills configured",
             )
         )
         return results
 
-    # Collect unique executor names
-    executors = {tc.executor for tc in config.tools.values()}
+    # Collect unique executor (skill) names
+    executors = {skill_id for skill_id in config.skills if config.skills[skill_id].enabled}
 
     for executor_name in sorted(executors):
         module_name = f"executors.{executor_name}"

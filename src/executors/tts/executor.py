@@ -22,6 +22,80 @@ import httpx
 # ---------------------------------------------------------------------------
 
 DEFAULT_BACKEND = "openai"
+
+
+def register_skill():
+    """Register the tts skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="tts",
+        label="Text-to-Speech",
+        tools=(
+            ToolSpec(
+                name="synthesize_speech",
+                description="Convert text to speech audio using TTS",
+                params=(
+                    Param(
+                        name="text",
+                        type="string",
+                        description="Text to convert to speech (max 5000 chars)",
+                        required=True,
+                    ),
+                    Param(
+                        name="voice",
+                        type="string",
+                        description="Voice name (e.g. nova, alloy, shimmer for OpenAI; Rachel for ElevenLabs)",
+                    ),
+                    Param(
+                        name="backend",
+                        type="string",
+                        description="TTS backend: openai, elevenlabs, or local",
+                    ),
+                    Param(
+                        name="output_format",
+                        type="string",
+                        description="Audio format: mp3, wav, ogg (default: mp3)",
+                    ),
+                    Param(
+                        name="output_path",
+                        type="string",
+                        description="Custom output file path (optional)",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        text = config.args.get("text", "")
+        if not text:
+            raise ValueError("tts executor requires a 'text' argument")
+
+        voice = config.args.get("voice") or None
+        backend = config.args.get("backend") or None
+        output_format = config.args.get("output_format") or None
+        output_path = config.args.get("output_path") or None
+
+        result = synthesize(
+            text,
+            voice=voice,
+            backend=backend,
+            output_format=output_format,
+            output_path=output_path,
+        )
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 DEFAULT_VOICE: dict[str, str] = {
     "elevenlabs": "Rachel",
     "openai": "nova",

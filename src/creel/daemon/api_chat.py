@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 from pathlib import Path
@@ -95,7 +96,7 @@ async def chat_ws(websocket: WebSocket) -> None:
     require_auth = websocket.query_params.get("auth") == "required"
 
     if require_auth and expected_token:
-        if not client_token or client_token != expected_token:
+        if not client_token or not hmac.compare_digest(client_token, expected_token):
             await websocket.close(code=4401, reason="unauthorized")
             return
 

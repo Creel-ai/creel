@@ -19,6 +19,143 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the google_docs skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="google_docs",
+        label="Google Docs",
+        tools=(
+            ToolSpec(
+                name="read_doc",
+                description="Read document content as plain text",
+                params=(
+                    Param(
+                        name="document_id",
+                        type="string",
+                        description="Google Docs document ID",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "read"},
+            ),
+            ToolSpec(
+                name="create_doc",
+                description="Create a new Google Doc",
+                params=(
+                    Param(
+                        name="title",
+                        type="string",
+                        description="Document title",
+                        required=True,
+                    ),
+                    Param(
+                        name="body",
+                        type="string",
+                        description="Optional initial body text",
+                    ),
+                ),
+                fixed_args={"action": "create"},
+            ),
+            ToolSpec(
+                name="append_to_doc",
+                description="Append text to the end of a document",
+                params=(
+                    Param(
+                        name="document_id",
+                        type="string",
+                        description="Google Docs document ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="text",
+                        type="string",
+                        description="Text to append",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "append"},
+            ),
+            ToolSpec(
+                name="replace_in_doc",
+                description="Find and replace text in a document",
+                params=(
+                    Param(
+                        name="document_id",
+                        type="string",
+                        description="Google Docs document ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="find",
+                        type="string",
+                        description="Text to find",
+                        required=True,
+                    ),
+                    Param(
+                        name="replace_with",
+                        type="string",
+                        description="Replacement text",
+                        required=True,
+                    ),
+                    Param(
+                        name="match_case",
+                        type="string",
+                        description="Case-sensitive search (true/false)",
+                    ),
+                ),
+                fixed_args={"action": "replace"},
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "")
+
+        if action == "read":
+            document_id = config.args.get("document_id", "")
+            result = read_document(document_id)
+        elif action == "create":
+            title = config.args.get("title", "")
+            body = config.args.get("body", "")
+            result = create_document(title, body)
+        elif action == "append":
+            document_id = config.args.get("document_id", "")
+            text = config.args.get("text", "")
+            result = append_text(document_id, text)
+        elif action == "replace":
+            document_id = config.args.get("document_id", "")
+            find = config.args.get("find", "")
+            replace_with = config.args.get("replace_with", "")
+            match_case = str(config.args.get("match_case", "true")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            result = replace_text(document_id, find, replace_with, match_case)
+        elif action == "insert":
+            document_id = config.args.get("document_id", "")
+            text = config.args.get("text", "")
+            index = int(config.args.get("index", "1"))
+            result = insert_text(document_id, text, index)
+        else:
+            raise ValueError(
+                f"google_docs: unknown action '{action}' (use read/create/append/replace/insert)"
+            )
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def _extract_text(body: dict) -> str:
     """Walk structural elements to extract plain text from a Docs body."""
     parts: list[str] = []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -23,14 +24,39 @@ from creel.cron.store import JobStore
 
 logger = logging.getLogger(__name__)
 
+# Cron expression constraints (defense-in-depth against pathological input).
+_CRON_MAX_LENGTH = 100
+_CRON_ALLOWED_RE = re.compile(r"^[a-zA-Z0-9 ,*\-/#?]+$")
+
 # Type for the executor callback: receives a CronJob, returns None.
 # The executor is responsible for actually running the job payload.
 JobExecutor = Callable[[CronJob], None]
 
 
+def _validate_cron_expr(expr: str) -> None:
+    """Validate a cron expression to prevent DoS via pathological input.
+
+    Checks:
+      1. Length <= 100 characters
+      2. Only allowed characters (alphanumeric, spaces, commas, asterisks,
+         hyphens, slashes, question marks, hash signs)
+      3. 5-7 fields (standard and extended cron formats)
+
+    Raises ValueError on invalid input.
+    """
+    if len(expr) > _CRON_MAX_LENGTH:
+        raise ValueError(f"Cron expression too long ({len(expr)} chars, max {_CRON_MAX_LENGTH})")
+    if not _CRON_ALLOWED_RE.match(expr):
+        raise ValueError(f"Cron expression contains disallowed characters: {expr!r}")
+    fields = expr.split()
+    if not (5 <= len(fields) <= 7):
+        raise ValueError(f"Cron expression must have 5-7 fields, got {len(fields)}")
+
+
 def _make_trigger(schedule: Schedule) -> CronTrigger | IntervalTrigger | DateTrigger:
     """Convert a Schedule model into an APScheduler trigger."""
     if schedule.kind == "cron":
+        _validate_cron_expr(schedule.expr)
         return CronTrigger.from_crontab(schedule.expr, timezone=schedule.tz)
     elif schedule.kind == "every":
         return IntervalTrigger(seconds=int(schedule.expr))

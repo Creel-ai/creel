@@ -15,6 +15,115 @@ from typing import Any
 import requests
 
 
+def register_skill():
+    """Register the apple_notes skill with the skill registry."""
+    import sys
+    from io import StringIO
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="apple_notes",
+        label="Apple Notes",
+        tools=(
+            ToolSpec(
+                name="list_notes",
+                description="List notes from Apple Notes",
+                params=(
+                    Param(
+                        name="folder",
+                        type="string",
+                        description="Folder to list notes from",
+                    ),
+                ),
+                fixed_args={"action": "list"},
+            ),
+            ToolSpec(
+                name="search_notes",
+                description="Search Apple Notes",
+                params=(
+                    Param(
+                        name="query",
+                        type="string",
+                        description="Search query",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "search"},
+            ),
+            ToolSpec(
+                name="read_note",
+                description="Read a note from Apple Notes",
+                params=(
+                    Param(
+                        name="name",
+                        type="string",
+                        description="Name of the note to read",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "read"},
+            ),
+            ToolSpec(
+                name="create_note",
+                description="Create a new note in Apple Notes",
+                params=(
+                    Param(
+                        name="title",
+                        type="string",
+                        description="Title of the note",
+                        required=True,
+                    ),
+                    Param(
+                        name="body",
+                        type="string",
+                        description="Body of the note",
+                        required=True,
+                    ),
+                    Param(
+                        name="folder",
+                        type="string",
+                        description="Folder to create the note in",
+                    ),
+                ),
+                fixed_args={"action": "create"},
+            ),
+        ),
+        needs_bridge=True,
+        bridge_scope="NOTES",
+        platform="darwin",
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        from creel.orchestrator import _env_override
+
+        env_vars = {
+            k: v
+            for k, v in {
+                "ACTION": config.args.get("action", "list"),
+                "FOLDER": config.args.get("folder", ""),
+                "QUERY": config.args.get("query", ""),
+                "TITLE": config.args.get("title", ""),
+                "BODY": config.args.get("body", ""),
+            }.items()
+            if v
+        }
+        old_stdout = sys.stdout
+        try:
+            sys.stdout = captured_output = StringIO()
+            with _env_override(env_vars):
+                main()
+            return captured_output.getvalue().strip() or "{}"
+        finally:
+            sys.stdout = old_stdout
+
+    return meta, execute
+
+
 def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
     """Make an HTTP call to the bridge server.
 

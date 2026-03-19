@@ -15,6 +15,197 @@ from typing import Any
 import requests
 
 
+def register_skill():
+    """Register the git_ops skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="git_ops",
+        label="Git Operations",
+        tools=(
+            ToolSpec(
+                name="git_status",
+                description="Show git working tree status",
+                params=(
+                    Param(
+                        name="short",
+                        type="string",
+                        description="Use short format (true/false)",
+                    ),
+                ),
+                fixed_args={"action": "status"},
+            ),
+            ToolSpec(
+                name="git_diff",
+                description="Show git diff",
+                params=(
+                    Param(
+                        name="cached",
+                        type="string",
+                        description="Show staged changes (true/false)",
+                    ),
+                    Param(
+                        name="diff_path",
+                        type="string",
+                        description="Path to diff",
+                    ),
+                ),
+                fixed_args={"action": "diff"},
+            ),
+            ToolSpec(
+                name="git_log",
+                description="Show git commit log",
+                params=(
+                    Param(
+                        name="max_count",
+                        type="string",
+                        description="Maximum number of commits to show",
+                    ),
+                    Param(
+                        name="oneline",
+                        type="string",
+                        description="Use oneline format (true/false)",
+                    ),
+                ),
+                fixed_args={"action": "log"},
+            ),
+            ToolSpec(
+                name="git_commit",
+                description="Create a git commit",
+                params=(
+                    Param(
+                        name="message",
+                        type="string",
+                        description="Commit message",
+                        required=True,
+                    ),
+                    Param(
+                        name="all",
+                        type="string",
+                        description="Stage all modified files (true/false)",
+                    ),
+                ),
+                fixed_args={"action": "commit"},
+            ),
+            ToolSpec(
+                name="git_branch",
+                description="List or manage git branches",
+                params=(
+                    Param(
+                        name="name",
+                        type="string",
+                        description="Branch name to create or delete",
+                    ),
+                    Param(
+                        name="delete",
+                        type="string",
+                        description="Delete the branch (true/false)",
+                    ),
+                    Param(
+                        name="list_all",
+                        type="string",
+                        description="List all branches including remote (true/false)",
+                    ),
+                ),
+                fixed_args={"action": "branch"},
+            ),
+            ToolSpec(
+                name="git_push",
+                description="Push commits to remote",
+                params=(
+                    Param(
+                        name="remote",
+                        type="string",
+                        description="Remote name (default: origin)",
+                    ),
+                    Param(
+                        name="branch",
+                        type="string",
+                        description="Branch name to push",
+                    ),
+                    Param(
+                        name="set_upstream",
+                        type="string",
+                        description="Set upstream tracking (true/false)",
+                    ),
+                ),
+                fixed_args={"action": "push"},
+            ),
+        ),
+        needs_bridge=True,
+        bridge_scope="GIT",
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "status")
+
+        if action == "status":
+            short_flag = str(config.args.get("short", "")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            result = status(short_flag)
+        elif action == "diff":
+            cached_flag = str(config.args.get("cached", "")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            diff_path = config.args.get("diff_path") or None
+            result = diff(cached_flag, diff_path)
+        elif action == "log":
+            max_count = int(config.args.get("max_count", "10"))
+            oneline_flag = str(config.args.get("oneline", "true")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            result = log(max_count, oneline_flag)
+        elif action == "commit":
+            msg = config.args.get("message", "")
+            all_flag = str(config.args.get("all", "")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            result = commit(msg, all_flag)
+        elif action == "branch":
+            name = config.args.get("name") or None
+            delete_flag = str(config.args.get("delete", "")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            list_all_flag = str(config.args.get("list_all", "")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            result = branch(name, delete_flag, list_all_flag)
+        elif action == "push":
+            remote = config.args.get("remote", "origin")
+            branch_name = config.args.get("branch") or None
+            set_upstream_flag = str(config.args.get("set_upstream", "")).lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            result = push(remote, branch_name, set_upstream_flag)
+        else:
+            raise ValueError(f"Unknown git action: {action}")
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
     """Make an HTTP call to the bridge server.
 

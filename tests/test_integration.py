@@ -123,17 +123,17 @@ class TestFullPipeline:
 
         mock_call_llm.side_effect = [first_response, second_response]
 
-        # Add a tool to the agent definition
-        from creel.models import ToolConfig
+        # Add a skill to the agent definition
+        from creel.models import SkillOverride
+        from creel.skills.registry import SkillRegistry
 
-        minimal_agent_def.tools = {
-            "test_tool": ToolConfig(
-                executor="weather",
-                description="Test tool",
-            )
+        minimal_agent_def.skills = {
+            "weather": SkillOverride(enabled=True),
         }
 
-        server = ChatServer(minimal_agent_def, use_containers=False)
+        registry = SkillRegistry()
+        registry._discover_builtins()
+        server = ChatServer(minimal_agent_def, use_containers=False, registry=registry)
 
         # Mock the tool execution
         with patch("creel.agent.execute_tool_call", return_value="Tool output"):

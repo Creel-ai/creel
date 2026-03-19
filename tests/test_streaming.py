@@ -8,6 +8,7 @@ from creel.agent import run_agent_loop
 from creel.llm import call_llm
 from creel.models import AgentConfig, LLMConfig
 from creel.providers import LLMMessage, TextBlock, Usage
+from creel.skills.registry import SkillRegistry
 
 
 def _make_config() -> LLMConfig:
@@ -223,7 +224,8 @@ def test_agent_loop_passes_on_text_delta(mock_call_llm):
     result = run_agent_loop(
         messages=[{"role": "user", "content": "hi"}],
         llm_config=_make_config(),
-        tools_config={},
+        registry=SkillRegistry(),
+        skill_overrides={},
         agent_config=AgentConfig(max_turns=1),
         on_text_delta=callback,
     )
@@ -242,7 +244,8 @@ def test_agent_loop_none_callback_by_default(mock_call_llm):
     result = run_agent_loop(
         messages=[{"role": "user", "content": "hi"}],
         llm_config=_make_config(),
-        tools_config={},
+        registry=SkillRegistry(),
+        skill_overrides={},
         agent_config=AgentConfig(max_turns=1),
     )
 

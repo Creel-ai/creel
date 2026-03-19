@@ -454,10 +454,12 @@ class TestContainerResourceOverrides:
     @patch("creel.containers._ensure_image")
     @patch("subprocess.run")
     @patch("tempfile.NamedTemporaryFile")
-    def test_timeout_threaded_from_tool_config(
+    def test_timeout_threaded_from_skill_override(
         self, mock_tempfile, mock_subprocess, mock_ensure_image
     ):
-        """Test that timeout from ToolConfig flows through to ExecutorConfig."""
+        """Test that timeout from SkillOverride flows through to ExecutorConfig."""
+        from creel.models import SkillOverride
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         mock_env_file = MagicMock()
@@ -465,17 +467,20 @@ class TestContainerResourceOverrides:
         mock_tempfile.return_value.__enter__.return_value = mock_env_file
         mock_subprocess.return_value = MagicMock(returncode=0, stdout='{"ok": true}', stderr="")
 
-        tools_config = {
-            "coding": ToolConfig(
-                executor="coding",
-                description="Dev",
-                timeout=300,
-                network=True,
-            ),
+        registry = SkillRegistry()
+        registry._discover_builtins()
+        skill_overrides = {
+            "coding": SkillOverride(enabled=True, timeout=300, network=True),
         }
 
         with patch("creel.tools._run_executor_container") as mock_container:
             mock_container.return_value = '{"ok": true}'
-            execute_tool_call("coding", {"command": "echo hi"}, tools_config, use_containers=True)
+            execute_tool_call(
+                "coding",
+                {"command": "echo hi"},
+                registry,
+                skill_overrides,
+                use_containers=True,
+            )
             exec_config = mock_container.call_args[0][0]
             assert exec_config.timeout == 300

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def build_system_prompt(
     base_prompt: str | None = None,
     workspace_dir: str | None = None,
     timezone_name: str = "UTC",
-    tools_config: dict | None = None,
+    registry: Any | None = None,
     memory_context: str | None = None,
     max_chars_per_file: int = DEFAULT_MAX_CHARS_PER_FILE,
 ) -> str:
@@ -49,7 +50,7 @@ def build_system_prompt(
         base_prompt: Core system prompt text. If None, uses a sensible default.
         workspace_dir: Path to workspace directory containing .md files.
         timezone_name: IANA timezone name (e.g. "America/Denver").
-        tools_config: Tool configurations (for generating usage guidance).
+        registry: SkillRegistry for generating tool usage guidance.
         memory_context: Pre-formatted memory context string to inject.
         max_chars_per_file: Max chars to include per workspace file.
 
@@ -78,8 +79,8 @@ def build_system_prompt(
         sections.append(f"## Relevant Memory\n{memory_context}")
 
     # 5. Tool usage guidance
-    if tools_config:
-        tool_section = _build_tool_guidance(tools_config)
+    if registry is not None:
+        tool_section = _build_tool_guidance_from_registry(registry)
         if tool_section:
             sections.append(tool_section)
 
@@ -128,14 +129,15 @@ def _build_workspace_section(workspace_dir: str, max_chars: int) -> str | None:
     return "## Workspace Context\n" + "\n\n".join(parts)
 
 
-def _build_tool_guidance(tools_config: dict) -> str | None:
-    """Build tool usage guidance section from tool configs."""
-    if not tools_config:
+def _build_tool_guidance_from_registry(registry: Any) -> str | None:
+    """Build tool usage guidance section from the skill registry."""
+    skills = registry.all_skills()
+    if not skills:
         return None
 
     lines = ["## Available Tools"]
-    for name, cfg in tools_config.items():
-        desc = getattr(cfg, "description", str(cfg))
-        lines.append(f"- **{name}**: {desc}")
+    for meta in skills:
+        for tool in meta.tools:
+            lines.append(f"- **{tool.name}**: {tool.description}")
 
     return "\n".join(lines)

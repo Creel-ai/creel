@@ -23,6 +23,157 @@ from typing import Any
 
 import requests
 
+
+def register_skill():
+    """Register the bluebubbles skill with the skill registry."""
+    import json
+    import os
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="bluebubbles",
+        label="BlueBubbles",
+        tools=(
+            ToolSpec(
+                name="check_messages",
+                description="Get recent iMessages via BlueBubbles",
+                params=(
+                    Param(
+                        name="chat_id",
+                        type="string",
+                        description="Chat ID to get messages from",
+                    ),
+                    Param(
+                        name="limit",
+                        type="string",
+                        description="Maximum number of messages to return",
+                    ),
+                    Param(
+                        name="after_date",
+                        type="string",
+                        description="Only return messages after this date",
+                    ),
+                ),
+                fixed_args={"_action": "get_recent_messages"},
+            ),
+            ToolSpec(
+                name="send_imessage",
+                description="Send an iMessage via BlueBubbles",
+                params=(
+                    Param(
+                        name="chat_id",
+                        type="string",
+                        description="Chat ID to send the message to",
+                        required=True,
+                    ),
+                    Param(
+                        name="text",
+                        type="string",
+                        description="Message text to send",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"_action": "send_message"},
+            ),
+            ToolSpec(
+                name="react_imessage",
+                description="React to an iMessage via BlueBubbles",
+                params=(
+                    Param(
+                        name="chat_id",
+                        type="string",
+                        description="Chat ID containing the message",
+                        required=True,
+                    ),
+                    Param(
+                        name="message_guid",
+                        type="string",
+                        description="GUID of the message to react to",
+                        required=True,
+                    ),
+                    Param(
+                        name="reaction",
+                        type="string",
+                        description="Reaction type (love, like, dislike, laugh, emphasis, question)",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"_action": "send_reaction"},
+            ),
+            ToolSpec(
+                name="get_chats",
+                description="List recent iMessage chats via BlueBubbles",
+                params=(
+                    Param(
+                        name="limit",
+                        type="string",
+                        description="Maximum number of chats to return",
+                    ),
+                ),
+                fixed_args={"_action": "get_chats"},
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("_action", "")
+        server_url = os.environ.get("BLUEBUBBLES_URL", "")
+        password = os.environ.get("BLUEBUBBLES_PASSWORD", "")
+        allowed_recipients = {
+            v.strip() for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",") if v.strip()
+        }
+        allowed_chats = {
+            v.strip() for v in os.environ.get("ALLOWED_CHATS", "").split(",") if v.strip()
+        }
+
+        result: object
+        if action == "get_recent_messages":
+            result = get_recent_messages(
+                server_url,
+                password,
+                allowed_chats,
+                chat_id=config.args.get("chat_id") or None,
+                limit=int(config.args.get("limit", "20")),
+                after_date=config.args.get("after_date") or None,
+            )
+        elif action == "send_message":
+            result = send_message(
+                server_url,
+                password,
+                allowed_recipients,
+                chat_id=config.args.get("chat_id", ""),
+                text=config.args.get("text", ""),
+            )
+        elif action == "send_reaction":
+            result = send_reaction(
+                server_url,
+                password,
+                allowed_recipients,
+                chat_id=config.args.get("chat_id", ""),
+                message_guid=config.args.get("message_guid", ""),
+                reaction=config.args.get("reaction", ""),
+            )
+        elif action == "get_chats":
+            result = get_chats(
+                server_url,
+                password,
+                allowed_chats,
+                limit=int(config.args.get("limit", "20")),
+            )
+        else:
+            raise ValueError(f"Unknown bluebubbles action: {action}")
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 # ---------------------------------------------------------------------------
 # Constants — hard caps enforced regardless of input
 # ---------------------------------------------------------------------------
@@ -52,9 +203,9 @@ def _env_set(name: str) -> set[str]:
 def _api(method: str, path: str, server_url: str, password: str, **kwargs) -> dict:
     """Make an authenticated BlueBubbles API call."""
     url = f"{server_url}/api/v1{path}"
-    params = kwargs.pop("params", {})
-    params["password"] = password
-    resp = requests.request(method, url, params=params, timeout=30, **kwargs)
+    headers = kwargs.pop("headers", {})
+    headers["Authorization"] = f"Bearer {password}"
+    resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
     resp.raise_for_status()
     return resp.json()
 

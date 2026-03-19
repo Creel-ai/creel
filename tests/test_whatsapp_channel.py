@@ -127,6 +127,7 @@ class TestWebhookMode:
             phone_number="+9999",
             mode="webhook",
             webhook_path="/webhooks/wa",
+            webhook_secret="test-secret",
         )
         routes = channel.get_webhook_routes()
         assert routes is not None
@@ -278,34 +279,17 @@ class TestWebhookHMAC:
             await channel._handle_webhook(request)
         assert exc_info.value.status_code == 403
 
-    @pytest.mark.asyncio
-    async def test_no_secret_skips_verification(self):
-        """When webhook_secret is empty, HMAC check is skipped (dev mode)."""
-        import json
-
+    def test_no_secret_raises_in_webhook_mode(self):
+        """Webhook mode without a secret must raise ValueError at init time."""
         bridge = MockBridge()
-        channel = WhatsAppChannel(
-            bridge=bridge,
-            phone_number="+9999",
-            mode="webhook",
-            webhook_verify_token="tok",
-            webhook_secret="",
-        )
-        channel.set_webhook_callback(lambda s, t: "ok")
-
-        payload = {"entry": []}
-        raw = json.dumps(payload).encode()
-
-        request = MagicMock()
-
-        async def _body():
-            return raw
-
-        request.body = _body
-        request.headers = {}
-
-        result = await channel._handle_webhook(request)
-        assert result == {"status": "ok"}
+        with pytest.raises(ValueError, match="webhook_secret is required"):
+            WhatsAppChannel(
+                bridge=bridge,
+                phone_number="+9999",
+                mode="webhook",
+                webhook_verify_token="tok",
+                webhook_secret="",
+            )
 
 
 class TestWebhookVerifyTokenRequired:

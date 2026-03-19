@@ -38,9 +38,9 @@ class BlueBubblesChannel(RetryMixin, Channel):
 
     def _api(self, method: str, path: str, **kwargs) -> dict:
         url = f"{self._server_url}/api/v1{path}"
-        params = kwargs.pop("params", {})
-        params["password"] = self._password
-        resp = requests.request(method, url, params=params, timeout=30, **kwargs)
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {self._password}"
+        resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
         resp.raise_for_status()
         return resp.json()
 

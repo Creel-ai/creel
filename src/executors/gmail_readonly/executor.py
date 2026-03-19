@@ -23,6 +23,78 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the gmail_readonly skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="gmail_readonly",
+        label="Gmail (read-only)",
+        tools=(
+            ToolSpec(
+                name="check_email",
+                description="Search and list emails matching a Gmail query",
+                params=(
+                    Param(
+                        name="query",
+                        type="string",
+                        description="Gmail search query string",
+                        required=True,
+                    ),
+                    Param(
+                        name="max_results",
+                        type="string",
+                        description="Maximum number of messages to return",
+                    ),
+                    Param(
+                        name="full_body",
+                        type="string",
+                        description="Whether to fetch full message body (true/false)",
+                    ),
+                ),
+            ),
+            ToolSpec(
+                name="read_email",
+                description="Read a single email by message ID with full body",
+                params=(
+                    Param(
+                        name="message_id",
+                        type="string",
+                        description="Gmail message ID",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"_action": "read_single"},
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        message_id = config.args.get("message_id", "")
+        if message_id:
+            email = read_email(message_id)
+            return json.dumps(email, indent=2)
+
+        query = config.args.get("query", "is:unread newer_than:1d")
+        max_results = int(config.args.get("max_results", 20))
+        full_body = str(config.args.get("full_body", "false")).lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        emails = fetch_emails(query, max_results, full_body)
+        return json.dumps(emails, indent=2)
+
+    return meta, execute
+
+
 def fetch_emails(
     query: str = "is:unread newer_than:1d",
     max_results: int = 20,

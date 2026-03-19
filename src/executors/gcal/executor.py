@@ -20,6 +20,43 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the gcal skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="gcal",
+        label="Google Calendar",
+        tools=(
+            ToolSpec(
+                name="check_calendar",
+                description="Check today's calendar events",
+                params=(
+                    Param(
+                        name="range",
+                        type="string",
+                        description="Time range: 'today' or 'week'",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        range_arg = config.args.get("range", "today")
+        events = fetch_events(range_arg)
+        return json.dumps(events, indent=2)
+
+    return meta, execute
+
+
 def fetch_events(range_arg: str = "today") -> list[dict]:
     """Fetch calendar events for the specified range."""
     creds = get_credentials()

@@ -16,7 +16,7 @@ from creel.containers import (
     collect_required_images,
     pull_required_images,
 )
-from creel.models import AgentDefinition, ToolConfig
+from creel.models import AgentDefinition, SkillOverride, ToolConfig
 
 
 class TestIsRemoteImage:
@@ -113,10 +113,9 @@ class TestCollectRequiredImagesGHCR:
         """Remote images should not trigger inclusion of the local base image."""
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "gmail": ToolConfig(
-                    executor="gmail_readonly",
-                    description="Gmail",
+            skills={
+                "gmail_readonly": SkillOverride(
+                    enabled=True,
                     image="ghcr.io/creel-ai/executor-gmail-readonly:latest",
                 ),
             },
@@ -129,10 +128,9 @@ class TestCollectRequiredImagesGHCR:
         """Tools with dockerfile should use custom- prefix tag."""
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "my_tool": ToolConfig(
-                    executor="my_tool",
-                    description="Custom",
+            skills={
+                "my_tool": SkillOverride(
+                    enabled=True,
                     dockerfile="./custom/Dockerfile",
                 ),
             },
@@ -145,11 +143,10 @@ class TestCollectRequiredImagesGHCR:
         """Mix of local and remote should include base for local only."""
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "weather": ToolConfig(executor="weather", description="Weather"),
-                "gmail": ToolConfig(
-                    executor="gmail_readonly",
-                    description="Gmail",
+            skills={
+                "weather": SkillOverride(enabled=True),
+                "gmail_readonly": SkillOverride(
+                    enabled=True,
                     image="ghcr.io/creel-ai/executor-gmail-readonly:latest",
                 ),
             },
@@ -169,13 +166,12 @@ class TestPullRequiredImages:
         mock_pull.return_value = "ghcr.io/creel-ai/executor-weather:latest"
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "weather": ToolConfig(
-                    executor="weather",
-                    description="Weather",
+            skills={
+                "weather": SkillOverride(
+                    enabled=True,
                     image="ghcr.io/creel-ai/executor-weather:latest",
                 ),
-                "local": ToolConfig(executor="local_tool", description="Local"),
+                "local_tool": SkillOverride(enabled=True),
             },
         )
         messages = pull_required_images(agent_def)
@@ -187,8 +183,8 @@ class TestPullRequiredImages:
         """Should return informational message when no remote images exist."""
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "weather": ToolConfig(executor="weather", description="Weather"),
+            skills={
+                "weather": SkillOverride(enabled=True),
             },
         )
         messages = pull_required_images(agent_def)
@@ -200,10 +196,9 @@ class TestPullRequiredImages:
         mock_pull.side_effect = RuntimeError("network error")
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "weather": ToolConfig(
-                    executor="weather",
-                    description="Weather",
+            skills={
+                "weather": SkillOverride(
+                    enabled=True,
                     image="ghcr.io/creel-ai/executor-weather:latest",
                 ),
             },

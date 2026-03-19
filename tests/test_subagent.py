@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from creel.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
+from creel.models import AgentConfig, LLMConfig
 from creel.subagents.executor import handle_subagent_tool
 from creel.subagents.manager import SubAgentManager
 from creel.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
@@ -21,18 +21,6 @@ from creel.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
 
 def _make_llm_config() -> LLMConfig:
     return LLMConfig(model="claude-sonnet-4-6", max_tokens=1024)
-
-
-def _make_tools() -> dict[str, ToolConfig]:
-    return {
-        "check_weather": ToolConfig(
-            executor="weather",
-            description="Get weather",
-            parameters={
-                "location": ToolParameter(type="string", description="City", required=True),
-            },
-        ),
-    }
 
 
 def _make_agent_config() -> AgentConfig:
@@ -51,16 +39,22 @@ def _mock_agent_result(text: str = "Done."):
     )
 
 
+def _make_skill_overrides() -> dict:
+    from creel.models import SkillOverride
+
+    return {"weather": SkillOverride(enabled=True)}
+
+
 def _make_manager(
     result_callback=None,
     llm_config=None,
-    tools_config=None,
+    skill_overrides=None,
     agent_config=None,
 ) -> SubAgentManager:
     return SubAgentManager(
         llm_config=llm_config or _make_llm_config(),
-        tools_config=tools_config or _make_tools(),
         agent_config=agent_config or _make_agent_config(),
+        skill_overrides=skill_overrides or _make_skill_overrides(),
         system_prompt="You are a test agent.",
         result_callback=result_callback,
     )
@@ -502,13 +496,16 @@ class TestToolsIntegration:
     def test_execute_tool_call_dispatches_subagent(self, mock_loop):
         """execute_tool_call should dispatch to subagent handler."""
         mock_loop.return_value = _mock_agent_result("sub done")
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         manager = _make_manager()
+        registry = SkillRegistry()
         result = execute_tool_call(
             tool_name="subagent",
             tool_input={"action": "list"},
-            tools_config=_make_tools(),
+            registry=registry,
+            skill_overrides={},
             subagent_manager=manager,
         )
 
@@ -517,13 +514,16 @@ class TestToolsIntegration:
 
     def test_execute_tool_call_without_manager_raises(self):
         """Without a manager, 'subagent' should fall through to unknown tool."""
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
+        registry = SkillRegistry()
         with pytest.raises(ValueError, match="Unknown tool"):
             execute_tool_call(
                 tool_name="subagent",
                 tool_input={"action": "list"},
-                tools_config=_make_tools(),
+                registry=registry,
+                skill_overrides={},
             )
 
 
@@ -534,16 +534,20 @@ class TestToolsIntegration:
 
 class TestToolDefinitions:
     def test_subagent_tool_included_when_enabled(self):
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions(_make_tools(), include_subagent_tool=True)
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {}, include_subagent_tool=True)
         names = [d["name"] for d in defs]
         assert "subagent" in names
 
     def test_subagent_tool_excluded_by_default(self):
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions(_make_tools())
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {})
         names = [d["name"] for d in defs]
         assert "subagent" not in names
 

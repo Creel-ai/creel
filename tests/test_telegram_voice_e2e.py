@@ -283,7 +283,7 @@ class TestWebhookWithVoice:
         channel = TelegramChannel(
             bridge=bridge,
             mode="webhook",
-            webhook_secret="",
+            webhook_secret="test-secret",
             allowed_senders=["42"],
         )
 
@@ -316,7 +316,7 @@ class TestWebhookWithVoice:
             return json.dumps(payload).encode()
 
         request.body = _body
-        request.headers = {}
+        request.headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret"}
 
         result = await channel._handle_webhook(request)
         assert result == {"status": "ok"}
@@ -340,7 +340,7 @@ class TestWebhookWithVoice:
         channel = TelegramChannel(
             bridge=bridge,
             mode="webhook",
-            webhook_secret="",
+            webhook_secret="test-secret",
             allowed_senders=["42"],
         )
 
@@ -374,7 +374,7 @@ class TestWebhookWithVoice:
             return json.dumps(payload).encode()
 
         request.body = _body
-        request.headers = {}
+        request.headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret"}
 
         await channel._handle_webhook(request)
 
@@ -684,7 +684,7 @@ class TestE2ETelegramVoice:
         channel = TelegramChannel(
             bridge=bridge,
             mode="webhook",
-            webhook_secret="",
+            webhook_secret="test-secret",
             allowed_senders=["42"],
         )
 
@@ -730,7 +730,7 @@ class TestE2ETelegramVoice:
                 return json.dumps(payload).encode()
 
             request.body = _body
-            request.headers = {}
+            request.headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret"}
 
             await channel._handle_webhook(request)
 

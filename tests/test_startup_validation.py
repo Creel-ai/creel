@@ -13,7 +13,7 @@ from creel.startup import SecretsValidationError, validate_secrets
 def _make_agent_def(llm_secrets=None, tools=None):
     agent = MagicMock()
     agent.llm.secrets = llm_secrets
-    agent.tools = tools or {}
+    agent.skills = tools or {}
     return agent
 
 
@@ -47,7 +47,7 @@ class TestValidateSecrets:
         agent = _make_agent_def(tools={"my_tool": tool})
         with caplog.at_level(logging.WARNING):
             validate_secrets(agent)  # should not raise
-        assert "tools.my_tool.secrets" in caplog.text
+        assert "skills.my_tool.secrets" in caplog.text
         assert "secrets file not found" in caplog.text
 
     def test_missing_llm_secrets_relative_path_raises(self, tmp_path: Path, monkeypatch):

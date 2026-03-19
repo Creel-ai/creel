@@ -26,6 +26,216 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+
+def register_skill():
+    """Register the exec_interactive skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="exec_interactive",
+        label="Interactive Shell",
+        tools=(
+            ToolSpec(
+                name="start_session",
+                description="Start an interactive PTY session",
+                params=(
+                    Param(
+                        name="command",
+                        type="string",
+                        description="Shell command to execute in the PTY",
+                        required=True,
+                    ),
+                    Param(
+                        name="timeout",
+                        type="string",
+                        description="Hard timeout in seconds (default 300)",
+                    ),
+                    Param(
+                        name="cols",
+                        type="string",
+                        description="Terminal width in columns (default 120)",
+                    ),
+                    Param(
+                        name="rows",
+                        type="string",
+                        description="Terminal height in rows (default 40)",
+                    ),
+                ),
+                fixed_args={"action": "start"},
+            ),
+            ToolSpec(
+                name="send_input",
+                description="Send input to a running interactive session",
+                params=(
+                    Param(
+                        name="session_id",
+                        type="string",
+                        description="The session to send input to",
+                        required=True,
+                    ),
+                    Param(
+                        name="input",
+                        type="string",
+                        description="String data to write to the PTY",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "send_input"},
+            ),
+            ToolSpec(
+                name="read_output",
+                description="Read available output from a running interactive session",
+                params=(
+                    Param(
+                        name="session_id",
+                        type="string",
+                        description="The session to read from",
+                        required=True,
+                    ),
+                    Param(
+                        name="read_timeout",
+                        type="string",
+                        description="How long to wait for output in seconds (default 10)",
+                    ),
+                ),
+                fixed_args={"action": "read_output"},
+            ),
+            ToolSpec(
+                name="resize_terminal",
+                description="Resize the terminal of a running session",
+                params=(
+                    Param(
+                        name="session_id",
+                        type="string",
+                        description="The session to resize",
+                        required=True,
+                    ),
+                    Param(
+                        name="cols",
+                        type="string",
+                        description="New terminal width",
+                    ),
+                    Param(
+                        name="rows",
+                        type="string",
+                        description="New terminal height",
+                    ),
+                ),
+                fixed_args={"action": "resize"},
+            ),
+            ToolSpec(
+                name="close_session",
+                description="Close an interactive session and clean up resources",
+                params=(
+                    Param(
+                        name="session_id",
+                        type="string",
+                        description="The session to close",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "close"},
+            ),
+            ToolSpec(
+                name="session_info",
+                description="Get information about a session",
+                params=(
+                    Param(
+                        name="session_id",
+                        type="string",
+                        description="The session to query",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "info"},
+            ),
+            ToolSpec(
+                name="list_sessions",
+                description="List all active interactive sessions",
+                params=(),
+                fixed_args={"action": "list_sessions"},
+            ),
+            ToolSpec(
+                name="get_io_log",
+                description="Get the full I/O log for a session",
+                params=(
+                    Param(
+                        name="session_id",
+                        type="string",
+                        description="The session to get the log for",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "get_io_log"},
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "")
+
+        if action == "start":
+            command = config.args.get("command", "")
+            if not command:
+                raise ValueError("exec_interactive 'start' requires a 'command' argument")
+            timeout = int(config.args.get("timeout", "300"))
+            cols = int(config.args.get("cols", "120"))
+            rows = int(config.args.get("rows", "40"))
+            result = start_session(command, timeout=timeout, cols=cols, rows=rows)
+        elif action == "send_input":
+            session_id = config.args.get("session_id", "")
+            data = config.args.get("input", "")
+            if not session_id:
+                raise ValueError("exec_interactive 'send_input' requires 'session_id'")
+            result = send_input(session_id, data)
+        elif action == "read_output":
+            session_id = config.args.get("session_id", "")
+            if not session_id:
+                raise ValueError("exec_interactive 'read_output' requires 'session_id'")
+            read_timeout_val = float(config.args.get("read_timeout", "10"))
+            result = read_output(session_id, timeout=read_timeout_val)
+        elif action == "resize":
+            session_id = config.args.get("session_id", "")
+            if not session_id:
+                raise ValueError("exec_interactive 'resize' requires 'session_id'")
+            cols = int(config.args.get("cols", "120"))
+            rows = int(config.args.get("rows", "40"))
+            result = resize_terminal(session_id, cols, rows)
+        elif action == "close":
+            session_id = config.args.get("session_id", "")
+            if not session_id:
+                raise ValueError("exec_interactive 'close' requires 'session_id'")
+            result = close_session(session_id)
+        elif action == "info":
+            session_id = config.args.get("session_id", "")
+            if not session_id:
+                raise ValueError("exec_interactive 'info' requires 'session_id'")
+            result = get_session_info(session_id)
+        elif action == "list_sessions":
+            result = list_sessions()
+        elif action == "get_io_log":
+            session_id = config.args.get("session_id", "")
+            if not session_id:
+                raise ValueError("exec_interactive 'get_io_log' requires 'session_id'")
+            result = get_io_log(session_id)
+        else:
+            raise ValueError(
+                f"exec_interactive: unknown action '{action}' "
+                "(use start/send_input/read_output/resize/close/info/list_sessions/get_io_log)"
+            )
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 # Default terminal dimensions
 DEFAULT_COLS = 120
 DEFAULT_ROWS = 40

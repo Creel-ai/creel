@@ -13,6 +13,7 @@ from creel.container_pool import (
     ContainerPoolConfig,
     ManagedContainer,
 )
+from creel.skills.registry import SkillRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -476,7 +477,8 @@ class TestContainerAgentPoolIntegration:
             pool=pool,
             start_msg={"type": "start", "messages": []},
             messages=[],
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             use_containers=False,
             guardian=None,
             confirm_action=None,
@@ -505,7 +507,8 @@ class TestContainerAgentPoolIntegration:
             pool=pool,
             start_msg={"type": "start", "messages": []},
             messages=[],
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             use_containers=False,
             guardian=None,
             confirm_action=None,

@@ -6,7 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from creel.context import estimate_messages_tokens, prune_messages
 from creel.llm import call_llm, extract_text
@@ -17,10 +17,13 @@ from creel.models import (
     LLMConfig,
     SafetyConfig,
     SessionState,
-    ToolConfig,
+    SkillOverride,
 )
 from creel.tool_cache import ToolResultCache
 from creel.tools import build_tool_definitions, execute_tool_call
+
+if TYPE_CHECKING:
+    from creel.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +150,8 @@ def _check_guardian_pre_execution(
     tool_name: str,
     tool_input: dict,
     messages: list[dict],
-    tools_config: dict[str, ToolConfig],
     confirm_action: Callable[[str, dict, str], bool] | None,
+    registry: SkillRegistry | None = None,
 ) -> _GuardianDecision:
     """Run all Guardian pre-execution checks for a single tool call.
 
@@ -196,7 +199,7 @@ def _check_guardian_pre_execution(
     user_request = _extract_last_user_text(messages)
     if user_request:
         prior_tools = _extract_prior_tools(messages)
-        available_tool_names = list(tools_config.keys()) if tools_config else None
+        available_tool_names = registry.all_tool_names() if registry is not None else None
         coherence = guardian.check_coherence(
             user_request,
             tool_name,
@@ -405,7 +408,8 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
 def _execute_single_tool(
     block: Any,
     *,
-    tools_config: dict[str, ToolConfig],
+    registry: SkillRegistry,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool,
     memory_manager: Any,
     bridge_config: Any,
@@ -439,7 +443,8 @@ def _execute_single_tool(
             result = execute_tool_call(
                 tool_name=tool_name,
                 tool_input=tool_input,
-                tools_config=tools_config,
+                registry=registry,
+                skill_overrides=skill_overrides,
                 use_containers=use_containers,
                 memory_manager=memory_manager,
                 bridge_config=bridge_config,
@@ -484,8 +489,18 @@ def _execute_single_tool(
             )
 
     # Classify executor output for tools that return untrusted content
-    tool_cfg = tools_config.get(tool_name)
-    if not is_error and guardian is not None and tool_cfg is not None and tool_cfg.classify_output:
+    _classify = False
+    _skill_result = registry.get_tool(tool_name)
+    if _skill_result is not None:
+        _skill_id = _skill_result[1].meta.id
+        _so = skill_overrides.get(_skill_id)
+        if _so is not None:
+            _classify = _so.classify_output or False
+            if _so.tools and tool_name in _so.tools:
+                _tool_override = _so.tools[tool_name]
+                if _tool_override.classify_output is not None:
+                    _classify = _tool_override.classify_output
+    if not is_error and guardian is not None and _classify:
         screen_result = guardian.screen_tool_result(tool_name, result)
         if screen_result.blocked:
             logger.warning(
@@ -560,8 +575,9 @@ def _execute_single_tool(
 def run_agent_loop(
     messages: list[dict],
     llm_config: LLMConfig,
-    tools_config: dict[str, ToolConfig],
     agent_config: AgentConfig,
+    registry: SkillRegistry,
+    skill_overrides: dict[str, SkillOverride],
     system_prompt: str | None = None,
     use_containers: bool = False,
     guardian: Any | None = None,
@@ -585,7 +601,6 @@ def run_agent_loop(
     Args:
         messages: Conversation history + new message (Anthropic format).
         llm_config: LLM configuration.
-        tools_config: Available tools.
         agent_config: Agent settings (max_turns, etc.).
         system_prompt: Optional system prompt.
         use_containers: If True, run executors in Docker containers.
@@ -604,21 +619,19 @@ def run_agent_loop(
         AgentResult with the final response and execution metadata.
     """
     include_memory = memory_manager is not None
-    include_workspace = bool(
-        tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
+    include_workspace = "file_ops" in skill_overrides
+    tool_defs = build_tool_definitions(
+        registry,
+        skill_overrides,
+        include_memory_tools=include_memory,
+        include_workspace_tools=include_workspace,
+        include_cron_tools=cron_manager is not None,
+        include_subagent_tool=subagent_manager is not None,
+        include_kb_tools=kb_manager is not None,
     )
-    tool_defs = (
-        build_tool_definitions(
-            tools_config,
-            include_memory_tools=include_memory,
-            include_workspace_tools=include_workspace,
-            include_cron_tools=cron_manager is not None,
-            include_subagent_tool=subagent_manager is not None,
-            include_kb_tools=kb_manager is not None,
-        )
-        if tools_config
-        else []
-    )
+    # Build the set of valid tool names from the definitions sent to the LLM.
+    # Used to reject hallucinated or prompt-injected tool names before execution.
+    valid_tool_names = frozenset(td["name"] for td in tool_defs)
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []
@@ -712,7 +725,27 @@ def run_agent_loop(
             tool_calls_made += 1
             tool_name = block.name
             tool_input = block.input
-            logger.info("Tool call: %s(%s)", tool_name, tool_input)
+            logger.info("Tool call: %s", tool_name)
+            logger.debug("Tool input: %s(%s)", tool_name, tool_input)
+
+            # Tool registry validation — reject tool names not in the
+            # configured tool set.  This prevents the LLM from invoking
+            # hallucinated or prompt-injected tool names.
+            if tool_name not in valid_tool_names:
+                logger.warning(
+                    "Tool %s not found in tool registry (%d tools available)",
+                    tool_name,
+                    len(valid_tool_names),
+                )
+                _record_tool_error(
+                    block.id,
+                    tool_name,
+                    tool_input,
+                    f"Tool '{tool_name}' is not available. Use one of the provided tools.",
+                    tool_history,
+                    tool_results,
+                )
+                continue
 
             # Per-task tool scoping — reject tools not in the whitelist
             if allowed_tools is not None and tool_name not in allowed_tools:
@@ -736,10 +769,12 @@ def run_agent_loop(
             if safety_config and safety_config.destructive_blocklist.enabled:
                 from creel.safety import check_destructive_blocklist
 
+                _skill_entry = registry.get_tool(tool_name)
+                _executor_id = _skill_entry[1].meta.id if _skill_entry else None
                 blocklist_match = check_destructive_blocklist(
                     tool_name,
                     tool_input,
-                    tools_config,
+                    _executor_id,
                     safety_config.destructive_blocklist,
                 )
                 if blocklist_match is not None:
@@ -788,8 +823,8 @@ def run_agent_loop(
                     tool_name,
                     tool_input,
                     messages,
-                    tools_config,
                     confirm_action,
+                    registry=registry,
                 )
                 if gd.action == "deny":
                     _record_tool_error(
@@ -820,7 +855,8 @@ def run_agent_loop(
             for block in execute_blocks:
                 _result = _execute_single_tool(
                     block,
-                    tools_config=tools_config,
+                    registry=registry,
+                    skill_overrides=skill_overrides,
                     use_containers=use_containers,
                     memory_manager=memory_manager,
                     bridge_config=bridge_config,
@@ -868,7 +904,8 @@ def run_agent_loop(
         for block in execute_blocks:
             tool_result_block = _execute_single_tool(
                 block,
-                tools_config=tools_config,
+                registry=registry,
+                skill_overrides=skill_overrides,
                 use_containers=use_containers,
                 memory_manager=memory_manager,
                 bridge_config=bridge_config,

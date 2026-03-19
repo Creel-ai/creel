@@ -16,6 +16,46 @@ from typing import Any
 import httpx
 
 DEFAULT_LOCATION = "Denver"
+
+
+def register_skill():
+    """Register the weather skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="weather",
+        label="Weather",
+        tools=(
+            ToolSpec(
+                name="check_weather",
+                description="Get current weather and forecast",
+                params=(
+                    Param(
+                        name="location",
+                        type="string",
+                        description="City name or coordinates",
+                        required=True,
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        location = config.args.get("location", "Denver")
+        result = fetch_weather(location)
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 

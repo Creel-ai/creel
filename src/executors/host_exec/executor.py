@@ -15,6 +15,141 @@ from typing import Any
 
 import httpx
 
+
+def register_skill():
+    """Register the host_exec skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="host_exec",
+        label="Host Exec",
+        tools=(
+            ToolSpec(
+                name="host_exec",
+                description="Run a command on the host (foreground or background)",
+                params=(
+                    Param(
+                        name="command",
+                        type="string",
+                        description="Shell command to execute",
+                        required=True,
+                    ),
+                    Param(
+                        name="background",
+                        type="string",
+                        description="Run in background and return session info (true/false, default false)",
+                    ),
+                    Param(
+                        name="workdir",
+                        type="string",
+                        description="Working directory for the command",
+                    ),
+                    Param(
+                        name="timeout",
+                        type="string",
+                        description="Timeout in seconds (default 300)",
+                    ),
+                    Param(
+                        name="env",
+                        type="string",
+                        description="Additional environment variables as JSON object",
+                    ),
+                ),
+                fixed_args={"_action": "exec"},
+            ),
+            ToolSpec(
+                name="host_process",
+                description="Manage a running background process (log, poll, write, kill)",
+                params=(
+                    Param(
+                        name="session_id",
+                        type="string",
+                        description="Session identifier",
+                        required=True,
+                    ),
+                    Param(
+                        name="action",
+                        type="string",
+                        description="Action to perform: log, poll, write, or kill",
+                    ),
+                    Param(
+                        name="limit",
+                        type="string",
+                        description="Max log lines to return (default 100)",
+                    ),
+                    Param(
+                        name="offset",
+                        type="string",
+                        description="Log line offset (default 0)",
+                    ),
+                    Param(
+                        name="data",
+                        type="string",
+                        description="Data to write to stdin (for write action)",
+                    ),
+                ),
+                fixed_args={"_action": "process"},
+            ),
+            ToolSpec(
+                name="host_sessions",
+                description="List all active host sessions",
+                params=(),
+                fixed_args={"_action": "sessions"},
+            ),
+        ),
+        needs_bridge=True,
+        bridge_scope="EXEC",
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("_action", "")
+
+        if action == "exec":
+            command = config.args.get("command", "")
+            if not command:
+                raise ValueError("host_exec requires a 'command' argument")
+            background = config.args.get("background", "false").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            workdir = config.args.get("workdir")
+            timeout = int(config.args.get("timeout", "300"))
+            env_str = config.args.get("env")
+            env = json.loads(env_str) if env_str else None
+            if env is not None and not isinstance(env, dict):
+                raise ValueError("env must be a JSON object")
+
+            result = host_exec(
+                command, background=background, workdir=workdir, timeout=timeout, env=env
+            )
+        elif action == "process":
+            session_id = config.args.get("session_id", "")
+            if not session_id:
+                raise ValueError("host_process requires a 'session_id' argument")
+            sub_action = config.args.get("action", "poll")
+            limit = int(config.args.get("limit", "100"))
+            offset = int(config.args.get("offset", "0"))
+            stdin_data = config.args.get("data")
+            result = host_process(
+                session_id, sub_action, limit=limit, offset=offset, data=stdin_data
+            )
+        elif action == "sessions":
+            result = host_sessions()
+        else:
+            raise ValueError(f"host_exec: unknown action '{action}' (use exec/process/sessions)")
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 # Env vars that callers are never allowed to set — mirrors bridge/process_manager.py
 _BLOCKED_ENV_VARS = frozenset(
     {

@@ -15,6 +15,122 @@ from typing import Any
 import requests
 
 
+def register_skill():
+    """Register the apple_reminders skill with the skill registry."""
+    import sys
+    from io import StringIO
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="apple_reminders",
+        label="Apple Reminders",
+        tools=(
+            ToolSpec(
+                name="list_reminders",
+                description="List reminders from Apple Reminders",
+                params=(
+                    Param(
+                        name="list_name",
+                        type="string",
+                        description="Reminder list name",
+                    ),
+                    Param(
+                        name="filter",
+                        type="string",
+                        description="Filter type (e.g. all, incomplete, completed)",
+                    ),
+                ),
+                fixed_args={"action": "list"},
+            ),
+            ToolSpec(
+                name="create_reminder",
+                description="Create a new reminder",
+                params=(
+                    Param(
+                        name="title",
+                        type="string",
+                        description="Title of the reminder",
+                        required=True,
+                    ),
+                    Param(
+                        name="due_date",
+                        type="string",
+                        description="Due date for the reminder",
+                    ),
+                    Param(
+                        name="notes",
+                        type="string",
+                        description="Notes for the reminder",
+                    ),
+                    Param(
+                        name="list_name",
+                        type="string",
+                        description="Reminder list name",
+                    ),
+                ),
+                fixed_args={"action": "add"},
+            ),
+            ToolSpec(
+                name="complete_reminder",
+                description="Complete a reminder",
+                params=(
+                    Param(
+                        name="name",
+                        type="string",
+                        description="Name of the reminder to complete",
+                        required=True,
+                    ),
+                    Param(
+                        name="list_name",
+                        type="string",
+                        description="Reminder list name",
+                    ),
+                ),
+                fixed_args={"action": "complete"},
+            ),
+            ToolSpec(
+                name="get_reminder_lists",
+                description="Get all reminder lists",
+                fixed_args={"action": "lists"},
+            ),
+        ),
+        needs_bridge=True,
+        bridge_scope="REMINDERS",
+        platform="darwin",
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        from creel.orchestrator import _env_override
+
+        env_vars = {
+            k: v
+            for k, v in {
+                "ACTION": config.args.get("action", "list"),
+                "FILTER": config.args.get("filter", "all"),
+                "TITLE": config.args.get("title", ""),
+                "LIST": config.args.get("list_name", ""),
+                "DUE": config.args.get("due_date", ""),
+                "ID": config.args.get("id", ""),
+            }.items()
+            if v
+        }
+        old_stdout = sys.stdout
+        try:
+            sys.stdout = captured_output = StringIO()
+            with _env_override(env_vars):
+                main()
+            return captured_output.getvalue().strip() or "{}"
+        finally:
+            sys.stdout = old_stdout
+
+    return meta, execute
+
+
 def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
     """Make an HTTP call to the bridge server.
 

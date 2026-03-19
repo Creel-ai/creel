@@ -94,9 +94,9 @@ class TelegramChannel(
         self._gate = sender_gate
 
         if mode == "webhook" and not webhook_secret:
-            logger.warning(
-                "Telegram webhook mode with no secret — "
-                "any sender can push updates to the webhook endpoint"
+            raise ValueError(
+                "webhook_secret is required for Telegram webhook mode — "
+                "without it any sender can push updates to the webhook endpoint"
             )
         self._callback: LegacyCallback | None = None
         self._bot_username: str = ""

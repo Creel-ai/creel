@@ -588,6 +588,8 @@ class ChatServer:
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
                 container_pool=self._container_pool,
+                registry=self._registry,
+                skill_overrides=self._agent_def.skills or None,
             )
 
         return run_agent_loop(

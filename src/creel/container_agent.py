@@ -26,7 +26,14 @@ from creel.agent import (
     _extract_user_request_for_coherence,
 )
 from creel.containers import _ensure_image
-from creel.models import AgentConfig, BridgeConfig, LLMConfig, SessionState, ToolConfig
+from creel.models import (
+    AgentConfig,
+    BridgeConfig,
+    LLMConfig,
+    SessionState,
+    SkillOverride,
+    ToolConfig,
+)
 from creel.tools import build_tool_definitions, execute_tool_call
 from guardian.types import ActionVerdict
 
@@ -101,6 +108,8 @@ def run_agent_loop_container(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    registry: Any | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> AgentResult:
     """Run the agent loop inside an isolated Docker container.
 
@@ -118,14 +127,17 @@ def run_agent_loop_container(
     include_memory = memory_manager is not None
     include_workspace = bool(
         tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
-    )
+    ) or (skill_overrides is not None and "file_ops" in skill_overrides)
+    has_tools = bool(tools_config) or bool(skill_overrides)
     tool_defs = (
         build_tool_definitions(
             tools_config,
             include_memory_tools=include_memory,
             include_workspace_tools=include_workspace,
+            registry=registry,
+            skill_overrides=skill_overrides,
         )
-        if tools_config
+        if has_tools
         else []
     )
 
@@ -156,6 +168,8 @@ def run_agent_loop_container(
             bridge_config,
             session_state,
             env_vars,
+            registry=registry,
+            skill_overrides=skill_overrides,
         )
 
     # Cold-start path (original behavior)
@@ -170,6 +184,8 @@ def run_agent_loop_container(
         bridge_config,
         session_state,
         env_vars,
+        registry=registry,
+        skill_overrides=skill_overrides,
     )
 
 
@@ -185,6 +201,8 @@ def _run_with_pool(
     bridge_config: BridgeConfig | None,
     session_state: SessionState | None,
     env_vars: dict[str, str],
+    registry: Any | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> AgentResult:
     """Run the agent loop using a warm container from the pool."""
     container = pool.acquire(
@@ -207,6 +225,8 @@ def _run_with_pool(
             bridge_config,
             session_state,
             container_pool=pool,
+            registry=registry,
+            skill_overrides=skill_overrides,
         )
         # Return container to pool for reuse
         pool.release(container)
@@ -237,6 +257,8 @@ def _run_cold_start(
     bridge_config: BridgeConfig | None,
     session_state: SessionState | None,
     env_vars: dict[str, str],
+    registry: Any | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> AgentResult:
     """Run the agent loop with a fresh ephemeral container (original path)."""
     with tempfile.NamedTemporaryFile(
@@ -276,6 +298,8 @@ def _run_cold_start(
                 memory_manager,
                 bridge_config,
                 session_state,
+                registry=registry,
+                skill_overrides=skill_overrides,
             )
         except Exception as e:
             logger.exception("Container agent protocol error")
@@ -323,6 +347,8 @@ def _run_protocol(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    registry: Any | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
     _send_to_container(proc, start_msg)
@@ -380,6 +406,8 @@ def _run_protocol(
                 bridge_config=bridge_config,
                 session_state=session_state,
                 container_pool=container_pool,
+                registry=registry,
+                skill_overrides=skill_overrides,
             )
 
             # Check if any result requires async approval
@@ -416,6 +444,8 @@ def _run_protocol_pooled(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    registry: Any | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol using a pooled ManagedContainer.
 
@@ -470,6 +500,8 @@ def _run_protocol_pooled(
                 bridge_config=bridge_config,
                 session_state=session_state,
                 container_pool=container_pool,
+                registry=registry,
+                skill_overrides=skill_overrides,
             )
 
             if results is None:
@@ -500,6 +532,8 @@ def _handle_tool_request(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    registry: Any | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> tuple[list[dict] | None, AgentResult | None]:
     """Process tool calls from the container, applying Guardian checks.
 
@@ -660,6 +694,8 @@ def _handle_tool_request(
                 bridge_config=bridge_config,
                 session_state=session_state,
                 container_pool=container_pool,
+                registry=registry,
+                skill_overrides=skill_overrides,
             )
             is_error = False
             elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -681,12 +717,18 @@ def _handle_tool_request(
 
         # Screen executor output for injection
         tool_cfg = tools_config.get(tool_name)
-        if (
-            not is_error
-            and guardian is not None
-            and tool_cfg is not None
-            and tool_cfg.classify_output
-        ):
+        _classify = tool_cfg.classify_output if tool_cfg is not None else False
+        if not _classify and registry is not None and skill_overrides is not None:
+            _skill_result = registry.get_tool(tool_name)
+            if _skill_result is not None:
+                _so = skill_overrides.get(_skill_result[1].meta.id)
+                if _so is not None:
+                    _classify = _so.classify_output or False
+                    if _so.tools and tool_name in _so.tools:
+                        _tool_ov = _so.tools[tool_name]
+                        if _tool_ov.classify_output is not None:
+                            _classify = _tool_ov.classify_output
+        if not is_error and guardian is not None and _classify:
             screen_result = guardian.screen_tool_result(tool_name, result)
             if screen_result.blocked:
                 logger.warning(

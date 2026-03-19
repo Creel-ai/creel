@@ -19,13 +19,7 @@ from creel.models import (
     SkillOverride,
 )
 from creel.tool_cache import ToolResultCache
-from creel.tools import (
-    BUILTIN_KB_TOOLS,
-    BUILTIN_MEMORY_TOOLS,
-    BUILTIN_WORKSPACE_TOOLS,
-    build_tool_definitions,
-    execute_tool_call,
-)
+from creel.tools import build_tool_definitions, execute_tool_call
 
 if TYPE_CHECKING:
     from creel.skills.registry import SkillRegistry
@@ -633,23 +627,9 @@ def run_agent_loop(
         include_subagent_tool=subagent_manager is not None,
         include_kb_tools=kb_manager is not None,
     )
-    # Build the set of valid tool names from the definitions sent to the LLM
-    # plus any active built-in tools.  Used to reject hallucinated or
-    # prompt-injected tool names before execution.
-    _valid: set[str] = {td["name"] for td in tool_defs}
-    if tools_config:
-        _valid.update(tools_config.keys())
-    if include_memory:
-        _valid.update(str(t["name"]) for t in BUILTIN_MEMORY_TOOLS)
-    if include_workspace:
-        _valid.update(str(t["name"]) for t in BUILTIN_WORKSPACE_TOOLS)
-    if cron_manager is not None:
-        _valid.add("cron")
-    if subagent_manager is not None:
-        _valid.add("subagent")
-    if kb_manager is not None:
-        _valid.update(str(t["name"]) for t in BUILTIN_KB_TOOLS)
-    valid_tool_names = frozenset(_valid)
+    # Build the set of valid tool names from the definitions sent to the LLM.
+    # Used to reject hallucinated or prompt-injected tool names before execution.
+    valid_tool_names = frozenset(td["name"] for td in tool_defs)
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []

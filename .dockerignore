@@ -1,0 +1,31 @@
+# Secrets and environment files
+.env
+*.env
+*.env.enc
+client_secret.json
+
+.venv/
+.git/
+.github/
+dist/
+build/
+*.egg-info/
+__pycache__/
+tests/
+docs/
+scripts/
+dashboard/
+workspace/
+secrets/
+sessions/
+logs/
+site/
+node_modules/
+.pytest_tmp/
+.coverage
+*.log
+
+# Executors have their own container images
+src/executors/
+src/taskrunner/
+src/llm/

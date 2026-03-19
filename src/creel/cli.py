@@ -36,7 +36,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from creel import paths
+from creel import __version__, paths
 
 if TYPE_CHECKING:
     from creel.knowledge_base import KnowledgeBase
@@ -2371,6 +2371,7 @@ def main() -> int:
         prog="creel",
         description="LLM Task Runner - secure, scheduled LLM task execution",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument(
         "--containers", action="store_true", help="Run executors/LLM in Docker containers"

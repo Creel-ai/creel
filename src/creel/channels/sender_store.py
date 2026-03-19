@@ -25,6 +25,10 @@ class SenderRecord:
     held_messages: list[dict] = field(default_factory=list)
 
 
+_MAX_HELD_PER_SENDER = 50
+_MAX_HELD_TEXT_LEN = 4096
+
+
 class SenderStore:
     """JSON-file-backed persistence for sender approval records.
 
@@ -33,6 +37,10 @@ class SenderStore:
     """
 
     def __init__(self, store_dir: str | Path, channel_id: str) -> None:
+        if "/" in channel_id or "\\" in channel_id or ".." in channel_id:
+            raise ValueError(
+                f"channel_id must not contain path separators or '..', got {channel_id!r}"
+            )
         self._dir = Path(store_dir) / channel_id
         self._dir.mkdir(parents=True, exist_ok=True)
         self._path = self._dir / "senders.json"
@@ -67,6 +75,17 @@ class SenderStore:
             record = self._records.get(sender_id)
             if record is None:
                 return
+            if len(record.held_messages) >= _MAX_HELD_PER_SENDER:
+                logger.warning(
+                    "Held message limit (%d) reached for sender %s, dropping oldest",
+                    _MAX_HELD_PER_SENDER,
+                    sender_id,
+                )
+                record.held_messages.pop(0)
+            # Truncate text to bound disk usage from unknown senders
+            text = message.get("text")
+            if isinstance(text, str) and len(text) > _MAX_HELD_TEXT_LEN:
+                message = {**message, "text": text[:_MAX_HELD_TEXT_LEN]}
             record.held_messages.append(message)
             self._save()
 

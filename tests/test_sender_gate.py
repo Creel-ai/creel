@@ -131,6 +131,36 @@ class TestSenderStore:
         assert not store.is_approved("ghost")
         assert not store.is_denied("ghost")
 
+    def test_channel_id_rejects_path_traversal(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="path separators"):
+            SenderStore(tmp_path, "../etc")
+        with pytest.raises(ValueError, match="path separators"):
+            SenderStore(tmp_path, "foo/bar")
+        with pytest.raises(ValueError, match="path separators"):
+            SenderStore(tmp_path, "foo\\bar")
+
+    def test_hold_message_caps_at_limit(self, tmp_path: Path):
+        from creel.channels.sender_store import _MAX_HELD_PER_SENDER
+
+        store = SenderStore(tmp_path, "ch")
+        store.add_pending("u1")
+        for i in range(_MAX_HELD_PER_SENDER + 10):
+            store.hold_message("u1", {"sender_id": "u1", "text": f"msg-{i}"})
+        held = store.release_held_messages("u1")
+        assert len(held) == _MAX_HELD_PER_SENDER
+        # Oldest messages were dropped, newest retained
+        assert held[-1]["text"] == f"msg-{_MAX_HELD_PER_SENDER + 9}"
+
+    def test_hold_message_truncates_long_text(self, tmp_path: Path):
+        from creel.channels.sender_store import _MAX_HELD_TEXT_LEN
+
+        store = SenderStore(tmp_path, "ch")
+        store.add_pending("u1")
+        long_text = "x" * (_MAX_HELD_TEXT_LEN + 1000)
+        store.hold_message("u1", {"sender_id": "u1", "text": long_text})
+        held = store.release_held_messages("u1")
+        assert len(held[0]["text"]) == _MAX_HELD_TEXT_LEN
+
 
 # ---------------------------------------------------------------------------
 # SenderGate policy tests

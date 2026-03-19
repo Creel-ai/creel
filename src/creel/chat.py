@@ -388,6 +388,9 @@ class ChatServer:
         elif auto_approve:
 
             def _auto_confirm(tool_name: str, tool_input: dict, reason: str) -> bool:
+                if reason.startswith("[BLOCKLIST]"):
+                    logger.warning("Blocklist match cannot be auto-approved: %s", reason)
+                    return False
                 logger.info("Auto-approving %s (reason: %s)", tool_name, reason)
                 if self._guardian is not None:
                     self._guardian.log_action_outcome(tool_name, "review", "auto_approved_by_cli")
@@ -608,6 +611,7 @@ class ChatServer:
             context_pruning=self._agent_def.session.context_pruning,
             max_context_tokens=self._agent_def.session.max_context_tokens,
             summarize_fn=self._summarize_fn,
+            safety_config=self._agent_def.safety,
         )
 
     def _handle_approval_response(

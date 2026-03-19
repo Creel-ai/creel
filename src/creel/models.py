@@ -614,6 +614,22 @@ class MonitorDefinition(BaseModel):
         return v
 
 
+class DestructiveBlocklistConfig(BaseModel):
+    """Configuration for the destructive-command blocklist safety floor."""
+
+    enabled: bool = True
+    custom_patterns: list[str] = Field(default_factory=list)
+    allowlist: list[str] = Field(default_factory=list)
+
+
+class SafetyConfig(BaseModel):
+    """Top-level safety configuration."""
+
+    destructive_blocklist: DestructiveBlocklistConfig = Field(
+        default_factory=DestructiveBlocklistConfig
+    )
+
+
 class AgentDefinition(BaseModel):
     """Global agent config loaded from agent.yaml."""
 
@@ -630,6 +646,7 @@ class AgentDefinition(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     media: MediaConfig | None = None
     guardian: GuardianConfig | None = None
+    safety: SafetyConfig = Field(default_factory=lambda: SafetyConfig())
     knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
     monitors: dict[str, MonitorDefinition] = Field(default_factory=dict)
 

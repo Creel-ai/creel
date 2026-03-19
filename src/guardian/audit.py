@@ -449,6 +449,28 @@ class AuditLogger:
             }
         )
 
+    def log_blocklist_match(
+        self,
+        *,
+        tool_name: str,
+        pattern_name: str,
+        outcome: str,
+    ) -> None:
+        """Log a destructive-command blocklist match.
+
+        Records tool name, pattern name, and outcome (approved/denied).
+        Never logs the raw command content for privacy.
+        """
+        self._write(
+            {
+                "event": "blocklist_match",
+                "ts": datetime.now(UTC).isoformat(),
+                "tool_name": tool_name,
+                "pattern_name": pattern_name,
+                "outcome": outcome,
+            }
+        )
+
     def log_network_alert(
         self,
         *,

@@ -340,6 +340,10 @@ class IMessageChannelConfig(BaseModel):
 
     listen_to: str
     poll_interval: int = 3
+    sender_policy: Literal["closed", "allowlist", "open"] = "closed"
+    auto_approve_senders: bool = False
+    notify_owner: bool = True
+    owner: str | None = None  # defaults to listen_to in allowlist mode
 
     @field_validator("listen_to")
     @classmethod
@@ -354,6 +358,10 @@ class BlueBubblesChannelConfig(BaseModel):
     password: str = ""
     listen_to: list[str] = Field(default_factory=list)
     poll_interval: int = 3
+    sender_policy: Literal["closed", "allowlist", "open"] = "closed"
+    auto_approve_senders: bool = False
+    notify_owner: bool = True
+    owner: str | None = None  # defaults to first entry in listen_to
 
     @field_validator("server_url")
     @classmethod
@@ -385,6 +393,10 @@ class WhatsAppChannelConfig(BaseModel):
     bridge_url: str | None = None
     poll_interval: int = 5
     allowed_senders: list[str] = Field(default_factory=list)
+    sender_policy: Literal["closed", "allowlist", "open"] = "closed"
+    auto_approve_senders: bool = False
+    notify_owner: bool = True
+    owner: str | None = None  # defaults to first entry in allowed_senders
 
     @model_validator(mode="after")
     def check_webhook_verify_token(self) -> WhatsAppChannelConfig:
@@ -426,12 +438,19 @@ class TelegramChannelConfig(BaseModel):
     allowed_chats: list[str] = Field(default_factory=list)
     send_typing: bool = True
     api_base_url: str | None = None  # Custom Bot API server (e.g. local test server)
+    sender_policy: Literal["closed", "allowlist", "open"] = "closed"
+    auto_approve_senders: bool = False
+    notify_owner: bool = True
+    owner: str | None = None  # defaults to first entry in allowed_senders
 
     @model_validator(mode="after")
     def check_allowed_senders_required(self) -> TelegramChannelConfig:
-        if not self.allowed_senders:
+        if self.sender_policy == "closed" and not self.allowed_senders:
+            raise ValueError("allowed_senders must not be empty when sender_policy is 'closed'")
+        if self.sender_policy == "allowlist" and not self.allowed_senders:
             raise ValueError(
-                "allowed_senders must not be empty — Telegram channel requires an explicit allow list"
+                "allowed_senders must have at least one entry (the owner) "
+                "when sender_policy is 'allowlist'"
             )
         return self
 

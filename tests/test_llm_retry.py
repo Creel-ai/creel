@@ -17,7 +17,7 @@ from creel.providers import LLMRateLimitError, LLMTransientError
 
 
 def _make_config() -> LLMConfig:
-    return LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100)
+    return LLMConfig(model="claude-sonnet-4-6", max_tokens=100)
 
 
 def _mock_anthropic_message() -> MagicMock:

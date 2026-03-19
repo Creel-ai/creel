@@ -217,6 +217,9 @@ class ChatServer:
                 logger.error("Failed to initialize knowledge base", exc_info=True)
 
         # Per-sender session state (e.g. workspace path for file_ops)
+        # Default workspace to the agent config workspace path so file_ops
+        # tools work without the LLM explicitly calling set_workspace first.
+        self._default_workspace: str | None = str(ws_path.resolve()) if ws_path.is_dir() else None
         self._session_states: dict[str, SessionState] = {}
 
         # Rate limiter for inject_system_event: per-sender list of timestamps.
@@ -401,7 +404,7 @@ class ChatServer:
         # Look up per-sender session state (workspace path, etc.)
         session_state = self._session_states.setdefault(
             sender_id,
-            SessionState(sender_id=sender_id),
+            SessionState(sender_id=sender_id, workspace=self._default_workspace),
         )
 
         # Run the agent loop (containerized or direct)
@@ -647,7 +650,7 @@ class ChatServer:
         # Execute all approved tools and patch their results
         session_state = self._session_states.setdefault(
             sender_id,
-            SessionState(sender_id=sender_id),
+            SessionState(sender_id=sender_id, workspace=self._default_workspace),
         )
         for pa in pending_actions:
             is_error = False

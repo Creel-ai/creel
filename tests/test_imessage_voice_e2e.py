@@ -72,7 +72,7 @@ def _make_agent_def(tmp_path: Path) -> AgentDefinition:
 
     return AgentDefinition(
         system_prompt="You are a test assistant.",
-        llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
+        llm=LLMConfig(model="claude-sonnet-4-6", max_tokens=100),
         agent=AgentConfig(max_turns=3),
         session=SessionConfig(
             sessions_dir=str(sessions_dir),
@@ -723,7 +723,7 @@ class TestE2EIMessageVoice:
 
         agent_def = AgentDefinition(
             system_prompt="You are a test assistant.",
-            llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
+            llm=LLMConfig(model="claude-sonnet-4-6", max_tokens=100),
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),

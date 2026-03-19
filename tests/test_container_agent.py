@@ -23,7 +23,7 @@ from guardian.types import ActionVerdict
 
 
 def _make_llm_config() -> LLMConfig:
-    return LLMConfig(model="claude-sonnet-4-20250514", max_tokens=1024)
+    return LLMConfig(model="claude-sonnet-4-6", max_tokens=1024)
 
 
 def _make_tools() -> dict[str, ToolConfig]:
@@ -98,7 +98,7 @@ class TestProtocolSerialization:
                 }
             ],
             "system": "Be helpful.",
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "max_tokens": 1024,
             "max_turns": 10,
         }

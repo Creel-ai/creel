@@ -99,7 +99,7 @@ class TestCoherenceChecker:
     def test_config_defaults(self) -> None:
         config = CoherenceConfig()
         assert config.enabled is False
-        assert config.model == "claude-haiku-4-5-20251001"
+        assert config.model == "claude-haiku-4-5"
 
 
 class TestGuardianCoherence:

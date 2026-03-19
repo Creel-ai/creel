@@ -49,7 +49,7 @@ class ModelRouter(LLMProvider):
     def __init__(
         self,
         primary_provider: str = "anthropic",
-        primary_model: str = "claude-sonnet-4-20250514",
+        primary_model: str = "claude-sonnet-4-6",
         fallback: list[str] | None = None,
         api_base: str | None = None,
         region: str | None = None,

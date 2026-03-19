@@ -331,13 +331,13 @@ async def test_tui_prefers_backend_stream_events(tmp_path):
 async def test_status_bar_shows_model(tmp_path):
     """StatusBar should display the model name passed to ChatApp."""
     server = _make_mock_server(tmp_path)
-    app = ChatApp(server, model_name="claude-sonnet-4-20250514")
+    app = ChatApp(server, model_name="claude-sonnet-4-6")
 
     async with app.run_test() as pilot:
         await pilot.pause()
 
         bar = app.query_one("#status-bar", StatusBar)
-        assert bar.model_name == "claude-sonnet-4-20250514"
+        assert bar.model_name == "claude-sonnet-4-6"
 
 
 @pytest.mark.asyncio
@@ -460,7 +460,7 @@ async def test_multiline_input(tmp_path):
 async def test_status_command(tmp_path):
     """/status should route to server and display status info."""
     server = _make_mock_server(
-        tmp_path, "Status:\n  Model: claude-sonnet-4-20250514\n  Session ID: abc123"
+        tmp_path, "Status:\n  Model: claude-sonnet-4-6\n  Session ID: abc123"
     )
     app = ChatApp(server)
 
@@ -477,7 +477,7 @@ async def test_status_command(tmp_path):
 @pytest.mark.asyncio
 async def test_model_command(tmp_path):
     """/model should route to server and display model info."""
-    server = _make_mock_server(tmp_path, "Model:\n  Name: claude-sonnet-4-20250514")
+    server = _make_mock_server(tmp_path, "Model:\n  Name: claude-sonnet-4-6")
     app = ChatApp(server)
 
     async with app.run_test() as pilot:

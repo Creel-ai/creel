@@ -50,7 +50,7 @@ class FakeAgentResult:
 class FakeLLMConfig:
     """Minimal stand-in for LLMConfig with model_copy support."""
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", secrets: str | None = None):
+    def __init__(self, model: str = "claude-sonnet-4-6", secrets: str | None = None):
         self.model = model
         self.secrets = secrets
 
@@ -73,7 +73,7 @@ class FakeAgentDef:
 
     def __init__(
         self,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-sonnet-4-6",
         secrets: str | None = None,
     ):
         self.llm = FakeLLMConfig(model=model, secrets=secrets)
@@ -144,41 +144,41 @@ class TestExecuteIsolated:
     def test_isolated_uses_agent_def_config(self, mock_agent_loop):
         """Isolated jobs should use the agent definition's LLM and tool configs."""
         mock_agent_loop.return_value = FakeAgentResult()
-        agent_def = FakeAgentDef(model="claude-sonnet-4-20250514")
+        agent_def = FakeAgentDef(model="claude-sonnet-4-6")
         executor = JobExecutor(agent_def=agent_def)
 
         job = _make_job(target="isolated")
         executor(job)
 
         call_kwargs = mock_agent_loop.call_args[1]
-        assert call_kwargs["llm_config"].model == "claude-sonnet-4-20250514"
+        assert call_kwargs["llm_config"].model == "claude-sonnet-4-6"
         assert call_kwargs["tools_config"] == {}
 
     @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_model_override(self, mock_agent_loop):
         """When payload.model is set, it should override the default model."""
         mock_agent_loop.return_value = FakeAgentResult()
-        agent_def = FakeAgentDef(model="claude-sonnet-4-20250514")
+        agent_def = FakeAgentDef(model="claude-sonnet-4-6")
         executor = JobExecutor(agent_def=agent_def)
 
-        job = _make_job(target="isolated", model="claude-haiku-4-5-20251001")
+        job = _make_job(target="isolated", model="claude-haiku-4-5")
         executor(job)
 
         call_kwargs = mock_agent_loop.call_args[1]
-        assert call_kwargs["llm_config"].model == "claude-haiku-4-5-20251001"
+        assert call_kwargs["llm_config"].model == "claude-haiku-4-5"
 
     @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_no_model_override_uses_default(self, mock_agent_loop):
         """When payload.model is None, the default model should be used."""
         mock_agent_loop.return_value = FakeAgentResult()
-        agent_def = FakeAgentDef(model="claude-sonnet-4-20250514")
+        agent_def = FakeAgentDef(model="claude-sonnet-4-6")
         executor = JobExecutor(agent_def=agent_def)
 
         job = _make_job(target="isolated", model=None)
         executor(job)
 
         call_kwargs = mock_agent_loop.call_args[1]
-        assert call_kwargs["llm_config"].model == "claude-sonnet-4-20250514"
+        assert call_kwargs["llm_config"].model == "claude-sonnet-4-6"
 
     def test_isolated_without_agent_def_raises(self):
         """Isolated execution without agent_def should raise RuntimeError."""
@@ -309,11 +309,11 @@ class TestExecutorWithManager:
     def test_model_copy_does_not_mutate_original(self, mock_agent_loop):
         """Model override should not mutate the original agent_def config."""
         mock_agent_loop.return_value = FakeAgentResult()
-        agent_def = FakeAgentDef(model="claude-sonnet-4-20250514")
+        agent_def = FakeAgentDef(model="claude-sonnet-4-6")
         executor = JobExecutor(agent_def=agent_def)
 
-        job = _make_job(target="isolated", model="claude-haiku-4-5-20251001")
+        job = _make_job(target="isolated", model="claude-haiku-4-5")
         executor(job)
 
         # Original should be unchanged
-        assert agent_def.llm.model == "claude-sonnet-4-20250514"
+        assert agent_def.llm.model == "claude-sonnet-4-6"

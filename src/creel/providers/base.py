@@ -168,10 +168,10 @@ class LLMProvider(ABC):
         fall back to the config's provider field.
 
         Examples:
-            >>> LLMProvider.parse_model_string("anthropic/claude-sonnet-4-20250514")
-            ('anthropic', 'claude-sonnet-4-20250514')
-            >>> LLMProvider.parse_model_string("claude-sonnet-4-20250514")
-            (None, 'claude-sonnet-4-20250514')
+            >>> LLMProvider.parse_model_string("anthropic/claude-sonnet-4-6")
+            ('anthropic', 'claude-sonnet-4-6')
+            >>> LLMProvider.parse_model_string("claude-sonnet-4-6")
+            (None, 'claude-sonnet-4-6')
             >>> LLMProvider.parse_model_string("bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0")
             ('bedrock', 'anthropic.claude-3-5-sonnet-20241022-v2:0')
         """

@@ -163,7 +163,6 @@ class OverrideConfig(BaseModel):
     """Configuration for temporary policy overrides."""
 
     enabled: bool = True
-    max_duration_hours: float = 2.0
     absolute_max_duration_hours: float = 24.0
     excluded_tools: list[str] = Field(default_factory=lambda: ["delete_*"])
     require_confirmation_for_wildcard: bool = True

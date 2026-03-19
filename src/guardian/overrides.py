@@ -110,6 +110,11 @@ class TemporaryOverrideManager:
         self._overrides: dict[str, TemporaryOverride] = {}
         self._lock = threading.Lock()
 
+    @property
+    def requires_wildcard_confirmation(self) -> bool:
+        """Whether bare wildcard patterns require explicit confirmation."""
+        return self._config.require_confirmation_for_wildcard
+
     def create_override(
         self,
         pattern: str,
@@ -128,21 +133,11 @@ class TemporaryOverrideManager:
         if not self._config.enabled:
             raise ValueError("Temporary overrides are disabled")
 
-        # Check excluded tools
+        # Check excluded tools — bidirectional match to prevent bypass via
+        # broad globs (e.g. "del*" bypassing excluded "delete_*").
         for excluded in self._config.excluded_tools:
-            if fnmatch(pattern, excluded) or pattern == excluded:
+            if fnmatch(pattern, excluded) or fnmatch(excluded, pattern):
                 raise ValueError(f"Pattern {pattern!r} matches excluded tool pattern {excluded!r}")
-
-        # Also check if the pattern itself would match any excluded pattern
-        # e.g. pattern="*" would match excluded="delete_*"
-        if pattern == "*":
-            for excluded in self._config.excluded_tools:
-                if excluded:  # non-empty excluded patterns exist
-                    raise ValueError(
-                        f"Wildcard pattern '*' would match excluded tools "
-                        f"({', '.join(self._config.excluded_tools)}). "
-                        f"Use a more specific pattern."
-                    )
 
         # Cap duration
         max_seconds = int(self._config.absolute_max_duration_hours * 3600)
@@ -206,25 +201,30 @@ class TemporaryOverrideManager:
                     return override
         return None
 
+    def _gc_expired(self) -> list[str]:
+        """Remove expired/exhausted overrides and audit-log them.
+
+        Must be called while ``self._lock`` is held. Returns the list of
+        removed override IDs.
+        """
+        expired_ids = [
+            oid for oid, ov in self._overrides.items() if ov.is_expired or ov.is_exhausted
+        ]
+        for oid in expired_ids:
+            ov = self._overrides.pop(oid)
+            if self._audit:
+                self._audit.log_override_expired(
+                    override_id=ov.id,
+                    pattern=ov.pattern,
+                    use_count=ov.use_count,
+                )
+        return expired_ids
+
     def list_active(self) -> list[TemporaryOverride]:
         """Return all active overrides, garbage-collecting expired ones."""
-        active = []
         with self._lock:
-            expired_ids = []
-            for oid, override in self._overrides.items():
-                if override.is_expired or override.is_exhausted:
-                    expired_ids.append(oid)
-                    if self._audit:
-                        self._audit.log_override_expired(
-                            override_id=override.id,
-                            pattern=override.pattern,
-                            use_count=override.use_count,
-                        )
-                else:
-                    active.append(override)
-            for oid in expired_ids:
-                del self._overrides[oid]
-        return active
+            self._gc_expired()
+            return [ov for ov in self._overrides.values() if ov.is_active]
 
     def check(self, tool_name: str, tool_args: dict) -> ActionDecision | None:
         """Check if a tool call matches any active override.
@@ -236,26 +236,16 @@ class TemporaryOverrideManager:
         allow_match: TemporaryOverride | None = None
 
         with self._lock:
-            expired_ids = []
-            for oid, override in self._overrides.items():
-                if override.is_expired or override.is_exhausted:
-                    expired_ids.append(oid)
+            self._gc_expired()
+
+            for override in self._overrides.values():
+                if not override.is_active:
                     continue
                 if fnmatch(tool_name, override.pattern):
                     if override.action == ActionVerdict.DENY:
                         deny_match = override
                     elif override.action == ActionVerdict.ALLOW and deny_match is None:
                         allow_match = override
-
-            for oid in expired_ids:
-                if self._audit:
-                    ov = self._overrides[oid]
-                    self._audit.log_override_expired(
-                        override_id=ov.id,
-                        pattern=ov.pattern,
-                        use_count=ov.use_count,
-                    )
-                del self._overrides[oid]
 
             # Deny wins over allow
             matched = deny_match or allow_match

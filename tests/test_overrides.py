@@ -277,7 +277,7 @@ class TestOverrideManager:
             )
 
     def test_wildcard_rejected_when_excluded_exist(self, manager):
-        with pytest.raises(ValueError, match="Wildcard"):
+        with pytest.raises(ValueError, match="excluded"):
             manager.create_override(
                 pattern="*",
                 action=ActionVerdict.ALLOW,
@@ -375,6 +375,26 @@ class TestOverrideManager:
         assert manager.check("gmail_modify.batch_label", {}) is not None
         assert manager.check("gmail_modify.batch_trash", {}) is not None
         assert manager.check("gmail_modify.single", {}) is None
+
+    def test_broad_glob_blocked_by_exclusion(self, manager):
+        """Broad globs like 'del*' that would match excluded tools are rejected."""
+        with pytest.raises(ValueError, match="excluded"):
+            manager.create_override(
+                pattern="del*",
+                action=ActionVerdict.ALLOW,
+                duration_seconds=1800,
+                created_by="test",
+            )
+
+    def test_superset_glob_blocked_by_exclusion(self, manager):
+        """Glob patterns that are supersets of excluded patterns are rejected."""
+        with pytest.raises(ValueError, match="excluded"):
+            manager.create_override(
+                pattern="d*",
+                action=ActionVerdict.ALLOW,
+                duration_seconds=1800,
+                created_by="test",
+            )
 
     def test_no_excluded_tools_allows_wildcard(self):
         """Wildcard works when excluded_tools is empty."""
@@ -510,3 +530,11 @@ class TestApprovalHint:
 
         hint = _build_approval_hint({}, 3)
         assert hint == ""
+
+    def test_hint_multiple_tools(self):
+        from creel.agent import _build_approval_hint
+
+        counts = {"github.create_issue": 4, "gmail_send": 5}
+        hint = _build_approval_hint(counts, 3)
+        assert "github.create_issue" in hint
+        assert "gmail_send" in hint

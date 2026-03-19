@@ -122,11 +122,14 @@ def _build_approval_hint(approval_counts: dict[str, int], threshold: int) -> str
     hints = [tool for tool, count in approval_counts.items() if count >= threshold]
     if not hints:
         return ""
-    tool = hints[0]
-    return (
-        f"💡 Tip: You approved `{tool}` {approval_counts[tool]} times. "
-        f"Use `/allow {tool} 30m` to auto-approve it temporarily."
-    )
+    if len(hints) == 1:
+        tool = hints[0]
+        return (
+            f"💡 Tip: You approved `{tool}` {approval_counts[tool]} times. "
+            f"Use `/allow {tool} 30m` to auto-approve it temporarily."
+        )
+    parts = ", ".join(f"`{t}` ({approval_counts[t]}x)" for t in hints)
+    return f"💡 Tip: You approved several tools repeatedly: {parts}. Use `/allow <pattern> 30m`."
 
 
 @dataclass

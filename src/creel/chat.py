@@ -835,7 +835,7 @@ class ChatServer:
 
         # Check for bare wildcard without confirmation
         override_mgr = self._guardian.override_manager
-        if pattern == "*" and override_mgr._config.require_confirmation_for_wildcard:
+        if pattern == "*" and override_mgr.requires_wildcard_confirmation:
             if not remaining.endswith("confirm"):
                 return (
                     "Warning: `/allow *` matches ALL tools. "

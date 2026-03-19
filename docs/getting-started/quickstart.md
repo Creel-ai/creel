@@ -59,7 +59,7 @@ source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-## 2. Initialize Creel
+## Initialize Creel
 
 The `creel init` wizard creates your `~/.creel/` directory, validates your API key, encrypts secrets, and generates `agent.yaml`:
 
@@ -94,7 +94,7 @@ Your API key is encrypted with [age](https://github.com/FiloSottile/age) and sto
     creel init --migrate --repo-root /path/to/repo
     ```
 
-## 3. Run your first task
+## Run your first task
 
 ```bash
 # See what tasks are available
@@ -107,7 +107,7 @@ creel run weather_check --dry
 creel run weather_check
 ```
 
-## 4. Start the daemon
+## Start the daemon
 
 The daemon runs the agent loop, scheduler, and channel plugins in the background:
 
@@ -119,7 +119,7 @@ creel daemon start
 creel daemon status
 ```
 
-## 5. Chat with your agent
+## Chat with your agent
 
 Attach a rich terminal UI to the running daemon:
 
@@ -138,7 +138,7 @@ creel send "What's the weather today?"
 creel send "Summarize my calendar" --stream
 ```
 
-## 6. Run on startup (optional)
+## Run on startup (optional)
 
 Install as a macOS launchd service so Creel starts automatically:
 

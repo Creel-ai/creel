@@ -21,4 +21,4 @@ USER creel
 EXPOSE 8080
 
 ENTRYPOINT ["creel"]
-CMD ["daemon", "start", "--foreground"]
+CMD ["daemon", "run"]

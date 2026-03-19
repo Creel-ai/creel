@@ -13,6 +13,7 @@ from typing import Any
 from creel.agent import run_agent_loop
 from creel.approvals import ApprovalQueue
 from creel.channels.message import Attachment
+from creel.commands import ChatContext, SlashCommandRegistry, build_default_registry
 from creel.log import generate_request_id, request_id_var
 from creel.media import MediaProcessor
 from creel.memory import MemoryManager
@@ -25,9 +26,6 @@ from creel.tool_cache import ToolResultCache
 from creel.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
-
-# Special commands handled before the agent loop
-_CLEAR_COMMANDS = {"clear", "reset", "/clear", "/reset"}
 
 # Approval response patterns
 _APPROVE_WORDS = {"y", "yes"}
@@ -275,6 +273,14 @@ class ChatServer:
             result_callback=self._on_subagent_result,
         )
 
+        # Initialize slash command registry
+        self._command_registry = build_default_registry()
+
+    @property
+    def command_registry(self) -> SlashCommandRegistry:
+        """Return the slash command registry (for plugin registration)."""
+        return self._command_registry
+
     def update_agent_def(self, agent_def: AgentDefinition) -> None:
         """Swap the agent definition and update derived references.
 
@@ -308,45 +314,16 @@ class ChatServer:
 
         stripped = text.strip()
 
-        # Handle clear command
-        if stripped.lower() in _CLEAR_COMMANDS:
-            self._session_mgr.clear(sender_id)
-            self._session_states.pop(sender_id, None)
-            return "Session cleared."
+        # Legacy bare-word aliases (backward compat: "clear" and "reset" without /)
+        if stripped.lower() in {"clear", "reset"}:
+            stripped = f"/{stripped}"
 
-        # Handle /new — start a new session
-        if stripped.lower() == "/new":
-            session = self._session_mgr.new_session(sender_id)
-            self._session_states.pop(sender_id, None)
-            return f"Started new session {session.session_id}."
-
-        # Handle /sessions — list all sessions
-        if stripped.lower() == "/sessions":
-            return self._format_sessions_list(sender_id)
-
-        # Handle /status — show server status info
-        if stripped.lower() == "/status":
-            return self._format_status(sender_id)
-
-        # Handle /model — show current model config
-        if stripped.lower() == "/model":
-            return self._format_model()
-
-        # Handle /compact — summarize older context to free up the window
-        if stripped.lower() == "/compact":
-            return self._handle_compact(sender_id)
-
-        # Handle /resume <id> — resume a session
-        if stripped.lower().startswith("/resume"):
-            return self._handle_resume(sender_id, stripped)
-
-        # Handle temporary override commands
-        if stripped.lower().startswith("/allow "):
-            return self._handle_allow(sender_id, stripped)
-        if stripped.lower().startswith("/deny "):
-            return self._handle_deny(sender_id, stripped)
-        if stripped.lower() == "/allows":
-            return self._handle_allows(sender_id)
+        # Dispatch slash commands via registry
+        if stripped.startswith("/"):
+            ctx = ChatContext(sender_id=sender_id, server=self)
+            result = self._command_registry.handle(stripped, ctx)
+            if result is not None:
+                return result
 
         # Check for pending approval response BEFORE normal processing
         if stripped.lower() in _APPROVE_WORDS | _DENY_WORDS:

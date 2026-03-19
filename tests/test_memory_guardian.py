@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from creel.agent import run_agent_loop
 from creel.memory import MemoryManager
 from creel.models import AgentConfig, LLMConfig
+from creel.skills.registry import SkillRegistry
 from guardian.types import ClassifierResult, ScreenResult
 
 # --- Helpers ---
@@ -98,7 +99,8 @@ class TestMemoryWriteScreening:
             run_agent_loop(
                 messages=[{"role": "user", "content": "remember this"}],
                 llm_config=LLMConfig(model="test", max_tokens=100),
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 agent_config=AgentConfig(max_turns=3),
                 guardian=guardian,
                 memory_manager=memory_manager,
@@ -127,7 +129,8 @@ class TestMemoryWriteScreening:
             run_agent_loop(
                 messages=[{"role": "user", "content": "remember this"}],
                 llm_config=LLMConfig(model="test", max_tokens=100),
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 agent_config=AgentConfig(max_turns=3),
                 guardian=guardian,
                 memory_manager=memory_manager,
@@ -156,7 +159,8 @@ class TestMemoryWriteScreening:
             run_agent_loop(
                 messages=[{"role": "user", "content": "edit memory"}],
                 llm_config=LLMConfig(model="test", max_tokens=100),
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 agent_config=AgentConfig(max_turns=3),
                 guardian=guardian,
                 memory_manager=memory_manager,
@@ -185,7 +189,8 @@ class TestMemoryWriteScreening:
             run_agent_loop(
                 messages=[{"role": "user", "content": "update memory"}],
                 llm_config=LLMConfig(model="test", max_tokens=100),
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 agent_config=AgentConfig(max_turns=3),
                 guardian=guardian,
                 memory_manager=memory_manager,
@@ -210,7 +215,8 @@ class TestMemoryWriteScreening:
             run_agent_loop(
                 messages=[{"role": "user", "content": "remember test"}],
                 llm_config=LLMConfig(model="test", max_tokens=100),
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 agent_config=AgentConfig(max_turns=3),
                 guardian=None,
                 memory_manager=memory_manager,
@@ -243,7 +249,8 @@ class TestMemoryReadScreening:
             run_agent_loop(
                 messages=[{"role": "user", "content": "search memories"}],
                 llm_config=LLMConfig(model="test", max_tokens=100),
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 agent_config=AgentConfig(max_turns=3),
                 guardian=guardian,
                 memory_manager=memory_manager,
@@ -271,7 +278,8 @@ class TestMemoryReadScreening:
             result = run_agent_loop(
                 messages=[{"role": "user", "content": "search"}],
                 llm_config=LLMConfig(model="test", max_tokens=100),
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 agent_config=AgentConfig(max_turns=3),
                 guardian=guardian,
                 memory_manager=memory_manager,
@@ -311,7 +319,8 @@ class TestMemoryGuardianSmoke:
                 result = run_agent_loop(
                     messages=[{"role": "user", "content": "remember I prefer dark mode"}],
                     llm_config=LLMConfig(model="test", max_tokens=100),
-                    tools_config={},
+                    registry=SkillRegistry(),
+                    skill_overrides={},
                     agent_config=AgentConfig(max_turns=3),
                     guardian=guardian,
                     memory_manager=mm,
@@ -345,7 +354,8 @@ class TestMemoryGuardianSmoke:
                 result = run_agent_loop(
                     messages=[{"role": "user", "content": "remember this"}],
                     llm_config=LLMConfig(model="test", max_tokens=100),
-                    tools_config={},
+                    registry=SkillRegistry(),
+                    skill_overrides={},
                     agent_config=AgentConfig(max_turns=3),
                     guardian=guardian,
                     memory_manager=mm,
@@ -380,7 +390,8 @@ class TestMemoryGuardianSmoke:
                 result = run_agent_loop(
                     messages=[{"role": "user", "content": "remember this"}],
                     llm_config=LLMConfig(model="test", max_tokens=100),
-                    tools_config={},
+                    registry=SkillRegistry(),
+                    skill_overrides={},
                     agent_config=AgentConfig(max_turns=3),
                     guardian=guardian,
                     memory_manager=mm,
@@ -420,7 +431,8 @@ class TestMemoryGuardianSmoke:
                 result = run_agent_loop(
                     messages=[{"role": "user", "content": "search and remember"}],
                     llm_config=LLMConfig(model="test", max_tokens=100),
-                    tools_config={},
+                    registry=SkillRegistry(),
+                    skill_overrides={},
                     agent_config=AgentConfig(max_turns=5),
                     guardian=guardian,
                     memory_manager=mm,
@@ -455,7 +467,8 @@ class TestMemoryGuardianSmoke:
                 result = run_agent_loop(
                     messages=[{"role": "user", "content": "search memories"}],
                     llm_config=LLMConfig(model="test", max_tokens=100),
-                    tools_config={},
+                    registry=SkillRegistry(),
+                    skill_overrides={},
                     agent_config=AgentConfig(max_turns=3),
                     guardian=guardian,
                     memory_manager=mm,
@@ -491,7 +504,8 @@ class TestMemoryGuardianSmoke:
                 result = run_agent_loop(
                     messages=[{"role": "user", "content": "update long term"}],
                     llm_config=LLMConfig(model="test", max_tokens=100),
-                    tools_config={},
+                    registry=SkillRegistry(),
+                    skill_overrides={},
                     agent_config=AgentConfig(max_turns=3),
                     guardian=guardian,
                     memory_manager=mm,

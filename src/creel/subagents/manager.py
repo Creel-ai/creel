@@ -33,8 +33,8 @@ class SubAgentManager:
         self,
         *,
         llm_config: Any,
-        tools_config: dict[str, Any],
         agent_config: Any,
+        skill_overrides: dict[str, Any] | None = None,
         system_prompt: str | None = None,
         use_containers: bool = False,
         guardian: Any | None = None,
@@ -42,7 +42,7 @@ class SubAgentManager:
         result_callback: Callable[[str, str], None] | None = None,
     ) -> None:
         self._llm_config = llm_config
-        self._tools_config = tools_config
+        self._skill_overrides = skill_overrides or {}
         self._agent_config = agent_config
         self._system_prompt = system_prompt
         self._use_containers = use_containers
@@ -196,11 +196,16 @@ class SubAgentManager:
             if cancel.is_set():
                 return
 
+            from creel.skills.registry import get_shared_registry
+
+            _registry = get_shared_registry()
+
             result = run_agent_loop(
                 messages=messages,
                 llm_config=llm_config,
-                tools_config=self._tools_config,
                 agent_config=agent_cfg,
+                registry=_registry,
+                skill_overrides=self._skill_overrides,
                 system_prompt=self._system_prompt,
                 use_containers=self._use_containers,
                 guardian=self._guardian,
@@ -220,8 +225,9 @@ class SubAgentManager:
                 result = run_agent_loop(
                     messages=messages,
                     llm_config=llm_config,
-                    tools_config=self._tools_config,
                     agent_config=agent_cfg,
+                    registry=_registry,
+                    skill_overrides=self._skill_overrides,
                     system_prompt=self._system_prompt,
                     use_containers=self._use_containers,
                     guardian=self._guardian,

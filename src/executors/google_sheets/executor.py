@@ -19,6 +19,160 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the google_sheets skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="google_sheets",
+        label="Google Sheets",
+        tools=(
+            ToolSpec(
+                name="read_sheet",
+                description="Read cell values from a spreadsheet range",
+                params=(
+                    Param(
+                        name="spreadsheet_id",
+                        type="string",
+                        description="The spreadsheet ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="range",
+                        type="string",
+                        description="A1 notation range (e.g. Sheet1!A1:B2)",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "read"},
+            ),
+            ToolSpec(
+                name="create_sheet",
+                description="Create a new spreadsheet",
+                params=(
+                    Param(
+                        name="title",
+                        type="string",
+                        description="Spreadsheet title",
+                        required=True,
+                    ),
+                    Param(
+                        name="sheet_name",
+                        type="string",
+                        description="Optional name for the first sheet",
+                    ),
+                    Param(
+                        name="data",
+                        type="string",
+                        description="Optional JSON string of 2D array for initial data",
+                    ),
+                ),
+                fixed_args={"action": "create"},
+            ),
+            ToolSpec(
+                name="write_to_sheet",
+                description="Write values to a spreadsheet range",
+                params=(
+                    Param(
+                        name="spreadsheet_id",
+                        type="string",
+                        description="The spreadsheet ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="range",
+                        type="string",
+                        description="A1 notation range (e.g. Sheet1!A1:B2)",
+                        required=True,
+                    ),
+                    Param(
+                        name="data",
+                        type="string",
+                        description="JSON string of 2D array of values",
+                        required=True,
+                    ),
+                    Param(
+                        name="value_input_option",
+                        type="string",
+                        description="How to interpret input (USER_ENTERED or RAW)",
+                    ),
+                ),
+                fixed_args={"action": "write"},
+            ),
+            ToolSpec(
+                name="append_to_sheet",
+                description="Append rows after the last row with data",
+                params=(
+                    Param(
+                        name="spreadsheet_id",
+                        type="string",
+                        description="The spreadsheet ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="range",
+                        type="string",
+                        description="A1 notation range to search for data (e.g. Sheet1!A:B)",
+                        required=True,
+                    ),
+                    Param(
+                        name="data",
+                        type="string",
+                        description="JSON string of 2D array of rows to append",
+                        required=True,
+                    ),
+                    Param(
+                        name="value_input_option",
+                        type="string",
+                        description="How to interpret input (USER_ENTERED or RAW)",
+                    ),
+                ),
+                fixed_args={"action": "append"},
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "")
+
+        if action == "read":
+            spreadsheet_id = config.args.get("spreadsheet_id", "")
+            range_ = config.args.get("range", "")
+            result = read_sheet(spreadsheet_id, range_)
+        elif action == "create":
+            title = config.args.get("title", "")
+            sheet_name = config.args.get("sheet_name", "")
+            data = config.args.get("data", "")
+            result = create_spreadsheet(title, sheet_name, data)
+        elif action == "write":
+            spreadsheet_id = config.args.get("spreadsheet_id", "")
+            range_ = config.args.get("range", "")
+            data = config.args.get("data", "")
+            value_input_option = config.args.get("value_input_option", "USER_ENTERED")
+            result = write_to_sheet(spreadsheet_id, range_, data, value_input_option)
+        elif action == "append":
+            spreadsheet_id = config.args.get("spreadsheet_id", "")
+            range_ = config.args.get("range", "")
+            data = config.args.get("data", "")
+            value_input_option = config.args.get("value_input_option", "USER_ENTERED")
+            result = append_to_sheet(spreadsheet_id, range_, data, value_input_option)
+        else:
+            raise ValueError(
+                f"google_sheets: unknown action '{action}' (use read/create/write/append)"
+            )
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def read_sheet(spreadsheet_id: str, range: str) -> dict:
     """Read cell values from a spreadsheet range.
 

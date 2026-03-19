@@ -698,75 +698,74 @@ class TestForceClose:
         mock_killpg.assert_any_call(42, signal.SIGKILL)
 
 
-class TestOrchestratorDispatch:
-    """Tests for exec_interactive dispatch through the orchestrator."""
+class TestSkillDispatch:
+    """Tests for exec_interactive dispatch through the skill execute function."""
+
+    @pytest.fixture(autouse=True)
+    def _register(self):
+        """Register the exec_interactive skill and expose its execute function."""
+        from executors.exec_interactive.executor import register_skill
+
+        _meta, self._execute = register_skill()
 
     def test_unknown_action_raises(self) -> None:
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         config = ExecutorConfig(name="exec_interactive", args={"action": "invalid"})
         with pytest.raises(ValueError, match="unknown action"):
-            _exec_interactive_inline(config)
+            self._execute(config)
 
     def test_start_requires_command(self) -> None:
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         config = ExecutorConfig(name="exec_interactive", args={"action": "start"})
         with pytest.raises(ValueError, match="requires a 'command'"):
-            _exec_interactive_inline(config)
+            self._execute(config)
 
     def test_send_input_requires_session_id(self) -> None:
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         config = ExecutorConfig(name="exec_interactive", args={"action": "send_input"})
         with pytest.raises(ValueError, match="requires 'session_id'"):
-            _exec_interactive_inline(config)
+            self._execute(config)
 
     def test_read_output_requires_session_id(self) -> None:
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         config = ExecutorConfig(name="exec_interactive", args={"action": "read_output"})
         with pytest.raises(ValueError, match="requires 'session_id'"):
-            _exec_interactive_inline(config)
+            self._execute(config)
 
     def test_resize_requires_session_id(self) -> None:
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         config = ExecutorConfig(name="exec_interactive", args={"action": "resize"})
         with pytest.raises(ValueError, match="requires 'session_id'"):
-            _exec_interactive_inline(config)
+            self._execute(config)
 
     def test_close_requires_session_id(self) -> None:
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         config = ExecutorConfig(name="exec_interactive", args={"action": "close"})
         with pytest.raises(ValueError, match="requires 'session_id'"):
-            _exec_interactive_inline(config)
+            self._execute(config)
 
     def test_info_requires_session_id(self) -> None:
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         config = ExecutorConfig(name="exec_interactive", args={"action": "info"})
         with pytest.raises(ValueError, match="requires 'session_id'"):
-            _exec_interactive_inline(config)
+            self._execute(config)
 
     @patch("executors.exec_interactive.executor.list_sessions")
     def test_list_sessions_dispatches(self, mock_list) -> None:
         import json
 
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         mock_list.return_value = {"success": True, "sessions": []}
         config = ExecutorConfig(name="exec_interactive", args={"action": "list_sessions"})
-        result = json.loads(_exec_interactive_inline(config))
+        result = json.loads(self._execute(config))
         assert result["success"] is True
 
     @patch("executors.exec_interactive.executor.start_session")
@@ -774,7 +773,6 @@ class TestOrchestratorDispatch:
         import json
 
         from creel.models import ExecutorConfig
-        from creel.orchestrator import _exec_interactive_inline
 
         mock_start.return_value = {"success": True, "session_id": "abc123"}
         config = ExecutorConfig(
@@ -787,7 +785,7 @@ class TestOrchestratorDispatch:
                 "rows": "24",
             },
         )
-        result = json.loads(_exec_interactive_inline(config))
+        result = json.loads(self._execute(config))
         assert result["success"] is True
         mock_start.assert_called_once_with("bash", timeout=120, cols=80, rows=24)
 
@@ -921,23 +919,23 @@ class TestContainerDispatch:
     def test_container_mode_routes_to_session_manager(self, mock_run) -> None:
         import json
 
-        from creel.models import ToolConfig
+        from creel.models import SkillOverride
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         mock_run.return_value = json.dumps({"success": True, "session_id": "test123"})
 
-        tool_cfg = ToolConfig(
-            executor="exec_interactive",
-            description="test",
-            parameters={},
-            network=True,
-        )
-        tools_config = {"exec_interactive": tool_cfg}
+        registry = SkillRegistry()
+        registry._discover_builtins()
+        skill_overrides = {
+            "exec_interactive": SkillOverride(enabled=True),
+        }
 
         result = execute_tool_call(
-            "exec_interactive",
-            {"action": "start", "command": "bash"},
-            tools_config,
+            "start_session",
+            {"command": "bash"},
+            registry,
+            skill_overrides,
             use_containers=True,
         )
 

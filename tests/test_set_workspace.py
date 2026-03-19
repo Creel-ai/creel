@@ -7,7 +7,8 @@ import os
 
 import pytest
 
-from creel.models import ToolConfig, ToolParameter
+from creel.models import SkillOverride
+from creel.skills.registry import SkillRegistry
 from creel.tools import (
     _is_blocked_path,
     _validate_workspace_path,
@@ -117,7 +118,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": str(tmp_path)},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=state,
         )
         result = json.loads(result_str)
@@ -129,7 +131,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": "relative/dir"},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=state,
         )
         result = json.loads(result_str)
@@ -141,7 +144,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": "/tmp/does_not_exist_xyz_999"},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=state,
         )
         result = json.loads(result_str)
@@ -155,7 +159,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": str(f)},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=state,
         )
         result = json.loads(result_str)
@@ -166,7 +171,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": "/"},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=state,
         )
         result = json.loads(result_str)
@@ -177,7 +183,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": ""},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=state,
         )
         result = json.loads(result_str)
@@ -188,7 +195,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": str(tmp_path)},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=None,
         )
         result = json.loads(result_str)
@@ -205,7 +213,8 @@ class TestSetWorkspaceHandler:
         result_str = execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": str(link)},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             session_state=state,
         )
         result = json.loads(result_str)
@@ -219,36 +228,27 @@ class TestSetWorkspaceHandler:
 # ---------------------------------------------------------------------------
 
 
-def _make_file_ops_tools() -> dict[str, ToolConfig]:
-    return {
-        "read_file": ToolConfig(
-            executor="file_ops",
-            description="Read a file",
-            parameters={
-                "file_path": ToolParameter(
-                    type="string",
-                    description="Path relative to workspace",
-                    required=True,
-                ),
-            },
-            fixed_args={"action": "read"},
-        ),
-    }
+def _file_ops_registry_and_overrides():
+    """Return a registry with file_ops and appropriate overrides."""
+    registry = SkillRegistry()
+    registry._discover_builtins()
+    overrides = {"file_ops": SkillOverride(enabled=True)}
+    return registry, overrides
 
 
 class TestWorkspaceInjection:
     def test_file_ops_uses_workspace_from_session_state(self, tmp_path):
         """When workspace is set in session_state, file_ops should use it."""
-        # Create a file in the workspace
         (tmp_path / "hello.txt").write_text("hello world")
 
         state = {"workspace": str(tmp_path)}
-        tools = _make_file_ops_tools()
+        registry, overrides = _file_ops_registry_and_overrides()
 
         result_str = execute_tool_call(
             tool_name="read_file",
             tool_input={"file_path": "hello.txt"},
-            tools_config=tools,
+            registry=registry,
+            skill_overrides=overrides,
             session_state=state,
         )
         result = json.loads(result_str)
@@ -261,11 +261,12 @@ class TestWorkspaceInjection:
         old = os.environ.get("WORKSPACE")
         os.environ["WORKSPACE"] = str(tmp_path)
         try:
-            tools = _make_file_ops_tools()
+            registry, overrides = _file_ops_registry_and_overrides()
             result_str = execute_tool_call(
                 tool_name="read_file",
                 tool_input={"file_path": "default.txt"},
-                tools_config=tools,
+                registry=registry,
+                skill_overrides=overrides,
                 session_state={},
             )
             result = json.loads(result_str)
@@ -282,13 +283,14 @@ class TestWorkspaceInjection:
         (tmp_path / "b.txt").write_text("bbb")
 
         state: dict = {}
-        tools = _make_file_ops_tools()
+        registry, overrides = _file_ops_registry_and_overrides()
 
         # First: set workspace
         execute_tool_call(
             tool_name="set_workspace",
             tool_input={"path": str(tmp_path)},
-            tools_config=tools,
+            registry=registry,
+            skill_overrides=overrides,
             session_state=state,
         )
 
@@ -296,7 +298,8 @@ class TestWorkspaceInjection:
         result_str = execute_tool_call(
             tool_name="read_file",
             tool_input={"file_path": "a.txt"},
-            tools_config=tools,
+            registry=registry,
+            skill_overrides=overrides,
             session_state=state,
         )
         result = json.loads(result_str)
@@ -306,7 +309,8 @@ class TestWorkspaceInjection:
         result_str = execute_tool_call(
             tool_name="read_file",
             tool_input={"file_path": "b.txt"},
-            tools_config=tools,
+            registry=registry,
+            skill_overrides=overrides,
             session_state=state,
         )
         result = json.loads(result_str)
@@ -322,19 +326,27 @@ class TestWorkspaceInjection:
         (dir2 / "f.txt").write_text("from dir2")
 
         state: dict = {}
-        tools = _make_file_ops_tools()
+        registry, overrides = _file_ops_registry_and_overrides()
 
         # Set to dir1
-        execute_tool_call("set_workspace", {"path": str(dir1)}, tools, session_state=state)
+        execute_tool_call(
+            "set_workspace", {"path": str(dir1)}, registry, overrides, session_state=state
+        )
         r1 = json.loads(
-            execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state)
+            execute_tool_call(
+                "read_file", {"file_path": "f.txt"}, registry, overrides, session_state=state
+            )
         )
         assert r1["content"] == "from dir1"
 
         # Switch to dir2
-        execute_tool_call("set_workspace", {"path": str(dir2)}, tools, session_state=state)
+        execute_tool_call(
+            "set_workspace", {"path": str(dir2)}, registry, overrides, session_state=state
+        )
         r2 = json.loads(
-            execute_tool_call("read_file", {"file_path": "f.txt"}, tools, session_state=state)
+            execute_tool_call(
+                "read_file", {"file_path": "f.txt"}, registry, overrides, session_state=state
+            )
         )
         assert r2["content"] == "from dir2"
 
@@ -355,13 +367,14 @@ class TestWorkspaceSecurity:
         (evil_ws / "f.txt").write_text("evil content")
 
         state = {"workspace": str(legit_ws)}
-        tools = _make_file_ops_tools()
+        registry, overrides = _file_ops_registry_and_overrides()
 
         # LLM tries to override workspace via tool_input
         result_str = execute_tool_call(
             tool_name="read_file",
             tool_input={"file_path": "f.txt", "workspace": str(evil_ws)},
-            tools_config=tools,
+            registry=registry,
+            skill_overrides=overrides,
             session_state=state,
         )
         result = json.loads(result_str)
@@ -374,7 +387,7 @@ class TestWorkspaceSecurity:
         ws.mkdir()
 
         state = {"workspace": str(ws)}
-        tools = _make_file_ops_tools()
+        registry, overrides = _file_ops_registry_and_overrides()
 
         # Delete the workspace directory
         ws.rmdir()
@@ -382,7 +395,8 @@ class TestWorkspaceSecurity:
         result_str = execute_tool_call(
             tool_name="read_file",
             tool_input={"file_path": "f.txt"},
-            tools_config=tools,
+            registry=registry,
+            skill_overrides=overrides,
             session_state=state,
         )
         result = json.loads(result_str)
@@ -397,17 +411,21 @@ class TestWorkspaceSecurity:
 
 class TestBuildToolDefinitions:
     def test_workspace_tools_included(self):
-        defs = build_tool_definitions({}, include_workspace_tools=True)
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {}, include_workspace_tools=True)
         names = [d["name"] for d in defs]
         assert "set_workspace" in names
 
     def test_workspace_tools_excluded_by_default(self):
-        defs = build_tool_definitions({})
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {})
         names = [d["name"] for d in defs]
         assert "set_workspace" not in names
 
     def test_workspace_and_memory_tools(self):
+        registry = SkillRegistry()
         defs = build_tool_definitions(
+            registry,
             {},
             include_memory_tools=True,
             include_workspace_tools=True,

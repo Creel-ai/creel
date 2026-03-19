@@ -21,6 +21,7 @@ from creel.models import AgentDefinition, LLMConfig, SessionState
 from creel.prompt_builder import build_system_prompt
 from creel.quiet_hours import should_suppress
 from creel.session import SessionManager
+from creel.skills.registry import SkillRegistry
 from creel.subagents import SubAgentManager
 from creel.tool_cache import ToolResultCache
 from creel.tools import execute_tool_call
@@ -46,10 +47,17 @@ class ChatServer:
         # Backward compat alias
         imessage_channel: Any | None = None,
         cron_manager: object | None = None,
+        registry: SkillRegistry | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._cron_manager = cron_manager
+        if registry is not None:
+            self._registry: SkillRegistry = registry
+        else:
+            from creel.skills.registry import get_shared_registry
+
+            self._registry = get_shared_registry()
         self._start_time = datetime.now(UTC)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
@@ -117,13 +125,8 @@ class ChatServer:
 
         # Initialize tool result cache from config.
         cache_cfg = agent_def.session.tool_cache
-        # Build per-tool TTL overrides from both config sources:
-        # 1. session.tool_cache.tool_ttls (explicit mapping)
-        # 2. Individual tool cache_ttl fields
+        # Per-tool TTL overrides from session.tool_cache.tool_ttls
         merged_ttls = dict(cache_cfg.tool_ttls)
-        for tool_name, tool_cfg in agent_def.tools.items():
-            if tool_cfg.cache_ttl > 0 and tool_name not in merged_ttls:
-                merged_ttls[tool_name] = tool_cfg.cache_ttl
         self._tool_cache: ToolResultCache | None = None
         if cache_cfg.enabled:
             self._tool_cache = ToolResultCache(
@@ -264,8 +267,8 @@ class ChatServer:
         # Initialize sub-agent manager
         self._subagent_manager = SubAgentManager(
             llm_config=agent_def.llm,
-            tools_config=agent_def.tools,
             agent_config=agent_def.agent,
+            skill_overrides=agent_def.skills,
             system_prompt=None,  # built lazily per request
             use_containers=use_containers,
             guardian=self._guardian,
@@ -292,7 +295,7 @@ class ChatServer:
         self._agent_def = agent_def
         # SubAgentManager holds config refs used when spawning new agents.
         self._subagent_manager._llm_config = agent_def.llm
-        self._subagent_manager._tools_config = agent_def.tools
+        self._subagent_manager._skill_overrides = agent_def.skills
         self._subagent_manager._agent_config = agent_def.agent
         self._subagent_manager._bridge_config = agent_def.bridge
 
@@ -576,7 +579,6 @@ class ChatServer:
             return run_agent_loop_container(
                 messages=messages,
                 llm_config=self._agent_def.llm,
-                tools_config=self._agent_def.tools,
                 agent_config=self._agent_def.agent,
                 system_prompt=system_prompt,
                 use_containers=self._use_containers,
@@ -586,13 +588,16 @@ class ChatServer:
                 bridge_config=self._agent_def.bridge,
                 session_state=session_state,
                 container_pool=self._container_pool,
+                registry=self._registry,
+                skill_overrides=self._agent_def.skills,
             )
 
         return run_agent_loop(
             messages=messages,
             llm_config=self._agent_def.llm,
-            tools_config=self._agent_def.tools,
             agent_config=self._agent_def.agent,
+            registry=self._registry,
+            skill_overrides=self._agent_def.skills,
             system_prompt=system_prompt,
             use_containers=self._use_containers,
             guardian=self._guardian,
@@ -652,7 +657,8 @@ class ChatServer:
                 tool_result = execute_tool_call(
                     tool_name=pa.tool_name,
                     tool_input=pa.tool_input,
-                    tools_config=self._agent_def.tools,
+                    registry=self._registry,
+                    skill_overrides=self._agent_def.skills,
                     use_containers=self._use_containers,
                     memory_manager=self._memory,
                     bridge_config=self._agent_def.bridge,
@@ -1018,7 +1024,7 @@ class ChatServer:
             base_prompt=base_prompt,
             workspace_dir=ws_cfg.path,
             timezone_name=ws_cfg.timezone,
-            tools_config=self._agent_def.tools,
+            registry=self._registry,
             memory_context=memory_context,
             max_chars_per_file=ws_cfg.max_chars_per_file,
         )

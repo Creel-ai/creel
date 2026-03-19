@@ -100,12 +100,12 @@ class TestCollectRequiredImages:
 
     def test_includes_base_image_when_executors_present(self) -> None:
         """Should include the base image when executor images are needed."""
-        from creel.models import AgentDefinition, ToolConfig
+        from creel.models import AgentDefinition, SkillOverride
 
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "weather": ToolConfig(executor="weather", description="Weather"),
+            skills={
+                "weather": SkillOverride(enabled=True),
             },
         )
         with patch("creel.containers._BASE_DOCKERFILE", _BASE_DOCKERFILE):
@@ -114,14 +114,12 @@ class TestCollectRequiredImages:
 
     def test_excludes_base_when_only_custom_images(self) -> None:
         """Should not include base image when all tools use custom images."""
-        from creel.models import AgentDefinition, ToolConfig
+        from creel.models import AgentDefinition, SkillOverride
 
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "custom": ToolConfig(
-                    executor="custom", description="Custom", image="my-image:latest"
-                ),
+            skills={
+                "custom": SkillOverride(enabled=True, image="my-image:latest"),
             },
         )
         images = collect_required_images(agent_def)
@@ -137,12 +135,12 @@ class TestPrebuildOrder:
         self, mock_ensure_base: MagicMock, mock_cache: MagicMock
     ) -> None:
         """Base image should be built synchronously before parallel executor builds."""
-        from creel.models import AgentDefinition, ToolConfig
+        from creel.models import AgentDefinition, SkillOverride
 
         agent_def = AgentDefinition(
             system_prompt="test",
-            tools={
-                "weather": ToolConfig(executor="weather", description="Weather"),
+            skills={
+                "weather": SkillOverride(enabled=True),
             },
         )
 

@@ -20,6 +20,63 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the drive_write skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="drive_write",
+        label="Google Drive Write",
+        tools=(
+            ToolSpec(
+                name="upload_file",
+                description="Upload a file to Google Drive",
+                params=(
+                    Param(
+                        name="name",
+                        type="string",
+                        description="File name",
+                        required=True,
+                    ),
+                    Param(
+                        name="content",
+                        type="string",
+                        description="File content",
+                        required=True,
+                    ),
+                    Param(
+                        name="mime_type",
+                        type="string",
+                        description="MIME type (default: text/plain)",
+                    ),
+                    Param(
+                        name="folder_id",
+                        type="string",
+                        description="Optional Drive folder ID to upload into",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        name = config.args.get("name", "")
+        content = config.args.get("content", "")
+        mime_type = config.args.get("mime_type", "text/plain")
+        folder_id = config.args.get("folder_id", "")
+        result = upload_file(name, content, mime_type, folder_id)
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def upload_file(
     name: str,
     content: str,

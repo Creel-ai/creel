@@ -15,6 +15,135 @@ from typing import Any
 import requests
 
 
+def register_skill():
+    """Register the things skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="things",
+        label="Things 3",
+        tools=(
+            ToolSpec(
+                name="list_things",
+                description="List tasks from Things 3 (inbox, today, upcoming, projects, or search)",
+                params=(
+                    Param(
+                        name="action",
+                        type="string",
+                        description="Action: inbox, today, upcoming, projects, or search",
+                    ),
+                    Param(
+                        name="query",
+                        type="string",
+                        description="Search query (required when action is search)",
+                    ),
+                ),
+            ),
+            ToolSpec(
+                name="create_things_task",
+                description="Create a new task in Things 3",
+                params=(
+                    Param(
+                        name="title",
+                        type="string",
+                        description="Title of the task",
+                        required=True,
+                    ),
+                    Param(
+                        name="notes",
+                        type="string",
+                        description="Notes for the task",
+                    ),
+                    Param(
+                        name="when",
+                        type="string",
+                        description="When to schedule the task",
+                    ),
+                    Param(
+                        name="deadline",
+                        type="string",
+                        description="Deadline for the task",
+                    ),
+                    Param(
+                        name="tags",
+                        type="string",
+                        description="Tags for the task",
+                    ),
+                    Param(
+                        name="list",
+                        type="string",
+                        description="Project or area to add the task to",
+                    ),
+                ),
+                fixed_args={"action": "add"},
+            ),
+            ToolSpec(
+                name="complete_things_task",
+                description="Mark a Things 3 task as complete",
+                params=(
+                    Param(
+                        name="id",
+                        type="string",
+                        description="ID of the task to complete",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "update", "completed": "true"},
+            ),
+        ),
+        needs_bridge=True,
+        bridge_scope="THINGS",
+        platform="darwin",
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "inbox")
+
+        if action == "inbox":
+            result = inbox()
+        elif action == "today":
+            result = today()
+        elif action == "upcoming":
+            result = upcoming()
+        elif action == "search":
+            query = config.args.get("query", "")
+            result = search(query)
+        elif action == "projects":
+            result = projects()
+        elif action == "add":
+            result = add_item(
+                title=config.args.get("title", ""),
+                notes=config.args.get("notes") or None,
+                tags=config.args.get("tags") or None,
+                when=config.args.get("when") or None,
+                list_name=config.args.get("list") or None,
+            )
+        elif action == "update":
+            completed_raw = config.args.get("completed")
+            completed_bool = None
+            if completed_raw is not None:
+                completed_bool = str(completed_raw).lower() in ("true", "1", "yes")
+            result = update_item(
+                item_id=config.args.get("id", ""),
+                completed=completed_bool,
+                title=config.args.get("title") or None,
+                notes=config.args.get("notes") or None,
+                tags=config.args.get("tags") or None,
+            )
+        else:
+            raise ValueError(f"Unknown things action: {action}")
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
     """Make an HTTP call to the bridge server.
 

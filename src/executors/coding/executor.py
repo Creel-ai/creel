@@ -20,6 +20,68 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+def register_skill():
+    """Register the coding skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="coding",
+        label="Coding",
+        tools=(
+            ToolSpec(
+                name="coding",
+                description="Run a shell command in a development environment",
+                params=(
+                    Param(
+                        name="command",
+                        type="string",
+                        description="Shell command to execute",
+                        required=True,
+                    ),
+                    Param(
+                        name="workdir",
+                        type="string",
+                        description="Working directory for command execution",
+                    ),
+                    Param(
+                        name="mount",
+                        type="string",
+                        description="Host path to mount into the container at /workspace",
+                    ),
+                    Param(
+                        name="timeout",
+                        type="string",
+                        description="Command timeout in seconds (default: 300, max: 1800)",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        command = config.args.get("command", "")
+        if not command:
+            raise ValueError("coding requires a 'command' argument")
+        workdir = config.args.get("workdir") or None
+        mount = config.args.get("mount") or None
+        timeout = None
+        timeout_str = config.args.get("timeout")
+        if timeout_str:
+            timeout = int(timeout_str)
+        result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 # Default timeout: 5 minutes
 DEFAULT_TIMEOUT = 300
 

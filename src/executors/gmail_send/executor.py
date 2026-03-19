@@ -21,6 +21,58 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the gmail_send skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="gmail_send",
+        label="Gmail (send)",
+        tools=(
+            ToolSpec(
+                name="send_email",
+                description="Send an email via Gmail",
+                params=(
+                    Param(
+                        name="to",
+                        type="string",
+                        description="Recipient email address",
+                        required=True,
+                    ),
+                    Param(
+                        name="subject",
+                        type="string",
+                        description="Email subject line",
+                        required=True,
+                    ),
+                    Param(
+                        name="body",
+                        type="string",
+                        description="Plain-text email body",
+                        required=True,
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        to = config.args.get("to", "")
+        subject = config.args.get("subject", "")
+        body = config.args.get("body", "")
+        result = send_email(to, subject, body)
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def send_email(to: str, subject: str, body: str) -> dict:
     """Send an email via the Gmail API.
 

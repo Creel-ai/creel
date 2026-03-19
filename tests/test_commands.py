@@ -278,10 +278,13 @@ class TestBuiltinHandlers:
     @pytest.fixture
     def server(self):
         """Minimal mock ChatServer for command handlers."""
+        from creel.skills.registry import SkillRegistry
+
         srv = MagicMock()
         srv._command_registry = build_default_registry()
         srv._agent_def = MagicMock()
         srv._agent_def.tools = {}
+        srv._registry = SkillRegistry()  # empty registry
         srv._agent_def.workspace.path = "/tmp/test"
         srv._agent_def.workspace.memory_context_mode = "recent"
         srv._agent_def.workspace.memory_days = 3
@@ -329,10 +332,18 @@ class TestBuiltinHandlers:
         assert "No tools" in result
 
     def test_cmd_tools_with_tools(self, server):
-        tool_cfg = MagicMock()
-        tool_cfg.executor = "weather"
-        tool_cfg.network = True
-        server._agent_def.tools = {"check_weather": tool_cfg}
+        from creel.skills.models import SkillMeta, ToolSpec
+        from creel.skills.registry import SkillRegistry
+
+        registry = SkillRegistry()
+        meta = SkillMeta(
+            id="weather",
+            label="Weather",
+            tools=(ToolSpec(name="check_weather", description="Get weather"),),
+            needs_network=True,
+        )
+        registry.register(meta, lambda c: "{}")
+        server._registry = registry
         ctx = ChatContext(sender_id="test", server=server)
         result = server._command_registry.handle("/tools", ctx)
         assert "check_weather" in result

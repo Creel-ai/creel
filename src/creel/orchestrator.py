@@ -6,15 +6,12 @@ Reads task definitions, runs executors, calls LLM, routes output.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import os
-import sys
 import threading
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from datetime import UTC, datetime
 from hashlib import sha256
-from io import StringIO
 from pathlib import Path
 
 from creel.containers import (
@@ -48,19 +45,6 @@ __all__ = [
     "collect_required_images",
     "prebuild_images",
 ]
-
-
-_EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
-    "apple_notes": "NOTES",
-    "apple_reminders": "REMINDERS",
-    "things": "THINGS",
-    "imessage_bridge": "IMESSAGE",
-    "browser": "BROWSER",
-    "git_ops": "GIT",
-    "host_exec": "EXEC",
-    "host_process": "EXEC",
-    "host_sessions": "EXEC",
-}
 
 
 def _replace_google_credentials_with_access_token(env_vars: dict[str, str]) -> None:
@@ -163,14 +147,19 @@ def _run_agent_mode(
     """Run a task in agent mode using the agent loop."""
     messages = [{"role": "user", "content": prompt}]
 
+    from creel.skills.registry import get_shared_registry
+
+    _registry = get_shared_registry()
+
     if use_containers:
         from creel.container_agent import run_agent_loop_container
 
         agent_result = run_agent_loop_container(
             messages=messages,
             llm_config=task.llm,
-            tools_config=task.tools,
             agent_config=task.agent,
+            registry=_registry,
+            skill_overrides=task.skills,
             use_containers=use_containers,
         )
     else:
@@ -179,8 +168,9 @@ def _run_agent_mode(
         agent_result = run_agent_loop(
             messages=messages,
             llm_config=task.llm,
-            tools_config=task.tools,
             agent_config=task.agent,
+            registry=_registry,
+            skill_overrides=task.skills,
             use_containers=use_containers,
             allowed_tools=task.allowed_tools or None,
         )
@@ -218,795 +208,39 @@ def _env_override(overrides: dict[str, str]) -> Generator[None, None, None]:
 
 
 def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
-    """Run an executor by importing and calling it directly (no container).
+    """Run an executor by looking up its skill registration (no container).
 
-    Uses _env_override to temporarily set secrets and bridge env vars,
-    restoring the original values when done.
+    Uses _env_override to temporarily set secrets and bridge env vars.
     """
+    from creel.skills.registry import get_shared_registry
+
     # Load secrets if configured
     env_overrides: dict[str, str] = {}
     if config.secrets:
         env_overrides = decrypt_env_file(config.secrets)
         _replace_google_credentials_with_access_token(env_overrides)
 
+    registry = get_shared_registry()
+
+    entry = registry.get_skill(name)
+    if entry is None:
+        raise ValueError(f"Unknown inline executor: {name}")
+
+    meta = entry.meta
     # Inject BRIDGE_URL and scoped BRIDGE_TOKEN for bridge-calling executors
-    if "BRIDGE_URL" not in env_overrides and not os.environ.get("BRIDGE_URL"):
-        env_overrides["BRIDGE_URL"] = os.environ.get("CREEL_BRIDGE_URL", "http://localhost:8099")
-    if "BRIDGE_TOKEN" not in env_overrides and not os.environ.get("BRIDGE_TOKEN"):
-        scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(name, name.upper())
-        scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
-        if scoped_token:
-            env_overrides["BRIDGE_TOKEN"] = scoped_token
+    if meta.needs_bridge or meta.bridge_scope:
+        if "BRIDGE_URL" not in env_overrides and not os.environ.get("BRIDGE_URL"):
+            env_overrides["BRIDGE_URL"] = os.environ.get(
+                "CREEL_BRIDGE_URL", "http://localhost:8099"
+            )
+        scope = meta.bridge_scope or meta.id.upper()
+        if "BRIDGE_TOKEN" not in env_overrides and not os.environ.get("BRIDGE_TOKEN"):
+            scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope}", "")
+            if scoped_token:
+                env_overrides["BRIDGE_TOKEN"] = scoped_token
 
     with _env_override(env_overrides):
-        return _dispatch_executor(name, config)
-
-
-def _dispatch_executor(name: str, config: ExecutorConfig) -> str:
-    """Dispatch to the correct inline executor handler."""
-    # Dict built at call time so unittest.mock patches are picked up.
-    dispatch: dict[str, Callable[[ExecutorConfig], str]] = {
-        "weather": _exec_weather_inline,
-        "calendar": _exec_gcal_inline,
-        "gcal_write": _exec_gcal_write_inline,
-        "gmail_readonly": _exec_gmail_readonly_inline,
-        "gmail_send": _exec_gmail_send_inline,
-        "gmail_modify": _exec_gmail_modify_inline,
-        "drive": _exec_drive_inline,
-        "drive_write": _exec_drive_write_inline,
-        "google_docs": _exec_google_docs_inline,
-        "google_sheets": _exec_google_sheets_inline,
-        "google_slides": _exec_google_slides_inline,
-        "apple_notes": _exec_apple_notes_inline,
-        "apple_reminders": _exec_apple_reminders_inline,
-        "brave_search": _exec_brave_search_inline,
-        "notion": _exec_notion_inline,
-        "notion_write": _exec_notion_write_inline,
-        "fetch_url": _exec_fetch_url_inline,
-        "browser": _exec_browser_inline,
-        "exec": _exec_exec_inline,
-        "exec_interactive": _exec_interactive_inline,
-        "file_ops": _exec_file_ops_inline,
-        "github": _exec_github_inline,
-        "coding": _exec_coding_inline,
-        "tts": _exec_tts_inline,
-        "host_exec": _exec_host_exec_inline,
-        "host_process": _exec_host_process_inline,
-        "host_sessions": _exec_host_sessions_inline,
-    }
-
-    # BlueBubbles variants share one handler with different actions.
-    bluebubbles_dispatch: dict[str, str] = {
-        "bluebubbles": "get_recent_messages",
-        "bluebubbles_send": "send_message",
-        "bluebubbles_react": "send_reaction",
-        "bluebubbles_chats": "get_chats",
-    }
-
-    if name in bluebubbles_dispatch:
-        return _exec_bluebubbles_inline(config, bluebubbles_dispatch[name])
-
-    handler = dispatch.get(name)
-    if handler is None:
-        raise ValueError(f"Unknown inline executor: {name}")
-    return handler(config)
-
-
-def _exec_weather_inline(config: ExecutorConfig) -> str:
-    """Run weather executor inline."""
-    from executors.weather.executor import fetch_weather
-
-    location = config.args.get("location", "Denver")
-    result = fetch_weather(location)
-    return json.dumps(result, indent=2)
-
-
-def _exec_gcal_inline(config: ExecutorConfig) -> str:
-    """Run Google Calendar executor inline."""
-    from executors.gcal.executor import fetch_events
-
-    range_arg = config.args.get("range", "today")
-    events = fetch_events(range_arg)
-    return json.dumps(events, indent=2)
-
-
-def _exec_gcal_write_inline(config: ExecutorConfig) -> str:
-    """Run Google Calendar write executor inline."""
-    from executors.gcal_write.executor import create_event
-
-    summary = config.args.get("summary", "")
-    start = config.args.get("start", "")
-    end = config.args.get("end", "")
-    description = config.args.get("description", "")
-    location = config.args.get("location", "")
-    event = create_event(summary, start, end, description, location)
-    return json.dumps(event, indent=2)
-
-
-def _exec_gmail_readonly_inline(config: ExecutorConfig) -> str:
-    """Run Gmail readonly executor inline (check_email or read_email)."""
-    message_id = config.args.get("message_id", "")
-    if message_id:
-        from executors.gmail_readonly.executor import read_email
-
-        result = read_email(message_id)
-        return json.dumps(result, indent=2)
-
-    from executors.gmail_readonly.executor import fetch_emails
-
-    query = config.args.get("query", "is:unread newer_than:1d")
-    max_results = int(config.args.get("max_results", 20))
-    full_body = str(config.args.get("full_body", "false")).lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    emails = fetch_emails(query, max_results, full_body)
-    return json.dumps(emails, indent=2)
-
-
-def _exec_gmail_send_inline(config: ExecutorConfig) -> str:
-    """Run Gmail send executor inline."""
-    from executors.gmail_send.executor import send_email
-
-    to = config.args.get("to", "")
-    subject = config.args.get("subject", "")
-    body = config.args.get("body", "")
-    result = send_email(to, subject, body)
-    return json.dumps(result, indent=2)
-
-
-def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
-    """Run Gmail modify executor inline."""
-    action = config.args.get("action", "")
-    message_id = config.args.get("message_id", "")
-
-    if action == "modify":
-        from executors.gmail_modify.executor import modify_message
-
-        add_raw = config.args.get("add_labels", "")
-        remove_raw = config.args.get("remove_labels", "")
-        add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
-        remove_labels = [label.strip() for label in remove_raw.split(",") if label.strip()] or None
-        result = modify_message(message_id, add_labels, remove_labels)
-    elif action == "trash":
-        from executors.gmail_modify.executor import trash_message
-
-        result = trash_message(message_id)
-    elif action == "delete":
-        from executors.gmail_modify.executor import delete_message
-
-        result = delete_message(message_id)
-    elif action in ("batch_modify", "batch_trash", "batch_delete"):
-        from executors.gmail_modify.executor import (
-            _parse_ids,
-            batch_delete,
-            batch_modify,
-            batch_trash,
-        )
-
-        ids = _parse_ids(config.args.get("message_ids", ""))
-        if not ids:
-            raise ValueError("gmail_modify: batch actions require non-empty message_ids")
-
-        if action == "batch_modify":
-            add_raw = config.args.get("add_labels", "")
-            remove_raw = config.args.get("remove_labels", "")
-            add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
-            remove_labels = [
-                label.strip() for label in remove_raw.split(",") if label.strip()
-            ] or None
-            result = batch_modify(ids, add_labels, remove_labels)
-        elif action == "batch_trash":
-            result = batch_trash(ids)
-        else:
-            result = batch_delete(ids)
-    else:
-        raise ValueError(
-            f"gmail_modify: unknown action '{action}' (use modify/trash/delete/batch_modify/batch_trash/batch_delete)"
-        )
-
-    return json.dumps(result, indent=2)
-
-
-def _exec_drive_inline(config: ExecutorConfig) -> str:
-    """Run Google Drive executor inline."""
-    from executors.drive.executor import list_files
-
-    query = config.args.get("query", "")
-    max_results = int(config.args.get("max_results", 20))
-    files = list_files(query, max_results)
-    return json.dumps(files, indent=2)
-
-
-def _exec_drive_write_inline(config: ExecutorConfig) -> str:
-    """Run Google Drive write executor inline."""
-    from executors.drive_write.executor import upload_file
-
-    name = config.args.get("name", "")
-    content = config.args.get("content", "")
-    mime_type = config.args.get("mime_type", "text/plain")
-    folder_id = config.args.get("folder_id", "")
-    result = upload_file(name, content, mime_type, folder_id)
-    return json.dumps(result, indent=2)
-
-
-def _exec_google_docs_inline(config: ExecutorConfig) -> str:
-    """Run Google Docs executor inline."""
-    action = config.args.get("action", "")
-
-    if action == "read":
-        from executors.google_docs.executor import read_document
-
-        document_id = config.args.get("document_id", "")
-        result = read_document(document_id)
-    elif action == "create":
-        from executors.google_docs.executor import create_document
-
-        title = config.args.get("title", "")
-        body = config.args.get("body", "")
-        result = create_document(title, body)
-    elif action == "append":
-        from executors.google_docs.executor import append_text
-
-        document_id = config.args.get("document_id", "")
-        text = config.args.get("text", "")
-        result = append_text(document_id, text)
-    elif action == "replace":
-        from executors.google_docs.executor import replace_text
-
-        document_id = config.args.get("document_id", "")
-        find = config.args.get("find", "")
-        replace_with = config.args.get("replace_with", "")
-        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
-        result = replace_text(document_id, find, replace_with, match_case)
-    elif action == "insert":
-        from executors.google_docs.executor import insert_text
-
-        document_id = config.args.get("document_id", "")
-        text = config.args.get("text", "")
-        index = int(config.args.get("index", "1"))
-        result = insert_text(document_id, text, index)
-    else:
-        raise ValueError(
-            f"google_docs: unknown action '{action}' (use read/create/append/replace/insert)"
-        )
-
-    return json.dumps(result, indent=2)
-
-
-def _exec_google_sheets_inline(config: ExecutorConfig) -> str:
-    """Run Google Sheets executor inline."""
-    action = config.args.get("action", "")
-
-    if action == "read":
-        from executors.google_sheets.executor import read_sheet
-
-        spreadsheet_id = config.args.get("spreadsheet_id", "")
-        range_ = config.args.get("range", "")
-        result = read_sheet(spreadsheet_id, range_)
-    elif action == "create":
-        from executors.google_sheets.executor import create_spreadsheet
-
-        title = config.args.get("title", "")
-        sheet_name = config.args.get("sheet_name", "")
-        data = config.args.get("data", "")
-        result = create_spreadsheet(title, sheet_name, data)
-    elif action == "write":
-        from executors.google_sheets.executor import write_to_sheet
-
-        spreadsheet_id = config.args.get("spreadsheet_id", "")
-        range_ = config.args.get("range", "")
-        data = config.args.get("data", "")
-        value_input_option = config.args.get("value_input_option", "USER_ENTERED")
-        result = write_to_sheet(spreadsheet_id, range_, data, value_input_option)
-    elif action == "append":
-        from executors.google_sheets.executor import append_to_sheet
-
-        spreadsheet_id = config.args.get("spreadsheet_id", "")
-        range_ = config.args.get("range", "")
-        data = config.args.get("data", "")
-        value_input_option = config.args.get("value_input_option", "USER_ENTERED")
-        result = append_to_sheet(spreadsheet_id, range_, data, value_input_option)
-    else:
-        raise ValueError(f"google_sheets: unknown action '{action}' (use read/create/write/append)")
-
-    return json.dumps(result, indent=2)
-
-
-def _exec_google_slides_inline(config: ExecutorConfig) -> str:
-    """Run Google Slides executor inline."""
-    action = config.args.get("action", "")
-
-    if action == "read":
-        from executors.google_slides.executor import read_presentation
-
-        presentation_id = config.args.get("presentation_id", "")
-        result = read_presentation(presentation_id)
-    elif action == "create":
-        from executors.google_slides.executor import create_presentation
-
-        title = config.args.get("title", "")
-        result = create_presentation(title)
-    elif action == "add_slide":
-        from executors.google_slides.executor import add_slide
-
-        presentation_id = config.args.get("presentation_id", "")
-        title = config.args.get("title", "")
-        body = config.args.get("body", "")
-        layout = config.args.get("layout", "BLANK")
-        result = add_slide(presentation_id, title, body, layout)
-    elif action == "replace_text":
-        from executors.google_slides.executor import replace_text
-
-        presentation_id = config.args.get("presentation_id", "")
-        find = config.args.get("find", "")
-        replace_with = config.args.get("replace_with", "")
-        match_case = str(config.args.get("match_case", "true")).lower() in ("true", "1", "yes")
-        result = replace_text(presentation_id, find, replace_with, match_case)
-    else:
-        raise ValueError(
-            f"google_slides: unknown action '{action}' (use read/create/add_slide/replace_text)"
-        )
-
-    return json.dumps(result, indent=2)
-
-
-def _exec_bluebubbles_inline(config: ExecutorConfig, action: str) -> str:
-    """Run BlueBubbles executor inline."""
-    from executors.bluebubbles.executor import (
-        get_chats,
-        get_recent_messages,
-        send_message,
-        send_reaction,
-    )
-
-    server_url = os.environ.get("BLUEBUBBLES_URL", "")
-    password = os.environ.get("BLUEBUBBLES_PASSWORD", "")
-    allowed_recipients = {
-        v.strip() for v in os.environ.get("ALLOWED_RECIPIENTS", "").split(",") if v.strip()
-    }
-    allowed_chats = {v.strip() for v in os.environ.get("ALLOWED_CHATS", "").split(",") if v.strip()}
-
-    result: object
-    if action == "get_recent_messages":
-        result = get_recent_messages(
-            server_url,
-            password,
-            allowed_chats,
-            chat_id=config.args.get("chat_id") or None,
-            limit=int(config.args.get("limit", "20")),
-            after_date=config.args.get("after_date") or None,
-        )
-    elif action == "send_message":
-        result = send_message(
-            server_url,
-            password,
-            allowed_recipients,
-            chat_id=config.args.get("chat_id", ""),
-            text=config.args.get("text", ""),
-        )
-    elif action == "send_reaction":
-        result = send_reaction(
-            server_url,
-            password,
-            allowed_recipients,
-            chat_id=config.args.get("chat_id", ""),
-            message_guid=config.args.get("message_guid", ""),
-            reaction=config.args.get("reaction", ""),
-        )
-    elif action == "get_chats":
-        result = get_chats(
-            server_url,
-            password,
-            allowed_chats,
-            limit=int(config.args.get("limit", "20")),
-        )
-    else:
-        raise ValueError(f"Unknown bluebubbles action: {action}")
-
-    return json.dumps(result, indent=2)
-
-
-def _exec_apple_notes_inline(config: ExecutorConfig) -> str:
-    """Run Apple Notes executor inline via bridge."""
-    from executors.apple_notes.executor import main as apple_notes_main
-
-    env_vars = {
-        k: v
-        for k, v in {
-            "ACTION": config.args.get("action", "list"),
-            "FOLDER": config.args.get("folder", ""),
-            "QUERY": config.args.get("query", ""),
-            "TITLE": config.args.get("title", ""),
-            "BODY": config.args.get("body", ""),
-        }.items()
-        if v  # Only set non-empty values
-    }
-
-    old_stdout = sys.stdout
-    try:
-        sys.stdout = captured_output = StringIO()
-        with _env_override(env_vars):
-            apple_notes_main()
-        return captured_output.getvalue().strip() or "{}"
-    finally:
-        sys.stdout = old_stdout
-
-
-def _exec_apple_reminders_inline(config: ExecutorConfig) -> str:
-    """Run Apple Reminders executor inline via bridge."""
-    from executors.apple_reminders.executor import main as apple_reminders_main
-
-    env_vars = {
-        k: v
-        for k, v in {
-            "ACTION": config.args.get("action", "list"),
-            "FILTER": config.args.get("filter", "all"),
-            "TITLE": config.args.get("title", ""),
-            "LIST": config.args.get("list_name", ""),
-            "DUE": config.args.get("due_date", ""),
-            "ID": config.args.get("id", ""),
-        }.items()
-        if v
-    }
-
-    old_stdout = sys.stdout
-    try:
-        sys.stdout = captured_output = StringIO()
-        with _env_override(env_vars):
-            apple_reminders_main()
-        return captured_output.getvalue().strip() or "{}"
-    finally:
-        sys.stdout = old_stdout
-
-
-def _exec_brave_search_inline(config: ExecutorConfig) -> str:
-    """Run Brave Search executor inline."""
-    from executors.brave_search.executor import search
-
-    query = config.args.get("query", "")
-    count = int(config.args.get("count", "5"))
-    result = search(
-        query,
-        count,
-        timeout=config.http.timeout,
-        connect_timeout=config.http.connect_timeout,
-    )
-    return json.dumps(result, indent=2)
-
-
-def _exec_notion_inline(config: ExecutorConfig) -> str:
-    """Run Notion executor inline."""
-    from executors.notion.executor import run_action
-
-    action = config.args.get("action", "")
-    if not action:
-        raise ValueError("notion executor requires an 'action' argument")
-
-    result = run_action(
-        action=action,
-        query=config.args.get("query", ""),
-        page_id=config.args.get("page_id", ""),
-        database_id=config.args.get("database_id", ""),
-        filter_json=config.args.get("filter_json", ""),
-        sorts_json=config.args.get("sorts_json", ""),
-        page_size=config.args.get("page_size"),
-        start_cursor=config.args.get("start_cursor", ""),
-    )
-    return json.dumps(result, indent=2)
-
-
-def _exec_notion_write_inline(config: ExecutorConfig) -> str:
-    """Run Notion write executor inline."""
-    from executors.notion_write.executor import run_action
-
-    action = config.args.get("action", "")
-    if not action:
-        raise ValueError("notion_write executor requires an 'action' argument")
-
-    result = run_action(
-        action=action,
-        page_id=config.args.get("page_id", ""),
-        database_id=config.args.get("database_id", ""),
-        properties_json=config.args.get("properties_json", ""),
-        children_json=config.args.get("children_json", ""),
-    )
-    return json.dumps(result, indent=2)
-
-
-def _exec_fetch_url_inline(config: ExecutorConfig) -> str:
-    """Run URL fetcher executor inline."""
-    from executors.fetch_url.executor import fetch_url
-
-    url = config.args.get("url", "")
-    max_chars = int(config.args.get("max_chars", "10000"))
-    result = fetch_url(
-        url,
-        max_chars,
-        timeout=config.http.timeout,
-        connect_timeout=config.http.connect_timeout,
-        max_redirects=config.http.max_redirects,
-        max_size_mb=config.http.max_size_mb,
-    )
-    return json.dumps(result, indent=2)
-
-
-def _exec_browser_inline(config: ExecutorConfig) -> str:
-    """Run browser executor inline by calling library functions directly."""
-    from executors.browser.executor import (
-        click,
-        close_session,
-        connect,
-        get_content,
-        get_links,
-        navigate,
-        screenshot,
-        sessions,
-        type_text,
-    )
-
-    action = config.args.get("action", "connect")
-
-    if action == "connect":
-        mode = config.args.get("mode", "managed")
-        cdp_url = config.args.get("cdp_url") or None
-        headless = str(config.args.get("headless", "true")).lower() in ("true", "1", "yes")
-        result = connect(mode=mode, cdp_url=cdp_url, headless=headless)
-    elif action == "navigate":
-        session_id = config.args.get("session_id", "")
-        url = config.args.get("url", "")
-        result = navigate(session_id, url)
-    elif action == "content":
-        session_id = config.args.get("session_id", "")
-        selector = config.args.get("selector") or None
-        result = get_content(session_id, selector)
-    elif action == "click":
-        session_id = config.args.get("session_id", "")
-        selector = config.args.get("selector", "")
-        result = click(session_id, selector)
-    elif action == "type":
-        session_id = config.args.get("session_id", "")
-        selector = config.args.get("selector", "")
-        text = config.args.get("text", "")
-        result = type_text(session_id, selector, text)
-    elif action == "screenshot":
-        session_id = config.args.get("session_id", "")
-        full_page = str(config.args.get("full_page", "false")).lower() in ("true", "1", "yes")
-        result = screenshot(session_id, full_page=full_page)
-    elif action == "links":
-        session_id = config.args.get("session_id", "")
-        result = get_links(session_id)
-    elif action == "close":
-        session_id = config.args.get("session_id", "")
-        result = close_session(session_id)
-    elif action == "sessions":
-        result = sessions()
-    else:
-        raise ValueError(f"Unknown browser action: {action}")
-
-    return json.dumps(result, indent=2)
-
-
-def _exec_exec_inline(config: ExecutorConfig) -> str:
-    """Run exec executor inline."""
-    from executors.exec.executor import run_command
-
-    command = config.args.get("command", "")
-    workdir = config.args.get("workdir")
-
-    if not command:
-        raise ValueError("exec executor requires a 'command' argument")
-
-    result = run_command(command, workdir)
-    return json.dumps(result, indent=2)
-
-
-def _exec_interactive_inline(config: ExecutorConfig) -> str:
-    """Run exec_interactive executor inline."""
-    from executors.exec_interactive.executor import (
-        close_session,
-        get_io_log,
-        get_session_info,
-        list_sessions,
-        read_output,
-        resize_terminal,
-        send_input,
-        start_session,
-    )
-
-    action = config.args.get("action", "")
-
-    if action == "start":
-        command = config.args.get("command", "")
-        if not command:
-            raise ValueError("exec_interactive 'start' requires a 'command' argument")
-        timeout = int(config.args.get("timeout", "300"))
-        cols = int(config.args.get("cols", "120"))
-        rows = int(config.args.get("rows", "40"))
-        result = start_session(command, timeout=timeout, cols=cols, rows=rows)
-    elif action == "send_input":
-        session_id = config.args.get("session_id", "")
-        data = config.args.get("input", "")
-        if not session_id:
-            raise ValueError("exec_interactive 'send_input' requires 'session_id'")
-        result = send_input(session_id, data)
-    elif action == "read_output":
-        session_id = config.args.get("session_id", "")
-        if not session_id:
-            raise ValueError("exec_interactive 'read_output' requires 'session_id'")
-        read_timeout = float(config.args.get("read_timeout", "10"))
-        result = read_output(session_id, timeout=read_timeout)
-    elif action == "resize":
-        session_id = config.args.get("session_id", "")
-        if not session_id:
-            raise ValueError("exec_interactive 'resize' requires 'session_id'")
-        cols = int(config.args.get("cols", "120"))
-        rows = int(config.args.get("rows", "40"))
-        result = resize_terminal(session_id, cols, rows)
-    elif action == "close":
-        session_id = config.args.get("session_id", "")
-        if not session_id:
-            raise ValueError("exec_interactive 'close' requires 'session_id'")
-        result = close_session(session_id)
-    elif action == "info":
-        session_id = config.args.get("session_id", "")
-        if not session_id:
-            raise ValueError("exec_interactive 'info' requires 'session_id'")
-        result = get_session_info(session_id)
-    elif action == "list_sessions":
-        result = list_sessions()
-    elif action == "get_io_log":
-        session_id = config.args.get("session_id", "")
-        if not session_id:
-            raise ValueError("exec_interactive 'get_io_log' requires 'session_id'")
-        result = get_io_log(session_id)
-    else:
-        raise ValueError(
-            f"exec_interactive: unknown action '{action}' "
-            "(use start/send_input/read_output/resize/close/info/list_sessions)"
-        )
-
-    return json.dumps(result, indent=2)
-
-
-def _exec_file_ops_inline(config: ExecutorConfig) -> str:
-    """Run file_ops executor inline."""
-    from executors.file_ops.executor import ACTIONS
-
-    action = config.args.get("action", "")
-    if action not in ACTIONS:
-        raise ValueError(f"file_ops: unknown action '{action}'")
-
-    # Map config args to the uppercase env vars the executor expects
-    env_map = {
-        "workspace": "WORKSPACE",
-        "action": "ACTION",
-        "file_path": "FILE_PATH",
-        "content": "CONTENT",
-        "old_text": "OLD_TEXT",
-        "new_text": "NEW_TEXT",
-        "offset": "OFFSET",
-        "limit": "LIMIT",
-        "directory": "DIRECTORY",
-        "pattern": "PATTERN",
-        "recursive": "RECURSIVE",
-    }
-
-    env_vars = {
-        env_key: str(config.args[arg_key])
-        for arg_key, env_key in env_map.items()
-        if config.args.get(arg_key, "")
-    }
-
-    with _env_override(env_vars):
-        result = ACTIONS[action]()
-    return json.dumps(result, indent=2)
-
-
-def _exec_github_inline(config: ExecutorConfig) -> str:
-    """Run github executor inline."""
-    from executors.github.executor import run_gh_command
-
-    command = config.args.get("command", "")
-    repo = config.args.get("repo") or None
-
-    if not command:
-        raise ValueError("github executor requires a 'command' argument")
-
-    result = run_gh_command(command, repo)
-    return json.dumps(result, indent=2)
-
-
-def _exec_coding_inline(config: ExecutorConfig) -> str:
-    """Run coding executor inline."""
-    from executors.coding.executor import run_command
-
-    command = config.args.get("command", "")
-    workdir = config.args.get("workdir") or None
-    mount = config.args.get("mount") or None
-    timeout_str = config.args.get("timeout") or None
-
-    if not command:
-        raise ValueError("coding executor requires a 'command' argument")
-
-    timeout = None
-    if timeout_str:
-        try:
-            timeout = int(timeout_str)
-        except ValueError:
-            pass
-
-    result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
-    return json.dumps(result, indent=2)
-
-
-def _exec_tts_inline(config: ExecutorConfig) -> str:
-    """Run TTS executor inline."""
-    from executors.tts.executor import synthesize
-
-    text = config.args.get("text", "")
-    if not text:
-        raise ValueError("tts executor requires a 'text' argument")
-
-    voice = config.args.get("voice") or None
-    backend = config.args.get("backend") or None
-    output_format = config.args.get("output_format") or None
-    output_path = config.args.get("output_path") or None
-
-    result = synthesize(
-        text,
-        voice=voice,
-        backend=backend,
-        output_format=output_format,
-        output_path=output_path,
-    )
-    return json.dumps(result, indent=2)
-
-
-def _exec_host_exec_inline(config: ExecutorConfig) -> str:
-    """Run host exec executor inline."""
-    from executors.host_exec.executor import host_exec
-
-    command = config.args.get("command", "")
-    if not command:
-        raise ValueError("host_exec executor requires a 'command' argument")
-
-    background = str(config.args.get("background", "false")).lower() in ("true", "1", "yes")
-    workdir = config.args.get("workdir") or None
-    timeout = int(config.args.get("timeout", "300"))
-    env_json = config.args.get("env") or None
-    env = json.loads(env_json) if isinstance(env_json, str) else env_json
-    if env is not None and not isinstance(env, dict):
-        raise ValueError(f"host_exec 'env' must be a JSON object, got {type(env).__name__}")
-
-    result = host_exec(command, background=background, workdir=workdir, timeout=timeout, env=env)
-    return json.dumps(result, indent=2)
-
-
-def _exec_host_process_inline(config: ExecutorConfig) -> str:
-    """Run host process management executor inline."""
-    from executors.host_exec.executor import host_process
-
-    session_id = config.args.get("session_id", "")
-    if not session_id:
-        raise ValueError("host_process executor requires a 'session_id' argument")
-
-    action = config.args.get("action", "poll")
-    limit = int(config.args.get("limit", "100"))
-    offset = int(config.args.get("offset", "0"))
-    data = config.args.get("data") or None
-
-    result = host_process(session_id, action, limit=limit, offset=offset, data=data)
-    return json.dumps(result, indent=2)
-
-
-def _exec_host_sessions_inline(config: ExecutorConfig) -> str:
-    """Run host sessions listing executor inline."""
-    from executors.host_exec.executor import host_sessions
-
-    result = host_sessions()
-    return json.dumps(result, indent=2)
+        return entry.execute(config)
 
 
 def _load_secrets_to_env(secrets_path: str) -> None:

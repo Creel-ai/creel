@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -406,19 +407,20 @@ def collect_required_images(agent_def: AgentDefinition) -> list[str]:
     """
     images: set[str] = set()
     has_local_executor_images = False
-    for _tool_name, tool_config in agent_def.tools.items():
-        if tool_config.dockerfile:
-            # Custom Dockerfile — tag derived from tool name
-            image = f"custom-{tool_config.executor.replace('_', '-')}:latest"
+    for skill_id, override in agent_def.skills.items():
+        if not override.enabled:
+            continue
+        if override.dockerfile:
+            image = f"custom-{skill_id.replace('_', '-')}:latest"
             images.add(image)
-        elif tool_config.image:
-            images.add(tool_config.image)
-            # Custom image overrides (local or remote) don't need the base
+        elif override.image:
+            images.add(override.image)
         else:
-            image = f"executor-{tool_config.executor.replace('_', '-')}:latest"
+            image = f"executor-{skill_id.replace('_', '-')}:latest"
             images.add(image)
             has_local_executor_images = True
-    if agent_def.tools:
+    has_tools = bool(agent_def.skills)
+    if has_tools:
         images.add("llm-runner:latest")
     if has_local_executor_images and _BASE_DOCKERFILE.exists():
         images.add(f"{_BASE_IMAGE_NAME}:latest")
@@ -493,10 +495,7 @@ def _run_executor_container(
         bridge_config: Optional bridge configuration for macOS host tools
     """
     from creel.log import request_id_var
-    from creel.orchestrator import (
-        _EXECUTOR_TO_BRIDGE_SCOPE,
-        _replace_google_credentials_with_access_token,
-    )
+    from creel.orchestrator import _replace_google_credentials_with_access_token
 
     # Validate host_auth early — before image build — so misconfigurations fail fast
     _host_auth_entry: _HostAuthEntry | None = None
@@ -553,9 +552,18 @@ def _run_executor_container(
         bridge_url = bridge_url.replace("://localhost", "://host.docker.internal")
         bridge_url = bridge_url.replace("://127.0.0.1", "://host.docker.internal")
         env_vars["BRIDGE_URL"] = bridge_url
-        # Look up scoped token by executor name (e.g. browser → BRIDGE_TOKEN_BROWSER)
+        # Look up scoped token by executor name via skill registry metadata
         executor_name = config.name or ""
-        scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(executor_name, executor_name.upper())
+        scope_name = executor_name.upper()
+        try:
+            from creel.skills.registry import get_shared_registry
+
+            _reg = get_shared_registry()
+            _entry = _reg.get_skill(executor_name)
+            if _entry is not None and _entry.meta.bridge_scope:
+                scope_name = _entry.meta.bridge_scope
+        except Exception:
+            pass  # Fallback to uppercase executor name
         scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
         if scoped_token:
             env_vars["BRIDGE_TOKEN"] = scoped_token
@@ -580,9 +588,12 @@ def _run_executor_container(
         mode="w", suffix=".env", delete=True, prefix="creel-"
     ) as env_file:
         for key, value in env_vars.items():
-            # Sanitize values to prevent env-file newline injection
+            # Sanitize keys and values to prevent env-file newline injection
+            safe_key = re.sub(r"[^A-Za-z0-9_]", "", key)
+            if not safe_key:
+                continue
             sanitized = value.replace("\n", "").replace("\r", "")
-            env_file.write(f"{key}={sanitized}\n")
+            env_file.write(f"{safe_key}={sanitized}\n")
         env_file.flush()
 
         # Build docker run command with per-tool resource overrides

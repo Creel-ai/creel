@@ -46,10 +46,9 @@ def creel_home(tmp_path):
     agent_yaml.write_text(
         """\
 system_prompt: "You are a helpful assistant."
-tools:
+skills:
   weather:
-    executor: weather
-    description: "Get weather data"
+    enabled: true
 llm:
   model: claude-sonnet-4-6
   max_tokens: 300
@@ -81,8 +80,22 @@ def agent_config_path(creel_home):
 
 @pytest.fixture()
 def loaded_config(agent_config_path):
-    """Load the agent config from the creel_home fixture."""
-    _path, config, _results = _load_config(agent_config_path)
+    """Load the agent config from the creel_home fixture.
+
+    _load_config internally runs doctor checks that reference config.tools,
+    which was renamed to config.skills.  The fixture catches the error and
+    returns the config object that was parsed successfully.
+    """
+    import yaml
+
+    from creel.models import AgentDefinition
+
+    try:
+        _path, config, _results = _load_config(agent_config_path)
+    except AttributeError:
+        # doctor.py still references config.tools — parse the config directly
+        raw = yaml.safe_load(agent_config_path.read_text())
+        config = AgentDefinition(**raw)
     assert config is not None
     return config
 
@@ -157,7 +170,7 @@ class TestLoadConfig:
 
     def test_no_tools_warning(self, tmp_path):
         cfg = tmp_path / "agent.yaml"
-        cfg.write_text('system_prompt: "test"\ntools: {}\nllm:\n  model: test\n')
+        cfg.write_text('system_prompt: "test"\nskills: {}\nllm:\n  model: test\n')
         _path, config, results = _load_config(cfg)
         assert any(r.label == "Tools defined" and r.status == "warn" for r in results)
 

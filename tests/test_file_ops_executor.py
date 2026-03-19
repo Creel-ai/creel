@@ -8,7 +8,6 @@ import os
 import pytest
 
 from creel.models import ExecutorConfig
-from creel.orchestrator import _exec_file_ops_inline
 from executors.file_ops.executor import (
     _safe_path,
     action_edit,
@@ -470,7 +469,14 @@ class TestMain:
 
 
 class TestExecFileOpsInline:
-    """Tests for the _exec_file_ops_inline orchestrator handler."""
+    """Tests for the file_ops skill execute function."""
+
+    @pytest.fixture(autouse=True)
+    def _register(self):
+        """Register the file_ops skill and expose its execute function."""
+        from executors.file_ops.executor import register_skill
+
+        _meta, self._execute = register_skill()
 
     def test_read_action(self, workspace):
         (workspace / "hello.txt").write_text("hello inline")
@@ -478,7 +484,7 @@ class TestExecFileOpsInline:
             name="file_ops",
             args={"action": "read", "file_path": "hello.txt"},
         )
-        result = json.loads(_exec_file_ops_inline(config))
+        result = json.loads(self._execute(config))
         assert result["content"] == "hello inline"
 
     def test_write_action(self, workspace):
@@ -486,7 +492,7 @@ class TestExecFileOpsInline:
             name="file_ops",
             args={"action": "write", "file_path": "new.txt", "content": "written"},
         )
-        result = json.loads(_exec_file_ops_inline(config))
+        result = json.loads(self._execute(config))
         assert result["bytes_written"] == 7
         assert (workspace / "new.txt").read_text() == "written"
 
@@ -497,7 +503,7 @@ class TestExecFileOpsInline:
             name="file_ops",
             args={"action": "list", "directory": "."},
         )
-        result = json.loads(_exec_file_ops_inline(config))
+        result = json.loads(self._execute(config))
         names = [e["name"] for e in result["entries"]]
         assert "a.txt" in names
         assert "b.txt" in names
@@ -513,7 +519,7 @@ class TestExecFileOpsInline:
                 "new_text": "qux",
             },
         )
-        result = json.loads(_exec_file_ops_inline(config))
+        result = json.loads(self._execute(config))
         assert result["replacements"] == 1
         assert (workspace / "doc.txt").read_text() == "foo qux baz"
 
@@ -523,7 +529,7 @@ class TestExecFileOpsInline:
             args={"action": "delete"},
         )
         with pytest.raises(ValueError, match="unknown action"):
-            _exec_file_ops_inline(config)
+            self._execute(config)
 
     def test_workspace_arg_overrides_env(self, tmp_path):
         """The workspace arg should set WORKSPACE env for the executor."""
@@ -539,7 +545,7 @@ class TestExecFileOpsInline:
                 "workspace": str(ws),
             },
         )
-        result = json.loads(_exec_file_ops_inline(config))
+        result = json.loads(self._execute(config))
         assert result["content"] == "custom"
 
     def test_env_restored_after_call(self, workspace):
@@ -549,5 +555,5 @@ class TestExecFileOpsInline:
             name="file_ops",
             args={"action": "list", "directory": "."},
         )
-        _exec_file_ops_inline(config)
+        self._execute(config)
         assert os.environ.get("WORKSPACE") == old_workspace

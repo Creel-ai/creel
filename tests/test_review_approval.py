@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from creel.approvals import ApprovalQueue
+from creel.skills.registry import SkillRegistry
 from guardian.types import ActionDecision, ActionVerdict
 
 # ── ApprovalQueue tests ─────────────────────────────────────────────
@@ -144,7 +145,8 @@ def test_review_returns_approval_required(mock_llm, mock_exec):
     result = run_agent_loop(
         messages=[{"role": "user", "content": "send an email"}],
         llm_config=LLMConfig(model="test"),
-        tools_config={"send_email": MagicMock()},
+        registry=SkillRegistry(),
+        skill_overrides={},
         agent_config=AgentConfig(max_turns=5),
         guardian=FakeGuardian(ActionVerdict.REVIEW),
     )
@@ -168,7 +170,8 @@ def test_review_with_confirm_action_approves(mock_llm, mock_exec):
     result = run_agent_loop(
         messages=[{"role": "user", "content": "send an email"}],
         llm_config=LLMConfig(model="test"),
-        tools_config={"send_email": MagicMock()},
+        registry=SkillRegistry(),
+        skill_overrides={},
         agent_config=AgentConfig(max_turns=5),
         guardian=FakeGuardian(ActionVerdict.REVIEW),
         confirm_action=auto_confirm,
@@ -191,7 +194,8 @@ def test_deny_still_denies(mock_llm, mock_exec):
     result = run_agent_loop(
         messages=[{"role": "user", "content": "send an email"}],
         llm_config=LLMConfig(model="test"),
-        tools_config={"send_email": MagicMock()},
+        registry=SkillRegistry(),
+        skill_overrides={},
         agent_config=AgentConfig(max_turns=5),
         guardian=FakeGuardian(ActionVerdict.DENY),
     )
@@ -665,7 +669,8 @@ def test_orphaned_tool_use_is_repaired_before_llm_call(mock_llm):
     result = run_agent_loop(
         messages=messages,
         llm_config=LLMConfig(model="test"),
-        tools_config={"send_email": MagicMock()},
+        registry=SkillRegistry(),
+        skill_overrides={},
         agent_config=AgentConfig(max_turns=1),
         guardian=None,
     )

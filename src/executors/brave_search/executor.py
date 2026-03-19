@@ -15,6 +15,56 @@ import requests
 
 BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search"
 
+
+def register_skill():
+    """Register the brave_search skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="brave_search",
+        label="Brave Search",
+        tools=(
+            ToolSpec(
+                name="web_search",
+                description="Search the web using Brave Search",
+                params=(
+                    Param(
+                        name="query",
+                        type="string",
+                        description="Search query",
+                        required=True,
+                    ),
+                    Param(
+                        name="count",
+                        type="string",
+                        description="Number of results (default: 5, max: 20)",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        query = config.args.get("query", "")
+        count = int(config.args.get("count", "5"))
+        result = search(
+            query,
+            count,
+            timeout=config.http.timeout,
+            connect_timeout=config.http.connect_timeout,
+        )
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 # Default HTTP settings
 DEFAULT_TIMEOUT = 15.0
 DEFAULT_CONNECT_TIMEOUT = 5.0

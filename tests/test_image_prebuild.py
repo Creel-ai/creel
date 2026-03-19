@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from creel.models import AgentDefinition, ToolConfig
+from creel.models import AgentDefinition, SkillOverride
 from creel.orchestrator import (
     ImageBuildCache,
     _image_cache,
@@ -24,16 +24,15 @@ def _minimal_agent_def(**overrides) -> AgentDefinition:
     """Build a minimal AgentDefinition for testing."""
     defaults = {
         "system_prompt": "test",
-        "tools": {},
+        "skills": {},
     }
     defaults.update(overrides)
     return AgentDefinition(**defaults)
 
 
-def _tool(executor: str, image: str | None = None, **kwargs) -> ToolConfig:
-    return ToolConfig(
-        executor=executor,
-        description="test tool",
+def _skill(image: str | None = None, **kwargs) -> SkillOverride:
+    return SkillOverride(
+        enabled=True,
         image=image,
         **kwargs,
     )
@@ -45,11 +44,11 @@ def _tool(executor: str, image: str | None = None, **kwargs) -> ToolConfig:
 
 
 class TestCollectRequiredImages:
-    def test_extracts_images_from_tools(self):
+    def test_extracts_images_from_skills(self):
         agent = _minimal_agent_def(
-            tools={
-                "weather": _tool("weather"),
-                "gmail": _tool("gmail_readonly"),
+            skills={
+                "weather": _skill(),
+                "gmail_readonly": _skill(),
             }
         )
         images = collect_required_images(agent)
@@ -57,21 +56,10 @@ class TestCollectRequiredImages:
         assert "executor-gmail-readonly:latest" in images
         assert "llm-runner:latest" in images
 
-    def test_deduplicates(self):
-        """Two tools with the same executor produce one image."""
-        agent = _minimal_agent_def(
-            tools={
-                "read_email": _tool("gmail_readonly"),
-                "search_email": _tool("gmail_readonly"),
-            }
-        )
-        images = collect_required_images(agent)
-        assert images.count("executor-gmail-readonly:latest") == 1
-
     def test_respects_image_override(self):
         agent = _minimal_agent_def(
-            tools={
-                "custom": _tool("weather", image="my-custom-image:v2"),
+            skills={
+                "weather": _skill(image="my-custom-image:v2"),
             }
         )
         images = collect_required_images(agent)
@@ -80,23 +68,23 @@ class TestCollectRequiredImages:
 
     def test_includes_llm_runner(self):
         agent = _minimal_agent_def(
-            tools={
-                "tool": _tool("weather"),
+            skills={
+                "weather": _skill(),
             }
         )
         images = collect_required_images(agent)
         assert "llm-runner:latest" in images
 
-    def test_no_tools_no_images(self):
-        agent = _minimal_agent_def(tools={})
+    def test_no_skills_no_images(self):
+        agent = _minimal_agent_def(skills={})
         images = collect_required_images(agent)
         assert images == []
 
     def test_sorted_output(self):
         agent = _minimal_agent_def(
-            tools={
-                "z_tool": _tool("zebra"),
-                "a_tool": _tool("apple"),
+            skills={
+                "zebra": _skill(),
+                "apple": _skill(),
             }
         )
         images = collect_required_images(agent)
@@ -291,9 +279,9 @@ class TestPrebuildImages:
         mock_build.side_effect = lambda img: f"built-{img}"
 
         agent = _minimal_agent_def(
-            tools={
-                "weather": _tool("weather"),
-                "gmail": _tool("gmail_readonly"),
+            skills={
+                "weather": _skill(),
+                "gmail_readonly": _skill(),
             }
         )
 

@@ -527,9 +527,11 @@ class TestKBToolHandling:
 
 class TestBuildToolDefinitions:
     def test_kb_tools_included_when_flag_set(self):
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions({}, include_kb_tools=True)
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {}, include_kb_tools=True)
         names = {d["name"] for d in defs}
         assert "kb_search" in names
         assert "kb_add" in names
@@ -537,9 +539,11 @@ class TestBuildToolDefinitions:
         assert "kb_stats" in names
 
     def test_kb_tools_excluded_by_default(self):
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions({})
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {})
         names = {d["name"] for d in defs}
         assert "kb_search" not in names
 

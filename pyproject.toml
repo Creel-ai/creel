@@ -93,6 +93,10 @@ bluebubbles = "creel.channels.bluebubbles:register_plugin"
 whatsapp = "creel.channels.whatsapp:register_plugin"
 telegram = "creel.channels.telegram:register_plugin"
 
+[project.entry-points."creel.skills"]
+# Skills are auto-discovered from built-in executors.
+# Third-party skills can register here as entry points.
+
 [project.urls]
 Homepage = "https://github.com/creel-ai/creel"
 Documentation = "https://creel-ai.com"

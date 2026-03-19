@@ -19,6 +19,141 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the google_slides skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="google_slides",
+        label="Google Slides",
+        tools=(
+            ToolSpec(
+                name="read_slides",
+                description="Read a Google Slides presentation",
+                params=(
+                    Param(
+                        name="presentation_id",
+                        type="string",
+                        description="The Google Slides presentation ID",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "read"},
+            ),
+            ToolSpec(
+                name="create_slides",
+                description="Create a new Google Slides presentation",
+                params=(
+                    Param(
+                        name="title",
+                        type="string",
+                        description="Presentation title",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "create"},
+            ),
+            ToolSpec(
+                name="add_slide",
+                description="Add a new slide to a presentation",
+                params=(
+                    Param(
+                        name="presentation_id",
+                        type="string",
+                        description="The presentation ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="title",
+                        type="string",
+                        description="Optional slide title text",
+                    ),
+                    Param(
+                        name="body",
+                        type="string",
+                        description="Optional slide body text",
+                    ),
+                    Param(
+                        name="layout",
+                        type="string",
+                        description="Predefined layout (default BLANK)",
+                    ),
+                ),
+                fixed_args={"action": "add_slide"},
+            ),
+            ToolSpec(
+                name="replace_in_slides",
+                description="Replace text across all slides in a presentation",
+                params=(
+                    Param(
+                        name="presentation_id",
+                        type="string",
+                        description="The presentation ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="find",
+                        type="string",
+                        description="Text to find",
+                        required=True,
+                    ),
+                    Param(
+                        name="replace_with",
+                        type="string",
+                        description="Replacement text",
+                        required=True,
+                    ),
+                    Param(
+                        name="match_case",
+                        type="string",
+                        description="Whether the search is case-sensitive (default true)",
+                    ),
+                ),
+                fixed_args={"action": "replace_text"},
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "")
+        if action == "read":
+            presentation_id = config.args.get("presentation_id", "")
+            result = read_presentation(presentation_id)
+        elif action == "create":
+            title = config.args.get("title", "")
+            result = create_presentation(title)
+        elif action == "add_slide":
+            presentation_id = config.args.get("presentation_id", "")
+            title = config.args.get("title", "")
+            body = config.args.get("body", "")
+            layout = config.args.get("layout", "BLANK")
+            result = add_slide(presentation_id, title, body, layout)
+        elif action == "replace_text":
+            presentation_id = config.args.get("presentation_id", "")
+            find = config.args.get("find", "")
+            replace_with = config.args.get("replace_with", "")
+            match_case = config.args.get("match_case", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+            result = replace_text(presentation_id, find, replace_with, match_case)
+        else:
+            raise ValueError(
+                f"google_slides: unknown action '{action}' (use read/create/add_slide/replace_text)"
+            )
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def _extract_slide_text(slide: dict) -> str:
     """Extract text from all shapes in a slide."""
     parts: list[str] = []

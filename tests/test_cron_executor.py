@@ -78,6 +78,7 @@ class FakeAgentDef:
     ):
         self.llm = FakeLLMConfig(model=model, secrets=secrets)
         self.tools = {}
+        self.skills = {}
         self.agent = FakeAgentConfig()
 
 
@@ -152,7 +153,7 @@ class TestExecuteIsolated:
 
         call_kwargs = mock_agent_loop.call_args[1]
         assert call_kwargs["llm_config"].model == "claude-sonnet-4-6"
-        assert call_kwargs["tools_config"] == {}
+        assert call_kwargs["skill_overrides"] == agent_def.skills
 
     @patch("creel.cron.executor.run_agent_loop")
     def test_isolated_model_override(self, mock_agent_loop):
@@ -317,3 +318,26 @@ class TestExecutorWithManager:
 
         # Original should be unchanged
         assert agent_def.llm.model == "claude-sonnet-4-6"
+
+
+# -- Skill registry integration --
+
+
+class TestExecuteIsolatedRegistry:
+    @patch("creel.cron.executor.run_agent_loop")
+    @patch("creel.skills.registry.get_shared_registry")
+    def test_isolated_uses_shared_registry(self, mock_get_registry, mock_agent_loop):
+        """_execute_isolated should obtain the registry via get_shared_registry()."""
+        mock_agent_loop.return_value = FakeAgentResult()
+        sentinel_registry = MagicMock()
+        mock_get_registry.return_value = sentinel_registry
+
+        agent_def = FakeAgentDef()
+        executor = JobExecutor(agent_def=agent_def)
+
+        job = _make_job(target="isolated")
+        executor(job)
+
+        mock_get_registry.assert_called_once()
+        call_kwargs = mock_agent_loop.call_args[1]
+        assert call_kwargs["registry"] is sentinel_registry

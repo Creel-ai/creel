@@ -19,6 +19,70 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the gcal_write skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="gcal_write",
+        label="Google Calendar Write",
+        tools=(
+            ToolSpec(
+                name="create_event",
+                description="Create a calendar event",
+                params=(
+                    Param(
+                        name="summary",
+                        type="string",
+                        description="Event title",
+                        required=True,
+                    ),
+                    Param(
+                        name="start",
+                        type="string",
+                        description="Start time (ISO 8601)",
+                        required=True,
+                    ),
+                    Param(
+                        name="end",
+                        type="string",
+                        description="End time (ISO 8601)",
+                        required=True,
+                    ),
+                    Param(
+                        name="description",
+                        type="string",
+                        description="Event description",
+                    ),
+                    Param(
+                        name="location",
+                        type="string",
+                        description="Event location",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        summary = config.args.get("summary", "")
+        start = config.args.get("start", "")
+        end = config.args.get("end", "")
+        description = config.args.get("description", "")
+        location = config.args.get("location", "")
+        event = create_event(summary, start, end, description, location)
+        return json.dumps(event, indent=2)
+
+    return meta, execute
+
+
 def create_event(
     summary: str,
     start: str,

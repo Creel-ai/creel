@@ -279,17 +279,23 @@ class TestContainerDispatch:
 
     @patch("creel.tools._run_interactive_via_container")
     def test_container_mode_routes_to_interactive_manager(self, mock_run) -> None:
+        from creel.models import SkillOverride
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         mock_run.return_value = json.dumps({"success": True, "session_id": "abc"})
 
-        tool_cfg = _tool_config()
-        tools_config = {"exec_interactive": tool_cfg}
+        registry = SkillRegistry()
+        registry._discover_builtins()
+        skill_overrides = {
+            "exec_interactive": SkillOverride(enabled=True),
+        }
 
         result = execute_tool_call(
-            "exec_interactive",
-            {"action": "start", "command": "bash"},
-            tools_config,
+            "start_session",
+            {"command": "bash"},
+            registry,
+            skill_overrides,
             use_containers=True,
         )
 
@@ -301,17 +307,23 @@ class TestContainerDispatch:
         """When use_containers=False, the inline path is used instead."""
         from unittest.mock import patch as _patch
 
+        from creel.models import SkillOverride
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
-        tool_cfg = _tool_config()
-        tools_config = {"exec_interactive": tool_cfg}
+        registry = SkillRegistry()
+        registry._discover_builtins()
+        skill_overrides = {
+            "exec_interactive": SkillOverride(enabled=True),
+        }
 
-        with _patch("creel.orchestrator._exec_interactive_inline") as mock_inline:
+        with _patch("creel.tools._run_executor_inline_skill") as mock_inline:
             mock_inline.return_value = json.dumps({"success": True})
             execute_tool_call(
-                "exec_interactive",
-                {"action": "list_sessions"},
-                tools_config,
+                "list_sessions",
+                {},
+                registry,
+                skill_overrides,
                 use_containers=False,
             )
             mock_inline.assert_called_once()

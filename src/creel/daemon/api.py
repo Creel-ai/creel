@@ -63,6 +63,25 @@ def _mount_webhook_routes(app: FastAPI, service: DaemonService) -> None:
                 app.api_route(path, methods=[method])(handler)
 
 
+def _mount_pairing_routes(app: FastAPI, auth_deps: list) -> None:
+    """Mount device pairing HTTP + WebSocket routes.
+
+    Creates a ``PairingManager`` stored on ``app.state`` and binds the
+    pairing API routers.
+    """
+    from creel import paths
+    from creel.daemon.api_pairing import create_pairing_routes
+    from creel.pairing import PairingManager
+
+    pairing_dir = paths.creel_home() / "pairing"
+    manager = PairingManager(pairing_dir)
+    app.state.pairing_manager = manager
+
+    pairing_http, pairing_ws = create_pairing_routes(manager)
+    app.include_router(pairing_http, dependencies=auth_deps)
+    app.include_router(pairing_ws)  # WebSocket — handles its own auth
+
+
 def create_daemon_app(
     service: DaemonService | None = None,
     *,
@@ -280,6 +299,9 @@ def create_daemon_app(
     app.include_router(config_router, dependencies=_auth_deps)
     app.include_router(logs_router, dependencies=_auth_deps)
     app.include_router(logs_ws_router)  # WebSocket — handles its own auth
+
+    # Mount device pairing routes
+    _mount_pairing_routes(app, _auth_deps)
 
     # Chat UI — no auth required (local-only by default)
     app.include_router(chat_router)

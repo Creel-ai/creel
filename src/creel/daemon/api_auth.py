@@ -8,6 +8,7 @@ on first daemon start and stored in ~/.creel/dashboard-token.
 
 from __future__ import annotations
 
+import hmac
 import os
 import uuid
 from pathlib import Path
@@ -66,11 +67,11 @@ async def require_dashboard_token(
     expected = request.app.state.dashboard_token
 
     # Check Bearer header first
-    if credentials and credentials.credentials == expected:
+    if credentials and hmac.compare_digest(credentials.credentials, expected):
         return expected
 
     # Check query parameter
-    if token and token == expected:
+    if token and hmac.compare_digest(token, expected):
         return expected
 
     raise HTTPException(

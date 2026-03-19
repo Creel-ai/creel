@@ -23,6 +23,7 @@ creel <command> [options]
 | `audit` | Query the guardian audit log |
 | `network ...` | Network traffic monitoring and policy management |
 | `monitor ...` | Manage proactive monitors and alerts |
+| `pair ...` | Device pairing management (`generate`, `list`, `remove`, `test`) |
 
 ## Global Options
 
@@ -224,3 +225,24 @@ Example output:
 
 2 entries shown.
 ```
+
+## Pair Commands
+
+```bash
+creel pair <subcommand> [options]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `generate` | Generate a new pairing code |
+| `list` | List all paired devices |
+| `remove <device_id>` | Remove a paired device |
+| `test <device_id>` | Test connectivity to a paired device |
+
+### Pair Generate Options
+
+| Option | Description |
+|--------|-------------|
+| `--timeout N` | Pairing timeout in seconds (default: 300) |
+
+See [Device Pairing](../architecture/device-pairing.md) for the full pairing flow and API reference.

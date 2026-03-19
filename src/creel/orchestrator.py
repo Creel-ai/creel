@@ -147,10 +147,9 @@ def _run_agent_mode(
     """Run a task in agent mode using the agent loop."""
     messages = [{"role": "user", "content": prompt}]
 
-    from creel.skills import SkillRegistry
+    from creel.skills.registry import get_shared_registry
 
-    _registry = SkillRegistry()
-    _registry.discover()
+    _registry = get_shared_registry()
 
     if use_containers:
         from creel.container_agent import run_agent_loop_container
@@ -213,7 +212,7 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
 
     Uses _env_override to temporarily set secrets and bridge env vars.
     """
-    from creel.skills.registry import SkillRegistry
+    from creel.skills.registry import get_shared_registry
 
     # Load secrets if configured
     env_overrides: dict[str, str] = {}
@@ -221,9 +220,7 @@ def _run_executor_inline(name: str, config: ExecutorConfig) -> str:
         env_overrides = decrypt_env_file(config.secrets)
         _replace_google_credentials_with_access_token(env_overrides)
 
-    # Lazy discover — avoids import-time side effects in tests
-    registry = SkillRegistry()
-    registry._discover_builtins()
+    registry = get_shared_registry()
 
     entry = registry.get_skill(name)
     if entry is None:

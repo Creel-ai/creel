@@ -506,6 +506,17 @@ def execute_tool_call(
     if skill_result is None:
         raise ValueError(f"Unknown tool: {tool_name}")
 
+    # Security: verify the skill is enabled in skill_overrides before executing
+    _, entry = skill_result
+    skill_id = entry.meta.id
+    if skill_id not in skill_overrides:
+        raise ValueError(
+            f"Tool '{tool_name}' (skill '{skill_id}') is not enabled in skill_overrides"
+        )
+    override = skill_overrides[skill_id]
+    if not override.enabled:
+        raise ValueError(f"Tool '{tool_name}' (skill '{skill_id}') is disabled")
+
     return _execute_skill_tool(
         tool_name=tool_name,
         tool_input=tool_input,
@@ -567,10 +578,17 @@ def _execute_skill_tool(
     # Convert all values to strings (executors expect string args)
     string_args = {k: str(v) for k, v in merged_args.items()}
 
+    # Resolve secrets: per-tool override wins over skill-level override
+    secrets = override.secrets
+    if override.tools:
+        tool_override = override.tools.get(tool_name)
+        if tool_override and tool_override.secrets:
+            secrets = tool_override.secrets
+
     # Build ExecutorConfig from skill override
     executor_config = ExecutorConfig(
         name=skill_id,
-        secrets=override.secrets,
+        secrets=secrets,
         args=string_args,
         timeout=override.timeout or 60,
         http=override.http or HttpConfig(),

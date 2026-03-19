@@ -172,12 +172,14 @@ class TestRunExecutorInline:
 
 class TestExecutorSecrets:
     def _patch_weather_skill(self, side_effect):
-        """Patch the weather skill's execute function within the registry.
+        """Patch the weather skill's execute function within the shared registry.
 
-        _run_executor_inline creates its own SkillRegistry, so we mock the
-        skill entry that gets discovered.
+        _run_executor_inline uses get_shared_registry(), so we reset it and
+        replace the weather skill's execute function after discovery.
         """
-        from creel.skills.registry import SkillEntry, SkillRegistry
+        import contextlib
+
+        from creel.skills.registry import SkillEntry, SkillRegistry, reset_shared_registry
 
         original_discover = SkillRegistry._discover_builtins
 
@@ -185,10 +187,18 @@ class TestExecutorSecrets:
             original_discover(self_reg)
             entry = self_reg.get_skill("weather")
             if entry is not None:
-                # Replace the execute function
                 self_reg._entries["weather"] = SkillEntry(meta=entry.meta, execute=side_effect)
 
-        return patch.object(SkillRegistry, "_discover_builtins", patched_discover)
+        @contextlib.contextmanager
+        def _ctx():
+            reset_shared_registry()
+            with patch.object(SkillRegistry, "_discover_builtins", patched_discover):
+                try:
+                    yield
+                finally:
+                    reset_shared_registry()
+
+        return _ctx()
 
     def test_secrets_loaded_and_restored(self, tmp_path, age_keypair, monkeypatch) -> None:
         """_run_executor_inline should load secrets and restore env after."""

@@ -499,10 +499,9 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     port = parsed.port or 8099
 
     # Pre-generate scoped tokens from skill registry metadata
-    from creel.skills.registry import SkillRegistry as _SkillReg
+    from creel.skills.registry import get_shared_registry as _get_sr
 
-    _sr = _SkillReg()
-    _sr._discover_builtins()
+    _sr = _get_sr()
     scopes = sorted({m.bridge_scope for m in _sr.all_skills() if m.bridge_scope})
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -584,10 +583,9 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
         config_path = args.agent_config or _default_agent_config()
 
-        from creel.skills import SkillRegistry
+        from creel.skills.registry import get_shared_registry
 
-        _registry = SkillRegistry()
-        _registry.discover()
+        _registry = get_shared_registry()
 
         server = ChatServer(
             agent_def,

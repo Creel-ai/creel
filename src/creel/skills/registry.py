@@ -17,6 +17,25 @@ logger = logging.getLogger(__name__)
 
 ENTRY_POINT_GROUP = "creel.skills"
 
+# Built-in tool names that must not be shadowed by skill plugins.
+_BUILTIN_TOOL_NAMES = frozenset(
+    {
+        "remember",
+        "update_long_term_memory",
+        "search_memory",
+        "delete_memory",
+        "edit_memory",
+        "list_memory_files",
+        "set_workspace",
+        "cron",
+        "subagent",
+        "kb_search",
+        "kb_add",
+        "kb_list",
+        "kb_stats",
+    }
+)
+
 
 @dataclass
 class SkillEntry:
@@ -24,6 +43,46 @@ class SkillEntry:
 
     meta: SkillMeta
     execute: ExecuteFn
+
+
+class _LazyExecute:
+    """Defers executor module imports until the first tool call.
+
+    At discovery time we only call register_skill() to get metadata.
+    The actual execute function (which may import heavy dependencies)
+    is loaded on first invocation.
+    """
+
+    __slots__ = ("_module_path", "_real_execute")
+
+    def __init__(self, module_path: str) -> None:
+        self._module_path = module_path
+        self._real_execute: ExecuteFn | None = None
+
+    def __call__(self, config):  # noqa: ANN001
+        if self._real_execute is None:
+            mod = importlib.import_module(self._module_path)
+            _, self._real_execute = mod.register_skill()
+        return self._real_execute(config)
+
+
+# Module-level singleton for sharing a single registry across the process.
+_global_registry: SkillRegistry | None = None
+
+
+def get_shared_registry() -> SkillRegistry:
+    """Return (and lazily create) the process-wide shared SkillRegistry."""
+    global _global_registry  # noqa: PLW0603
+    if _global_registry is None:
+        _global_registry = SkillRegistry()
+        _global_registry.discover()
+    return _global_registry
+
+
+def reset_shared_registry() -> None:
+    """Reset the shared registry (for testing)."""
+    global _global_registry  # noqa: PLW0603
+    _global_registry = None
 
 
 class SkillRegistry:
@@ -38,7 +97,15 @@ class SkillRegistry:
 
         Raises ValueError on tool name collision with a different skill.
         """
-        # Check for tool name collisions
+        # Check for built-in tool name shadowing
+        for tool in meta.tools:
+            if tool.name in _BUILTIN_TOOL_NAMES:
+                raise ValueError(
+                    f"Tool name '{tool.name}' is a built-in tool and cannot "
+                    f"be registered by skill '{meta.id}'"
+                )
+
+        # Check for tool name collisions with other skills
         for tool in meta.tools:
             existing_skill = self._tool_map.get(tool.name)
             if existing_skill is not None and existing_skill != meta.id:
@@ -132,7 +199,12 @@ class SkillRegistry:
             logger.warning("Skill discovery found no plugins")
 
     def _discover_builtins(self) -> None:
-        """Import built-in executor modules directly to fill any gaps."""
+        """Import built-in executor modules directly to fill any gaps.
+
+        Uses lazy execute wrappers so heavy dependencies (google-api-client,
+        beautifulsoup4, etc.) are only imported when a tool is actually called,
+        not at discovery time.
+        """
         for module_path in self._BUILTIN_EXECUTORS:
             try:
                 mod = importlib.import_module(module_path)
@@ -141,7 +213,10 @@ class SkillRegistry:
                     continue
                 meta, execute = register_fn()
                 if meta.id not in self._entries:
-                    self.register(meta, execute)
+                    # Wrap in a lazy proxy that defers heavy imports to first call
+                    lazy_exec = _LazyExecute(module_path)
+                    # Store the eagerly-loaded meta but lazy execute
+                    self.register(meta, lazy_exec)
             except Exception:
                 logger.debug("Could not load built-in skill from %s", module_path)
 

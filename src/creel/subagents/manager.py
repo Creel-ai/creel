@@ -196,10 +196,9 @@ class SubAgentManager:
             if cancel.is_set():
                 return
 
-            from creel.skills import SkillRegistry
+            from creel.skills.registry import get_shared_registry
 
-            _registry = SkillRegistry()
-            _registry.discover()
+            _registry = get_shared_registry()
 
             result = run_agent_loop(
                 messages=messages,

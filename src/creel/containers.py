@@ -555,10 +555,9 @@ def _run_executor_container(
         executor_name = config.name or ""
         scope_name = executor_name.upper()
         try:
-            from creel.skills.registry import SkillRegistry
+            from creel.skills.registry import get_shared_registry
 
-            _reg = SkillRegistry()
-            _reg._discover_builtins()
+            _reg = get_shared_registry()
             _entry = _reg.get_skill(executor_name)
             if _entry is not None and _entry.meta.bridge_scope:
                 scope_name = _entry.meta.bridge_scope

@@ -52,7 +52,12 @@ class ChatServer:
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._cron_manager = cron_manager
-        self._registry: SkillRegistry = registry or SkillRegistry()
+        if registry is not None:
+            self._registry: SkillRegistry = registry
+        else:
+            from creel.skills.registry import get_shared_registry
+
+            self._registry = get_shared_registry()
         self._start_time = datetime.now(UTC)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn

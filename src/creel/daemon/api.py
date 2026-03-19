@@ -172,11 +172,17 @@ def create_daemon_app(
             status = "starting"
         return {"status": status, "service": "creel-daemon"}
 
-    @app.get("/v1/status", response_model=DaemonStatusResponse)
+    # -- v1 API endpoints (defined inline, mounted on a router with auth) ------
+
+    from fastapi import APIRouter
+
+    v1_router = APIRouter(prefix="/v1", tags=["v1"])
+
+    @v1_router.get("/status", response_model=DaemonStatusResponse)
     async def status() -> DaemonStatusResponse:
         return DaemonStatusResponse(**app.state.service.status())
 
-    @app.post("/v1/messages", response_model=SendMessageResponse)
+    @v1_router.post("/messages", response_model=SendMessageResponse)
     async def send_message(request: SendMessageRequest) -> SendMessageResponse:
         svc = app.state.service
         try:
@@ -197,7 +203,7 @@ def create_daemon_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.post("/v1/messages/stream")
+    @v1_router.post("/messages/stream")
     async def stream_message(request: SendMessageRequest) -> StreamingResponse:
         svc = app.state.service
 
@@ -240,26 +246,26 @@ def create_daemon_app(
             },
         )
 
-    @app.get("/v1/sessions", response_model=list[SessionSummary])
+    @v1_router.get("/sessions", response_model=list[SessionSummary])
     async def list_sessions(
         sender_id: str = Query(..., min_length=1),
     ) -> list[SessionSummary]:
         rows = await asyncio.to_thread(app.state.service.list_sessions, sender_id)
         return [SessionSummary(sender_id=sender_id, **row) for row in rows]
 
-    @app.get("/v1/sessions/active", response_model=SessionSummary)
+    @v1_router.get("/sessions/active", response_model=SessionSummary)
     async def active_session(
         sender_id: str = Query(..., min_length=1),
     ) -> SessionSummary:
         row = await asyncio.to_thread(app.state.service.get_active_session, sender_id)
         return SessionSummary(**row)
 
-    @app.post("/v1/sessions/new", response_model=SessionSummary)
+    @v1_router.post("/sessions/new", response_model=SessionSummary)
     async def new_session(request: SessionRequest) -> SessionSummary:
         row = await asyncio.to_thread(app.state.service.new_session, request.sender_id)
         return SessionSummary(**row)
 
-    @app.post("/v1/sessions/{session_id}/resume", response_model=SessionSummary)
+    @v1_router.post("/sessions/{session_id}/resume", response_model=SessionSummary)
     async def resume_session(session_id: str, request: SessionRequest) -> SessionSummary:
         try:
             row = await asyncio.to_thread(
@@ -269,7 +275,7 @@ def create_daemon_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.get("/v1/sessions/{session_id}/history", response_model=SessionHistoryResponse)
+    @v1_router.get("/sessions/{session_id}/history", response_model=SessionHistoryResponse)
     async def session_history(
         session_id: str,
         sender_id: str = Query(..., min_length=1),
@@ -290,8 +296,9 @@ def create_daemon_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    # Mount dashboard API routes (/api/*) — all require auth
+    # Mount dashboard API routes (/api/*) and v1 routes — all require auth
     _auth_deps = [Depends(require_dashboard_token)]
+    app.include_router(v1_router, dependencies=_auth_deps)
     app.include_router(dashboard_router, dependencies=_auth_deps)
     app.include_router(tasks_router, dependencies=_auth_deps)
     app.include_router(cron_router, dependencies=_auth_deps)

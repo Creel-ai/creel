@@ -203,9 +203,9 @@ def _env_set(name: str) -> set[str]:
 def _api(method: str, path: str, server_url: str, password: str, **kwargs) -> dict:
     """Make an authenticated BlueBubbles API call."""
     url = f"{server_url}/api/v1{path}"
-    params = kwargs.pop("params", {})
-    params["password"] = password
-    resp = requests.request(method, url, params=params, timeout=30, **kwargs)
+    headers = kwargs.pop("headers", {})
+    headers["Authorization"] = f"Bearer {password}"
+    resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
     resp.raise_for_status()
     return resp.json()
 

@@ -1,12 +1,19 @@
-"""Tests for URL fetcher executor — HTML extraction and content handling."""
+"""Tests for URL fetcher executor — HTML extraction, content handling, and SSRF protection."""
 
 from __future__ import annotations
 
+import socket
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
-from executors.fetch_url.executor import fetch_url
+from executors.fetch_url.executor import (
+    _is_blocked_ip,
+    _resolve_and_validate,
+    _validate_url,
+    fetch_url,
+)
 
 
 def _mock_response(text, content_type="text/html; charset=utf-8", status_code=200):
@@ -24,11 +31,17 @@ def _mock_response(text, content_type="text/html; charset=utf-8", status_code=20
     return mock
 
 
-# --- fetch_url ---
+def _fake_public_getaddrinfo(host, port, *args, **kwargs):
+    """Return a fake public IP for any hostname — used by existing fetch tests."""
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 443))]
+
+
+# --- fetch_url: HTML extraction ---
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_extracts_html(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_extracts_html(_mock_dns, mock_get):
     """fetch_url should extract text content from HTML."""
     html = """
     <html>
@@ -57,7 +70,8 @@ def test_fetch_url_extracts_html(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_respects_max_chars(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_respects_max_chars(_mock_dns, mock_get):
     """fetch_url should truncate content to max_chars."""
     html = "<html><body><p>" + "x" * 500 + "</p></body></html>"
     mock_get.return_value = _mock_response(html)
@@ -69,7 +83,8 @@ def test_fetch_url_respects_max_chars(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_not_truncated(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_not_truncated(_mock_dns, mock_get):
     """fetch_url should set truncated=False when content fits."""
     html = "<html><body><p>Short content</p></body></html>"
     mock_get.return_value = _mock_response(html)
@@ -79,7 +94,8 @@ def test_fetch_url_not_truncated(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_plain_text(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_plain_text(_mock_dns, mock_get):
     """fetch_url should handle plain text content."""
     mock_get.return_value = _mock_response("Just plain text", content_type="text/plain")
 
@@ -88,7 +104,8 @@ def test_fetch_url_plain_text(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_json_content(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_json_content(_mock_dns, mock_get):
     """fetch_url should handle JSON content."""
     mock_get.return_value = _mock_response('{"key": "value"}', content_type="application/json")
 
@@ -97,7 +114,8 @@ def test_fetch_url_json_content(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_unsupported_content_type(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_unsupported_content_type(_mock_dns, mock_get):
     """fetch_url should return a message for unsupported content types."""
     mock_get.return_value = _mock_response(b"binary data", content_type="application/pdf")
 
@@ -106,7 +124,8 @@ def test_fetch_url_unsupported_content_type(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_collapses_blank_lines(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_collapses_blank_lines(_mock_dns, mock_get):
     """fetch_url should collapse multiple blank lines."""
     html = "<html><body><p>Line 1</p><br><br><br><p>Line 2</p></body></html>"
     mock_get.return_value = _mock_response(html)
@@ -117,7 +136,8 @@ def test_fetch_url_collapses_blank_lines(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_sends_user_agent(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_sends_user_agent(_mock_dns, mock_get):
     """fetch_url should send a User-Agent header."""
     mock_get.return_value = _mock_response("<html><body>Hi</body></html>")
     fetch_url("https://example.com")
@@ -129,7 +149,8 @@ def test_fetch_url_sends_user_agent(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_no_title(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_no_title(_mock_dns, mock_get):
     """fetch_url should handle pages without a title tag."""
     html = "<html><body><p>No title here</p></body></html>"
     mock_get.return_value = _mock_response(html)
@@ -142,7 +163,8 @@ def test_fetch_url_no_title(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_passes_custom_timeouts(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_passes_custom_timeouts(_mock_dns, mock_get):
     """fetch_url should pass connect and read timeouts to requests."""
     mock_get.return_value = _mock_response("<html><body>Hi</body></html>")
     fetch_url("https://example.com", timeout=30, connect_timeout=10)
@@ -152,7 +174,8 @@ def test_fetch_url_passes_custom_timeouts(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_timeout_error_returns_message(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_timeout_error_returns_message(_mock_dns, mock_get):
     """fetch_url should return a clear error dict on timeout."""
     mock_get.side_effect = requests.exceptions.Timeout("timed out")
 
@@ -164,7 +187,8 @@ def test_fetch_url_timeout_error_returns_message(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_connection_error_returns_message(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_connection_error_returns_message(_mock_dns, mock_get):
     """fetch_url should return a clear error dict on connection failure."""
     mock_get.side_effect = requests.exceptions.ConnectionError("refused")
 
@@ -175,7 +199,8 @@ def test_fetch_url_connection_error_returns_message(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_too_many_redirects(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_too_many_redirects(_mock_dns, mock_get):
     """fetch_url should return a clear error on too many redirects."""
     mock_get.side_effect = requests.exceptions.TooManyRedirects("too many")
 
@@ -186,7 +211,8 @@ def test_fetch_url_too_many_redirects(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_response_too_large_by_content_length(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_response_too_large_by_content_length(_mock_dns, mock_get):
     """fetch_url should reject responses exceeding max_size_mb via Content-Length."""
     mock = _mock_response("<html><body>data</body></html>")
     mock.headers["Content-Length"] = str(10 * 1024 * 1024)  # 10 MB
@@ -200,7 +226,8 @@ def test_fetch_url_response_too_large_by_content_length(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_response_too_large_by_actual_content(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_response_too_large_by_actual_content(_mock_dns, mock_get):
     """fetch_url should reject responses exceeding max_size_mb by actual size."""
     mock = _mock_response("<html><body>data</body></html>")
     mock.headers.pop("Content-Length", None)
@@ -217,7 +244,8 @@ def test_fetch_url_response_too_large_by_actual_content(mock_get):
 
 
 @patch("executors.fetch_url.executor.requests.Session.get")
-def test_fetch_url_http_error_returns_message(mock_get):
+@patch("executors.fetch_url.executor.socket.getaddrinfo", side_effect=_fake_public_getaddrinfo)
+def test_fetch_url_http_error_returns_message(_mock_dns, mock_get):
     """fetch_url should return an error dict on HTTP 4xx/5xx responses."""
     mock = _mock_response("<html><body>Not Found</body></html>", status_code=404)
     mock.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Client Error")
@@ -227,3 +255,268 @@ def test_fetch_url_http_error_returns_message(mock_get):
 
     assert "error" in result
     assert "404" in result["error"]
+
+
+# ===========================================================================
+# SSRF protection tests
+# ===========================================================================
+
+
+class TestIsBlockedIp:
+    """Unit tests for the _is_blocked_ip helper."""
+
+    @pytest.mark.parametrize(
+        "ip",
+        [
+            "10.0.0.1",
+            "10.255.255.255",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.0.1",
+            "192.168.1.100",
+            "127.0.0.1",
+            "127.0.0.2",
+            "169.254.169.254",  # AWS/Azure metadata
+            "169.254.0.1",
+        ],
+    )
+    def test_blocked_ipv4(self, ip):
+        assert _is_blocked_ip(ip) is True
+
+    @pytest.mark.parametrize(
+        "ip",
+        [
+            "8.8.8.8",
+            "93.184.216.34",
+            "1.1.1.1",
+            "203.0.113.1",
+        ],
+    )
+    def test_allowed_ipv4(self, ip):
+        assert _is_blocked_ip(ip) is False
+
+    @pytest.mark.parametrize(
+        "ip",
+        [
+            "::1",
+            "fc00::1",
+            "fdff::1",
+            "fe80::1",
+        ],
+    )
+    def test_blocked_ipv6(self, ip):
+        assert _is_blocked_ip(ip) is True
+
+    @pytest.mark.parametrize(
+        "ip",
+        [
+            "2607:f8b0:4004:800::200e",  # Google public
+        ],
+    )
+    def test_allowed_ipv6(self, ip):
+        assert _is_blocked_ip(ip) is False
+
+    def test_ipv4_mapped_ipv6_loopback(self):
+        """::ffff:127.0.0.1 should be blocked (IPv4-mapped loopback)."""
+        assert _is_blocked_ip("::ffff:127.0.0.1") is True
+
+    def test_ipv4_mapped_ipv6_private(self):
+        """::ffff:10.0.0.1 should be blocked (IPv4-mapped private)."""
+        assert _is_blocked_ip("::ffff:10.0.0.1") is True
+
+    def test_ipv4_mapped_ipv6_public(self):
+        """::ffff:8.8.8.8 should not be blocked."""
+        assert _is_blocked_ip("::ffff:8.8.8.8") is False
+
+    def test_invalid_ip_returns_false(self):
+        assert _is_blocked_ip("not-an-ip") is False
+
+
+class TestValidateUrl:
+    """Unit tests for the _validate_url function."""
+
+    def test_allows_https(self):
+        assert _validate_url("https://example.com") is None
+
+    def test_allows_http(self):
+        assert _validate_url("http://example.com") is None
+
+    def test_blocks_file_scheme(self):
+        err = _validate_url("file:///etc/passwd")
+        assert err is not None
+        assert "scheme" in err.lower()
+
+    def test_blocks_ftp_scheme(self):
+        err = _validate_url("ftp://example.com/file")
+        assert err is not None
+        assert "scheme" in err.lower()
+
+    def test_blocks_gopher_scheme(self):
+        err = _validate_url("gopher://evil.com")
+        assert err is not None
+        assert "scheme" in err.lower()
+
+    def test_blocks_data_scheme(self):
+        err = _validate_url("data:text/html,<h1>hi</h1>")
+        assert err is not None
+        assert "scheme" in err.lower()
+
+    def test_blocks_metadata_google_internal(self):
+        err = _validate_url("http://metadata.google.internal/computeMetadata/v1/")
+        assert err is not None
+        assert "metadata" in err.lower()
+
+    def test_blocks_metadata_google_com(self):
+        err = _validate_url("http://metadata.google.com/computeMetadata/v1/")
+        assert err is not None
+        assert "metadata" in err.lower()
+
+    def test_blocks_literal_private_ip(self):
+        err = _validate_url("http://10.0.0.1/admin")
+        assert err is not None
+        assert "private" in err.lower()
+
+    def test_blocks_literal_loopback(self):
+        err = _validate_url("http://127.0.0.1:8080/")
+        assert err is not None
+        assert "private" in err.lower()
+
+    def test_blocks_literal_link_local(self):
+        err = _validate_url("http://169.254.169.254/latest/meta-data/")
+        assert err is not None
+        assert "private" in err.lower()
+
+    def test_blocks_literal_ipv6_loopback(self):
+        err = _validate_url("http://[::1]:8080/")
+        assert err is not None
+        assert "private" in err.lower()
+
+    def test_allows_public_ip_literal(self):
+        assert _validate_url("http://93.184.216.34/") is None
+
+    def test_blocks_no_hostname(self):
+        err = _validate_url("http://")
+        assert err is not None
+
+
+class TestResolveAndValidate:
+    """Unit tests for the _resolve_and_validate function."""
+
+    @patch("executors.fetch_url.executor.socket.getaddrinfo")
+    def test_blocks_dns_resolving_to_private(self, mock_dns):
+        """A hostname resolving to 10.x should be blocked."""
+        mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
+        err = _resolve_and_validate("https://evil.example.com")
+        assert err is not None
+        assert "private" in err.lower()
+
+    @patch("executors.fetch_url.executor.socket.getaddrinfo")
+    def test_blocks_dns_resolving_to_loopback(self, mock_dns):
+        """A hostname resolving to 127.0.0.1 should be blocked (DNS rebinding)."""
+        mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
+        err = _resolve_and_validate("https://rebind.example.com")
+        assert err is not None
+        assert "private" in err.lower()
+
+    @patch("executors.fetch_url.executor.socket.getaddrinfo")
+    def test_blocks_dns_resolving_to_link_local(self, mock_dns):
+        """A hostname resolving to 169.254.x should be blocked."""
+        mock_dns.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 443))
+        ]
+        err = _resolve_and_validate("https://metadata-trick.example.com")
+        assert err is not None
+        assert "private" in err.lower()
+
+    @patch("executors.fetch_url.executor.socket.getaddrinfo")
+    def test_allows_dns_resolving_to_public(self, mock_dns):
+        """A hostname resolving to a public IP should pass."""
+        mock_dns.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ]
+        assert _resolve_and_validate("https://example.com") is None
+
+    @patch("executors.fetch_url.executor.socket.getaddrinfo")
+    def test_blocks_if_any_address_is_private(self, mock_dns):
+        """If DNS returns mixed public+private, block (any private is bad)."""
+        mock_dns.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443)),
+        ]
+        err = _resolve_and_validate("https://mixed.example.com")
+        assert err is not None
+        assert "private" in err.lower()
+
+    @patch(
+        "executors.fetch_url.executor.socket.getaddrinfo",
+        side_effect=socket.gaierror("Name or service not known"),
+    )
+    def test_blocks_dns_failure(self, _mock_dns):
+        """DNS resolution failure should be blocked."""
+        err = _resolve_and_validate("https://doesnotexist.invalid")
+        assert err is not None
+        assert "DNS" in err
+
+    def test_skips_dns_for_literal_ip(self):
+        """Literal IPs skip DNS (already validated in _validate_url)."""
+        # Should return None (pass) even without mocking DNS
+        assert _resolve_and_validate("https://93.184.216.34/") is None
+
+
+class TestFetchUrlSsrfIntegration:
+    """Integration tests: fetch_url should block SSRF attempts end-to-end."""
+
+    def test_blocks_private_ip_10(self):
+        result = fetch_url("http://10.0.0.1/admin")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+
+    def test_blocks_private_ip_172(self):
+        result = fetch_url("http://172.16.0.1/")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+
+    def test_blocks_private_ip_192(self):
+        result = fetch_url("http://192.168.1.1/")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+
+    def test_blocks_loopback(self):
+        result = fetch_url("http://127.0.0.1:8080/secret")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+
+    def test_blocks_aws_metadata(self):
+        result = fetch_url("http://169.254.169.254/latest/meta-data/")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+
+    def test_blocks_gce_metadata(self):
+        result = fetch_url("http://metadata.google.internal/computeMetadata/v1/")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+
+    def test_blocks_file_scheme(self):
+        result = fetch_url("file:///etc/passwd")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+        assert "scheme" in result["error"].lower()
+
+    def test_blocks_data_scheme(self):
+        result = fetch_url("data:text/html,<script>alert(1)</script>")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+
+    @patch("executors.fetch_url.executor.socket.getaddrinfo")
+    def test_blocks_dns_rebinding(self, mock_dns):
+        """A hostname that resolves to a private IP should be blocked."""
+        mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
+        result = fetch_url("https://attacker-controlled.example.com")
+        assert "error" in result
+        assert "Blocked" in result["error"]
+        assert "private" in result["error"].lower()
+
+    def test_blocks_ipv6_loopback(self):
+        result = fetch_url("http://[::1]:8080/")
+        assert "error" in result
+        assert "Blocked" in result["error"]

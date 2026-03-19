@@ -64,7 +64,7 @@ class TestLLMJudge:
         assert result.confidence == 0.1
 
     @patch("creel.providers.build_provider")
-    def test_api_failure_falls_through(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_api_failure_fails_closed(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
         mock_provider = MagicMock()
         mock_provider.create.side_effect = RuntimeError("API down")
         mock_build.return_value = mock_provider
@@ -72,13 +72,14 @@ class TestLLMJudge:
         judge = LLMJudge(config)
         result = judge.judge("test")
 
-        # Should fall through with is_injection=False
+        # Should fail closed with is_injection=True
         assert result is not None
-        assert result.is_injection is False
-        assert "failed" in result.reasoning.lower()
+        assert result.is_injection is True
+        assert result.confidence == 1.0
+        assert "fail-closed" in result.reasoning.lower()
 
     @patch("creel.providers.build_provider")
-    def test_json_parse_error_falls_through(
+    def test_json_parse_error_fails_closed(
         self, mock_build: MagicMock, config: LLMJudgeConfig
     ) -> None:
         mock_provider = MagicMock()
@@ -89,8 +90,9 @@ class TestLLMJudge:
         result = judge.judge("test")
 
         assert result is not None
-        assert result.is_injection is False
-        assert "failed" in result.reasoning.lower()
+        assert result.is_injection is True
+        assert result.confidence == 1.0
+        assert "fail-closed" in result.reasoning.lower()
 
     @patch("creel.providers.build_provider")
     def test_uses_correct_model(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:

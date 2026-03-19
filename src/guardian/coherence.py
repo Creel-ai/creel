@@ -88,8 +88,8 @@ class CoherenceChecker:
     ) -> CoherenceResult:
         """Check if a tool call is coherent with the user's request.
 
-        Returns a CoherenceResult. On any failure, defaults to coherent
-        (fail-open) to avoid blocking legitimate actions.
+        Returns a CoherenceResult. On any failure, defaults to incoherent
+        (fail-closed) to block potentially unsafe actions.
         """
         if not self._config.enabled:
             return CoherenceResult(
@@ -167,9 +167,9 @@ class CoherenceChecker:
             )
 
         except Exception:
-            logger.warning("Coherence check failed — defaulting to coherent", exc_info=True)
+            logger.warning("Coherence check failed — fail-closed default (blocked)", exc_info=True)
             return CoherenceResult(
-                coherent=True,
-                confidence=0.0,
-                reasoning="Coherence check failed — falling through",
+                coherent=False,
+                confidence=1.0,
+                reasoning="Coherence check failed — fail-closed default (blocked)",
             )

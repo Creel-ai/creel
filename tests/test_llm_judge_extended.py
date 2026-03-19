@@ -124,7 +124,7 @@ class TestJudgeParsing:
         assert result.is_injection is False
 
     @patch("creel.providers.build_provider")
-    def test_empty_response_falls_through(
+    def test_empty_response_fails_closed(
         self, mock_build: MagicMock, config: LLMJudgeConfig
     ) -> None:
         mock_provider = MagicMock()
@@ -133,12 +133,13 @@ class TestJudgeParsing:
         judge = LLMJudge(config)
         result = judge.judge("test")
         assert result is not None
-        assert result.is_injection is False
-        assert "failed" in result.reasoning.lower()
+        assert result.is_injection is True
+        assert result.confidence == 1.0
+        assert "fail-closed" in result.reasoning.lower()
 
     @patch("creel.providers.build_provider")
     def test_json_wrapped_in_markdown(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
-        """If the LLM wraps JSON in ```json blocks, parsing should fail gracefully."""
+        """If the LLM wraps JSON in ```json blocks, parsing fails and judge fails closed."""
         mock_provider = MagicMock()
         mock_provider.create.return_value = _mock_llm_response(
             '```json\n{"is_injection": true, "confidence": 0.95}\n```'
@@ -146,19 +147,21 @@ class TestJudgeParsing:
         mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
-        # This will fail JSON parsing and fall through
+        # This will fail JSON parsing and fail closed
         assert result is not None
-        assert result.is_injection is False
+        assert result.is_injection is True
+        assert result.confidence == 1.0
 
     @patch("creel.providers.build_provider")
-    def test_timeout_falls_through(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
+    def test_timeout_fails_closed(self, mock_build: MagicMock, config: LLMJudgeConfig) -> None:
         mock_provider = MagicMock()
         mock_provider.create.side_effect = TimeoutError("API timeout")
         mock_build.return_value = mock_provider
         judge = LLMJudge(config)
         result = judge.judge("test")
         assert result is not None
-        assert result.is_injection is False
+        assert result.is_injection is True
+        assert result.confidence == 1.0
 
 
 class TestUsageTracking:

@@ -135,10 +135,10 @@ class LLMJudge:
         except Exception:
             logger.warning("LLM judge failed", exc_info=True)
 
-        # Fall through — don't block on judge failure
+        # Fail closed — block on judge failure rather than allowing potentially unsafe input
         return ClassifierResult(
-            is_injection=False,
-            confidence=0.0,
+            is_injection=True,
+            confidence=1.0,
             source="llm_judge",
-            reasoning="Judge failed — falling through",
+            reasoning="Judge failed — fail-closed default (blocked)",
         )

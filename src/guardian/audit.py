@@ -104,13 +104,18 @@ class AuditLogger:
         source: str,
         confidence: float | None = None,
     ) -> None:
-        """Log a tool result screening event (includes raw text for debugging)."""
+        """Log a tool result screening event.
+
+        Stores a hash and length of the text rather than raw content
+        to avoid persisting credentials or PII from tool output.
+        """
         self._write(
             {
                 "event": "screen_tool_result",
                 "ts": datetime.now(UTC).isoformat(),
                 "tool_name": tool_name,
-                "text": text,
+                "text_hash": _hash_text(text),
+                "text_length": len(text),
                 "blocked": blocked,
                 "source": source,
                 "confidence": confidence,
@@ -125,13 +130,25 @@ class AuditLogger:
         blocked: bool,
         source: str,
     ) -> None:
-        """Log a debug screening event with raw text and per-chunk breakdown."""
+        """Log a debug screening event with hashed text and per-chunk breakdown.
+
+        Never writes raw input text to disk — stores hash and length only.
+        Per-chunk details include scores but not raw text.
+        """
+        # Strip raw text from chunk details to avoid leaking content
+        safe_chunks = []
+        for chunk in chunks:
+            safe_chunk = {k: v for k, v in chunk.items() if k != "text"}
+            safe_chunk["text_hash"] = _hash_text(chunk.get("text", ""))
+            safe_chunks.append(safe_chunk)
+
         self._write(
             {
                 "event": "screen_input_debug",
                 "ts": datetime.now(UTC).isoformat(),
-                "text": text,
-                "chunks": chunks,
+                "text_hash": _hash_text(text),
+                "text_length": len(text),
+                "chunks": safe_chunks,
                 "blocked": blocked,
                 "source": source,
             }

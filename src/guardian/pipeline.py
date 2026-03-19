@@ -75,6 +75,11 @@ class CheckFn(Protocol):
     async def __call__(self, ctx: PipelineContext) -> CheckResult: ...
 
 
+# Checks that must fail closed (block on error) — security-critical checks
+# that should not silently allow requests through when they crash.
+_FAIL_CLOSED_CHECKS = frozenset({"injection_detector", "policy_engine"})
+
+
 class GuardianPipeline:
     """Async executor for the Guardian safety-check pipeline.
 
@@ -259,9 +264,10 @@ class GuardianPipeline:
             completed = await asyncio.gather(*tasks, return_exceptions=True)
             for name, outcome in zip(check_names, completed, strict=True):
                 if isinstance(outcome, BaseException):
-                    logger.error("Check %s failed: %s", name, outcome)
+                    fail_closed = name in _FAIL_CLOSED_CHECKS
+                    logger.error("Check %s failed (fail_closed=%s): %s", name, fail_closed, outcome)
                     results[name] = CheckResult(
-                        name=name, blocked=False, result=None, error=str(outcome)
+                        name=name, blocked=fail_closed, result=None, error=str(outcome)
                     )
                 else:
                     results[name] = outcome
@@ -287,9 +293,10 @@ class GuardianPipeline:
                         continue
                     exc = task.exception()
                     if exc:
-                        logger.error("Check %s failed: %s", name, exc)
+                        fail_closed = name in _FAIL_CLOSED_CHECKS
+                        logger.error("Check %s failed (fail_closed=%s): %s", name, fail_closed, exc)
                         results[name] = CheckResult(
-                            name=name, blocked=False, result=None, error=str(exc)
+                            name=name, blocked=fail_closed, result=None, error=str(exc)
                         )
                     else:
                         cr = task.result()
@@ -321,5 +328,8 @@ class GuardianPipeline:
                 if cr.blocked and self._config.short_circuit:
                     return
             except Exception as exc:
-                logger.error("Check %s failed: %s", name, exc)
-                results[name] = CheckResult(name=name, blocked=False, result=None, error=str(exc))
+                fail_closed = name in _FAIL_CLOSED_CHECKS
+                logger.error("Check %s failed (fail_closed=%s): %s", name, fail_closed, exc)
+                results[name] = CheckResult(
+                    name=name, blocked=fail_closed, result=None, error=str(exc)
+                )

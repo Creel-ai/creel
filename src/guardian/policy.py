@@ -33,7 +33,9 @@ def _match_condition(condition: dict, tool_args: dict) -> bool:
     if value is None:
         return False
 
-    return fnmatch.fnmatch(str(value), pattern)
+    # Case-insensitive matching for command arguments to prevent
+    # trivial bypasses like "RM -rf" evading "*rm -rf*".
+    return fnmatch.fnmatch(str(value).lower(), pattern.lower())
 
 
 class PolicyEngine:

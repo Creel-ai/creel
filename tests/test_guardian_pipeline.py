@@ -417,7 +417,8 @@ class TestTimeout:
 
 class TestErrorHandling:
     @pytest.mark.asyncio
-    async def test_failing_check_does_not_block(self, policy_file: Path) -> None:
+    async def test_critical_check_failure_blocks(self, policy_file: Path) -> None:
+        """Critical checks (injection_detector, policy_engine) fail closed."""
         g = _make_guardian(
             policy_file,
             pipeline=PipelineConfig(
@@ -441,12 +442,42 @@ class TestErrorHandling:
         ctx = PipelineContext(text="x", tool_name="check_weather", tool_args={})
         result = await pipeline.run(ctx)
 
-        assert result.blocked is False
+        # Critical check (injection_detector) fails closed — pipeline is blocked
+        assert result.blocked is True
         assert result.results["injection_detector"].error is not None
+        assert result.results["injection_detector"].blocked is True
         assert result.results["policy_engine"].blocked is False
 
     @pytest.mark.asyncio
-    async def test_failing_sequential_check(self, policy_file: Path) -> None:
+    async def test_non_critical_check_failure_does_not_block(self, policy_file: Path) -> None:
+        """Non-critical checks (e.g. drift_detector) fail open."""
+        g = _make_guardian(
+            policy_file,
+            pipeline=PipelineConfig(
+                parallel_checks=["drift_detector"],
+                sequential_checks=[],
+                short_circuit=False,
+                timeout=5.0,
+            ),
+        )
+        pipeline = g._pipeline
+
+        async def crashing_check(ctx: PipelineContext) -> CheckResult:
+            raise RuntimeError("drift check exploded")
+
+        pipeline._checks["drift_detector"] = crashing_check
+
+        ctx = PipelineContext(text="x", tool_name="check_weather", tool_args={})
+        result = await pipeline.run(ctx)
+
+        # Non-critical check fails open — pipeline is NOT blocked
+        assert result.blocked is False
+        assert result.results["drift_detector"].error is not None
+        assert result.results["drift_detector"].blocked is False
+
+    @pytest.mark.asyncio
+    async def test_failing_sequential_critical_check_blocks(self, policy_file: Path) -> None:
+        """Sequential critical check failure should block."""
         g = _make_guardian(
             policy_file,
             pipeline=PipelineConfig(
@@ -466,7 +497,7 @@ class TestErrorHandling:
         ctx = PipelineContext(text="x", tool_name="t", tool_args={})
         result = await pipeline.run(ctx)
 
-        assert result.blocked is False
+        assert result.blocked is True
         assert result.results["injection_detector"].error is not None
 
     @pytest.mark.asyncio

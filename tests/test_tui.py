@@ -182,8 +182,9 @@ async def test_subtitle_shows_session_info(tmp_path):
 
 @pytest.mark.asyncio
 async def test_help_command(tmp_path):
-    """/help should show command list without calling the server."""
-    server = _make_mock_server(tmp_path)
+    """/help should be sent to the server and display the response."""
+    help_text = "/new  Start a new session\n/status  Show server status\n/compact  Compact"
+    server = _make_mock_server(tmp_path, help_text)
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
@@ -195,15 +196,14 @@ async def test_help_command(tmp_path):
         log = app.query_one("#chat-log")
         lines_text = "\n".join(str(line) for line in log.lines)
         assert "/compact" in lines_text
-        assert "/exit" in lines_text
         assert "/new" in lines_text
-        server.handle_message.assert_not_called()
+        server.handle_message.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_compact_command(tmp_path):
-    """/compact should clear the display but not the session."""
-    server = _make_mock_server(tmp_path)
+    """/compact should be sent to the server (session compaction)."""
+    server = _make_mock_server(tmp_path, "Compacted 4 messages → 2 (summary + recent).")
     mgr = server._session_mgr
     mgr.add_user_message(SENDER_ID, "Hello there")
 
@@ -212,10 +212,6 @@ async def test_compact_command(tmp_path):
     async with app.run_test() as pilot:
         await pilot.pause()
 
-        log = app.query_one("#chat-log")
-        lines_text = "\n".join(str(line) for line in log.lines)
-        assert "Hello there" in lines_text
-
         inp = app.query_one("#chat-input", ChatInput)
         inp.load_text("/compact")
         await pilot.press("enter")
@@ -223,12 +219,8 @@ async def test_compact_command(tmp_path):
 
         log = app.query_one("#chat-log")
         lines_text = "\n".join(str(line) for line in log.lines)
-        assert "Hello there" not in lines_text
-        assert "Display cleared" in lines_text
-
-        # Session history should still be intact
-        session = mgr.get_or_create(SENDER_ID)
-        assert len(session.messages) == 1
+        assert "Compacted" in lines_text
+        server.handle_message.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -492,8 +484,9 @@ async def test_model_command(tmp_path):
 
 @pytest.mark.asyncio
 async def test_help_includes_new_commands(tmp_path):
-    """/help should mention /status, /model, and new shortcuts."""
-    server = _make_mock_server(tmp_path)
+    """/help should mention /status and /model (returned from server registry)."""
+    help_text = "/status  Show server status\n/model  Show current model\n/tools  List tools"
+    server = _make_mock_server(tmp_path, help_text)
     app = ChatApp(server)
 
     async with app.run_test() as pilot:
@@ -506,9 +499,6 @@ async def test_help_includes_new_commands(tmp_path):
         lines_text = "\n".join(str(line) for line in log.lines)
         assert "/status" in lines_text
         assert "/model" in lines_text
-        assert "ctrl+s" in lines_text
-        assert "ctrl+l" in lines_text
-        assert "ctrl+c/d" in lines_text
 
 
 @pytest.mark.asyncio

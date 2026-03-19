@@ -48,39 +48,9 @@ SENDER_ID = "cli"
 
 _LOG_POLL_INTERVAL = 0.25
 
-# Commands handled locally in the TUI (not sent to backend)
-_TUI_COMMANDS = {"/compact", "/exit", "/quit", "/help"}
-# Commands handled by ChatServer that return instantly (no LLM call)
-_SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions", "/status", "/model", "/allows"}
-# /resume is a prefix match, handled separately
+# TUI-only commands that are never sent to the backend
+_TUI_LOCAL_COMMANDS = {"/exit", "/quit"}
 
-_HELP_TEXT = """\
-[bold]Commands:[/bold]
-  [cyan]/help[/cyan]         Show this help
-  [cyan]/compact[/cyan]      Clear the display (keeps session history)
-  [cyan]/new[/cyan]          Start a new session
-  [cyan]/sessions[/cyan]     List all sessions
-  [cyan]/resume <id>[/cyan]  Resume a session by ID
-  [cyan]/status[/cyan]       Show server status info
-  [cyan]/model[/cyan]        Show current model config
-  [cyan]/allow <p> [Nx] [t][/cyan]  Temporarily allow a tool pattern
-  [cyan]/deny <pattern>[/cyan]     Revoke an active override
-  [cyan]/allows[/cyan]       List active overrides
-  [cyan]/clear[/cyan]        Clear session history
-  [cyan]/exit[/cyan]         Quit
-
-[bold]Shortcuts:[/bold]
-  [cyan]ctrl+n[/cyan]        New session
-  [cyan]ctrl+s[/cyan]        Switch session
-  [cyan]ctrl+l[/cyan]        Clear display
-  [cyan]ctrl+c/d[/cyan]      Quit
-  [cyan]enter[/cyan]         Send message
-  [cyan]shift+enter[/cyan]   New line
-
-[bold]Tips:[/bold]
-  Hold [cyan]shift[/cyan] and drag to select/copy text
-  Use [cyan]↑[/cyan]/[cyan]↓[/cyan] to recall previous messages\
-"""
 
 # Syntax highlighting theme for code blocks in Markdown rendering
 _CODE_THEME = "monokai"
@@ -532,7 +502,7 @@ class ChatApp(App):
         cmd = text.split()[0].lower()
 
         # TUI-local commands
-        if cmd in _TUI_COMMANDS:
+        if cmd in _TUI_LOCAL_COMMANDS:
             self._handle_tui_command(cmd)
             return
 
@@ -542,13 +512,8 @@ class ChatApp(App):
         bar = self.query_one("#status-bar", StatusBar)
         bar.message_count += 1
 
-        # Server commands that return instantly (no LLM call)
-        if (
-            cmd in _SERVER_COMMANDS
-            or cmd == "/resume"
-            or cmd.startswith("/allow")
-            or cmd.startswith("/deny")
-        ):
+        # Slash commands — dispatch to server (registry handles routing)
+        if text.startswith("/"):
             response = self._server.handle_message(self._sender_id, text)
             self._append_response(response)
             self._update_subtitle()
@@ -560,13 +525,7 @@ class ChatApp(App):
         self._send_message(text)
 
     def _handle_tui_command(self, cmd: str) -> None:
-        log = self.query_one("#chat-log", RichLog)
-        if cmd == "/help":
-            log.write(_HELP_TEXT)
-        elif cmd == "/compact":
-            log.clear()
-            log.write("[dim]Display cleared. Session history preserved.[/dim]")
-        elif cmd in ("/exit", "/quit"):
+        if cmd in ("/exit", "/quit"):
             self.action_quit()
 
     @work(thread=True)

@@ -41,6 +41,7 @@ _CREDENTIAL_PATTERNS: list[tuple[str, re.Pattern, int]] = [
     # Anthropic
     ("anthropic_api_key", re.compile(r"sk-ant-[A-Za-z0-9\-_]{40,}"), 45),
     # OpenAI
+    ("openai_project_key", re.compile(r"sk-proj-[A-Za-z0-9_-]{20,}"), 28),
     ("openai_api_key", re.compile(r"sk-[A-Za-z0-9]{20,}"), 23),
     # Slack
     ("slack_bot_token", re.compile(r"xoxb-[0-9]{10,}-[0-9A-Za-z]{20,}"), 30),
@@ -48,6 +49,24 @@ _CREDENTIAL_PATTERNS: list[tuple[str, re.Pattern, int]] = [
     # Stripe
     ("stripe_secret_key", re.compile(r"sk_live_[0-9a-zA-Z]{24,}"), 32),
     ("stripe_restricted_key", re.compile(r"rk_live_[0-9a-zA-Z]{24,}"), 32),
+    # SendGrid
+    ("sendgrid_api_key", re.compile(r"SG\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), 20),
+    # npm / PyPI tokens
+    ("npm_token", re.compile(r"npm_[A-Za-z0-9]{20,}"), 24),
+    ("pypi_token", re.compile(r"pypi-[A-Za-z0-9_-]{20,}"), 25),
+    # age secret keys
+    ("age_secret_key", re.compile(r"AGE-SECRET-KEY-[A-Z0-9]{20,}"), 35),
+    # JWTs (header.payload.signature)
+    ("jwt_token", re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+"), 30),
+    # Database connection URIs
+    (
+        "database_uri",
+        re.compile(
+            r"(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s]{10,}",
+            re.IGNORECASE,
+        ),
+        20,
+    ),
     # Generic patterns (lower priority, higher false positive risk)
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE), 20),
     ("basic_auth", re.compile(r"Basic\s+[A-Za-z0-9+/]+=+", re.IGNORECASE), 15),

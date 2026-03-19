@@ -406,17 +406,19 @@ class TestResolveAndValidate:
     def test_blocks_dns_resolving_to_private(self, mock_dns):
         """A hostname resolving to 10.x should be blocked."""
         mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
-        err = _resolve_and_validate("https://evil.example.com")
+        err, ips = _resolve_and_validate("https://evil.example.com")
         assert err is not None
         assert "private" in err.lower()
+        assert ips == []
 
     @patch("executors.fetch_url.executor.socket.getaddrinfo")
     def test_blocks_dns_resolving_to_loopback(self, mock_dns):
         """A hostname resolving to 127.0.0.1 should be blocked (DNS rebinding)."""
         mock_dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
-        err = _resolve_and_validate("https://rebind.example.com")
+        err, ips = _resolve_and_validate("https://rebind.example.com")
         assert err is not None
         assert "private" in err.lower()
+        assert ips == []
 
     @patch("executors.fetch_url.executor.socket.getaddrinfo")
     def test_blocks_dns_resolving_to_link_local(self, mock_dns):
@@ -424,17 +426,20 @@ class TestResolveAndValidate:
         mock_dns.return_value = [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 443))
         ]
-        err = _resolve_and_validate("https://metadata-trick.example.com")
+        err, ips = _resolve_and_validate("https://metadata-trick.example.com")
         assert err is not None
         assert "private" in err.lower()
+        assert ips == []
 
     @patch("executors.fetch_url.executor.socket.getaddrinfo")
     def test_allows_dns_resolving_to_public(self, mock_dns):
-        """A hostname resolving to a public IP should pass."""
+        """A hostname resolving to a public IP should pass and return IPs."""
         mock_dns.return_value = [
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
         ]
-        assert _resolve_and_validate("https://example.com") is None
+        err, ips = _resolve_and_validate("https://example.com")
+        assert err is None
+        assert ips == ["93.184.216.34"]
 
     @patch("executors.fetch_url.executor.socket.getaddrinfo")
     def test_blocks_if_any_address_is_private(self, mock_dns):
@@ -443,9 +448,10 @@ class TestResolveAndValidate:
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443)),
         ]
-        err = _resolve_and_validate("https://mixed.example.com")
+        err, ips = _resolve_and_validate("https://mixed.example.com")
         assert err is not None
         assert "private" in err.lower()
+        assert ips == []
 
     @patch(
         "executors.fetch_url.executor.socket.getaddrinfo",
@@ -453,14 +459,16 @@ class TestResolveAndValidate:
     )
     def test_blocks_dns_failure(self, _mock_dns):
         """DNS resolution failure should be blocked."""
-        err = _resolve_and_validate("https://doesnotexist.invalid")
+        err, ips = _resolve_and_validate("https://doesnotexist.invalid")
         assert err is not None
         assert "DNS" in err
+        assert ips == []
 
     def test_skips_dns_for_literal_ip(self):
         """Literal IPs skip DNS (already validated in _validate_url)."""
-        # Should return None (pass) even without mocking DNS
-        assert _resolve_and_validate("https://93.184.216.34/") is None
+        err, ips = _resolve_and_validate("https://93.184.216.34/")
+        assert err is None
+        assert ips == []  # no DNS resolution needed
 
 
 class TestFetchUrlSsrfIntegration:

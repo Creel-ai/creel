@@ -751,9 +751,9 @@ def run_agent_loop(
             # hallucinated or prompt-injected tool names.
             if tool_name not in valid_tool_names:
                 logger.warning(
-                    "Tool %s not found in tool registry (valid: %s)",
+                    "Tool %s not found in tool registry (%d tools available)",
                     tool_name,
-                    sorted(valid_tool_names),
+                    len(valid_tool_names),
                 )
                 _record_tool_error(
                     block.id,

@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
 
 USER_AGENT = "Creel/1.0 (URL Fetcher)"
 
@@ -163,35 +164,65 @@ def _validate_url(url: str) -> str | None:
     return None
 
 
-def _resolve_and_validate(url: str) -> str | None:
+def _resolve_and_validate(url: str) -> tuple[str | None, list[str]]:
     """Resolve the hostname via DNS and return an error if the IP is blocked.
 
-    This prevents DNS rebinding: even if the hostname looks fine, the
-    resolved address must not point to a private/internal range.
+    Returns ``(error_message_or_None, list_of_safe_ips)``.  The caller
+    should pin the connection to one of the returned IPs to prevent a
+    TOCTOU DNS rebinding attack.
     """
     parsed = urlparse(url)
     hostname = parsed.hostname
     if not hostname:
-        return "Blocked: URL has no hostname"
+        return "Blocked: URL has no hostname", []
 
     # Skip DNS check for literal IPs (already validated in _validate_url)
     try:
         ipaddress.ip_address(hostname)
-        return None
+        return None, []
     except ValueError:
         pass
 
     try:
         addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
-        return f"Blocked: DNS resolution failed for '{hostname}'"
+        return f"Blocked: DNS resolution failed for '{hostname}'", []
 
+    safe_ips: list[str] = []
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         ip_str = str(sockaddr[0])
         if _is_blocked_ip(ip_str):
-            return "Blocked: URL resolves to a private/internal IP address"
+            return "Blocked: URL resolves to a private/internal IP address", []
+        safe_ips.append(ip_str)
 
-    return None
+    return None, safe_ips
+
+
+class _PinnedIPAdapter(HTTPAdapter):
+    """HTTPAdapter that forces connections to a pre-resolved IP.
+
+    This closes the TOCTOU gap between DNS validation and the actual
+    HTTP request — the resolved IP is pinned so a second DNS lookup
+    cannot return a different (potentially private) address.
+    """
+
+    def __init__(self, pinned_ip: str, **kwargs):
+        self._pinned_ip = pinned_ip
+        super().__init__(**kwargs)
+
+    def send(self, request, **kwargs):
+        # Rewrite the URL to use the pinned IP, preserving the Host header
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(request.url)
+        # Set Host header so the server sees the original hostname
+        request.headers.setdefault("Host", parsed.hostname or "")
+        # Replace hostname with the pinned IP
+        pinned_netloc = self._pinned_ip
+        if parsed.port:
+            pinned_netloc = f"{self._pinned_ip}:{parsed.port}"
+        request.url = urlunparse(parsed._replace(netloc=pinned_netloc))
+        return super().send(request, **kwargs)
 
 
 def fetch_url(
@@ -218,12 +249,18 @@ def fetch_url(
     if error:
         return {"url": url, "error": error}
 
-    error = _resolve_and_validate(url)
+    error, safe_ips = _resolve_and_validate(url)
     if error:
         return {"url": url, "error": error}
 
     with requests.Session() as session:
         session.max_redirects = max_redirects
+        # Pin the connection to the pre-resolved IP to prevent TOCTOU
+        # DNS rebinding (second lookup returning a different address).
+        if safe_ips:
+            adapter = _PinnedIPAdapter(safe_ips[0])
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
         return _fetch_with_session(
             session, url, max_chars, timeout, connect_timeout, max_redirects, max_size_mb
         )

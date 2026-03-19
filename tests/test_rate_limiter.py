@@ -22,7 +22,7 @@ from creel.rate_limiter import (
 
 class TestEstimateCost:
     def test_known_model(self):
-        cost = estimate_cost("claude-sonnet-4-20250514", 1000, 500)
+        cost = estimate_cost("claude-sonnet-4-6", 1000, 500)
         # input: 1000 * 3.00 / 1M = 0.003
         # output: 500 * 15.00 / 1M = 0.0075
         assert abs(cost - 0.0105) < 1e-6
@@ -33,11 +33,11 @@ class TestEstimateCost:
         assert abs(cost - 0.0105) < 1e-6
 
     def test_zero_tokens(self):
-        assert estimate_cost("claude-sonnet-4-20250514", 0, 0) == 0.0
+        assert estimate_cost("claude-sonnet-4-6", 0, 0) == 0.0
 
     def test_haiku_cheaper(self):
-        haiku_cost = estimate_cost("claude-haiku-4-5-20251001", 1000, 1000)
-        sonnet_cost = estimate_cost("claude-sonnet-4-20250514", 1000, 1000)
+        haiku_cost = estimate_cost("claude-haiku-4-5", 1000, 1000)
+        sonnet_cost = estimate_cost("claude-sonnet-4-6", 1000, 1000)
         assert haiku_cost < sonnet_cost
 
 
@@ -55,7 +55,7 @@ class TestRateLimiterBasic:
 
     def test_record_tracks_usage(self):
         rl = RateLimiter()
-        rl.record("claude-sonnet-4-20250514", input_tokens=100, output_tokens=50)
+        rl.record("claude-sonnet-4-6", input_tokens=100, output_tokens=50)
         usage = rl.get_usage()
         assert usage.requests_last_minute == 1
         assert usage.tokens_today == 150
@@ -115,7 +115,7 @@ class TestHourlyLimit:
         )
         # Record 3 requests to fill the hourly window
         for _ in range(3):
-            rl.record("claude-sonnet-4-20250514", 10, 10)
+            rl.record("claude-sonnet-4-6", 10, 10)
 
         with pytest.raises(RateLimitExceeded, match="requests_per_hour"):
             rl.check(block=False)
@@ -130,7 +130,7 @@ class TestDailyLimits:
             queue_timeout=0.0,
         )
         # Record 60 + 60 = 120 tokens, exceeding 100 limit
-        rl.record("claude-sonnet-4-20250514", 60, 60)
+        rl.record("claude-sonnet-4-6", 60, 60)
         with pytest.raises(RateLimitExceeded, match="tokens_per_day"):
             rl.check(block=False)
 
@@ -143,7 +143,7 @@ class TestDailyLimits:
             queue_timeout=0.0,
         )
         # Record a call that exceeds the cost cap
-        rl.record("claude-sonnet-4-20250514", 10000, 10000)
+        rl.record("claude-sonnet-4-6", 10000, 10000)
         with pytest.raises(RateLimitExceeded, match="cost_per_day_usd"):
             rl.check(block=False)
 
@@ -190,7 +190,7 @@ class TestAlerts:
             on_alert=on_alert,
         )
         # Record 85 tokens out of 100 limit = 85%
-        rl.record("claude-sonnet-4-20250514", 45, 40)
+        rl.record("claude-sonnet-4-6", 45, 40)
         assert len(alerts) == 1
         assert alerts[0][0] == "approaching_limit"
         assert alerts[0][1] == "tokens_per_day"
@@ -208,7 +208,7 @@ class TestAlerts:
             cost_per_day_usd=100.0,
             on_alert=on_alert,
         )
-        rl.record("claude-sonnet-4-20250514", 55, 50)
+        rl.record("claude-sonnet-4-6", 55, 50)
         alert_types = [a[0] for a in alerts]
         assert "limit_hit" in alert_types
 
@@ -226,9 +226,9 @@ class TestAlerts:
             on_alert=on_alert,
         )
         # Two calls that both keep us above 80%
-        rl.record("claude-sonnet-4-20250514", 450, 400)
+        rl.record("claude-sonnet-4-6", 450, 400)
         count_after_first = len(alerts)
-        rl.record("claude-sonnet-4-20250514", 10, 10)
+        rl.record("claude-sonnet-4-6", 10, 10)
         # Should not fire again for same threshold
         assert len(alerts) == count_after_first
 
@@ -236,7 +236,7 @@ class TestAlerts:
 class TestUsageHistory:
     def test_in_memory_history(self):
         rl = RateLimiter()
-        rl.record("claude-sonnet-4-20250514", 100, 50)
+        rl.record("claude-sonnet-4-6", 100, 50)
         history = rl.get_usage_history(days=1)
         assert len(history) == 1
         assert history[0]["requests"] == 1
@@ -245,7 +245,7 @@ class TestUsageHistory:
     def test_persisted_history(self, tmp_path):
         usage_dir = tmp_path / "usage"
         rl = RateLimiter(usage_dir=usage_dir)
-        rl.record("claude-sonnet-4-20250514", 200, 100)
+        rl.record("claude-sonnet-4-6", 200, 100)
 
         history = rl.get_usage_history(days=1)
         assert len(history) == 1
@@ -258,7 +258,7 @@ class TestUsageHistory:
 
         usage_dir = tmp_path / "usage"
         rl = RateLimiter(usage_dir=usage_dir)
-        rl.record("claude-sonnet-4-20250514", 100, 50)
+        rl.record("claude-sonnet-4-6", 100, 50)
 
         today = datetime.datetime.now(datetime.UTC).date().strftime("%Y-%m-%d")
         fpath = usage_dir / f"{today}.jsonl"
@@ -338,7 +338,7 @@ class TestRateLimitConfig:
 
         llm = LLMConfig(
             **{
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "max_tokens": 4096,
                 "rate_limits": {
                     "requests_per_minute": 60,
@@ -374,7 +374,7 @@ class TestConcurrency:
         def recorder():
             try:
                 for _ in range(20):
-                    rl.record("claude-sonnet-4-20250514", 10, 5)
+                    rl.record("claude-sonnet-4-6", 10, 5)
             except Exception as e:
                 errors.append(e)
 
@@ -432,7 +432,7 @@ class TestLLMIntegration:
 
         from creel.models import LLMConfig
 
-        config = LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100)
+        config = LLMConfig(model="claude-sonnet-4-6", max_tokens=100)
 
         with pytest.raises(RateLimitExceeded, match="requests_per_minute"):
             llm_mod.call_llm(
@@ -452,7 +452,7 @@ class TestLLMIntegration:
 
         from creel.models import LLMConfig
 
-        config = LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100)
+        config = LLMConfig(model="claude-sonnet-4-6", max_tokens=100)
         llm_mod.call_llm(
             messages=[{"role": "user", "content": "hello"}],
             config=config,
@@ -472,7 +472,7 @@ class TestLLMIntegration:
 
         from creel.models import LLMConfig
 
-        config = LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100)
+        config = LLMConfig(model="claude-sonnet-4-6", max_tokens=100)
         result = llm_mod.call_llm(
             messages=[{"role": "user", "content": "hello"}],
             config=config,

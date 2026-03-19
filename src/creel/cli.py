@@ -640,7 +640,10 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
             except Exception:
                 logger.exception("SIGHUP config reload failed")
 
-        _signal.signal(_signal.SIGHUP, _sighup_handler)
+        if threading.current_thread() is threading.main_thread():
+            _signal.signal(_signal.SIGHUP, _sighup_handler)
+        else:
+            logger.warning("Not on main thread — SIGHUP reload handler not installed")
 
         # Start file watcher for automatic config reload
         from creel.daemon.watcher import ConfigWatcher

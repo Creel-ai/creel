@@ -150,8 +150,8 @@ def test_review_returns_approval_required(mock_llm, mock_exec):
     )
 
     assert result.stop_reason == "approval_required"
-    assert result.pending_approval is not None
-    assert result.pending_approval.tool_name == "send_email"
+    assert result.pending_approvals
+    assert result.pending_approvals[0].tool_name == "send_email"
     mock_exec.assert_not_called()
 
 
@@ -221,7 +221,6 @@ def _make_chat_server(tmp_path, guardian=None, imessage_channel=None):
         },
         session=SessionConfig(
             sessions_dir=str(tmp_path / "sessions"),
-            max_history=10,
             summarize_on_trim=False,
         ),
         workspace=WorkspaceConfig(
@@ -249,9 +248,9 @@ def test_chat_approval_required_queues_action(mock_run, tmp_path):
         turns_used=1,
         tool_calls_made=0,
         stop_reason="approval_required",
-        pending_approval=PendingApproval(
-            "send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_abc"
-        ),
+        pending_approvals=[
+            PendingApproval("send_email", {"to": "x@y.com"}, "flagged", tool_use_id="tool_abc")
+        ],
     )
 
     server = _make_chat_server(tmp_path)
@@ -500,12 +499,14 @@ def test_chat_y_cascading_approval(mock_exec, mock_run, tmp_path):
         turns_used=1,
         tool_calls_made=1,
         stop_reason="approval_required",
-        pending_approval=PendingApproval(
-            tool_name="gmail_send",
-            tool_input={"to": "boss@example.com", "body": "Done"},
-            reason="outbound email requires review",
-            tool_use_id="tool_followup",
-        ),
+        pending_approvals=[
+            PendingApproval(
+                tool_name="gmail_send",
+                tool_input={"to": "boss@example.com", "body": "Done"},
+                reason="outbound email requires review",
+                tool_use_id="tool_followup",
+            )
+        ],
     )
 
     server = _make_chat_server(tmp_path)

@@ -48,12 +48,12 @@ class TestModelRouterCreate:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
         )
         result = router.create(
             messages=[{"role": "user", "content": "hi"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=100,
         )
 
@@ -74,13 +74,13 @@ class TestModelRouterCreate:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
             check_health=False,
         )
         result = router.create(
             messages=[{"role": "user", "content": "hi"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=100,
         )
 
@@ -99,13 +99,13 @@ class TestModelRouterCreate:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
             check_health=False,
         )
         result = router.create(
             messages=[{"role": "user", "content": "hi"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=100,
         )
 
@@ -121,7 +121,7 @@ class TestModelRouterCreate:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
             check_health=False,
         )
@@ -129,7 +129,7 @@ class TestModelRouterCreate:
         with pytest.raises(LLMAuthError, match="bad key"):
             router.create(
                 messages=[{"role": "user", "content": "hi"}],
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=100,
             )
 
@@ -147,7 +147,7 @@ class TestModelRouterCreate:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
             check_health=False,
         )
@@ -155,7 +155,7 @@ class TestModelRouterCreate:
         with pytest.raises(LLMTransientError, match="also down"):
             router.create(
                 messages=[{"role": "user", "content": "hi"}],
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=100,
             )
 
@@ -173,13 +173,13 @@ class TestModelRouterCreate:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o", "ollama/llama3.2"],
             check_health=True,
         )
         result = router.create(
             messages=[{"role": "user", "content": "hi"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=100,
         )
 
@@ -195,14 +195,14 @@ class TestModelRouterCreate:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=[],
         )
 
         with pytest.raises(LLMRateLimitError):
             router.create(
                 messages=[{"role": "user", "content": "hi"}],
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=100,
             )
 
@@ -219,13 +219,13 @@ class TestModelRouterStream:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
             check_health=False,
         )
         result = router.stream(
             messages=[{"role": "user", "content": "hi"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=100,
         )
 
@@ -243,7 +243,7 @@ class TestModelRouterHealth:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
         )
         assert router.health() is True
@@ -258,7 +258,7 @@ class TestModelRouterHealth:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
         )
         assert router.health() is False
@@ -277,7 +277,7 @@ class TestModelRouterEnvVars:
 
         router = ModelRouter(
             primary_provider="anthropic",
-            primary_model="claude-sonnet-4-20250514",
+            primary_model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
         )
         env = router.extract_env_vars()
@@ -289,9 +289,7 @@ class TestGetProviderWithFallback:
     def test_no_fallback_returns_plain_provider(self):
         from creel.providers import get_provider_with_fallback
 
-        provider = get_provider_with_fallback(
-            provider="anthropic", model="claude-sonnet-4-20250514"
-        )
+        provider = get_provider_with_fallback(provider="anthropic", model="claude-sonnet-4-6")
         assert not isinstance(provider, ModelRouter)
 
     def test_with_fallback_returns_router(self):
@@ -299,7 +297,7 @@ class TestGetProviderWithFallback:
 
         provider = get_provider_with_fallback(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             fallback=["openai/gpt-4o"],
         )
         assert isinstance(provider, ModelRouter)

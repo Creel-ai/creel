@@ -23,14 +23,14 @@ from creel.providers.base import LLMProvider
 
 class TestParseModelString:
     def test_with_provider_prefix(self):
-        provider, model = LLMProvider.parse_model_string("anthropic/claude-sonnet-4-20250514")
+        provider, model = LLMProvider.parse_model_string("anthropic/claude-sonnet-4-6")
         assert provider == "anthropic"
-        assert model == "claude-sonnet-4-20250514"
+        assert model == "claude-sonnet-4-6"
 
     def test_without_prefix(self):
-        provider, model = LLMProvider.parse_model_string("claude-sonnet-4-20250514")
+        provider, model = LLMProvider.parse_model_string("claude-sonnet-4-6")
         assert provider is None
-        assert model == "claude-sonnet-4-20250514"
+        assert model == "claude-sonnet-4-6"
 
     def test_openai_prefix(self):
         provider, model = LLMProvider.parse_model_string("openai/gpt-4o")
@@ -58,7 +58,7 @@ class TestResolveProviderName:
         assert _resolve_provider_name("gpt-4o", "openai") == "openai"
 
     def test_default_anthropic(self):
-        assert _resolve_provider_name("claude-sonnet-4-20250514", "anthropic") == "anthropic"
+        assert _resolve_provider_name("claude-sonnet-4-6", "anthropic") == "anthropic"
 
 
 class TestResolveModelName:
@@ -66,7 +66,7 @@ class TestResolveModelName:
         assert _resolve_model_name("openai/gpt-4o") == "gpt-4o"
 
     def test_no_prefix(self):
-        assert _resolve_model_name("claude-sonnet-4-20250514") == "claude-sonnet-4-20250514"
+        assert _resolve_model_name("claude-sonnet-4-6") == "claude-sonnet-4-6"
 
 
 # -- Factory --
@@ -105,7 +105,7 @@ class TestGetProvider:
         assert isinstance(provider, BedrockProvider)
 
     def test_explicit_provider(self):
-        provider = get_provider(provider="anthropic", model="claude-sonnet-4-20250514")
+        provider = get_provider(provider="anthropic", model="claude-sonnet-4-6")
         from creel.providers.anthropic import AnthropicProvider
 
         assert isinstance(provider, AnthropicProvider)
@@ -184,7 +184,7 @@ class TestAnthropicProvider:
         provider = AnthropicProvider()
         result = provider.create(
             messages=[{"role": "user", "content": "Hello"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=100,
         )
 
@@ -222,7 +222,7 @@ class TestAnthropicProvider:
         provider = AnthropicProvider()
         result = provider.create(
             messages=[{"role": "user", "content": "Weather?"}],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=100,
         )
 
@@ -267,6 +267,6 @@ class TestAnthropicProvider:
         with pytest.raises(LLMRateLimitError):
             provider.create(
                 messages=[{"role": "user", "content": "Hi"}],
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=100,
             )

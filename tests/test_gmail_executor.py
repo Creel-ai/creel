@@ -1,10 +1,19 @@
-"""Tests for the Gmail executor."""
+"""Tests for the Gmail executors (readonly and modify)."""
 
 from __future__ import annotations
 
 import base64
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from executors.gmail_modify.executor import (
+    _MAX_BATCH_SIZE,
+    _parse_ids,
+    batch_delete,
+    batch_modify,
+    batch_trash,
+)
 from executors.gmail_readonly.executor import (
     _clean_snippet,
     _extract_body,
@@ -280,3 +289,85 @@ class TestFetchEmails:
 
         emails = fetch_emails()
         assert emails == []
+
+
+# ---------------------------------------------------------------------------
+# Gmail modify executor — batch operations
+# ---------------------------------------------------------------------------
+
+
+class TestParseIds:
+    def test_comma_separated(self) -> None:
+        assert _parse_ids("a,b,c") == ["a", "b", "c"]
+
+    def test_strips_whitespace(self) -> None:
+        assert _parse_ids(" a , b , c ") == ["a", "b", "c"]
+
+    def test_empty_string(self) -> None:
+        assert _parse_ids("") == []
+
+    def test_trailing_comma(self) -> None:
+        assert _parse_ids("a,b,") == ["a", "b"]
+
+
+class TestBatchModify:
+    @patch("executors.gmail_modify.executor.get_credentials")
+    @patch("executors.gmail_modify.executor.build")
+    def test_batch_modify_calls_api(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+        mock_creds.return_value = MagicMock()
+        mock_service = MagicMock()
+        mock_build.return_value = mock_service
+
+        result = batch_modify(["m1", "m2"], add_labels=["STARRED"], remove_labels=["UNREAD"])
+
+        assert result == {"modified": 2, "ids": ["m1", "m2"]}
+        mock_service.users().messages().batchModify.assert_called_once_with(
+            userId="me",
+            body={"ids": ["m1", "m2"], "addLabelIds": ["STARRED"], "removeLabelIds": ["UNREAD"]},
+        )
+
+    def test_batch_modify_rejects_oversized_list(self) -> None:
+        ids = [f"m{i}" for i in range(_MAX_BATCH_SIZE + 1)]
+        with pytest.raises(ValueError, match="Too many message IDs"):
+            batch_modify(ids)
+
+
+class TestBatchTrash:
+    @patch("executors.gmail_modify.executor.get_credentials")
+    @patch("executors.gmail_modify.executor.build")
+    def test_batch_trash_delegates_to_modify(
+        self, mock_build: MagicMock, mock_creds: MagicMock
+    ) -> None:
+        mock_creds.return_value = MagicMock()
+        mock_service = MagicMock()
+        mock_build.return_value = mock_service
+
+        result = batch_trash(["m1"])
+
+        assert result == {"modified": 1, "ids": ["m1"]}
+        mock_service.users().messages().batchModify.assert_called_once_with(
+            userId="me",
+            body={"ids": ["m1"], "addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX"]},
+        )
+
+
+class TestBatchDelete:
+    @patch("executors.gmail_modify.executor.get_credentials")
+    @patch("executors.gmail_modify.executor.build")
+    def test_batch_delete_calls_api(self, mock_build: MagicMock, mock_creds: MagicMock) -> None:
+        mock_creds.return_value = MagicMock()
+        mock_service = MagicMock()
+        mock_build.return_value = mock_service
+
+        result = batch_delete(["m1", "m2"])
+
+        assert result == {"deleted": 2, "ids": ["m1", "m2"]}
+        mock_service.users().messages().batchDelete.assert_called_once_with(
+            userId="me",
+            body={"ids": ["m1", "m2"]},
+        )
+
+    def test_batch_delete_rejects_oversized_list(self) -> None:
+        ids = [f"m{i}" for i in range(_MAX_BATCH_SIZE + 1)]
+        with pytest.raises(ValueError, match="Too many message IDs"):
+            batch_delete(ids)

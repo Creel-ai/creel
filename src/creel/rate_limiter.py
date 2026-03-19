@@ -21,7 +21,11 @@ logger = logging.getLogger(__name__)
 # Update this table when new models are released; unknown models fall back to
 # _DEFAULT_PRICING below.
 MODEL_PRICING: dict[str, tuple[float, float]] = {
-    # Claude 4 family
+    # Claude 4 family (current aliases)
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5": (0.80, 4.00),
+    "claude-opus-4-6": (15.00, 75.00),
+    # Claude 4 family (dated IDs — keep until fully deprecated)
     "claude-sonnet-4-20250514": (3.00, 15.00),
     "claude-haiku-4-5-20251001": (0.80, 4.00),
     "claude-opus-4-20250514": (15.00, 75.00),

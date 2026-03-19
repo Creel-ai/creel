@@ -585,12 +585,14 @@ def _handle_tool_request(
                         turns_used=0,
                         tool_calls_made=0,
                         stop_reason="approval_required",
-                        pending_approval=PendingApproval(
-                            tool_name=tool_name,
-                            tool_input=tool_input,
-                            reason=decision.reason,
-                            tool_use_id=tool_id,
-                        ),
+                        pending_approvals=[
+                            PendingApproval(
+                                tool_name=tool_name,
+                                tool_input=tool_input,
+                                reason=decision.reason,
+                                tool_use_id=tool_id,
+                            )
+                        ],
                     )
                     return None, pending_result
 

@@ -69,7 +69,7 @@ class LLMJudgeConfig(BaseModel):
 
     enabled: bool = True  # enabled by default for security
     provider: str | None = None  # None = inherit from main LLM config
-    model: str = "claude-haiku-4-5-20251001"
+    model: str = "claude-haiku-4-5"
     max_tokens: int = 256
     timeout: float = 3.0
     uncertain_only: bool = True  # only run when classifier is uncertain
@@ -98,7 +98,7 @@ class CoherenceConfig(BaseModel):
 
     enabled: bool = False  # off by default — opt-in
     provider: str | None = None  # None = inherit from main LLM config
-    model: str = "claude-haiku-4-5-20251001"
+    model: str = "claude-haiku-4-5"
     max_tokens: int = 256
     timeout: float = 3.0
 

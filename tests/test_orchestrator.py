@@ -30,7 +30,7 @@ def _make_task(tmp_path: Path, **overrides) -> Path:
         },
         "prompt": "Date: {date}\nWeather: {weather}",
         "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
     }
     task.update(overrides)
     path = tmp_path / f"{task['name']}.yaml"
@@ -93,7 +93,7 @@ def test_gmail_executor_through_orchestrator(tmp_path: Path) -> None:
         },
         "prompt": "Date: {date}\nEmails: {gmail_readonly}",
         "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
     }
     path = tmp_path / "gmail_test.yaml"
     path.write_text(yaml.dump(task))
@@ -432,7 +432,7 @@ class TestAgentMode:
         task_path = _make_task(
             tmp_path,
             llm={
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "max_tokens": 100,
                 "secrets": str(enc_path),
             },
@@ -492,6 +492,43 @@ class TestGmailExecutorInline:
         cfg = ExecutorConfig(args={"action": "unknown", "message_id": "msg-3"})
         with pytest.raises(ValueError, match="unknown action"):
             _run_executor_inline("gmail_modify", cfg)
+
+    def test_gmail_batch_modify(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "batch_modify",
+                "message_ids": "m1,m2,m3",
+                "add_labels": "STARRED",
+                "remove_labels": "UNREAD",
+            }
+        )
+        with patch(
+            "executors.gmail_modify.executor.batch_modify",
+            return_value={"modified": 3, "ids": ["m1", "m2", "m3"]},
+        ) as mock_bm:
+            result = _run_executor_inline("gmail_modify", cfg)
+        assert "modified" in result
+        mock_bm.assert_called_once_with(["m1", "m2", "m3"], ["STARRED"], ["UNREAD"])
+
+    def test_gmail_batch_trash(self) -> None:
+        cfg = ExecutorConfig(args={"action": "batch_trash", "message_ids": "m1, m2"})
+        with patch(
+            "executors.gmail_modify.executor.batch_trash",
+            return_value={"modified": 2, "ids": ["m1", "m2"]},
+        ) as mock_bt:
+            result = _run_executor_inline("gmail_modify", cfg)
+        assert "modified" in result
+        mock_bt.assert_called_once_with(["m1", "m2"])
+
+    def test_gmail_batch_delete(self) -> None:
+        cfg = ExecutorConfig(args={"action": "batch_delete", "message_ids": "m1,m2"})
+        with patch(
+            "executors.gmail_modify.executor.batch_delete",
+            return_value={"deleted": 2, "ids": ["m1", "m2"]},
+        ) as mock_bd:
+            result = _run_executor_inline("gmail_modify", cfg)
+        assert "deleted" in result
+        mock_bd.assert_called_once_with(["m1", "m2"])
 
 
 # ---------------------------------------------------------------------------
@@ -720,7 +757,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nSheet data: {google_sheets}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "sheets_test.yaml"
         path.write_text(yaml.dump(task))
@@ -751,7 +788,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nDocument: {google_docs}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "docs_test.yaml"
         path.write_text(yaml.dump(task))
@@ -784,7 +821,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nPresentation: {google_slides}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "slides_test.yaml"
         path.write_text(yaml.dump(task))
@@ -817,7 +854,7 @@ class TestGoogleExecutorsE2E:
             },
             "prompt": "Date: {date}\nDocument: {google_docs}",
             "output": {"type": "stdout", "to": ""},
-            "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+            "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
         }
         path = tmp_path / "docs_fail_test.yaml"
         path.write_text(yaml.dump(task))

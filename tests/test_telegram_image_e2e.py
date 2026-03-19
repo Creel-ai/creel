@@ -577,11 +577,10 @@ class TestE2ETelegramImage:
 
         return AgentDefinition(
             system_prompt="You are a test assistant.",
-            llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
+            llm=LLMConfig(model="claude-sonnet-4-6", max_tokens=100),
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),
-                max_history=50,
                 summarize_on_trim=False,
             ),
             workspace=WorkspaceConfig(path=str(tmp_path / "nonexistent-workspace")),
@@ -603,7 +602,7 @@ class TestE2ETelegramImage:
         mock_result.turns_used = 1
         mock_result.tool_calls_made = 0
         mock_result.stop_reason = "end_turn"
-        mock_result.pending_approval = None
+        mock_result.pending_approvals = []
         mock_result.last_input_tokens = 100
 
         mock_vision_block = {
@@ -665,7 +664,7 @@ class TestE2ETelegramImage:
         mock_result.turns_used = 1
         mock_result.tool_calls_made = 0
         mock_result.stop_reason = "end_turn"
-        mock_result.pending_approval = None
+        mock_result.pending_approvals = []
         mock_result.last_input_tokens = 50
 
         mock_vision_block = {
@@ -719,11 +718,10 @@ class TestE2ETelegramImage:
 
         agent_def = AgentDefinition(
             system_prompt="You are a test assistant.",
-            llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
+            llm=LLMConfig(model="claude-sonnet-4-6", max_tokens=100),
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),
-                max_history=50,
                 summarize_on_trim=False,
             ),
             workspace=WorkspaceConfig(path=str(tmp_path / "nonexistent-workspace")),
@@ -740,7 +738,7 @@ class TestE2ETelegramImage:
         mock_result.turns_used = 1
         mock_result.tool_calls_made = 0
         mock_result.stop_reason = "end_turn"
-        mock_result.pending_approval = None
+        mock_result.pending_approvals = []
         mock_result.last_input_tokens = 50
 
         attachment = Attachment(
@@ -778,7 +776,7 @@ class TestE2ETelegramImage:
         mock_result.turns_used = 1
         mock_result.tool_calls_made = 0
         mock_result.stop_reason = "end_turn"
-        mock_result.pending_approval = None
+        mock_result.pending_approvals = []
         mock_result.last_input_tokens = 200
 
         mock_vision_block = {

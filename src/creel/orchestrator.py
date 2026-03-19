@@ -377,8 +377,34 @@ def _exec_gmail_modify_inline(config: ExecutorConfig) -> str:
         from executors.gmail_modify.executor import delete_message
 
         result = delete_message(message_id)
+    elif action in ("batch_modify", "batch_trash", "batch_delete"):
+        from executors.gmail_modify.executor import (
+            _parse_ids,
+            batch_delete,
+            batch_modify,
+            batch_trash,
+        )
+
+        ids = _parse_ids(config.args.get("message_ids", ""))
+        if not ids:
+            raise ValueError("gmail_modify: batch actions require non-empty message_ids")
+
+        if action == "batch_modify":
+            add_raw = config.args.get("add_labels", "")
+            remove_raw = config.args.get("remove_labels", "")
+            add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
+            remove_labels = [
+                label.strip() for label in remove_raw.split(",") if label.strip()
+            ] or None
+            result = batch_modify(ids, add_labels, remove_labels)
+        elif action == "batch_trash":
+            result = batch_trash(ids)
+        else:
+            result = batch_delete(ids)
     else:
-        raise ValueError(f"gmail_modify: unknown action '{action}' (use modify/trash/delete)")
+        raise ValueError(
+            f"gmail_modify: unknown action '{action}' (use modify/trash/delete/batch_modify/batch_trash/batch_delete)"
+        )
 
     return json.dumps(result, indent=2)
 

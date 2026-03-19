@@ -9,7 +9,7 @@ from creel.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
 
 
 def _make_llm_config() -> LLMConfig:
-    return LLMConfig(model="claude-sonnet-4-20250514", max_tokens=1024)
+    return LLMConfig(model="claude-sonnet-4-6", max_tokens=1024)
 
 
 def _make_tools() -> dict[str, ToolConfig]:

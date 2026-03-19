@@ -29,7 +29,7 @@ def _sample_task(name: str = "test_task", schedule: str = "0 7 * * *") -> dict:
         "executors": {"weather": {"args": {"location": "denver"}}},
         "prompt": "Weather: {weather}",
         "output": {"type": "stdout", "to": ""},
-        "llm": {"model": "claude-sonnet-4-20250514", "max_tokens": 100},
+        "llm": {"model": "claude-sonnet-4-6", "max_tokens": 100},
     }
 
 

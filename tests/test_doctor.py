@@ -51,7 +51,7 @@ tools:
     executor: weather
     description: "Get weather data"
 llm:
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-6
   max_tokens: 300
 channels: {}
 """
@@ -318,7 +318,7 @@ guardian:
     enabled: false
   llm_judge:
     enabled: true
-    model: claude-haiku-4-5-20251001
+    model: claude-haiku-4-5
   policy:
     enabled: true
     policy_file: "{creel_home / "policies" / "default.yaml"}"

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from creel.cron.manager import CronManager, _make_trigger
+from creel.cron.manager import CronManager, _make_trigger, _validate_cron_expr
 from creel.cron.models import (
     CronJob,
     Payload,
@@ -67,6 +67,57 @@ class TestMakeTrigger:
         from apscheduler.triggers.date import DateTrigger
 
         assert isinstance(trigger, DateTrigger)
+
+
+# -- _validate_cron_expr tests --
+
+
+class TestValidateCronExpr:
+    def test_valid_standard_5_field(self):
+        """Standard 5-field cron expressions should pass."""
+        _validate_cron_expr("0 8 * * *")
+        _validate_cron_expr("*/5 * * * *")
+        _validate_cron_expr("0 0 1,15 * MON-FRI")
+
+    def test_valid_6_and_7_field(self):
+        """Extended 6- and 7-field cron expressions should pass."""
+        _validate_cron_expr("0 0 8 * * MON")  # 6 fields
+        _validate_cron_expr("0 0 8 * * MON 2026")  # 7 fields
+
+    def test_rejects_too_long(self):
+        expr = "* " * 51  # 102 chars, over the 100 limit
+        with pytest.raises(ValueError, match="too long"):
+            _validate_cron_expr(expr.strip())
+
+    def test_rejects_disallowed_characters(self):
+        with pytest.raises(ValueError, match="disallowed characters"):
+            _validate_cron_expr("0 8 * * *; rm -rf /")
+
+    def test_rejects_shell_metacharacters(self):
+        for bad in ["0 8 * * $(cmd)", "0 8 * * `cmd`", "0 8 & * *", "0|8 * * * *"]:
+            with pytest.raises(ValueError, match="disallowed characters"):
+                _validate_cron_expr(bad)
+
+    def test_rejects_too_few_fields(self):
+        with pytest.raises(ValueError, match="must have 5-7 fields"):
+            _validate_cron_expr("0 8 * *")
+
+    def test_rejects_too_many_fields(self):
+        with pytest.raises(ValueError, match="must have 5-7 fields"):
+            _validate_cron_expr("0 0 8 * * MON 2026 extra")
+
+    def test_rejects_empty_string(self):
+        with pytest.raises(ValueError, match="disallowed characters"):
+            _validate_cron_expr("")
+
+    def test_make_trigger_calls_validation(self):
+        """_make_trigger should reject bad cron expressions before APScheduler."""
+        schedule = Schedule.__new__(Schedule)
+        object.__setattr__(schedule, "kind", "cron")
+        object.__setattr__(schedule, "expr", "0 8 * * *; echo pwned")
+        object.__setattr__(schedule, "tz", "UTC")
+        with pytest.raises(ValueError, match="disallowed characters"):
+            _make_trigger(schedule)
 
 
 # -- CronManager lifecycle tests --

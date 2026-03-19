@@ -377,6 +377,7 @@ class TestWebhookMode:
             bridge=bridge,
             mode="webhook",
             webhook_path="/webhooks/tg",
+            webhook_secret="test-secret",
             allowed_senders=["42"],
         )
         routes = channel.get_webhook_routes()
@@ -529,41 +530,16 @@ class TestWebhookSecretToken:
             await channel._handle_webhook(request)
         assert exc_info.value.status_code == 403
 
-    @pytest.mark.asyncio
-    async def test_no_secret_skips_verification(self):
-        """When webhook_secret is empty, token check is skipped (dev mode)."""
-        import json
-
+    def test_no_secret_raises_in_webhook_mode(self):
+        """Webhook mode without a secret must raise ValueError at init time."""
         bridge = MockBridge()
-        channel = TelegramChannel(
-            bridge=bridge,
-            mode="webhook",
-            webhook_secret="",
-            allowed_senders=["42"],
-        )
-        channel.set_webhook_callback(lambda s, t: "ok")
-
-        payload = {
-            "update_id": 1,
-            "message": {
-                "message_id": 1,
-                "from": {"id": 42, "username": "alice"},
-                "chat": {"id": 42, "type": "private"},
-                "text": "hello",
-            },
-        }
-        raw = json.dumps(payload).encode()
-
-        request = MagicMock()
-
-        async def _body():
-            return raw
-
-        request.body = _body
-        request.headers = {}
-
-        result = await channel._handle_webhook(request)
-        assert result == {"status": "ok"}
+        with pytest.raises(ValueError, match="webhook_secret is required"):
+            TelegramChannel(
+                bridge=bridge,
+                mode="webhook",
+                webhook_secret="",
+                allowed_senders=["42"],
+            )
 
 
 class TestWebhookSecretRequired:

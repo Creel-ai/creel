@@ -57,6 +57,13 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
         self._webhook_verify_token = webhook_verify_token
         self._webhook_secret = webhook_secret
         self._gate = sender_gate
+
+        if mode == "webhook" and not webhook_secret:
+            raise ValueError(
+                "webhook_secret is required for WhatsApp webhook mode — "
+                "without it inbound payloads cannot be verified"
+            )
+
         self._callback: Callable[[str, str], str] | None = None
 
     # --- Channel interface ---

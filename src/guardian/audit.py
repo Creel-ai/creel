@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,6 +41,7 @@ class AuditLogger:
         self._base_path = Path(log_file)
         self._rotate_daily = rotate_daily
         self._max_size_bytes = int(max_size_mb * 1024 * 1024) if max_size_mb > 0 else 0
+        self._write_lock = threading.Lock()
 
     def _get_path(self) -> Path:
         """Return the current log file path, accounting for rotation."""
@@ -51,25 +53,31 @@ class AuditLogger:
         return self._base_path
 
     def _write(self, record: dict) -> None:
-        """Append a JSON record to the log file."""
+        """Append a JSON record to the log file.
+
+        Uses a lock to serialize rotation + write so concurrent callers
+        (e.g. multiple Guardian checks via ``asyncio.gather`` dispatched
+        to a thread-pool) cannot both rotate the same file.
+        """
         # Include request_id if set in current context
         rid = request_id_var.get(None)
         if rid is not None:
             record["request_id"] = rid
         try:
-            path = self._get_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
+            with self._write_lock:
+                path = self._get_path()
+                path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Size-based rotation
-            if self._max_size_bytes > 0 and path.exists():
-                if path.stat().st_size >= self._max_size_bytes:
-                    rotated = path.with_suffix(f"{path.suffix}.1")
-                    if rotated.exists():
-                        rotated.unlink()
-                    path.rename(rotated)
+                # Size-based rotation
+                if self._max_size_bytes > 0 and path.exists():
+                    if path.stat().st_size >= self._max_size_bytes:
+                        rotated = path.with_suffix(f"{path.suffix}.1")
+                        if rotated.exists():
+                            rotated.unlink()
+                        path.rename(rotated)
 
-            with open(path, "a") as f:
-                f.write(json.dumps(record, default=str) + "\n")
+                with open(path, "a") as f:
+                    f.write(json.dumps(record, default=str) + "\n")
         except Exception:
             logger.warning("Failed to write audit log to %s", self._base_path, exc_info=True)
 

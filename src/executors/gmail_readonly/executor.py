@@ -79,8 +79,8 @@ def register_skill():
     def execute(config: ExecutorConfig) -> str:
         message_id = config.args.get("message_id", "")
         if message_id:
-            result = read_email(message_id)
-            return json.dumps(result, indent=2)
+            email = read_email(message_id)
+            return json.dumps(email, indent=2)
 
         query = config.args.get("query", "is:unread newer_than:1d")
         max_results = int(config.args.get("max_results", 20))
@@ -89,8 +89,8 @@ def register_skill():
             "1",
             "yes",
         )
-        result = fetch_emails(query, max_results, full_body)
-        return json.dumps(result, indent=2)
+        emails = fetch_emails(query, max_results, full_body)
+        return json.dumps(emails, indent=2)
 
     return meta, execute
 

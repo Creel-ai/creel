@@ -328,6 +328,16 @@ def _cmd_debug(args: str, ctx: ChatContext) -> str:
         current = agent_def.guardian.debug
         agent_def.guardian.debug = not current
         state = "ON" if not current else "OFF"
+        # Audit log the toggle so security state changes are tracked
+        guardian = ctx.server._guardian
+        if guardian and hasattr(guardian, "_audit") and guardian._audit:
+            guardian._audit._write(
+                {
+                    "event": "debug_toggled",
+                    "state": state.lower(),
+                    "toggled_by": ctx.sender_id,
+                }
+            )
         return f"Debug mode: {state}"
     return "No guardian config to toggle debug on."
 

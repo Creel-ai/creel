@@ -114,6 +114,25 @@ deny_when:
   - tool: exec
     arg: command
     pattern: "*ncat -e*"
+  # Interpreter code execution (bypass blocklist via scripting languages)
+  - tool: exec
+    arg: command
+    pattern: "*python -c*"
+  - tool: exec
+    arg: command
+    pattern: "*python3 -c*"
+  - tool: exec
+    arg: command
+    pattern: "*perl -e*"
+  - tool: exec
+    arg: command
+    pattern: "*ruby -e*"
+  - tool: exec
+    arg: command
+    pattern: "*osascript*"
+  - tool: exec
+    arg: command
+    pattern: "*eval $(*"
   # Pipe to shell (command injection via download)
   # NOTE: fnmatch glob matching may false-positive on args containing "| sh"
   # as a substring in non-pipe context. Acceptable trade-off for security.
@@ -160,6 +179,24 @@ deny_when:
   # Host exec tool: block same dangerous patterns as exec
   # NOTE: ProcessManager also enforces a regex blocklist internally
   # (see src/bridge/process_manager.py). Keep both in sync.
+  - tool: host_exec
+    arg: command
+    pattern: "*python -c*"
+  - tool: host_exec
+    arg: command
+    pattern: "*python3 -c*"
+  - tool: host_exec
+    arg: command
+    pattern: "*perl -e*"
+  - tool: host_exec
+    arg: command
+    pattern: "*ruby -e*"
+  - tool: host_exec
+    arg: command
+    pattern: "*osascript*"
+  - tool: host_exec
+    arg: command
+    pattern: "*eval $(*"
   - tool: host_exec
     arg: command
     pattern: "*rm -rf*"
@@ -226,6 +263,24 @@ deny_when:
   # Interactive PTY: block same dangerous patterns as exec
   - tool: exec_interactive
     arg: command
+    pattern: "*python -c*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*python3 -c*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*perl -e*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*ruby -e*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*osascript*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*eval $(*"
+  - tool: exec_interactive
+    arg: command
     pattern: "*rm -rf*"
   - tool: exec_interactive
     arg: command
@@ -290,6 +345,24 @@ deny_when:
   # Coding tool: block same dangerous patterns as exec
   # NOTE: The executor also enforces a blocklist internally
   # (see src/executors/coding/executor.py). Keep both in sync.
+  - tool: coding
+    arg: command
+    pattern: "*python -c*"
+  - tool: coding
+    arg: command
+    pattern: "*python3 -c*"
+  - tool: coding
+    arg: command
+    pattern: "*perl -e*"
+  - tool: coding
+    arg: command
+    pattern: "*ruby -e*"
+  - tool: coding
+    arg: command
+    pattern: "*osascript*"
+  - tool: coding
+    arg: command
+    pattern: "*eval $(*"
   - tool: coding
     arg: command
     pattern: "*rm -rf*"

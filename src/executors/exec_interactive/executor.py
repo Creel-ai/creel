@@ -14,7 +14,9 @@ import errno
 import fcntl
 import logging
 import os
+import re
 import select
+import signal
 import struct
 import termios
 import threading
@@ -28,6 +30,47 @@ logger = logging.getLogger(__name__)
 DEFAULT_COLS = 120
 DEFAULT_ROWS = 40
 DEFAULT_TIMEOUT = 300  # 5 minutes
+MAX_TIMEOUT = 3600  # 1 hour hard cap
+MAX_SESSIONS = 10  # Max concurrent PTY sessions
+
+# Environment variables safe to inherit into PTY sessions.
+# All others are stripped to prevent credential leakage.
+_SAFE_ENV_VARS = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "TERM",
+        "TMPDIR",
+        "TZ",
+    }
+)
+_SAFE_ENV_PREFIXES = ("LC_",)
+
+# Command patterns rejected at both start_session and send_input time.
+# Mirrors the patterns in bridge/process_manager.py for defense-in-depth.
+_BLOCKED_COMMAND_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\brm\s+.*(?:-\w*r\w*f|-\w*f\w*r|--recursive|--force)", re.IGNORECASE),
+    re.compile(r"\brm\s+.*-r\b.*-f\b|\brm\s+.*-f\b.*-r\b", re.IGNORECASE),
+    re.compile(r"\bmkfs\b"),
+    re.compile(r"\bdd\b.*\bof\s*=\s*/dev/"),
+    re.compile(r">\s*/dev/sd[a-z]|>\s*/dev/nvme"),
+    re.compile(r":\(\)\s*\{.*:\s*\|\s*:.*&.*\}\s*;\s*:"),  # fork bomb
+    re.compile(r"\bchmod\s+.*777\s+/"),
+    re.compile(r"\bcurl\b.*\|\s*(?:ba)?sh\b"),
+    re.compile(r"\bwget\b.*\|\s*(?:ba)?sh\b"),
+    re.compile(r"/dev/tcp/|/dev/udp/"),  # reverse shells
+    re.compile(r"\bnc\b.*-[el]|\bncat\b.*-[el]"),  # bind shells
+    re.compile(r"\bsudo\b"),
+    re.compile(r"\bpython3?\s+-c\b"),
+    re.compile(r"\bperl\s+-e\b"),
+    re.compile(r"\bruby\s+-e\b"),
+    re.compile(r"\bosascript\b"),
+    re.compile(r"\beval\s+\$\("),
+]
 
 # Max bytes to read from PTY in a single call
 READ_CHUNK_SIZE = 4096
@@ -67,6 +110,33 @@ class InteractiveSession:
 # Global session registry
 _sessions: dict[str, InteractiveSession] = {}
 _sessions_lock = threading.Lock()
+
+
+def _validate_command(text: str) -> str | None:
+    """Check text against blocked command patterns.
+
+    Returns an error message if blocked, or None if safe.
+    Used for both initial commands and send_input data.
+    """
+    for pattern in _BLOCKED_COMMAND_PATTERNS:
+        if pattern.search(text):
+            return "Command rejected by safety filter"
+    return None
+
+
+def _build_safe_env() -> dict[str, str]:
+    """Build a minimal environment dict for PTY child processes.
+
+    Strips all credentials and sensitive variables, inheriting only
+    safe vars like PATH, HOME, LANG, etc.
+    """
+    safe: dict[str, str] = {}
+    for key, value in os.environ.items():
+        if key in _SAFE_ENV_VARS or any(key.startswith(p) for p in _SAFE_ENV_PREFIXES):
+            safe[key] = value
+    # Ensure TERM is set for PTY
+    safe.setdefault("TERM", "xterm-256color")
+    return safe
 
 
 def _set_terminal_size(fd: int, cols: int, rows: int) -> None:
@@ -136,7 +206,31 @@ def start_session(
             "error": "Timeout must be positive",
         }
 
+    # Cap timeout to prevent indefinite sessions
+    timeout = min(timeout, MAX_TIMEOUT)
+
+    # Bound terminal dimensions
+    cols = max(10, min(cols, 500))
+    rows = max(5, min(rows, 200))
+
+    # Enforce max concurrent sessions
+    active_count = sum(1 for s in _sessions.values() if not s.closed)
+    if active_count >= MAX_SESSIONS:
+        return {
+            "success": False,
+            "error": f"Maximum concurrent sessions ({MAX_SESSIONS}) reached. Close an existing session first.",
+        }
+
+    # Validate command against blocklist
+    rejection = _validate_command(command)
+    if rejection:
+        return {
+            "success": False,
+            "error": rejection,
+        }
+
     session_id = uuid.uuid4().hex[:12]
+    safe_env = _build_safe_env()
 
     try:
         pid, fd = os.forkpty()
@@ -147,9 +241,9 @@ def start_session(
         }
 
     if pid == 0:
-        # Child process — exec the command in a shell
+        # Child process — exec the command in a shell with sanitized env
         try:
-            os.execvp("bash", ["bash", "-c", command])  # noqa: S606
+            os.execve("/bin/bash", ["bash", "-c", command], safe_env)  # noqa: S606
         except Exception:
             os._exit(127)
 
@@ -233,6 +327,18 @@ def send_input(session_id: str, data: str) -> dict:
             "success": False,
             "error": f"Session {session_id} timed out after {session.timeout}s",
         }
+
+    # Validate input against blocked command patterns
+    rejection = _validate_command(data)
+    if rejection:
+        return {
+            "success": False,
+            "error": rejection,
+        }
+
+    # Cap io_log to prevent unbounded memory growth
+    if len(session.io_log) > 10_000:
+        session.io_log = session.io_log[-5_000:]
 
     session.io_log.append(
         {
@@ -481,13 +587,11 @@ def get_io_log(session_id: str) -> dict:
 
 
 def _force_close(session: InteractiveSession) -> dict:
-    """Force-close a session, killing the process and cleaning up."""
-    import signal
-
+    """Force-close a session, killing the process group and cleaning up."""
     exit_code = None
     try:
-        # Try graceful SIGTERM first
-        os.kill(session.pid, signal.SIGTERM)
+        # Kill the entire process group (forkpty children are session leaders)
+        os.killpg(session.pid, signal.SIGTERM)
         # Give it a moment to exit
         for _ in range(10):
             pid_result, status = os.waitpid(session.pid, os.WNOHANG)
@@ -496,8 +600,8 @@ def _force_close(session: InteractiveSession) -> dict:
                 break
             time.sleep(0.1)
         else:
-            # Force kill
-            os.kill(session.pid, signal.SIGKILL)
+            # Force kill the process group
+            os.killpg(session.pid, signal.SIGKILL)
             _, status = os.waitpid(session.pid, 0)
             exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1
     except ChildProcessError:

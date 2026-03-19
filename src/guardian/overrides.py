@@ -133,6 +133,15 @@ class TemporaryOverrideManager:
         if not self._config.enabled:
             raise ValueError("Temporary overrides are disabled")
 
+        # Enforce max active overrides to prevent resource exhaustion
+        with self._lock:
+            active_count = sum(1 for ov in self._overrides.values() if ov.is_active)
+            if active_count >= self._config.max_active_overrides:
+                raise ValueError(
+                    f"Maximum active overrides ({self._config.max_active_overrides}) reached. "
+                    "Revoke an existing override first."
+                )
+
         # Check excluded tools — bidirectional match to prevent bypass via
         # broad globs (e.g. "del*" bypassing excluded "delete_*").
         for excluded in self._config.excluded_tools:
@@ -226,10 +235,14 @@ class TemporaryOverrideManager:
             self._gc_expired()
             return [ov for ov in self._overrides.values() if ov.is_active]
 
-    def check(self, tool_name: str, tool_args: dict) -> ActionDecision | None:
+    def check(
+        self, tool_name: str, tool_args: dict, *, sender_id: str = ""
+    ) -> ActionDecision | None:
         """Check if a tool call matches any active override.
 
         Deny overrides take priority over allow overrides.
+        When ``sender_id`` is provided, only overrides created by that
+        sender (or with no scope restriction) are considered.
         Returns ``None`` if no override matches (fall through to static policy).
         """
         deny_match: TemporaryOverride | None = None
@@ -240,6 +253,9 @@ class TemporaryOverrideManager:
 
             for override in self._overrides.values():
                 if not override.is_active:
+                    continue
+                # Scope check: skip overrides from a different sender
+                if sender_id and override.created_by and override.created_by != sender_id:
                     continue
                 if fnmatch(tool_name, override.pattern):
                     if override.action == ActionVerdict.DENY:

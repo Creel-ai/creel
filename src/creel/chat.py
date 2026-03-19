@@ -318,6 +318,15 @@ class ChatServer:
         if stripped.lower() in {"clear", "reset"}:
             stripped = f"/{stripped}"
 
+        # Screen slash command input through Guardian before dispatch.
+        # Commands like /allow modify security policy — their arguments
+        # must be screened for prompt injection.
+        if stripped.startswith("/") and self._guardian:
+            screen_result = self._guardian.screen_input(text)
+            if screen_result.blocked:
+                logger.warning("Guardian blocked slash command input from %s", sender_id)
+                return screen_result.rejection_message
+
         # Dispatch slash commands via registry
         if stripped.startswith("/"):
             ctx = ChatContext(sender_id=sender_id, server=self)

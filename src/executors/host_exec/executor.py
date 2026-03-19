@@ -15,6 +15,41 @@ from typing import Any
 
 import httpx
 
+# Env vars that callers are never allowed to set — mirrors bridge/process_manager.py
+_BLOCKED_ENV_VARS = frozenset(
+    {
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "BASH_ENV",
+        "ENV",
+        "CDPATH",
+        "PYTHONSTARTUP",
+        "PYTHONPATH",
+        "NODE_OPTIONS",
+        "PERL5OPT",
+        "RUBYOPT",
+    }
+)
+_BLOCKED_ENV_PREFIXES = ("BRIDGE_TOKEN_", "BASH_FUNC_")
+
+
+def _validate_env(env: dict[str, str]) -> None:
+    """Reject dangerous environment variables before sending to bridge.
+
+    Defense-in-depth: the bridge also validates, but we reject locally
+    so malicious env vars never leave the executor process.
+    """
+    for key in env:
+        upper = key.upper()
+        if upper in _BLOCKED_ENV_VARS:
+            raise ValueError(f"Environment variable {key!r} is blocked for security reasons")
+        for prefix in _BLOCKED_ENV_PREFIXES:
+            if upper.startswith(prefix):
+                raise ValueError(f"Environment variable {key!r} is blocked for security reasons")
+
 
 def call_bridge(
     endpoint: str,
@@ -95,6 +130,7 @@ def host_exec(
     if workdir:
         data["workdir"] = workdir
     if env:
+        _validate_env(env)
         data["env"] = env
 
     # Use a longer HTTP timeout for foreground commands

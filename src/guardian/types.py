@@ -166,6 +166,7 @@ class OverrideConfig(BaseModel):
     absolute_max_duration_hours: float = 24.0
     excluded_tools: list[str] = Field(default_factory=lambda: ["delete_*"])
     require_confirmation_for_wildcard: bool = True
+    max_active_overrides: int = 20
 
 
 class GuardianConfig(BaseModel):

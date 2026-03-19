@@ -637,8 +637,8 @@ class TestForceClose:
 
     @patch("executors.exec_interactive.executor.os.close")
     @patch("executors.exec_interactive.executor.os.waitpid", return_value=(42, 0))
-    @patch("executors.exec_interactive.executor.os.kill")
-    def test_graceful_sigterm(self, mock_kill, mock_waitpid, mock_close) -> None:
+    @patch("executors.exec_interactive.executor.os.killpg")
+    def test_graceful_sigterm(self, mock_killpg, mock_waitpid, mock_close) -> None:
         session = InteractiveSession(
             session_id="force1",
             pid=42,
@@ -655,13 +655,13 @@ class TestForceClose:
 
         assert result["success"] is True
         assert session.closed is True
-        mock_kill.assert_called_with(42, signal.SIGTERM)
+        mock_killpg.assert_called_with(42, signal.SIGTERM)
         mock_close.assert_called_once_with(5)
 
     @patch("executors.exec_interactive.executor.os.close")
     @patch("executors.exec_interactive.executor.os.waitpid")
-    @patch("executors.exec_interactive.executor.os.kill")
-    def test_force_sigkill_on_stubborn_process(self, mock_kill, mock_waitpid, mock_close) -> None:
+    @patch("executors.exec_interactive.executor.os.killpg")
+    def test_force_sigkill_on_stubborn_process(self, mock_killpg, mock_waitpid, mock_close) -> None:
         # First waitpid calls return 0 (still running), then last returns after SIGKILL
         mock_waitpid.side_effect = [
             (0, 0),
@@ -692,10 +692,10 @@ class TestForceClose:
         result = close_session("force2")
 
         assert result["success"] is True
-        # Should have sent SIGTERM then SIGKILL
-        assert mock_kill.call_count == 2
-        mock_kill.assert_any_call(42, signal.SIGTERM)
-        mock_kill.assert_any_call(42, signal.SIGKILL)
+        # Should have sent SIGTERM then SIGKILL to process group
+        assert mock_killpg.call_count == 2
+        mock_killpg.assert_any_call(42, signal.SIGTERM)
+        mock_killpg.assert_any_call(42, signal.SIGKILL)
 
 
 class TestOrchestratorDispatch:

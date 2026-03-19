@@ -230,7 +230,7 @@ class NetworkMonitor:
                 "Network alert: %s (executor=%s, url=%s)",
                 verdict.reason,
                 executor,
-                url,
+                _sanitize_url(url),
             )
             return verdict
         return None
@@ -248,9 +248,14 @@ class NetworkMonitor:
         blocked: bool = False,
         block_reason: str = "",
     ) -> None:
-        """Append a request record to the in-memory log."""
+        """Append a request record to the in-memory log.
+
+        Sanitizes the URL (strips query string and fragment) to avoid
+        storing credentials from query parameters.
+        """
+        sanitized = _sanitize_url(url)
         record = {
-            "url": url,
+            "url": sanitized,
             "domain": domain,
             "executor": executor,
             "method": method,
@@ -266,15 +271,32 @@ class NetworkMonitor:
         if blocked:
             logger.warning(
                 "Network request blocked: %s (executor=%s, reason=%s)",
-                url,
+                sanitized,
                 executor,
                 block_reason,
             )
 
 
-def _extract_domain(url: str) -> str:
-    """Extract the hostname from a URL."""
+def _sanitize_url(url: str) -> str:
+    """Strip query string and fragment from a URL to avoid logging sensitive params."""
+    from urllib.parse import urlunparse
+
     parsed = urlparse(url)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
+
+def _extract_domain(url: str) -> str:
+    """Extract the hostname from a URL.
+
+    Rejects URLs with userinfo (user@host) to prevent URL parser
+    differential attacks where the domain check passes for the
+    hostname portion but an HTTP client connects to the userinfo host.
+    """
+    parsed = urlparse(url)
+    # Reject URLs with userinfo — potential parser confusion attack
+    if "@" in (parsed.netloc or ""):
+        logger.warning("Rejecting URL with userinfo component: %s", _sanitize_url(url))
+        return ""
     return parsed.hostname or ""
 
 

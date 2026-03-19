@@ -121,13 +121,18 @@ class TestAuditLogger:
         assert len(lines) == 1
         record = json.loads(lines[0])
         assert record["event"] == "screen_input_debug"
-        assert record["text"] == '{"id": "msg_123"}'
+        # Raw text is not stored — only hash and length for privacy
+        assert "text" not in record
+        assert "text_hash" in record
+        assert record["text_length"] == len('{"id": "msg_123"}')
         assert record["blocked"] is True
         assert record["source"] == "fast_classifier"
         assert len(record["chunks"]) == 1
         assert record["chunks"][0]["label"] == "INJECTION"
         assert record["chunks"][0]["score"] == 0.9953
         assert record["chunks"][0]["is_injection"] is True
+        # Chunks should have text_hash instead of raw text
+        assert "text_hash" in record["chunks"][0]
         assert "ts" in record
 
     def test_log_screen_debug_multiple_chunks(self, logger: AuditLogger, log_file: Path) -> None:

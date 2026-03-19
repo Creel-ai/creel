@@ -6,18 +6,54 @@ Get Creel running in 5 minutes. By the end you'll have a personal AI agent respo
 
 | Tool | What it's for | Install |
 |------|--------------|---------|
-| Python 3.12+ | Runtime | `pyenv install 3.12.11` |
-| [uv](https://github.com/astral-sh/uv) | Fast package manager | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Python 3.11+ | Runtime | `pyenv install 3.12.12` |
 | [age](https://github.com/FiloSottile/age) | Secrets encryption | `brew install age` |
 | Docker | Container isolation (optional) | [docker.com](https://docs.docker.com/get-docker/) |
 
-## 1. Clone and install
+## Install
+
+### Option A: pip / uv (recommended)
 
 ```bash
-git clone https://github.com/Creel-ai/creel.git
+pip install creel
+# or
+uv pip install creel
+```
+
+For the guardian security pipeline (prompt-injection detection):
+
+```bash
+pip install "creel[guardian]"
+```
+
+### Option B: Docker
+
+```bash
+docker pull ghcr.io/creel-ai/creel:latest
+
+# Run the daemon
+docker run -d \
+  -v ~/.creel:/home/creel/.creel \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -p 8080:8080 \
+  ghcr.io/creel-ai/creel:latest
+```
+
+Or use the provided `docker-compose.yml`:
+
+```bash
+docker compose up -d
+```
+
+!!! note "macOS-native features"
+    Docker mode does not support macOS-native features (Apple Notes, Reminders, iMessage, Things 3). Use pip install on macOS for full functionality.
+
+### Option C: From source (development)
+
+```bash
+git clone https://github.com/creel-ai/creel.git
 cd creel
 
-# Create virtualenv and install
 uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"

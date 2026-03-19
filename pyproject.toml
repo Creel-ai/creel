@@ -5,8 +5,23 @@ build-backend = "hatchling.build"
 [project]
 name = "creel"
 version = "0.1.0"
-description = "Secure, scheduled LLM task runner with isolated fetchers"
+description = "Secure LLM task runner and personal AI assistant"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
+authors = [
+    {name = "Ross Kippenbrock"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
 dependencies = [
     "anthropic>=0.39.0",
     "apscheduler>=3.10.0,<4.0.0",
@@ -77,6 +92,12 @@ imessage = "creel.channels.imessage:register_plugin"
 bluebubbles = "creel.channels.bluebubbles:register_plugin"
 whatsapp = "creel.channels.whatsapp:register_plugin"
 telegram = "creel.channels.telegram:register_plugin"
+
+[project.urls]
+Homepage = "https://github.com/creel-ai/creel"
+Documentation = "https://creel-ai.com"
+Repository = "https://github.com/creel-ai/creel"
+Issues = "https://github.com/creel-ai/creel/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/creel", "src/guardian", "src/bridge"]

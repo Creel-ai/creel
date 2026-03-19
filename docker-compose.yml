@@ -1,0 +1,11 @@
+services:
+  creel:
+    image: ghcr.io/creel-ai/creel:latest
+    volumes:
+      - ~/.creel:/home/creel/.creel
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - CREEL_HOME=/home/creel/.creel

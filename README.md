@@ -212,41 +212,36 @@ The exec executor provides sandboxed shell command execution within isolated Doc
 ### 1. Install
 
 ```bash
+pip install creel
+# or
+uv pip install creel
+```
+
+<details>
+<summary>Other install methods</summary>
+
+**Docker:**
+```bash
+docker pull ghcr.io/creel-ai/creel:latest
+docker compose up -d
+```
+
+**From source (development):**
+```bash
 git clone https://github.com/creel-ai/creel.git
 cd creel
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev,guardian]"
+```
+</details>
+
+### 2. Initialize
 
 ```bash
-# macOS
-brew install pyenv uv age
-
-# Linux
-curl https://pyenv.run | bash      # then follow shell setup instructions
-curl -LsSf https://astral.sh/uv/install.sh | sh
-sudo apt install age               # or: brew install age
+creel init
 ```
 
-```bash
-pyenv install 3.12.12   # if not already installed
-uv venv
-source .venv/bin/activate
-uv pip install -e ".[dev, guardian]"
-
-# Set up age for secrets encryption (one-time)
-mkdir -p ~/.age
-age-keygen -o ~/.age/key.txt 2> ~/.age/key.pub
-
-# List available tasks
-creel list
-
-# Validate a task definition
-creel validate weather_check
-```
-
-### 2. Add your Anthropic key
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # or use ANTHROPIC_AUTH_TOKEN
-```
+The wizard sets up `~/.creel/`, validates your API key, encrypts secrets with [age](https://github.com/FiloSottile/age), and generates `agent.yaml`.
 
 ### 3. Start the daemon and chat
 

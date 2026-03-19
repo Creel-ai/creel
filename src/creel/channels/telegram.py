@@ -27,6 +27,7 @@ from creel.channels.message import (
     IncomingMessage as MediaMessage,
 )
 from creel.channels.mixins import BridgeClientMixin, MediaHandlerMixin, PollingChannelMixin
+from creel.channels.sender_gate import SenderGate, SenderPolicy
 from creel.channels.telegram_bridge import (
     HttpTelegramBridge,
     TelegramBridge,
@@ -80,6 +81,7 @@ class TelegramChannel(
         webhook_path: str = "/webhooks/telegram",
         webhook_secret: str = "",
         send_typing: bool = True,
+        sender_gate: SenderGate | None = None,
     ) -> None:
         self._bridge = bridge
         self._mode = mode
@@ -89,6 +91,7 @@ class TelegramChannel(
         self._webhook_path = webhook_path
         self._webhook_secret = webhook_secret
         self._send_typing = send_typing
+        self._gate = sender_gate
 
         if mode == "webhook" and not webhook_secret:
             logger.warning(
@@ -206,7 +209,19 @@ class TelegramChannel(
             self._bridge.send_typing(msg.sender_id)
 
     def _dispatch_message(self, msg: IncomingMessage, callback: LegacyCallback) -> str:
-        """Override dispatch to pass media attachments through."""
+        """Override dispatch to pass media attachments through.
+
+        Also intercepts owner gate commands (``/approve``, ``/deny``, ``/pending``)
+        and replays held messages after approval.
+        """
+        # Intercept gate commands from owners
+        if self._gate is not None and msg.text:
+            gate_reply = self._gate.handle_owner_response(msg.text, msg.sender_id)
+            if gate_reply is not None:
+                # After an /approve, replay held messages through the callback
+                self._replay_held_messages(msg.text, callback)
+                return gate_reply
+
         attachments = msg.metadata.get("_attachments")
         if attachments:
             media_msg = MediaMessage(
@@ -218,10 +233,52 @@ class TelegramChannel(
             return callback(media_msg)  # type: ignore[call-arg,arg-type]
         return callback(msg.sender_id, msg.text)
 
+    def _replay_held_messages(self, command_text: str, callback: LegacyCallback) -> None:
+        """After an /approve command, replay held messages for the approved sender."""
+        if self._gate is None:
+            return
+        import re
+
+        m = re.match(r"^/approve\s+(\S+)", command_text.strip(), re.IGNORECASE)
+        if not m:
+            return
+        target_id = m.group(1)
+        held = self._gate.release_held_messages(target_id)
+        for held_msg in held:
+            sender: str = held_msg.get("sender_id") or target_id
+            text: str = held_msg.get("text") or ""
+            if text:
+                self._allowed_recipients.add(sender)
+                try:
+                    response = callback(sender, text)
+                    self.send(sender, response)
+                except Exception:
+                    logger.exception("Error replaying held message for %s", sender)
+
     # --- Access control ---
 
     def _is_allowed(self, msg: TelegramMessage) -> bool:
         """Check if a message passes sender/chat access control."""
+        if self._gate is not None:
+            # Resolve the sender identity — try numeric ID first, then @username
+            sender_key = msg.sender_id
+            if sender_key not in self._allowed_senders:
+                if msg.sender_username in self._allowed_senders:
+                    sender_key = msg.sender_username
+                elif f"@{msg.sender_username}" in self._allowed_senders:
+                    sender_key = f"@{msg.sender_username}"
+
+            result = self._gate.check(
+                sender_key,
+                display_name=f"@{msg.sender_username}" if msg.sender_username else "",
+                text=msg.text or "",
+            )
+            if not result.allowed and self._allowed_chats and msg.is_group:
+                if msg.chat_id not in self._allowed_chats:
+                    return False
+            return result.allowed
+
+        # Legacy path — no gate
         if not self._allowed_senders:
             return False
 
@@ -352,6 +409,14 @@ class TelegramChannel(
             if self._send_typing:
                 self._bridge.send_typing(chat_id)
 
+            # Intercept gate commands from owners in webhook mode
+            if self._gate is not None and processed_text:
+                gate_reply = self._gate.handle_owner_response(processed_text, chat_id)
+                if gate_reply is not None:
+                    await asyncio.to_thread(self.send, chat_id, gate_reply)
+                    await asyncio.to_thread(self._replay_held_messages, processed_text, callback)
+                    return {"status": "ok"}
+
             if msg.media:
                 attachments = await asyncio.to_thread(self._download_media, msg.media)
                 incoming = MediaMessage(
@@ -402,6 +467,27 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
 
         cfg = TelegramChannelConfig(**config)
         bridge = HttpTelegramBridge(cfg.bot_token, api_base_url=cfg.api_base_url)
+
+        gate: SenderGate | None = None
+        if cfg.sender_policy != "closed":
+            from creel.channels.sender_store import SenderStore
+
+            store = SenderStore("sender_data", "telegram")
+            owner_id = cfg.owner or (cfg.allowed_senders[0] if cfg.allowed_senders else "")
+            owner_ids = {owner_id} if owner_id else set()
+
+            def _notify(recipient: str, text: str) -> None:
+                bridge.send_message(recipient, text)
+
+            gate = SenderGate(
+                policy=SenderPolicy(cfg.sender_policy),
+                static_senders=set(cfg.allowed_senders),
+                store=store,
+                owner_sender_ids=owner_ids,
+                notify_fn=_notify,
+                auto_approve=cfg.auto_approve_senders,
+            )
+
         return TelegramChannel(
             bridge=bridge,
             mode=cfg.mode,
@@ -411,6 +497,7 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
             webhook_path=cfg.webhook_path,
             webhook_secret=cfg.webhook_secret,
             send_typing=cfg.send_typing,
+            sender_gate=gate,
         )
 
     return meta, factory

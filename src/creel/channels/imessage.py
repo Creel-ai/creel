@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from creel.channels import Channel
 from creel.channels.message import Attachment, IncomingMessage
 from creel.channels.mixins import MediaHandlerMixin
+from creel.channels.sender_gate import SenderGate, SenderPolicy
 from creel.outputs import MESSAGE_PREFIX
 
 if TYPE_CHECKING:
@@ -36,9 +37,11 @@ class IMessageChannel(MediaHandlerMixin, Channel):
         self,
         allowed_senders: list[str],
         poll_interval: int = 3,
+        sender_gate: SenderGate | None = None,
     ):
         self._allowed_senders = set(allowed_senders)
         self._poll_interval = poll_interval
+        self._gate = sender_gate
 
     def listen(self, callback: Callable[[str, str], str]) -> None:
         """Poll chat.db for new incoming messages and respond."""
@@ -75,23 +78,30 @@ class IMessageChannel(MediaHandlerMixin, Channel):
                     if text and text.startswith(MESSAGE_PREFIX):
                         logger.debug("Skipping own message: %s", text[:40])
                         continue
-                    if sender in self._allowed_senders:
-                        logger.info("Message from %s: %s", sender, (text or "")[:80])
-                        try:
-                            if attachments:
-                                # Build a full IncomingMessage with attachments
-                                incoming = IncomingMessage(
-                                    sender_id=sender,
-                                    text=text or None,
-                                    attachments=attachments,
-                                    channel="imessage",
-                                )
-                                response = callback(incoming)  # type: ignore[call-arg,arg-type]
-                            else:
-                                response = callback(sender, text)
-                            self.send(sender, response)
-                        except Exception:
-                            logger.exception("Error handling message from %s", sender)
+                    if not self._check_sender(sender, text):
+                        continue
+                    # Intercept gate commands from owners
+                    if self._gate is not None and text:
+                        gate_reply = self._gate.handle_owner_response(text, sender)
+                        if gate_reply is not None:
+                            self.send(sender, gate_reply)
+                            self._replay_held_messages(text, callback)
+                            continue
+                    logger.info("Message from %s: %s", sender, (text or "")[:80])
+                    try:
+                        if attachments:
+                            incoming = IncomingMessage(
+                                sender_id=sender,
+                                text=text or None,
+                                attachments=attachments,
+                                channel="imessage",
+                            )
+                            response = callback(incoming)  # type: ignore[call-arg,arg-type]
+                        else:
+                            response = callback(sender, text)
+                        self.send(sender, response)
+                    except Exception:
+                        logger.exception("Error handling message from %s", sender)
             except Exception:
                 consecutive_errors += 1
                 backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)
@@ -178,6 +188,32 @@ class IMessageChannel(MediaHandlerMixin, Channel):
 
         logger.info("Timeout waiting for reply from %s", sender_id)
         return None
+
+    def _check_sender(self, sender: str, text: str = "") -> bool:
+        if self._gate is not None:
+            result = self._gate.check(sender, text=text)
+            return result.allowed
+        return sender in self._allowed_senders
+
+    def _replay_held_messages(self, command_text: str, callback: Callable[[str, str], str]) -> None:
+        if self._gate is None:
+            return
+        import re
+
+        m = re.match(r"^/approve\s+(\S+)", command_text.strip(), re.IGNORECASE)
+        if not m:
+            return
+        target_id = m.group(1)
+        held = self._gate.release_held_messages(target_id)
+        for held_msg in held:
+            sender: str = held_msg.get("sender_id") or target_id
+            text: str = held_msg.get("text") or ""
+            if text:
+                try:
+                    response = callback(sender, text)
+                    self.send(sender, response)
+                except Exception:
+                    logger.exception("Error replaying held message for %s", sender)
 
     def _get_latest_rowid(self) -> int:
         """Get the highest ROWID in chat.db."""
@@ -305,9 +341,37 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
 
     def factory(config: dict[str, Any]) -> IMessageChannel:
         cfg = IMessageChannelConfig(**config)
-        return IMessageChannel(
+
+        gate: SenderGate | None = None
+        if cfg.sender_policy != "closed":
+            from creel.channels.sender_store import SenderStore
+
+            store = SenderStore("sender_data", "imessage")
+            owner_id = cfg.owner or cfg.listen_to
+            owner_ids = {owner_id} if owner_id else set()
+
+            channel_ref: list[IMessageChannel] = []
+
+            def _notify(recipient: str, text: str) -> None:
+                if channel_ref:
+                    channel_ref[0].send(recipient, text)
+
+            gate = SenderGate(
+                policy=SenderPolicy(cfg.sender_policy),
+                static_senders={cfg.listen_to},
+                store=store,
+                owner_sender_ids=owner_ids,
+                notify_fn=_notify,
+                auto_approve=cfg.auto_approve_senders,
+            )
+
+        ch = IMessageChannel(
             allowed_senders=[cfg.listen_to],
             poll_interval=cfg.poll_interval,
+            sender_gate=gate,
         )
+        if gate is not None:
+            channel_ref.append(ch)  # noqa: F821 — assigned above
+        return ch
 
     return meta, factory

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from creel.channels.base import Channel
 from creel.channels.mixins import HealthCheckMixin, RetryMixin
+from creel.channels.sender_gate import SenderGate, SenderPolicy
 from creel.channels.webhook import WebhookChannelMixin
 from creel.channels.whatsapp_bridge import (
     HttpWhatsAppBridge,
@@ -45,6 +46,7 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
         webhook_path: str = "/webhooks/whatsapp",
         webhook_verify_token: str = "",
         webhook_secret: str = "",
+        sender_gate: SenderGate | None = None,
     ) -> None:
         self._bridge = bridge
         self._phone_number = phone_number
@@ -54,6 +56,7 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
         self._webhook_path = webhook_path
         self._webhook_verify_token = webhook_verify_token
         self._webhook_secret = webhook_secret
+        self._gate = sender_gate
         self._callback: Callable[[str, str], str] | None = None
 
     # --- Channel interface ---
@@ -96,8 +99,15 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
                 consecutive_errors = 0
 
                 for msg in messages:
-                    if self._allowed_senders and msg.sender not in self._allowed_senders:
+                    if not self._check_sender(msg.sender, msg.text):
                         continue
+                    # Intercept gate commands from owners
+                    if self._gate is not None:
+                        gate_reply = self._gate.handle_owner_response(msg.text, msg.sender)
+                        if gate_reply is not None:
+                            self.send(msg.sender, gate_reply)
+                            self._replay_held_messages(msg.text, callback)
+                            continue
                     logger.info("WhatsApp from %s: %s", msg.sender, msg.text[:80])
                     response = callback(msg.sender, msg.text)
                     self.send(msg.sender, response)
@@ -191,16 +201,55 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
                     if not text:
                         continue
 
-                    if self._allowed_senders and sender not in self._allowed_senders:
+                    if not self._check_sender(sender, text):
                         continue
 
                     # Run callback in thread to avoid blocking the event loop
                     callback = self._webhook_callback or self._callback
                     if callback:
+                        # Intercept gate commands from owners
+                        if self._gate is not None:
+                            gate_reply = self._gate.handle_owner_response(text, sender)
+                            if gate_reply is not None:
+                                await asyncio.to_thread(self.send, sender, gate_reply)
+                                await asyncio.to_thread(self._replay_held_messages, text, callback)
+                                continue
                         response = await asyncio.to_thread(callback, sender, text)
                         await asyncio.to_thread(self.send, sender, response)
 
         return {"status": "ok"}
+
+    # --- Sender gating ---
+
+    def _check_sender(self, sender: str, text: str = "") -> bool:
+        """Return True if *sender* is allowed to interact."""
+        if self._gate is not None:
+            result = self._gate.check(sender, text=text)
+            return result.allowed
+        # Legacy: static list check
+        if self._allowed_senders and sender not in self._allowed_senders:
+            return False
+        return True
+
+    def _replay_held_messages(self, command_text: str, callback: Callable[[str, str], str]) -> None:
+        if self._gate is None:
+            return
+        import re
+
+        m = re.match(r"^/approve\s+(\S+)", command_text.strip(), re.IGNORECASE)
+        if not m:
+            return
+        target_id = m.group(1)
+        held = self._gate.release_held_messages(target_id)
+        for held_msg in held:
+            sender: str = held_msg.get("sender_id") or target_id
+            text: str = held_msg.get("text") or ""
+            if text:
+                try:
+                    response = callback(sender, text)
+                    self.send(sender, response)
+                except Exception:
+                    logger.exception("Error replaying held message for %s", sender)
 
     # --- Health ---
 
@@ -233,6 +282,26 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
         else:
             bridge = NeonizeWhatsAppBridge(cfg.auth_state_dir)
 
+        gate: SenderGate | None = None
+        if cfg.sender_policy != "closed":
+            from creel.channels.sender_store import SenderStore
+
+            store = SenderStore("sender_data", "whatsapp")
+            owner_id = cfg.owner or (cfg.allowed_senders[0] if cfg.allowed_senders else "")
+            owner_ids = {owner_id} if owner_id else set()
+
+            def _notify(recipient: str, text: str) -> None:
+                bridge.send_message(recipient, text)
+
+            gate = SenderGate(
+                policy=SenderPolicy(cfg.sender_policy),
+                static_senders=set(cfg.allowed_senders),
+                store=store,
+                owner_sender_ids=owner_ids,
+                notify_fn=_notify,
+                auto_approve=cfg.auto_approve_senders,
+            )
+
         return WhatsAppChannel(
             bridge=bridge,
             phone_number=cfg.phone_number,
@@ -242,6 +311,7 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
             webhook_path=cfg.webhook_path,
             webhook_verify_token=cfg.webhook_verify_token,
             webhook_secret=cfg.webhook_secret,
+            sender_gate=gate,
         )
 
     return meta, factory

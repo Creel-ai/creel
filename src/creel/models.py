@@ -677,6 +677,7 @@ class TaskDefinition(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     mode: str = "simple"
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
+    skills: dict[str, SkillOverride] = Field(default_factory=dict)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     allowed_tools: list[str] = Field(default_factory=list)
 

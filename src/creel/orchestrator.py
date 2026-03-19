@@ -159,7 +159,7 @@ def _run_agent_mode(
             llm_config=task.llm,
             agent_config=task.agent,
             registry=_registry,
-            skill_overrides=task.skills if hasattr(task, "skills") else {},
+            skill_overrides=task.skills,
             use_containers=use_containers,
         )
     else:
@@ -170,7 +170,7 @@ def _run_agent_mode(
             llm_config=task.llm,
             agent_config=task.agent,
             registry=_registry,
-            skill_overrides=task.skills if hasattr(task, "skills") else {},
+            skill_overrides=task.skills,
             use_containers=use_containers,
             allowed_tools=task.allowed_tools or None,
         )

@@ -218,7 +218,7 @@ class SkillRegistry:
                     # Store the eagerly-loaded meta but lazy execute
                     self.register(meta, lazy_exec)
             except Exception:
-                logger.debug("Could not load built-in skill from %s", module_path)
+                logger.warning("Could not load built-in skill from %s", module_path, exc_info=True)
 
     def get_skill(self, skill_id: str) -> SkillEntry | None:
         """Look up a skill entry by skill ID."""

@@ -118,6 +118,8 @@ skills:
         classify_output: true
   git_ops:
     classify_output: true
+  bluebubbles:
+    enabled: false
   imessage_bridge: {}
   host_exec: {}
 

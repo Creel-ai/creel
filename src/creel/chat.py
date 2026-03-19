@@ -267,8 +267,8 @@ class ChatServer:
         # Initialize sub-agent manager
         self._subagent_manager = SubAgentManager(
             llm_config=agent_def.llm,
-            tools_config={},
             agent_config=agent_def.agent,
+            skill_overrides=agent_def.skills,
             system_prompt=None,  # built lazily per request
             use_containers=use_containers,
             guardian=self._guardian,
@@ -295,7 +295,7 @@ class ChatServer:
         self._agent_def = agent_def
         # SubAgentManager holds config refs used when spawning new agents.
         self._subagent_manager._llm_config = agent_def.llm
-        self._subagent_manager._tools_config = {}
+        self._subagent_manager._skill_overrides = agent_def.skills
         self._subagent_manager._agent_config = agent_def.agent
         self._subagent_manager._bridge_config = agent_def.bridge
 

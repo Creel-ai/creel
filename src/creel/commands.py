@@ -213,17 +213,18 @@ def _cmd_allows(args: str, ctx: ChatContext) -> str:
 
 def _cmd_tools(args: str, ctx: ChatContext) -> str:
     """List available tools and their status."""
-    tools_config = ctx.server._agent_def.tools
-    if not tools_config:
+    registry = ctx.server._registry
+    skills = registry.all_skills()
+    if not skills:
         return "No tools configured."
 
     lines = ["Available tools:", ""]
-    for name, cfg in sorted(tools_config.items()):
-        executor = cfg.executor
-        network = "net" if cfg.network else "   "
-        lines.append(f"  {name:<30s}  [{executor}]  {network}")
+    for meta in skills:
+        for tool in meta.tools:
+            net = "net" if meta.needs_network else "   "
+            lines.append(f"  {tool.name:<30s}  [{meta.id}]  {net}")
 
-    lines.append(f"\n{len(tools_config)} tools loaded.")
+    lines.append(f"\n{sum(len(m.tools) for m in skills)} tools loaded.")
     return "\n".join(lines)
 
 

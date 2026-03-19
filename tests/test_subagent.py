@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from creel.models import AgentConfig, LLMConfig, ToolConfig, ToolParameter
+from creel.models import AgentConfig, LLMConfig
 from creel.subagents.executor import handle_subagent_tool
 from creel.subagents.manager import SubAgentManager
 from creel.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
@@ -21,18 +21,6 @@ from creel.subagents.models import SubAgentConfig, SubAgentInfo, SubAgentStatus
 
 def _make_llm_config() -> LLMConfig:
     return LLMConfig(model="claude-sonnet-4-6", max_tokens=1024)
-
-
-def _make_tools() -> dict[str, ToolConfig]:
-    return {
-        "check_weather": ToolConfig(
-            executor="weather",
-            description="Get weather",
-            parameters={
-                "location": ToolParameter(type="string", description="City", required=True),
-            },
-        ),
-    }
 
 
 def _make_agent_config() -> AgentConfig:
@@ -51,16 +39,22 @@ def _mock_agent_result(text: str = "Done."):
     )
 
 
+def _make_skill_overrides() -> dict:
+    from creel.models import SkillOverride
+
+    return {"weather": SkillOverride(enabled=True)}
+
+
 def _make_manager(
     result_callback=None,
     llm_config=None,
-    tools_config=None,
+    skill_overrides=None,
     agent_config=None,
 ) -> SubAgentManager:
     return SubAgentManager(
         llm_config=llm_config or _make_llm_config(),
-        tools_config=tools_config or _make_tools(),
         agent_config=agent_config or _make_agent_config(),
+        skill_overrides=skill_overrides or _make_skill_overrides(),
         system_prompt="You are a test agent.",
         result_callback=result_callback,
     )

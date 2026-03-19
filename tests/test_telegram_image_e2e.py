@@ -453,7 +453,7 @@ class TestWebhookWithPhoto:
         channel = TelegramChannel(
             bridge=bridge,
             mode="webhook",
-            webhook_secret="",
+            webhook_secret="test-secret",
             allowed_senders=["42"],
         )
 
@@ -489,7 +489,7 @@ class TestWebhookWithPhoto:
             return json.dumps(payload).encode()
 
         request.body = _body
-        request.headers = {}
+        request.headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret"}
 
         result = await channel._handle_webhook(request)
         assert result == {"status": "ok"}
@@ -514,7 +514,7 @@ class TestWebhookWithPhoto:
         channel = TelegramChannel(
             bridge=bridge,
             mode="webhook",
-            webhook_secret="",
+            webhook_secret="test-secret",
             allowed_senders=["42"],
         )
 
@@ -542,7 +542,7 @@ class TestWebhookWithPhoto:
             return json.dumps(payload).encode()
 
         request.body = _body
-        request.headers = {}
+        request.headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret"}
 
         result = await channel._handle_webhook(request)
         assert result == {"status": "ok"}

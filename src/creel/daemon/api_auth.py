@@ -1,9 +1,9 @@
 """Dashboard API authentication.
 
-All /api/* endpoints require a Bearer token. The token is auto-generated
-on first daemon start and stored in ~/.creel/dashboard-token.
+All /api/* and /v1/* endpoints require a Bearer token. The token is
+auto-generated on first daemon start and stored in ~/.creel/dashboard-token.
 
-/health and /v1/* endpoints remain unauthenticated for backward compatibility.
+/health remains unauthenticated.
 """
 
 from __future__ import annotations

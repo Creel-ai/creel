@@ -46,6 +46,9 @@ def client(minimal_agent_def, tmp_path: Path) -> TestClient:
     service = DaemonService(minimal_agent_def, server=server)
     app = create_daemon_app(service)
     with TestClient(app) as c:
+        # Inject auth header so v1 endpoints accept requests
+        token = app.state.dashboard_token
+        c.headers["Authorization"] = f"Bearer {token}"
         yield c
 
 
@@ -123,3 +126,29 @@ def test_stream_message_endpoint(client: TestClient) -> None:
     assert events[-1]["payload"]["text"] == "echo:hello"
     token_chunks = [e["payload"]["text"] for e in events if e["type"] == "token"]
     assert token_chunks == ["echo:", "hello"]
+
+
+def test_v1_endpoints_require_auth(minimal_agent_def, tmp_path: Path) -> None:
+    """Verify /v1/* endpoints reject unauthenticated requests."""
+    server = _StubChatServer(tmp_path / "sessions")
+    service = DaemonService(minimal_agent_def, server=server)
+    app = create_daemon_app(service)
+    with TestClient(app) as c:
+        # No auth header — should get 401
+        resp = c.get("/v1/status")
+        assert resp.status_code == 401
+
+        resp = c.post("/v1/messages", json={"sender_id": "cli", "text": "hello"})
+        assert resp.status_code == 401
+
+        resp = c.get("/v1/sessions", params={"sender_id": "cli"})
+        assert resp.status_code == 401
+
+        # Wrong token — should also get 401
+        c.headers["Authorization"] = "Bearer wrong-token"
+        resp = c.get("/v1/status")
+        assert resp.status_code == 401
+
+        # Health remains unauthenticated
+        resp = c.get("/health")
+        assert resp.status_code == 200

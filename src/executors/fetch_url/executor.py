@@ -3,16 +3,24 @@
 
 No authentication required. Uses requests + BeautifulSoup.
 Outputs JSON to stdout.
+
+Includes SSRF protection: blocks private/internal IPs, cloud metadata
+endpoints, and non-HTTP schemes. Validates both the URL and the resolved
+IP address to prevent DNS rebinding attacks.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import socket
 import sys
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
 
 USER_AGENT = "Creel/1.0 (URL Fetcher)"
 
@@ -76,6 +84,146 @@ DEFAULT_CONNECT_TIMEOUT = 5.0
 DEFAULT_MAX_REDIRECTS = 3
 DEFAULT_MAX_SIZE_MB = 5.0
 
+# Allowed URL schemes
+_ALLOWED_SCHEMES = {"http", "https"}
+
+# Blocked cloud metadata hostnames (case-insensitive comparison)
+_BLOCKED_HOSTNAMES = {
+    "metadata.google.internal",
+    "metadata.google.com",
+}
+
+# Private / reserved IPv4 networks
+_BLOCKED_IPV4_NETWORKS = [
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv4Network("127.0.0.0/8"),
+    ipaddress.IPv4Network("169.254.0.0/16"),
+]
+
+# Private / reserved IPv6 networks
+_BLOCKED_IPV6_NETWORKS = [
+    ipaddress.IPv6Network("::1/128"),
+    ipaddress.IPv6Network("fc00::/7"),
+    ipaddress.IPv6Network("fe80::/10"),
+]
+
+
+def _is_blocked_ip(addr: str) -> bool:
+    """Return True if *addr* falls within a blocked IP range."""
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+
+    if isinstance(ip, ipaddress.IPv4Address):
+        return any(ip in net for net in _BLOCKED_IPV4_NETWORKS)
+    if isinstance(ip, ipaddress.IPv6Address):
+        # Also check IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
+        mapped = ip.ipv4_mapped
+        if mapped is not None:
+            return any(mapped in net for net in _BLOCKED_IPV4_NETWORKS)
+        return any(ip in net for net in _BLOCKED_IPV6_NETWORKS)
+    return False
+
+
+def _validate_url(url: str) -> str | None:
+    """Parse *url* and return an error message if it should be blocked.
+
+    Checks:
+    - scheme must be http or https
+    - hostname must not be a blocked cloud metadata host
+    - hostname that is a literal IP must not be in a private range
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "Blocked: unable to parse URL"
+
+    # Scheme check
+    if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+        return f"Blocked: scheme '{parsed.scheme}' is not allowed (only http/https)"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "Blocked: URL has no hostname"
+
+    # Cloud metadata hostname check
+    if hostname.lower() in _BLOCKED_HOSTNAMES:
+        return f"Blocked: hostname '{hostname}' is a known cloud metadata endpoint"
+
+    # If the hostname is a literal IP, check it immediately
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if _is_blocked_ip(str(ip)):
+            return "Blocked: URL points to a private/internal IP address"
+    except ValueError:
+        pass  # Not a literal IP — will be checked after DNS resolution
+
+    return None
+
+
+def _resolve_and_validate(url: str) -> tuple[str | None, list[str]]:
+    """Resolve the hostname via DNS and return an error if the IP is blocked.
+
+    Returns ``(error_message_or_None, list_of_safe_ips)``.  The caller
+    should pin the connection to one of the returned IPs to prevent a
+    TOCTOU DNS rebinding attack.
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        return "Blocked: URL has no hostname", []
+
+    # Skip DNS check for literal IPs (already validated in _validate_url)
+    try:
+        ipaddress.ip_address(hostname)
+        return None, []
+    except ValueError:
+        pass
+
+    try:
+        addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return f"Blocked: DNS resolution failed for '{hostname}'", []
+
+    safe_ips: list[str] = []
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+        ip_str = str(sockaddr[0])
+        if _is_blocked_ip(ip_str):
+            return "Blocked: URL resolves to a private/internal IP address", []
+        safe_ips.append(ip_str)
+
+    return None, safe_ips
+
+
+class _PinnedIPAdapter(HTTPAdapter):
+    """HTTPAdapter that forces connections to a pre-resolved IP.
+
+    This closes the TOCTOU gap between DNS validation and the actual
+    HTTP request — the resolved IP is pinned so a second DNS lookup
+    cannot return a different (potentially private) address.
+    """
+
+    def __init__(self, pinned_ip: str, **kwargs):
+        self._pinned_ip = pinned_ip
+        super().__init__(**kwargs)
+
+    def send(self, request, **kwargs):
+        # Rewrite the URL to use the pinned IP, preserving the Host header
+        from urllib.parse import urlparse, urlunparse
+
+        parsed = urlparse(request.url)
+        # Set Host header so the server sees the original hostname
+        request.headers.setdefault("Host", parsed.hostname or "")
+        # Replace hostname with the pinned IP
+        pinned_netloc = self._pinned_ip
+        if parsed.port:
+            pinned_netloc = f"{self._pinned_ip}:{parsed.port}"
+        request.url = urlunparse(parsed._replace(netloc=pinned_netloc))
+        return super().send(request, **kwargs)
+
 
 def fetch_url(
     url: str,
@@ -96,8 +244,23 @@ def fetch_url(
         max_redirects: Maximum number of redirects to follow.
         max_size_mb: Maximum response size in MB.
     """
+    # --- SSRF protection ---
+    error = _validate_url(url)
+    if error:
+        return {"url": url, "error": error}
+
+    error, safe_ips = _resolve_and_validate(url)
+    if error:
+        return {"url": url, "error": error}
+
     with requests.Session() as session:
         session.max_redirects = max_redirects
+        # Pin the connection to the pre-resolved IP to prevent TOCTOU
+        # DNS rebinding (second lookup returning a different address).
+        if safe_ips:
+            adapter = _PinnedIPAdapter(safe_ips[0])
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
         return _fetch_with_session(
             session, url, max_chars, timeout, connect_timeout, max_redirects, max_size_mb
         )

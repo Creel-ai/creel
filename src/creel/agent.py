@@ -627,6 +627,9 @@ def run_agent_loop(
         include_subagent_tool=subagent_manager is not None,
         include_kb_tools=kb_manager is not None,
     )
+    # Build the set of valid tool names from the definitions sent to the LLM.
+    # Used to reject hallucinated or prompt-injected tool names before execution.
+    valid_tool_names = frozenset(td["name"] for td in tool_defs)
     turns_used = 0
     tool_calls_made = 0
     tool_history: list[dict] = []
@@ -722,6 +725,25 @@ def run_agent_loop(
             tool_input = block.input
             logger.info("Tool call: %s", tool_name)
             logger.debug("Tool input: %s(%s)", tool_name, tool_input)
+
+            # Tool registry validation — reject tool names not in the
+            # configured tool set.  This prevents the LLM from invoking
+            # hallucinated or prompt-injected tool names.
+            if tool_name not in valid_tool_names:
+                logger.warning(
+                    "Tool %s not found in tool registry (%d tools available)",
+                    tool_name,
+                    len(valid_tool_names),
+                )
+                _record_tool_error(
+                    block.id,
+                    tool_name,
+                    tool_input,
+                    f"Tool '{tool_name}' is not available. Use one of the provided tools.",
+                    tool_history,
+                    tool_results,
+                )
+                continue
 
             # Per-task tool scoping — reject tools not in the whitelist
             if allowed_tools is not None and tool_name not in allowed_tools:

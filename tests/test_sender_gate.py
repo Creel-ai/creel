@@ -754,7 +754,7 @@ class TestTelegramChannelGateIntegration:
         channel = TelegramChannel(
             bridge=bridge,
             mode="webhook",
-            webhook_secret="",
+            webhook_secret="test-secret",
             allowed_senders=["42"],
             sender_gate=gate,
         )
@@ -777,7 +777,7 @@ class TestTelegramChannelGateIntegration:
             return raw
 
         request.body = _body
-        request.headers = {}
+        request.headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret"}
 
         result = await channel._handle_webhook(request)
         assert result == {"status": "ok"}

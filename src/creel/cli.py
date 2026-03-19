@@ -1898,6 +1898,8 @@ def cmd_pair_generate(args: argparse.Namespace) -> int:
 
 def cmd_pair_list(args: argparse.Namespace) -> int:
     """List all paired devices."""
+    import datetime
+
     from creel.pairing import PairingManager
 
     manager = PairingManager(_default_pairing_dir())
@@ -1909,10 +1911,11 @@ def cmd_pair_list(args: argparse.Namespace) -> int:
 
     print(f"{'ID':<34} {'Name':<20} {'Type':<10} {'Last Seen':<20} {'Capabilities'}")
     print("-" * 110)
-    import datetime
 
     for d in devices:
-        last_seen = datetime.datetime.fromtimestamp(d.last_seen).strftime("%Y-%m-%d %H:%M:%S")
+        last_seen = datetime.datetime.fromtimestamp(d.last_seen, tz=datetime.UTC).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         caps = ", ".join(d.capabilities) if d.capabilities else "(none)"
         print(f"{d.id:<34} {d.name:<20} {d.device_type:<10} {last_seen:<20} {caps}")
 

@@ -32,10 +32,16 @@ logger = logging.getLogger(__name__)
 _PAIRING_CODE_LENGTH = 4  # 4 bytes → 8 hex chars
 # Default pairing timeout
 _DEFAULT_TIMEOUT_SECONDS = 300
+_MIN_TIMEOUT_SECONDS = 1
+_MAX_TIMEOUT_SECONDS = 86400  # 24 hours
 # TOTP window: ±1 step tolerance for clock skew
 _TOTP_STEP_SECONDS = 30
 _TOTP_VALID_WINDOW = 1
 _TOTP_DIGITS = 6
+# Max TOTP attempts before session is rejected
+_MAX_TOTP_ATTEMPTS = 3
+# Max concurrent pending pairing sessions
+_MAX_PENDING_SESSIONS = 10
 
 
 class DeviceType(StrEnum):
@@ -99,6 +105,7 @@ class PairingSession:
     device_type: str = DeviceType.OTHER.value
     capabilities: list[str] = field(default_factory=list)
     status: str = PairingStatus.PENDING.value
+    totp_attempts: int = 0
     created_at: float = field(default_factory=time.time)
     expires_at: float = 0.0
 
@@ -179,6 +186,18 @@ class PairingManager:
         that the remote device must present, plus a ``totp_secret`` used for
         challenge-response verification.
         """
+        timeout_seconds = max(_MIN_TIMEOUT_SECONDS, min(timeout_seconds, _MAX_TIMEOUT_SECONDS))
+        # Cap concurrent pending sessions to prevent resource exhaustion
+        with self._lock:
+            pending = [
+                s
+                for s in self._list_sessions()
+                if s.status == PairingStatus.PENDING.value and not s.is_expired
+            ]
+            if len(pending) >= _MAX_PENDING_SESSIONS:
+                raise RuntimeError(
+                    f"Too many pending pairing sessions (max {_MAX_PENDING_SESSIONS})"
+                )
         session = PairingSession(
             pairing_code=secrets.token_hex(_PAIRING_CODE_LENGTH).upper(),
             totp_secret=secrets.token_urlsafe(32),
@@ -237,11 +256,24 @@ class PairingManager:
                 logger.warning("Session %s expired", session_id)
                 return None
 
-            # Verify TOTP challenge
+            # Verify TOTP challenge — allow limited retries
             if not verify_totp(session.totp_secret, totp_code):
-                session.status = PairingStatus.REJECTED.value
-                self._save_session(session)
-                logger.warning("TOTP verification failed for session %s", session_id)
+                session.totp_attempts += 1
+                if session.totp_attempts >= _MAX_TOTP_ATTEMPTS:
+                    session.status = PairingStatus.REJECTED.value
+                    self._save_session(session)
+                    logger.warning(
+                        "TOTP verification failed for session %s (max attempts reached)",
+                        session_id,
+                    )
+                else:
+                    self._save_session(session)
+                    logger.warning(
+                        "TOTP verification failed for session %s (attempt %d/%d)",
+                        session_id,
+                        session.totp_attempts,
+                        _MAX_TOTP_ATTEMPTS,
+                    )
                 return None
 
             # Success — create the device record
@@ -287,12 +319,13 @@ class PairingManager:
 
     def remove_device(self, device_id: str) -> bool:
         """Remove a paired device.  Returns ``True`` if it existed."""
-        path = self._device_path(device_id)
-        if path.is_file():
-            path.unlink()
-            logger.info("Removed device %s", device_id)
-            return True
-        return False
+        with self._lock:
+            path = self._device_path(device_id)
+            if path.is_file():
+                path.unlink()
+                logger.info("Removed device %s", device_id)
+                return True
+            return False
 
     def update_last_seen(self, device_id: str) -> bool:
         """Touch the last_seen timestamp for a device."""
@@ -310,6 +343,10 @@ class PairingManager:
         if device is None:
             return False
         return hmac.compare_digest(device.auth_token, token)
+
+    def load_session(self, session_id: str) -> PairingSession | None:
+        """Load a pairing session by ID.  Returns ``None`` if not found."""
+        return self._load_session(session_id)
 
     # --- Internal helpers ---
 
@@ -334,6 +371,10 @@ class PairingManager:
     def _save_session(self, session: PairingSession) -> None:
         path = self._session_path(session.session_id)
         path.write_text(json.dumps(session.to_dict(), indent=2), encoding="utf-8")
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
 
     def _load_session(self, session_id: str) -> PairingSession | None:
         path = self._session_path(session_id)
@@ -366,12 +407,12 @@ class PairingManager:
         return sessions
 
     def cleanup_expired_sessions(self) -> int:
-        """Remove expired pairing sessions.  Returns count removed."""
+        """Mark expired pending sessions and delete their files.  Returns count removed."""
         removed = 0
         with self._lock:
             for session in self._list_sessions():
                 if session.is_expired and session.status == PairingStatus.PENDING.value:
-                    session.status = PairingStatus.EXPIRED.value
-                    self._save_session(session)
+                    path = self._session_path(session.session_id)
+                    path.unlink(missing_ok=True)
                     removed += 1
         return removed

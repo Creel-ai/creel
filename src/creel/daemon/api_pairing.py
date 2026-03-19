@@ -6,7 +6,7 @@ import asyncio
 import hmac
 import logging
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from creel.pairing import (
@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 class GeneratePairingResponse(BaseModel):
     session_id: str
     pairing_code: str
-    totp_secret: str
     expires_at: float
 
 
@@ -35,6 +34,16 @@ class CompletePairingRequest(BaseModel):
     device_name: str = Field(min_length=1, max_length=128)
     device_type: DeviceType = DeviceType.OTHER
     capabilities: list[DeviceCapability] = Field(default_factory=list)
+
+
+class CompletePairingResponse(BaseModel):
+    id: str
+    name: str
+    device_type: str
+    capabilities: list[str]
+    last_seen: float
+    paired_at: float
+    auth_token: str
 
 
 class DeviceResponse(BaseModel):
@@ -60,18 +69,20 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
 
     @http.post("/generate", response_model=GeneratePairingResponse)
     async def api_generate_pairing(
-        timeout_seconds: int = 300,
+        timeout_seconds: int = Query(default=300, ge=1, le=86400),
     ) -> GeneratePairingResponse:
-        session = await asyncio.to_thread(manager.generate_pairing, timeout_seconds)
+        try:
+            session = await asyncio.to_thread(manager.generate_pairing, timeout_seconds)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from None
         return GeneratePairingResponse(
             session_id=session.session_id,
             pairing_code=session.pairing_code,
-            totp_secret=session.totp_secret,
             expires_at=session.expires_at,
         )
 
-    @http.post("/complete", response_model=DeviceResponse)
-    async def api_complete_pairing(req: CompletePairingRequest) -> DeviceResponse:
+    @http.post("/complete", response_model=CompletePairingResponse)
+    async def api_complete_pairing(req: CompletePairingRequest) -> CompletePairingResponse:
         # Look up session by pairing code
         session = await asyncio.to_thread(manager.validate_pairing_code, req.pairing_code)
         if session is None:
@@ -88,13 +99,14 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
         if device is None:
             raise HTTPException(status_code=403, detail="Pairing verification failed")
 
-        return DeviceResponse(
+        return CompletePairingResponse(
             id=device.id,
             name=device.name,
             device_type=device.device_type,
             capabilities=device.capabilities,
             last_seen=device.last_seen,
             paired_at=device.paired_at,
+            auth_token=device.auth_token,
         )
 
     @http.get("/devices", response_model=DeviceListResponse)
@@ -165,7 +177,7 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
 
         try:
             while True:
-                session = await asyncio.to_thread(manager._load_session, session_id)
+                session = await asyncio.to_thread(manager.load_session, session_id)
                 if session is None:
                     await websocket.send_json({"error": "session_not_found"})
                     break
@@ -197,5 +209,7 @@ def create_pairing_routes(manager: PairingManager) -> tuple[APIRouter, APIRouter
                 await asyncio.sleep(1)
         except WebSocketDisconnect:
             logger.info("WebSocket disconnected for session %s", session_id)
+        except ValueError:
+            await websocket.send_json({"error": "invalid_session_id"})
 
     return http, ws

@@ -158,9 +158,12 @@ class TestPairingManager:
         assert manager.validate_pairing_code("DEADBEEF") is None
 
     def test_validate_pairing_code_expired(self, manager: PairingManager) -> None:
-        session = manager.generate_pairing(timeout_seconds=0)
-        # Ensure expiry
-        time.sleep(0.01)
+        session = manager.generate_pairing(timeout_seconds=1)
+        # Manually expire the session
+        loaded = manager._load_session(session.session_id)
+        assert loaded is not None
+        loaded.expires_at = time.time() - 1
+        manager._save_session(loaded)
         assert manager.validate_pairing_code(session.pairing_code) is None
 
     def test_complete_pairing_success(self, manager: PairingManager) -> None:
@@ -183,22 +186,41 @@ class TestPairingManager:
         assert loaded_session is not None
         assert loaded_session.status == PairingStatus.PAIRED.value
 
-    def test_complete_pairing_bad_totp(self, manager: PairingManager) -> None:
+    def test_complete_pairing_bad_totp_retries(self, manager: PairingManager) -> None:
         session = manager.generate_pairing()
-        device = manager.complete_pairing(
-            session.session_id,
-            "000000",
-            device_name="BadPhone",
-        )
+        # First two failures keep session pending
+        for i in range(2):
+            device = manager.complete_pairing(session.session_id, "000000", device_name="BadPhone")
+            assert device is None
+            loaded = manager._load_session(session.session_id)
+            assert loaded is not None
+            assert loaded.status == PairingStatus.PENDING.value
+            assert loaded.totp_attempts == i + 1
+
+        # Third failure rejects the session
+        device = manager.complete_pairing(session.session_id, "000000", device_name="BadPhone")
         assert device is None
-        # Session should be rejected
         loaded = manager._load_session(session.session_id)
         assert loaded is not None
         assert loaded.status == PairingStatus.REJECTED.value
 
+    def test_complete_pairing_retry_then_succeed(self, manager: PairingManager) -> None:
+        session = manager.generate_pairing()
+        # One bad attempt
+        manager.complete_pairing(session.session_id, "000000", device_name="Phone")
+        # Then succeed with correct code
+        totp_code = generate_totp_code(session.totp_secret)
+        device = manager.complete_pairing(session.session_id, totp_code, device_name="Phone")
+        assert device is not None
+        assert device.name == "Phone"
+
     def test_complete_pairing_expired_session(self, manager: PairingManager) -> None:
-        session = manager.generate_pairing(timeout_seconds=0)
-        time.sleep(0.01)
+        session = manager.generate_pairing(timeout_seconds=1)
+        # Manually expire the session
+        loaded = manager._load_session(session.session_id)
+        assert loaded is not None
+        loaded.expires_at = time.time() - 1
+        manager._save_session(loaded)
         totp_code = generate_totp_code(session.totp_secret)
         device = manager.complete_pairing(
             session.session_id,
@@ -290,10 +312,18 @@ class TestDeviceManagement:
 
 class TestCleanupExpiredSessions:
     def test_cleanup_expired(self, manager: PairingManager) -> None:
-        manager.generate_pairing(timeout_seconds=0)
+        session = manager.generate_pairing(timeout_seconds=1)
         time.sleep(0.01)
+        # Manually set expires_at in the past to force expiry
+        loaded = manager.load_session(session.session_id)
+        assert loaded is not None
+        loaded.expires_at = time.time() - 1
+        manager._save_session(loaded)
+
         removed = manager.cleanup_expired_sessions()
         assert removed == 1
+        # File should be deleted
+        assert manager.load_session(session.session_id) is None
 
     def test_cleanup_skips_active(self, manager: PairingManager) -> None:
         manager.generate_pairing(timeout_seconds=3600)
@@ -313,6 +343,57 @@ class TestPathValidation:
     def test_valid_hex_id_accepted(self, manager: PairingManager) -> None:
         path = manager._device_path("ab" * 16)
         assert path.name == f"{'ab' * 16}.json"
+
+
+class TestFilePermissions:
+    def test_session_file_permissions(self, manager: PairingManager) -> None:
+        import os
+        import stat
+
+        session = manager.generate_pairing()
+        path = manager._session_path(session.session_id)
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        assert mode == 0o600
+
+    def test_device_file_permissions(self, manager: PairingManager) -> None:
+        import os
+        import stat
+
+        session = manager.generate_pairing()
+        totp_code = generate_totp_code(session.totp_secret)
+        device = manager.complete_pairing(session.session_id, totp_code, "Phone")
+        assert device is not None
+        path = manager._device_path(device.id)
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        assert mode == 0o600
+
+
+class TestSessionCap:
+    def test_max_pending_sessions(self, manager: PairingManager) -> None:
+        for _ in range(10):
+            manager.generate_pairing()
+        with pytest.raises(RuntimeError, match="Too many pending"):
+            manager.generate_pairing()
+
+    def test_completed_sessions_dont_count(self, manager: PairingManager) -> None:
+        # Fill to max, then complete one — should free a slot
+        sessions = [manager.generate_pairing() for _ in range(10)]
+        s = sessions[0]
+        totp_code = generate_totp_code(s.totp_secret)
+        manager.complete_pairing(s.session_id, totp_code, "Phone")
+        # Now we should be able to generate one more
+        session = manager.generate_pairing()
+        assert session is not None
+
+
+class TestTimeoutValidation:
+    def test_negative_timeout_clamped(self, manager: PairingManager) -> None:
+        session = manager.generate_pairing(timeout_seconds=-10)
+        assert session.expires_at > session.created_at
+
+    def test_excessive_timeout_clamped(self, manager: PairingManager) -> None:
+        session = manager.generate_pairing(timeout_seconds=999999)
+        assert session.expires_at - session.created_at <= 86400
 
 
 class TestCorruptFiles:

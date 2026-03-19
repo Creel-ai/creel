@@ -40,6 +40,7 @@ class SubAgentManager:
         guardian: Any | None = None,
         bridge_config: Any | None = None,
         result_callback: Callable[[str, str], None] | None = None,
+        safety_config: Any | None = None,
     ) -> None:
         self._llm_config = llm_config
         self._tools_config = tools_config
@@ -48,6 +49,7 @@ class SubAgentManager:
         self._use_containers = use_containers
         self._guardian = guardian
         self._bridge_config = bridge_config
+        self._safety_config = safety_config
         self._result_callback = result_callback
 
         # agent_id → SubAgentInfo
@@ -206,6 +208,7 @@ class SubAgentManager:
                 guardian=self._guardian,
                 bridge_config=self._bridge_config,
                 session_state=SessionState(),
+                safety_config=self._safety_config,
             )
 
             # Process any steer messages that arrived while the loop ran
@@ -227,6 +230,7 @@ class SubAgentManager:
                     guardian=self._guardian,
                     bridge_config=self._bridge_config,
                     session_state=SessionState(),
+                    safety_config=self._safety_config,
                 )
 
             if cancel.is_set():

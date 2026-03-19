@@ -271,6 +271,7 @@ class ChatServer:
             guardian=self._guardian,
             bridge_config=agent_def.bridge,
             result_callback=self._on_subagent_result,
+            safety_config=agent_def.safety,
         )
 
         # Initialize slash command registry

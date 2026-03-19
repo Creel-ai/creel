@@ -272,6 +272,28 @@ class TestAllowlist:
         )
         assert result is not None
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "rm -rf /tmp/build && rm -rf /",
+            "rm -rf /tmp/build; rm -rf /",
+            "rm -rf /tmp/build || rm -rf /",
+            "rm -rf /tmp/build | cat /etc/shadow",
+            "$(rm -rf /tmp/build) rm -rf /",
+            "`rm -rf /tmp/build` rm -rf /",
+        ],
+    )
+    def test_allowlist_rejects_shell_chaining(self, command: str):
+        """Allowlisted command embedded in a chain must NOT bypass the blocklist."""
+        config = _default_config(allowlist=["rm -rf /tmp/build"])
+        result = check_destructive_blocklist(
+            "run_command",
+            {"command": command},
+            _make_tools_config(),
+            config,
+        )
+        assert result is not None
+
 
 # ---------------------------------------------------------------------------
 # Custom patterns

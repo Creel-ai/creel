@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 # Executor names that run unsandboxed on the host.
 _HOST_EXEC_TOOLS: frozenset[str] = frozenset({"exec", "host_exec", "exec_interactive", "coding"})
 
+# Shell chaining operators that invalidate an allowlist substring match.
+# Prevents "allowlisted_cmd && rm -rf /" from bypassing the blocklist.
+_SHELL_CHAIN_RE: re.Pattern[str] = re.compile(r"&&|\|\||[;|]|\$\(|`")
+
 # Built-in patterns reused from bridge/process_manager.py and
 # exec_interactive/executor.py, plus additional patterns from issue #250.
 _BUILTIN_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -113,9 +117,19 @@ def check_destructive_blocklist(
     if not isinstance(command, str) or not command.strip():
         return None
 
-    # Allowlist: exact substring match bypasses the blocklist
+    # Allowlist: exact match or substring match with no shell chaining.
+    # Reject if the command contains operators (&&, ||, ;, |, $(...), `...`)
+    # beyond the allowlisted portion — prevents "allowlisted && rm -rf /".
     for allowed in config.allowlist:
         if allowed and allowed in command:
+            remainder = command.replace(allowed, "", 1)
+            if _SHELL_CHAIN_RE.search(remainder):
+                logger.warning(
+                    "Allowlist entry %r matched but command contains shell chaining; "
+                    "not allowlisting",
+                    allowed,
+                )
+                continue
             logger.debug("Blocklist allowlisted: %r matches allowlist entry %r", command, allowed)
             return None
 

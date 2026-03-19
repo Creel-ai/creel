@@ -338,6 +338,14 @@ class ChatServer:
         if stripped.lower().startswith("/resume"):
             return self._handle_resume(sender_id, stripped)
 
+        # Handle temporary override commands
+        if stripped.lower().startswith("/allow "):
+            return self._handle_allow(sender_id, stripped)
+        if stripped.lower().startswith("/deny "):
+            return self._handle_deny(sender_id, stripped)
+        if stripped.lower() == "/allows":
+            return self._handle_allows(sender_id)
+
         # Check for pending approval response BEFORE normal processing
         if stripped.lower() in _APPROVE_WORDS | _DENY_WORDS:
             pending = self._approval_queue.get_pending(sender_id)
@@ -807,6 +815,98 @@ class ChatServer:
             return f"Resumed session {session_id}: {title}"
         except ValueError as e:
             return str(e)
+
+    def _handle_allow(self, sender_id: str, text: str) -> str:
+        """Handle /allow <pattern> [<count>x] [<duration>] — create a temporary allow override."""
+        if not self._guardian:
+            return "Guardian is not enabled."
+
+        from guardian.overrides import parse_duration, parse_use_count
+        from guardian.types import ActionVerdict
+
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return "Usage: /allow <pattern> [<count>x] [<duration>]"
+
+        args = parts[1].strip()
+        tokens = args.split()
+        pattern = tokens[0]
+        remaining = " ".join(tokens[1:])
+
+        # Check for bare wildcard without confirmation
+        override_mgr = self._guardian.override_manager
+        if pattern == "*" and override_mgr._config.require_confirmation_for_wildcard:
+            if not remaining.endswith("confirm"):
+                return (
+                    "Warning: `/allow *` matches ALL tools. "
+                    "Append `confirm` to proceed, e.g. `/allow * 30m confirm`."
+                )
+            remaining = remaining.rsplit("confirm", 1)[0].strip()
+
+        # Parse use count and duration from remaining args
+        max_uses, remaining = parse_use_count(remaining)
+        duration_seconds = 30 * 60  # default 30m
+        if remaining:
+            try:
+                duration_seconds = parse_duration(remaining)
+            except ValueError as e:
+                return f"Invalid duration: {e}"
+
+        try:
+            override = override_mgr.create_override(
+                pattern=pattern,
+                action=ActionVerdict.ALLOW,
+                duration_seconds=duration_seconds,
+                created_by=sender_id,
+                max_uses=max_uses,
+            )
+        except ValueError as e:
+            return f"Cannot create override: {e}"
+
+        expiry = override.expires_at.strftime("%H:%M:%S UTC")
+        uses_str = f", max {max_uses} uses" if max_uses else ""
+        return f"Allowing `{pattern}` until {expiry}{uses_str}."
+
+    def _handle_deny(self, sender_id: str, text: str) -> str:
+        """Handle /deny <pattern> — revoke an active allow override."""
+        if not self._guardian:
+            return "Guardian is not enabled."
+
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return "Usage: /deny <pattern>"
+
+        pattern = parts[1].strip()
+        override_mgr = self._guardian.override_manager
+        revoked = override_mgr.revoke_override(pattern)
+        if revoked:
+            return f"Revoked override for `{pattern}`."
+        return f"No active override found for `{pattern}`."
+
+    def _handle_allows(self, sender_id: str) -> str:
+        """Handle /allows — list all active temporary overrides."""
+        if not self._guardian:
+            return "Guardian is not enabled."
+
+        override_mgr = self._guardian.override_manager
+        active = override_mgr.list_active()
+        if not active:
+            return "No active overrides."
+
+        lines = ["Active overrides:", ""]
+        for ov in active:
+            uses_str = f"{ov.use_count}/{ov.max_uses}" if ov.max_uses else f"{ov.use_count}/∞"
+            remaining = ov.remaining_seconds
+            if remaining >= 3600:
+                time_str = f"{remaining // 3600}h{(remaining % 3600) // 60}m"
+            elif remaining >= 60:
+                time_str = f"{remaining // 60}m{remaining % 60}s"
+            else:
+                time_str = f"{remaining}s"
+            lines.append(
+                f"  {ov.action.value:5s}  {ov.pattern:<20s}  uses={uses_str}  expires in {time_str}"
+            )
+        return "\n".join(lines)
 
     def _format_status(self, sender_id: str) -> str:
         """Format server status information."""

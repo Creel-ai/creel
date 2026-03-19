@@ -347,6 +347,91 @@ class AuditLogger:
             record["block_reason"] = block_reason
         self._write(record)
 
+    def log_override_created(
+        self,
+        *,
+        override_id: str,
+        pattern: str,
+        action: str,
+        duration_seconds: int,
+        created_by: str,
+        scope: str = "",
+        max_uses: int | None = None,
+    ) -> None:
+        """Log creation of a temporary policy override."""
+        record: dict = {
+            "event": "override_created",
+            "ts": datetime.now(UTC).isoformat(),
+            "override_id": override_id,
+            "pattern": pattern,
+            "action": action,
+            "duration_seconds": duration_seconds,
+            "created_by": created_by,
+        }
+        if scope:
+            record["scope"] = scope
+        if max_uses is not None:
+            record["max_uses"] = max_uses
+        self._write(record)
+
+    def log_override_revoked(
+        self,
+        *,
+        override_id: str,
+        pattern: str,
+        revoked_by: str,
+    ) -> None:
+        """Log revocation of a temporary policy override."""
+        self._write(
+            {
+                "event": "override_revoked",
+                "ts": datetime.now(UTC).isoformat(),
+                "override_id": override_id,
+                "pattern": pattern,
+                "revoked_by": revoked_by,
+            }
+        )
+
+    def log_override_expired(
+        self,
+        *,
+        override_id: str,
+        pattern: str,
+        use_count: int,
+    ) -> None:
+        """Log expiration of a temporary policy override."""
+        self._write(
+            {
+                "event": "override_expired",
+                "ts": datetime.now(UTC).isoformat(),
+                "override_id": override_id,
+                "pattern": pattern,
+                "use_count": use_count,
+            }
+        )
+
+    def log_override_hit(
+        self,
+        *,
+        override_id: str,
+        pattern: str,
+        tool_name: str,
+        verdict: str,
+        use_count: int,
+    ) -> None:
+        """Log a tool call that matched a temporary override."""
+        self._write(
+            {
+                "event": "override_hit",
+                "ts": datetime.now(UTC).isoformat(),
+                "override_id": override_id,
+                "pattern": pattern,
+                "tool_name": tool_name,
+                "verdict": verdict,
+                "use_count": use_count,
+            }
+        )
+
     def log_network_alert(
         self,
         *,

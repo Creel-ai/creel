@@ -11,6 +11,7 @@ from guardian.drift import DriftDetector
 from guardian.fast_classifier import FastClassifier
 from guardian.llm_judge import LLMJudge
 from guardian.network import NetworkMonitor, NetworkVerdict, _extract_domain
+from guardian.overrides import TemporaryOverrideManager
 from guardian.pipeline import GuardianPipeline, PipelineContext, PipelineResult
 from guardian.policy import PolicyEngine
 from guardian.types import (
@@ -68,6 +69,10 @@ class Guardian:
         )
         self._network = (
             NetworkMonitor(config.network_policy) if config.network_policy.enabled else None
+        )
+        self._override_manager = TemporaryOverrideManager(
+            config.overrides,
+            self._audit,
         )
         self._pipeline = GuardianPipeline(self, config.pipeline)
 
@@ -261,11 +266,37 @@ class Guardian:
 
         return result
 
+    @property
+    def override_manager(self) -> TemporaryOverrideManager:
+        """Return the temporary override manager."""
+        return self._override_manager
+
     def validate_action(self, tool_name: str, tool_args: dict) -> ActionDecision:
         """Validate a proposed tool action against the policy engine (stage 3).
 
+        Temporary overrides are checked first (highest priority). If an
+        override matches, it bypasses the static policy entirely.
+
         Returns an ActionDecision with the verdict.
         """
+        # Check temporary overrides first
+        override_decision = self._override_manager.check(tool_name, tool_args)
+        if override_decision is not None:
+            if override_decision.verdict == ActionVerdict.DENY:
+                logger.warning(
+                    "Action denied by override: %s — %s",
+                    tool_name,
+                    override_decision.reason,
+                )
+            if self._audit:
+                self._audit.log_action(
+                    tool_name=tool_name,
+                    arg_keys=list(tool_args.keys()),
+                    verdict=override_decision.verdict.value,
+                    matched_rule=override_decision.matched_rule,
+                )
+            return override_decision
+
         if not self._policy:
             return ActionDecision(
                 verdict=ActionVerdict.ALLOW,

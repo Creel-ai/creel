@@ -51,7 +51,7 @@ _LOG_POLL_INTERVAL = 0.25
 # Commands handled locally in the TUI (not sent to backend)
 _TUI_COMMANDS = {"/compact", "/exit", "/quit", "/help"}
 # Commands handled by ChatServer that return instantly (no LLM call)
-_SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions", "/status", "/model"}
+_SERVER_COMMANDS = {"/clear", "/reset", "/new", "/sessions", "/status", "/model", "/allows"}
 # /resume is a prefix match, handled separately
 
 _HELP_TEXT = """\
@@ -63,6 +63,9 @@ _HELP_TEXT = """\
   [cyan]/resume <id>[/cyan]  Resume a session by ID
   [cyan]/status[/cyan]       Show server status info
   [cyan]/model[/cyan]        Show current model config
+  [cyan]/allow <p> [Nx] [t][/cyan]  Temporarily allow a tool pattern
+  [cyan]/deny <pattern>[/cyan]     Revoke an active override
+  [cyan]/allows[/cyan]       List active overrides
   [cyan]/clear[/cyan]        Clear session history
   [cyan]/exit[/cyan]         Quit
 
@@ -540,7 +543,12 @@ class ChatApp(App):
         bar.message_count += 1
 
         # Server commands that return instantly (no LLM call)
-        if cmd in _SERVER_COMMANDS or cmd == "/resume":
+        if (
+            cmd in _SERVER_COMMANDS
+            or cmd == "/resume"
+            or cmd.startswith("/allow")
+            or cmd.startswith("/deny")
+        ):
             response = self._server.handle_message(self._sender_id, text)
             self._append_response(response)
             self._update_subtitle()

@@ -117,12 +117,25 @@ def _extract_user_request_for_coherence(messages: list[dict]) -> str:
 _MEMORY_WRITE_TOOLS = frozenset({"remember", "update_long_term_memory", "edit_memory"})
 
 
+def _build_approval_hint(approval_counts: dict[str, int], threshold: int) -> str:
+    """Build a hint suggesting /allow for repeatedly approved tools."""
+    hints = [tool for tool, count in approval_counts.items() if count >= threshold]
+    if not hints:
+        return ""
+    tool = hints[0]
+    return (
+        f"💡 Tip: You approved `{tool}` {approval_counts[tool]} times. "
+        f"Use `/allow {tool} 30m` to auto-approve it temporarily."
+    )
+
+
 @dataclass
 class _GuardianDecision:
     """Result of pre-execution Guardian checks."""
 
     action: str  # "allow" | "deny" | "needs_approval"
     error_message: str = ""
+    approved_tool: str = ""  # set when a REVIEW was approved by user
 
 
 def _check_guardian_pre_execution(
@@ -142,6 +155,8 @@ def _check_guardian_pre_execution(
     request async approval.
     """
     from guardian.types import ActionVerdict
+
+    _approved_tool = ""
 
     # Stage 1: Policy validation
     decision = guardian.validate_action(tool_name, tool_input)
@@ -164,6 +179,7 @@ def _check_guardian_pre_execution(
                     error_message=f"Action denied by user: {decision.reason}",
                 )
             guardian.log_action_outcome(tool_name, "review", "approved_by_user")
+            _approved_tool = tool_name
         else:
             # No synchronous callback — signal that async approval is needed.
             # The caller handles injecting synthetic results and returning.
@@ -215,7 +231,7 @@ def _check_guardian_pre_execution(
                     ),
                 )
 
-    return _GuardianDecision(action="allow")
+    return _GuardianDecision(action="allow", approved_tool=_approved_tool)
 
 
 def _extract_last_user_text(messages: list[dict]) -> str:
@@ -448,6 +464,9 @@ def run_agent_loop(
     tool_history: list[dict] = []
     last_input_tokens = 0
     _model_override = session_state.model_override if session_state else None
+    # Track consecutive approvals per tool pattern for hint suggestion
+    _approval_counts: dict[str, int] = {}
+    _APPROVAL_HINT_THRESHOLD = 3
 
     for _turn in range(agent_config.max_turns):
         turns_used += 1
@@ -506,6 +525,10 @@ def run_agent_loop(
         if not tool_use_blocks:
             # No tools called - we have a final text response
             text = extract_text(response)
+            # Suggest /allow if user approved the same tool repeatedly
+            hint = _build_approval_hint(_approval_counts, _APPROVAL_HINT_THRESHOLD)
+            if hint:
+                text = f"{text}\n\n{hint}"
             # Append assistant response to messages for session tracking
             messages.append({"role": "assistant", "content": _serialize_content(response.content)})
             return AgentResult(
@@ -599,6 +622,12 @@ def run_agent_loop(
                             tool_use_id=block.id,
                         ),
                         last_input_tokens=last_input_tokens,
+                    )
+
+                # Track consecutive user approvals for hint suggestion
+                if gd.approved_tool:
+                    _approval_counts[gd.approved_tool] = (
+                        _approval_counts.get(gd.approved_tool, 0) + 1
                     )
 
             # Check tool result cache before executing.

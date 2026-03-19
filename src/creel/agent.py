@@ -17,7 +17,6 @@ from creel.models import (
     LLMConfig,
     SessionState,
     SkillOverride,
-    ToolConfig,
 )
 from creel.tool_cache import ToolResultCache
 from creel.tools import build_tool_definitions, execute_tool_call
@@ -150,7 +149,6 @@ def _check_guardian_pre_execution(
     tool_name: str,
     tool_input: dict,
     messages: list[dict],
-    tools_config: dict[str, ToolConfig],
     confirm_action: Callable[[str, dict, str], bool] | None,
     registry: SkillRegistry | None = None,
 ) -> _GuardianDecision:
@@ -200,16 +198,13 @@ def _check_guardian_pre_execution(
     user_request = _extract_last_user_text(messages)
     if user_request:
         prior_tools = _extract_prior_tools(messages)
-        # Gather available tool names from both legacy config and registry
-        available_tool_names = list(tools_config.keys()) if tools_config else []
-        if registry is not None:
-            available_tool_names.extend(registry.all_tool_names())
+        available_tool_names = registry.all_tool_names() if registry is not None else None
         coherence = guardian.check_coherence(
             user_request,
             tool_name,
             tool_input,
             prior_tools=prior_tools,
-            available_tools=available_tool_names or None,
+            available_tools=available_tool_names,
         )
         if not coherence.coherent:
             logger.warning(
@@ -412,7 +407,8 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
 def _execute_single_tool(
     block: Any,
     *,
-    tools_config: dict[str, ToolConfig],
+    registry: SkillRegistry,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool,
     memory_manager: Any,
     bridge_config: Any,
@@ -422,8 +418,6 @@ def _execute_single_tool(
     guardian: Any | None,
     tool_cache: ToolResultCache | None,
     tool_history: list[dict],
-    registry: SkillRegistry | None = None,
-    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> dict:
     """Execute a single tool call and return a tool_result block.
 
@@ -448,15 +442,14 @@ def _execute_single_tool(
             result = execute_tool_call(
                 tool_name=tool_name,
                 tool_input=tool_input,
-                tools_config=tools_config,
+                registry=registry,
+                skill_overrides=skill_overrides,
                 use_containers=use_containers,
                 memory_manager=memory_manager,
                 bridge_config=bridge_config,
                 session_state=session_state,
                 cron_manager=cron_manager,
                 subagent_manager=subagent_manager,
-                registry=registry,
-                skill_overrides=skill_overrides,
             )
             is_error = False
             elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -495,22 +488,17 @@ def _execute_single_tool(
             )
 
     # Classify executor output for tools that return untrusted content
-    tool_cfg = tools_config.get(tool_name)
     _classify = False
-    if tool_cfg is not None:
-        _classify = tool_cfg.classify_output
-    elif registry is not None and skill_overrides is not None:
-        _skill_result = registry.get_tool(tool_name)
-        if _skill_result is not None:
-            _skill_id = _skill_result[1].meta.id
-            _so = skill_overrides.get(_skill_id)
-            if _so is not None:
-                _classify = _so.classify_output or False
-                # Check per-tool override
-                if _so.tools and tool_name in _so.tools:
-                    _tool_override = _so.tools[tool_name]
-                    if _tool_override.classify_output is not None:
-                        _classify = _tool_override.classify_output
+    _skill_result = registry.get_tool(tool_name)
+    if _skill_result is not None:
+        _skill_id = _skill_result[1].meta.id
+        _so = skill_overrides.get(_skill_id)
+        if _so is not None:
+            _classify = _so.classify_output or False
+            if _so.tools and tool_name in _so.tools:
+                _tool_override = _so.tools[tool_name]
+                if _tool_override.classify_output is not None:
+                    _classify = _tool_override.classify_output
     if not is_error and guardian is not None and _classify:
         screen_result = guardian.screen_tool_result(tool_name, result)
         if screen_result.blocked:
@@ -586,8 +574,9 @@ def _execute_single_tool(
 def run_agent_loop(
     messages: list[dict],
     llm_config: LLMConfig,
-    tools_config: dict[str, ToolConfig],
     agent_config: AgentConfig,
+    registry: SkillRegistry,
+    skill_overrides: dict[str, SkillOverride],
     system_prompt: str | None = None,
     use_containers: bool = False,
     guardian: Any | None = None,
@@ -604,15 +593,12 @@ def run_agent_loop(
     context_pruning: ContextPruningConfig | None = None,
     max_context_tokens: int = 180_000,
     summarize_fn: Callable[[list[dict]], str] | None = None,
-    registry: SkillRegistry | None = None,
-    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
     Args:
         messages: Conversation history + new message (Anthropic format).
         llm_config: LLM configuration.
-        tools_config: Available tools.
         agent_config: Agent settings (max_turns, etc.).
         system_prompt: Optional system prompt.
         use_containers: If True, run executors in Docker containers.
@@ -631,23 +617,15 @@ def run_agent_loop(
         AgentResult with the final response and execution metadata.
     """
     include_memory = memory_manager is not None
-    include_workspace = bool(
-        tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
-    ) or (skill_overrides is not None and "file_ops" in skill_overrides)
-    has_tools = bool(tools_config) or bool(skill_overrides)
-    tool_defs = (
-        build_tool_definitions(
-            tools_config,
-            include_memory_tools=include_memory,
-            include_workspace_tools=include_workspace,
-            include_cron_tools=cron_manager is not None,
-            include_subagent_tool=subagent_manager is not None,
-            include_kb_tools=kb_manager is not None,
-            registry=registry,
-            skill_overrides=skill_overrides,
-        )
-        if has_tools
-        else []
+    include_workspace = "file_ops" in skill_overrides
+    tool_defs = build_tool_definitions(
+        registry,
+        skill_overrides,
+        include_memory_tools=include_memory,
+        include_workspace_tools=include_workspace,
+        include_cron_tools=cron_manager is not None,
+        include_subagent_tool=subagent_manager is not None,
+        include_kb_tools=kb_manager is not None,
     )
     turns_used = 0
     tool_calls_made = 0
@@ -769,7 +747,6 @@ def run_agent_loop(
                     tool_name,
                     tool_input,
                     messages,
-                    tools_config,
                     confirm_action,
                     registry=registry,
                 )
@@ -802,7 +779,8 @@ def run_agent_loop(
             for block in execute_blocks:
                 _result = _execute_single_tool(
                     block,
-                    tools_config=tools_config,
+                    registry=registry,
+                    skill_overrides=skill_overrides,
                     use_containers=use_containers,
                     memory_manager=memory_manager,
                     bridge_config=bridge_config,
@@ -812,8 +790,6 @@ def run_agent_loop(
                     guardian=guardian,
                     tool_cache=tool_cache,
                     tool_history=tool_history,
-                    registry=registry,
-                    skill_overrides=skill_overrides,
                 )
                 tool_results.append(_result)
 
@@ -852,7 +828,8 @@ def run_agent_loop(
         for block in execute_blocks:
             tool_result_block = _execute_single_tool(
                 block,
-                tools_config=tools_config,
+                registry=registry,
+                skill_overrides=skill_overrides,
                 use_containers=use_containers,
                 memory_manager=memory_manager,
                 bridge_config=bridge_config,
@@ -862,8 +839,6 @@ def run_agent_loop(
                 guardian=guardian,
                 tool_cache=tool_cache,
                 tool_history=tool_history,
-                registry=registry,
-                skill_overrides=skill_overrides,
             )
             tool_results.append(tool_result_block)
 

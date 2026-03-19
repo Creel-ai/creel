@@ -406,18 +406,6 @@ def collect_required_images(agent_def: AgentDefinition) -> list[str]:
     """
     images: set[str] = set()
     has_local_executor_images = False
-    # Legacy tools
-    for _tool_name, tool_config in agent_def.tools.items():
-        if tool_config.dockerfile:
-            image = f"custom-{tool_config.executor.replace('_', '-')}:latest"
-            images.add(image)
-        elif tool_config.image:
-            images.add(tool_config.image)
-        else:
-            image = f"executor-{tool_config.executor.replace('_', '-')}:latest"
-            images.add(image)
-            has_local_executor_images = True
-    # Skill-based tools
     for skill_id, override in agent_def.skills.items():
         if not override.enabled:
             continue
@@ -430,7 +418,7 @@ def collect_required_images(agent_def: AgentDefinition) -> list[str]:
             image = f"executor-{skill_id.replace('_', '-')}:latest"
             images.add(image)
             has_local_executor_images = True
-    has_tools = bool(agent_def.tools) or bool(agent_def.skills)
+    has_tools = bool(agent_def.skills)
     if has_tools:
         images.add("llm-runner:latest")
     if has_local_executor_images and _BASE_DOCKERFILE.exists():
@@ -506,10 +494,7 @@ def _run_executor_container(
         bridge_config: Optional bridge configuration for macOS host tools
     """
     from creel.log import request_id_var
-    from creel.orchestrator import (
-        _EXECUTOR_TO_BRIDGE_SCOPE,
-        _replace_google_credentials_with_access_token,
-    )
+    from creel.orchestrator import _replace_google_credentials_with_access_token
 
     # Validate host_auth early — before image build — so misconfigurations fail fast
     _host_auth_entry: _HostAuthEntry | None = None
@@ -566,9 +551,19 @@ def _run_executor_container(
         bridge_url = bridge_url.replace("://localhost", "://host.docker.internal")
         bridge_url = bridge_url.replace("://127.0.0.1", "://host.docker.internal")
         env_vars["BRIDGE_URL"] = bridge_url
-        # Look up scoped token by executor name (e.g. browser → BRIDGE_TOKEN_BROWSER)
+        # Look up scoped token by executor name via skill registry metadata
         executor_name = config.name or ""
-        scope_name = _EXECUTOR_TO_BRIDGE_SCOPE.get(executor_name, executor_name.upper())
+        scope_name = executor_name.upper()
+        try:
+            from creel.skills.registry import SkillRegistry
+
+            _reg = SkillRegistry()
+            _reg._discover_builtins()
+            _entry = _reg.get_skill(executor_name)
+            if _entry is not None and _entry.meta.bridge_scope:
+                scope_name = _entry.meta.bridge_scope
+        except Exception:
+            pass  # Fallback to uppercase executor name
         scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope_name}", "")
         if scoped_token:
             env_vars["BRIDGE_TOKEN"] = scoped_token

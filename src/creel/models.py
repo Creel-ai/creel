@@ -648,7 +648,6 @@ class AgentDefinition(BaseModel):
 
     system_prompt: str
     system_prompt_file: str | None = None
-    tools: dict[str, ToolConfig] = Field(default_factory=dict)
     skills: dict[str, SkillOverride] = Field(default_factory=dict)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
@@ -744,13 +743,5 @@ def load_agent_config(path: str | Path | None = None) -> AgentDefinition:
 
     if not isinstance(raw, dict):
         raise ValueError(f"Agent config must contain a YAML mapping, got {type(raw)}")
-
-    # Backward compatibility: if tools: is present but skills: is absent,
-    # log a deprecation warning. Both sections can coexist during migration.
-    if "tools" in raw and "skills" not in raw:
-        logger.warning(
-            "agent.yaml uses 'tools:' without 'skills:'. "
-            "Consider migrating to the 'skills:' section for self-describing executors."
-        )
 
     return AgentDefinition(**raw)

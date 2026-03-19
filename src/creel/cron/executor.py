@@ -71,11 +71,17 @@ class JobExecutor:
 
         messages: list[dict] = [{"role": "user", "content": job.payload.message}]
 
+        from creel.skills import SkillRegistry
+
+        _registry = SkillRegistry()
+        _registry.discover()
+
         result = run_agent_loop(
             messages=messages,
             llm_config=llm_config,
-            tools_config=self._agent_def.tools,
             agent_config=self._agent_def.agent,
+            registry=_registry,
+            skill_overrides=self._agent_def.skills,
             use_containers=self._use_containers,
         )
 

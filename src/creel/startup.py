@@ -21,7 +21,7 @@ def validate_secrets(agent_def) -> None:
 
     Checks:
     - agent_def.llm.secrets
-    - Each tool's secrets in agent_def.tools
+    - Each skill's secrets in agent_def.skills
 
     Raises SecretsValidationError with a clear message on failure.
     """
@@ -34,9 +34,9 @@ def validate_secrets(agent_def) -> None:
     if agent_def.llm.secrets:
         required_secrets.append(("llm.secrets", agent_def.llm.secrets))
 
-    for tool_name, tool_cfg in agent_def.tools.items():
-        if tool_cfg.secrets:
-            optional_secrets.append((f"tools.{tool_name}.secrets", tool_cfg.secrets))
+    for skill_id, skill_cfg in agent_def.skills.items():
+        if skill_cfg.secrets:
+            optional_secrets.append((f"skills.{skill_id}.secrets", skill_cfg.secrets))
 
     # Check channel secrets (e.g. telegram)
     for channel_id in agent_def.channels.configured_channels():

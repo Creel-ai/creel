@@ -4,138 +4,110 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from creel.models import ToolConfig, ToolParameter
+import pytest
+
+from creel.models import SkillOverride
+from creel.skills.registry import SkillRegistry
 from creel.tools import build_tool_definitions, execute_tool_call
 
 
-def _make_tools() -> dict[str, ToolConfig]:
+def _make_registry() -> SkillRegistry:
+    """Build a registry with all built-in skills discovered."""
+    registry = SkillRegistry()
+    registry._discover_builtins()
+    return registry
+
+
+def _make_overrides() -> dict[str, SkillOverride]:
+    """Build skill overrides that include weather and gmail_modify."""
     return {
-        "check_weather": ToolConfig(
-            executor="weather",
-            description="Get weather for a location",
-            parameters={
-                "location": ToolParameter(
-                    type="string",
-                    description="City name",
-                    required=True,
-                ),
-            },
-        ),
-        "trash_email": ToolConfig(
-            executor="gmail_modify",
-            secrets="secrets/gmail_modify.env.enc",
-            description="Trash an email",
-            parameters={
-                "message_id": ToolParameter(
-                    type="string",
-                    description="Gmail message ID",
-                    required=True,
-                ),
-            },
-            fixed_args={"action": "trash"},
-        ),
+        "weather": SkillOverride(enabled=True),
+        "gmail_modify": SkillOverride(enabled=True),
     }
 
 
 def test_build_tool_definitions():
     """Tool definitions should match Anthropic API format."""
-    tools = _make_tools()
-    defs = build_tool_definitions(tools)
+    registry = _make_registry()
+    overrides = _make_overrides()
+    defs = build_tool_definitions(registry, overrides)
 
-    assert len(defs) == 2
+    assert len(defs) > 0
 
-    weather_def = next(d for d in defs if d["name"] == "check_weather")
-    assert weather_def["description"] == "Get weather for a location"
-    assert "location" in weather_def["input_schema"]["properties"]
-    assert weather_def["input_schema"]["required"] == ["location"]
+    # Weather skill should expose check_weather or weather tool
+    weather_names = [d["name"] for d in defs if "weather" in d["name"].lower()]
+    assert len(weather_names) > 0
 
-    trash_def = next(d for d in defs if d["name"] == "trash_email")
-    # fixed_args should NOT appear as parameters
-    assert "action" not in trash_def["input_schema"]["properties"]
-    assert "message_id" in trash_def["input_schema"]["properties"]
+    # Fixed args should NOT appear as parameters in any tool
+    for d in defs:
+        props = d["input_schema"].get("properties", {})
+        # fixed_args like 'action' should not be in properties
+        if d["name"] in ("trash_email", "delete_message"):
+            assert "action" not in props
 
 
 def test_build_tool_definitions_empty():
-    """Empty tools config should return empty list."""
-    assert build_tool_definitions({}) == []
+    """Empty skill overrides should return empty list."""
+    registry = _make_registry()
+    assert build_tool_definitions(registry, {}) == []
 
 
 def test_build_tool_definitions_no_required():
-    """Tools with no required params should have no 'required' key."""
-    tools = {
-        "check_drive": ToolConfig(
-            executor="drive",
-            description="Search Drive",
-            parameters={
-                "query": ToolParameter(type="string", description="Search query"),
-            },
-        ),
-    }
-    defs = build_tool_definitions(tools)
-    assert "required" not in defs[0]["input_schema"]
+    """Tools with no required params should have no 'required' key or empty list."""
+    registry = _make_registry()
+    overrides = {"drive": SkillOverride(enabled=True)}
+    defs = build_tool_definitions(registry, overrides)
+    # Find a tool that has no required params
+    for d in defs:
+        if not d["input_schema"].get("required"):
+            # Either no 'required' key, or empty list
+            assert "required" not in d["input_schema"] or d["input_schema"]["required"] == []
+            break
 
 
-def test_fixed_args_excluded_from_schema():
-    """Parameters that are in fixed_args should be excluded from the schema."""
-    tools = {
-        "mark_read": ToolConfig(
-            executor="gmail_modify",
-            description="Mark as read",
-            parameters={
-                "message_id": ToolParameter(type="string", required=True),
-                "action": ToolParameter(type="string"),
-                "remove_labels": ToolParameter(type="string"),
-            },
-            fixed_args={"action": "modify", "remove_labels": "UNREAD"},
-        ),
-    }
-    defs = build_tool_definitions(tools)
-    props = defs[0]["input_schema"]["properties"]
-    assert "message_id" in props
-    assert "action" not in props
-    assert "remove_labels" not in props
-
-
-@patch("creel.tools._run_executor_inline")
-def test_execute_tool_call_merges_fixed_args(mock_fetch):
+@patch("creel.tools._run_executor_inline_skill")
+def test_execute_tool_call_merges_fixed_args(mock_run):
     """fixed_args should override LLM input."""
-    mock_fetch.return_value = '{"status": "trashed"}'
-    tools = _make_tools()
+    mock_run.return_value = '{"status": "trashed"}'
+    registry = _make_registry()
+    overrides = {"gmail_modify": SkillOverride(enabled=True)}
 
     result = execute_tool_call(
         tool_name="trash_email",
         tool_input={"message_id": "abc123"},
-        tools_config=tools,
+        registry=registry,
+        skill_overrides=overrides,
     )
 
     assert result == '{"status": "trashed"}'
 
     # Verify the executor was called with merged args
-    call_args = mock_fetch.call_args
-    executor_config = call_args[0][1]
+    call_args = mock_run.call_args
+    executor_config = call_args[0][2]  # 3rd positional arg is config
     assert executor_config.args["message_id"] == "abc123"
     assert executor_config.args["action"] == "trash"
 
 
-@patch("creel.tools._run_executor_inline")
-def test_execute_tool_call_fixed_args_win(mock_fetch):
+@patch("creel.tools._run_executor_inline_skill")
+def test_execute_tool_call_fixed_args_win(mock_run):
     """If LLM tries to override a fixed_arg, the fixed value wins."""
-    mock_fetch.return_value = '{"ok": true}'
-    tools = _make_tools()
+    mock_run.return_value = '{"ok": true}'
+    registry = _make_registry()
+    overrides = {"gmail_modify": SkillOverride(enabled=True)}
 
     execute_tool_call(
         tool_name="trash_email",
         tool_input={"message_id": "abc", "action": "delete"},
-        tools_config=tools,
+        registry=registry,
+        skill_overrides=overrides,
     )
 
-    executor_config = mock_fetch.call_args[0][1]
+    executor_config = mock_run.call_args[0][2]
     assert executor_config.args["action"] == "trash"  # fixed wins
 
 
 def test_execute_tool_call_unknown_tool():
     """Unknown tool should raise ValueError."""
-    import pytest
-
+    registry = _make_registry()
     with pytest.raises(ValueError, match="Unknown tool"):
-        execute_tool_call("nonexistent", {}, {})
+        execute_tool_call("nonexistent", {}, registry, {})

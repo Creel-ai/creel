@@ -241,13 +241,9 @@ def test_invalid_mode(tmp_path: Path) -> None:
 def test_load_agent_config(tmp_path: Path) -> None:
     config = {
         "system_prompt": "You are helpful. Today is {date}.",
-        "tools": {
-            "check_weather": {
-                "executor": "weather",
-                "description": "Get weather",
-                "parameters": {
-                    "location": {"type": "string", "required": True},
-                },
+        "skills": {
+            "weather": {
+                "enabled": True,
             },
         },
         "llm": {"model": "claude-sonnet-4-6", "max_tokens": 1024},
@@ -259,7 +255,7 @@ def test_load_agent_config(tmp_path: Path) -> None:
 
     agent_def = load_agent_config(path)
     assert agent_def.system_prompt.startswith("You are helpful")
-    assert "check_weather" in agent_def.tools
+    assert "weather" in agent_def.skills
     assert agent_def.agent.max_turns == 15
     assert agent_def.llm.max_tokens == 1024
 

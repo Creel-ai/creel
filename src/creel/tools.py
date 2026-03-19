@@ -16,11 +16,10 @@ from creel.models import (
     SkillOverride,
     ToolConfig,
 )
-from creel.orchestrator import _run_executor_inline
+from creel.skills.registry import SkillRegistry
 
 if TYPE_CHECKING:
     from creel.container_pool import ContainerPool
-    from creel.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -301,29 +300,24 @@ BUILTIN_WORKSPACE_TOOLS = [
 
 
 def build_tool_definitions(
-    tools_config: dict[str, ToolConfig],
+    registry: SkillRegistry,
+    skill_overrides: dict[str, SkillOverride],
     include_memory_tools: bool = False,
     include_workspace_tools: bool = False,
     include_cron_tools: bool = False,
     include_subagent_tool: bool = False,
     include_kb_tools: bool = False,
-    registry: SkillRegistry | None = None,
-    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> list[dict]:
-    """Convert tool configs to Anthropic API tool definitions.
+    """Convert skill registry metadata to Anthropic API tool definitions.
 
-    Supports two modes:
-    - Legacy: builds defs from ``tools_config`` (dict[str, ToolConfig])
-    - Skills: builds defs from ``registry`` + ``skill_overrides``
-
-    When a registry is provided and skill_overrides is non-empty, skill-based
-    tools are generated from the registry metadata.  Legacy tools_config entries
-    are still emitted (for backward compat during migration).
+    Iterates enabled skills in ``skill_overrides``, looks up each in the
+    registry, and builds tool definitions from the intrinsic ``ToolSpec``
+    metadata.
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
     """
-    tool_defs = []
+    tool_defs: list[dict] = []
 
     if include_memory_tools:
         tool_defs.extend(BUILTIN_MEMORY_TOOLS)
@@ -338,79 +332,40 @@ def build_tool_definitions(
     if include_kb_tools:
         tool_defs.extend(BUILTIN_KB_TOOLS)
 
-    # Collect tool names already emitted by skills to avoid duplicates
-    skill_tool_names: set[str] = set()
-
-    # --- Skills-based tool definitions ---
-    if registry is not None and skill_overrides:
-        for skill_id, override in skill_overrides.items():
-            if not override.enabled:
-                continue
-            entry = registry.get_skill(skill_id)
-            if entry is None:
-                logger.warning("Skill '%s' in config but not registered — skipping", skill_id)
-                continue
-            for tool_spec in entry.meta.tools:
-                skill_tool_names.add(tool_spec.name)
-                properties: dict[str, dict] = {}
-                required: list[str] = []
-                for param in tool_spec.params:
-                    # Skip parameters that are overridden by fixed_args
-                    if param.name in tool_spec.fixed_args:
-                        continue
-                    properties[param.name] = {
-                        "type": param.type,
-                        "description": param.description,
-                    }
-                    if param.required:
-                        required.append(param.name)
-
-                schema: dict = {
-                    "type": "object",
-                    "properties": properties,
+    for skill_id, override in skill_overrides.items():
+        if not override.enabled:
+            continue
+        entry = registry.get_skill(skill_id)
+        if entry is None:
+            logger.warning("Skill '%s' in config but not registered — skipping", skill_id)
+            continue
+        for tool_spec in entry.meta.tools:
+            properties: dict[str, dict] = {}
+            required: list[str] = []
+            for param in tool_spec.params:
+                if param.name in tool_spec.fixed_args:
+                    continue
+                properties[param.name] = {
+                    "type": param.type,
+                    "description": param.description,
                 }
-                if required:
-                    schema["required"] = required
+                if param.required:
+                    required.append(param.name)
 
-                tool_defs.append(
-                    {
-                        "name": tool_spec.name,
-                        "description": tool_spec.description,
-                        "input_schema": schema,
-                    }
-                )
-
-    # --- Legacy tools_config definitions ---
-    for name, cfg in tools_config.items():
-        if name in skill_tool_names:
-            continue  # Already provided by skill registry
-        properties = {}
-        required = []
-
-        for param_name, tool_param in cfg.parameters.items():
-            if param_name in cfg.fixed_args:
-                continue
-            properties[param_name] = {
-                "type": tool_param.type,
-                "description": tool_param.description,
+            schema: dict = {
+                "type": "object",
+                "properties": properties,
             }
-            if tool_param.required:
-                required.append(param_name)
+            if required:
+                schema["required"] = required
 
-        schema = {
-            "type": "object",
-            "properties": properties,
-        }
-        if required:
-            schema["required"] = required
-
-        tool_defs.append(
-            {
-                "name": name,
-                "description": cfg.description,
-                "input_schema": schema,
-            }
-        )
+            tool_defs.append(
+                {
+                    "name": tool_spec.name,
+                    "description": tool_spec.description,
+                    "input_schema": schema,
+                }
+            )
 
     return tool_defs
 
@@ -454,7 +409,8 @@ def _validate_workspace_path(path: str) -> str | None:
 def execute_tool_call(
     tool_name: str,
     tool_input: dict,
-    tools_config: dict[str, ToolConfig],
+    registry: SkillRegistry,
+    skill_overrides: dict[str, SkillOverride],
     use_containers: bool = False,
     memory_manager: Any | None = None,
     bridge_config: BridgeConfig | None = None,
@@ -463,28 +419,21 @@ def execute_tool_call(
     subagent_manager: Any | None = None,
     container_pool: ContainerPool | None = None,
     kb_manager: Any | None = None,
-    registry: SkillRegistry | None = None,
-    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> str:
-    """Execute a tool call via the corresponding executor.
+    """Execute a tool call via the skill registry.
 
-    Supports two modes:
-    - Legacy: looks up tool in ``tools_config``
-    - Skills: looks up tool in ``registry``, gets config from ``skill_overrides``
-
-    Merges fixed_args over LLM-provided input (fixed_args always win).
-    Converts the tool config into a ExecutorConfig and delegates to
-    the existing executor infrastructure.
+    Looks up the tool in the registry, merges fixed_args over LLM-provided
+    input, and delegates to the skill's execute function (inline) or to
+    the container infrastructure.
 
     Returns:
         The executor output as a string.
 
     Raises:
-        ValueError: If tool_name is not found in tools_config or registry.
+        ValueError: If tool_name is not found in the registry.
     """
     # Handle set_workspace built-in
     if tool_name == "set_workspace":
-        # set_workspace requires an active session (not task mode)
         if session_state is None:
             return json.dumps({"error": "set_workspace is only available in interactive sessions"})
         path = tool_input.get("path", "")
@@ -552,77 +501,21 @@ def execute_tool_call(
     if tool_name in ("kb_search", "kb_add", "kb_list", "kb_stats") and kb_manager is not None:
         return _handle_kb_tool(tool_name, tool_input, kb_manager)
 
-    # --- Skill-based execution path ---
-    if registry is not None and skill_overrides is not None:
-        skill_result = registry.get_tool(tool_name)
-        if skill_result is not None:
-            return _execute_skill_tool(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                skill_result=skill_result,
-                skill_overrides=skill_overrides,
-                use_containers=use_containers,
-                bridge_config=bridge_config,
-                session_state=session_state,
-                container_pool=container_pool,
-            )
-
-    # --- Legacy tools_config execution path ---
-    if tool_name not in tools_config:
+    # --- Skill-based execution ---
+    skill_result = registry.get_tool(tool_name)
+    if skill_result is None:
         raise ValueError(f"Unknown tool: {tool_name}")
 
-    cfg = tools_config[tool_name]
-
-    # Security: strip 'workspace' from LLM-provided input for file_ops tools
-    # to prevent bypassing the set_workspace approval flow.
-    if cfg.executor == "file_ops":
-        tool_input = {k: v for k, v in tool_input.items() if k != "workspace"}
-
-    # Merge: LLM input as base, fixed_args override
-    merged_args = {**tool_input, **cfg.fixed_args}
-
-    # Inject workspace from session_state for file_ops tools
-    _ws = (
-        (
-            session_state.get("workspace")
-            if isinstance(session_state, dict)
-            else getattr(session_state, "workspace", None)
-        )
-        if session_state
-        else None
+    return _execute_skill_tool(
+        tool_name=tool_name,
+        tool_input=tool_input,
+        skill_result=skill_result,
+        skill_overrides=skill_overrides,
+        use_containers=use_containers,
+        bridge_config=bridge_config,
+        session_state=session_state,
+        container_pool=container_pool,
     )
-    if cfg.executor == "file_ops" and _ws:
-        workspace = _ws
-        # Re-validate: workspace may have been removed since set_workspace
-        if not os.path.isdir(workspace):
-            return json.dumps(
-                {"error": "Workspace is no longer valid (directory removed or inaccessible)"}
-            )
-        merged_args["workspace"] = workspace
-
-    # Convert all values to strings (executors expect string args)
-    string_args = {k: str(v) for k, v in merged_args.items()}
-
-    # Build a ExecutorConfig for the existing infrastructure
-    executor_config = ExecutorConfig(
-        name=cfg.executor,
-        secrets=cfg.secrets,
-        args=string_args,
-        timeout=cfg.timeout,
-        http=cfg.http,
-    )
-
-    logger.info("Executing tool %s (executor: %s)", tool_name, cfg.executor)
-
-    if use_containers:
-        # Route coding executor through warm container pool when available
-        if cfg.executor == "coding" and container_pool is not None and container_pool.enabled:
-            return _run_coding_via_pool(container_pool, executor_config, cfg)
-        # Route exec_interactive through per-session container manager
-        if cfg.executor == "exec_interactive":
-            return _run_interactive_via_container(executor_config, cfg)
-        return _run_executor_container(executor_config, cfg, bridge_config)
-    return _run_executor_inline(cfg.executor, executor_config)
 
 
 def _execute_skill_tool(

@@ -502,13 +502,16 @@ class TestToolsIntegration:
     def test_execute_tool_call_dispatches_subagent(self, mock_loop):
         """execute_tool_call should dispatch to subagent handler."""
         mock_loop.return_value = _mock_agent_result("sub done")
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         manager = _make_manager()
+        registry = SkillRegistry()
         result = execute_tool_call(
             tool_name="subagent",
             tool_input={"action": "list"},
-            tools_config=_make_tools(),
+            registry=registry,
+            skill_overrides={},
             subagent_manager=manager,
         )
 
@@ -517,13 +520,16 @@ class TestToolsIntegration:
 
     def test_execute_tool_call_without_manager_raises(self):
         """Without a manager, 'subagent' should fall through to unknown tool."""
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
+        registry = SkillRegistry()
         with pytest.raises(ValueError, match="Unknown tool"):
             execute_tool_call(
                 tool_name="subagent",
                 tool_input={"action": "list"},
-                tools_config=_make_tools(),
+                registry=registry,
+                skill_overrides={},
             )
 
 
@@ -534,16 +540,20 @@ class TestToolsIntegration:
 
 class TestToolDefinitions:
     def test_subagent_tool_included_when_enabled(self):
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions(_make_tools(), include_subagent_tool=True)
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {}, include_subagent_tool=True)
         names = [d["name"] for d in defs]
         assert "subagent" in names
 
     def test_subagent_tool_excluded_by_default(self):
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions(_make_tools())
+        registry = SkillRegistry()
+        defs = build_tool_definitions(registry, {})
         names = [d["name"] for d in defs]
         assert "subagent" not in names
 

@@ -605,6 +605,7 @@ class TestActionRuns:
 
 class TestExecuteToolCallCronDispatch:
     def test_dispatch_with_cron_manager(self, tmp_path: Path) -> None:
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         mgr = _make_manager(tmp_path)
@@ -613,7 +614,8 @@ class TestExecuteToolCallCronDispatch:
         result_str = execute_tool_call(
             tool_name="cron",
             tool_input={"action": "list"},
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             cron_manager=mgr,
         )
         result = json.loads(result_str)
@@ -621,17 +623,20 @@ class TestExecuteToolCallCronDispatch:
         assert result["jobs"][0]["name"] == "Dispatched"
 
     def test_dispatch_without_cron_manager_raises(self, tmp_path: Path) -> None:
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         with pytest.raises(ValueError, match="Unknown tool"):
             execute_tool_call(
                 tool_name="cron",
                 tool_input={"action": "list"},
-                tools_config={},
+                registry=SkillRegistry(),
+                skill_overrides={},
                 cron_manager=None,
             )
 
     def test_add_via_dispatch(self, tmp_path: Path) -> None:
+        from creel.skills.registry import SkillRegistry
         from creel.tools import execute_tool_call
 
         mgr = _make_manager(tmp_path)
@@ -644,7 +649,8 @@ class TestExecuteToolCallCronDispatch:
                 "schedule_expr": "0 8 * * *",
                 "message": "hello",
             },
-            tools_config={},
+            registry=SkillRegistry(),
+            skill_overrides={},
             cron_manager=mgr,
         )
         result = json.loads(result_str)
@@ -659,23 +665,27 @@ class TestExecuteToolCallCronDispatch:
 
 class TestBuildToolDefinitionsCron:
     def test_includes_cron_when_flagged(self) -> None:
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions({}, include_cron_tools=True)
+        defs = build_tool_definitions(SkillRegistry(), {}, include_cron_tools=True)
         names = [d["name"] for d in defs]
         assert "cron" in names
 
     def test_excludes_cron_by_default(self) -> None:
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
-        defs = build_tool_definitions({})
+        defs = build_tool_definitions(SkillRegistry(), {})
         names = [d["name"] for d in defs]
         assert "cron" not in names
 
     def test_cron_with_other_builtins(self) -> None:
+        from creel.skills.registry import SkillRegistry
         from creel.tools import build_tool_definitions
 
         defs = build_tool_definitions(
+            SkillRegistry(),
             {},
             include_memory_tools=True,
             include_cron_tools=True,

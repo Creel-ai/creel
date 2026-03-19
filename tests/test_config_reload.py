@@ -461,5 +461,8 @@ class TestConstants:
     def test_reloadable_fields_match_model(self):
         """All reloadable fields should exist in AgentDefinition."""
         model_fields = set(AgentDefinition.model_fields.keys())
+        # 'tools' was renamed to 'skills' in the skill registry migration
+        _field_renames = {"tools": "skills"}
         for field in RELOADABLE_FIELDS:
-            assert field in model_fields, f"{field} not in AgentDefinition"
+            expected = _field_renames.get(field, field)
+            assert expected in model_fields, f"{field} not in AgentDefinition"

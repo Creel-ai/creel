@@ -498,10 +498,12 @@ def _start_bridge_server(bridge_config) -> threading.Thread:
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 8099
 
-    # Pre-generate scoped tokens so orchestrator can inject them into containers
-    from creel.orchestrator import _EXECUTOR_TO_BRIDGE_SCOPE
+    # Pre-generate scoped tokens from skill registry metadata
+    from creel.skills.registry import SkillRegistry as _SkillReg
 
-    scopes = sorted(set(_EXECUTOR_TO_BRIDGE_SCOPE.values()))
+    _sr = _SkillReg()
+    _sr._discover_builtins()
+    scopes = sorted({m.bridge_scope for m in _sr.all_skills() if m.bridge_scope})
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
         if not os.environ.get(env_var):
@@ -610,9 +612,9 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
             service.start_channel(channel_type)
 
         guardian_status = "active" if server._guardian else "inactive"
-        tool_count = len(agent_def.tools)
+        tool_count = len(agent_def.skills)
         logger.info(
-            "Creel agent ready. Tools loaded: %d. Guardian: %s.", tool_count, guardian_status
+            "Creel agent ready. Skills loaded: %d. Guardian: %s.", tool_count, guardian_status
         )
 
         # Pre-build Docker images in background so they're ready before first use

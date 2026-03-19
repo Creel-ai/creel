@@ -33,7 +33,7 @@ class SubAgentManager:
         self,
         *,
         llm_config: Any,
-        tools_config: dict[str, Any],
+        tools_config: dict[str, Any] | None = None,
         agent_config: Any,
         system_prompt: str | None = None,
         use_containers: bool = False,
@@ -196,11 +196,17 @@ class SubAgentManager:
             if cancel.is_set():
                 return
 
+            from creel.skills import SkillRegistry
+
+            _registry = SkillRegistry()
+            _registry.discover()
+
             result = run_agent_loop(
                 messages=messages,
                 llm_config=llm_config,
-                tools_config=self._tools_config,
                 agent_config=agent_cfg,
+                registry=_registry,
+                skill_overrides={},
                 system_prompt=self._system_prompt,
                 use_containers=self._use_containers,
                 guardian=self._guardian,
@@ -220,8 +226,9 @@ class SubAgentManager:
                 result = run_agent_loop(
                     messages=messages,
                     llm_config=llm_config,
-                    tools_config=self._tools_config,
                     agent_config=agent_cfg,
+                    registry=_registry,
+                    skill_overrides={},
                     system_prompt=self._system_prompt,
                     use_containers=self._use_containers,
                     guardian=self._guardian,

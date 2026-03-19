@@ -493,6 +493,43 @@ class TestGmailExecutorInline:
         with pytest.raises(ValueError, match="unknown action"):
             _run_executor_inline("gmail_modify", cfg)
 
+    def test_gmail_batch_modify(self) -> None:
+        cfg = ExecutorConfig(
+            args={
+                "action": "batch_modify",
+                "message_ids": "m1,m2,m3",
+                "add_labels": "STARRED",
+                "remove_labels": "UNREAD",
+            }
+        )
+        with patch(
+            "executors.gmail_modify.executor.batch_modify",
+            return_value={"modified": 3, "ids": ["m1", "m2", "m3"]},
+        ) as mock_bm:
+            result = _run_executor_inline("gmail_modify", cfg)
+        assert "modified" in result
+        mock_bm.assert_called_once_with(["m1", "m2", "m3"], ["STARRED"], ["UNREAD"])
+
+    def test_gmail_batch_trash(self) -> None:
+        cfg = ExecutorConfig(args={"action": "batch_trash", "message_ids": "m1, m2"})
+        with patch(
+            "executors.gmail_modify.executor.batch_trash",
+            return_value={"modified": 2, "ids": ["m1", "m2"]},
+        ) as mock_bt:
+            result = _run_executor_inline("gmail_modify", cfg)
+        assert "modified" in result
+        mock_bt.assert_called_once_with(["m1", "m2"])
+
+    def test_gmail_batch_delete(self) -> None:
+        cfg = ExecutorConfig(args={"action": "batch_delete", "message_ids": "m1,m2"})
+        with patch(
+            "executors.gmail_modify.executor.batch_delete",
+            return_value={"deleted": 2, "ids": ["m1", "m2"]},
+        ) as mock_bd:
+            result = _run_executor_inline("gmail_modify", cfg)
+        assert "deleted" in result
+        mock_bd.assert_called_once_with(["m1", "m2"])
+
 
 # ---------------------------------------------------------------------------
 # Google Docs/Sheets/Slides inline handler tests

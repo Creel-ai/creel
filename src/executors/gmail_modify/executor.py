@@ -88,6 +88,9 @@ def delete_message(message_id: str) -> dict:
     return {"id": message_id, "deleted": True}
 
 
+_MAX_BATCH_SIZE = 10  # Keep small to limit blast radius from LLM errors
+
+
 def batch_modify(
     message_ids: list[str],
     add_labels: list[str] | None = None,
@@ -95,7 +98,7 @@ def batch_modify(
 ) -> dict:
     """Batch modify labels on multiple Gmail messages.
 
-    Uses the Gmail batchModify API for efficiency (up to 1000 messages).
+    Uses the Gmail batchModify API for efficiency (up to _MAX_BATCH_SIZE messages).
 
     Args:
         message_ids: List of Gmail message IDs.
@@ -105,6 +108,10 @@ def batch_modify(
     Returns:
         Dict with count of modified messages.
     """
+    if len(message_ids) > _MAX_BATCH_SIZE:
+        raise ValueError(
+            f"Too many message IDs ({len(message_ids)}); Gmail batch limit is {_MAX_BATCH_SIZE}"
+        )
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
@@ -144,6 +151,10 @@ def batch_delete(message_ids: list[str]) -> dict:
     Returns:
         Dict confirming deletion.
     """
+    if len(message_ids) > _MAX_BATCH_SIZE:
+        raise ValueError(
+            f"Too many message IDs ({len(message_ids)}); Gmail batch limit is {_MAX_BATCH_SIZE}"
+        )
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 

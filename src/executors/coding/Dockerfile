@@ -32,11 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install coding agents globally
-RUN npm install -g @anthropic-ai/claude-code @openai/codex 2>/dev/null || true
-
-# Install uv for Python project management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Install coding agents globally (|| true: optional, build succeeds without them)
+RUN npm install -g @anthropic-ai/claude-code @openai/codex || true
 
 # Default workspace directory
 RUN mkdir -p /workspace && chown executor:executor /workspace

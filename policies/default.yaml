@@ -74,6 +74,10 @@ deny:
 # Conditional deny rules — block dangerous shell patterns in exec commands
 # Tier 1-4 (Block): Shell injection, reverse shells, destructive commands
 deny_when:
+  # Permanent bulk deletion via gmail_modify executor
+  - tool: gmail_modify
+    arg: action
+    pattern: "batch_delete"
   # Destructive filesystem commands
   - tool: exec
     arg: command

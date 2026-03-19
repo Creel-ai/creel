@@ -133,8 +133,9 @@ class HttpTelegramBridge(TelegramBridge):
                 reply_to_message_id = None  # only reply to the first chunk
             try:
                 self._call("sendMessage", **params)
-            except Exception:
-                # Fall back to plain text if Markdown parsing fails
+            except RuntimeError:
+                # Fall back to plain text if Telegram rejects the Markdown
+                logger.debug("Markdown send failed, retrying as plain text")
                 params.pop("parse_mode", None)
                 self._call("sendMessage", **params)
 

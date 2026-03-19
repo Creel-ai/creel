@@ -646,7 +646,7 @@ class AgentDefinition(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     media: MediaConfig | None = None
     guardian: GuardianConfig | None = None
-    safety: SafetyConfig = Field(default_factory=lambda: SafetyConfig())
+    safety: SafetyConfig = Field(default_factory=SafetyConfig)
     knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
     monitors: dict[str, MonitorDefinition] = Field(default_factory=dict)
 

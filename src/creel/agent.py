@@ -749,6 +749,12 @@ def run_agent_loop(
                     )
                     if confirm_action is not None:
                         if not confirm_action(tool_name, tool_input, reason):
+                            if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                                guardian._audit.log_blocklist_match(
+                                    tool_name=tool_name,
+                                    pattern_name=blocklist_match.pattern_name,
+                                    outcome="denied",
+                                )
                             _record_tool_error(
                                 block.id,
                                 tool_name,
@@ -758,8 +764,20 @@ def run_agent_loop(
                                 tool_results,
                             )
                             continue
-                        # Approved — fall through to Guardian
+                        # Approved — log and fall through to Guardian
+                        if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                            guardian._audit.log_blocklist_match(
+                                tool_name=tool_name,
+                                pattern_name=blocklist_match.pattern_name,
+                                outcome="approved",
+                            )
                     else:
+                        if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                            guardian._audit.log_blocklist_match(
+                                tool_name=tool_name,
+                                pattern_name=blocklist_match.pattern_name,
+                                outcome="pending_review",
+                            )
                         review_blocks.append((block, reason))
                         continue
 

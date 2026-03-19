@@ -10,6 +10,7 @@ human confirmation.
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 from dataclasses import dataclass
@@ -124,15 +125,31 @@ def check_destructive_blocklist(
             logger.warning("Blocklist match: pattern=%s tool=%s", name, tool_name)
             return BlocklistMatch(matched=True, pattern_name=name, command=command)
 
-    # Check custom patterns
-    for raw in config.custom_patterns:
-        try:
-            compiled = re.compile(raw, re.IGNORECASE)
-        except re.error:
-            logger.warning("Invalid custom blocklist pattern: %r", raw)
+    # Check custom patterns (compiled + cached)
+    for raw, compiled in _compile_custom_patterns(tuple(config.custom_patterns)):
+        if compiled is None:
             continue
         if compiled.search(command):
             logger.warning("Blocklist match (custom): pattern=%r tool=%s", raw, tool_name)
             return BlocklistMatch(matched=True, pattern_name=f"custom:{raw}", command=command)
 
     return None
+
+
+@functools.lru_cache(maxsize=16)
+def _compile_custom_patterns(
+    patterns: tuple[str, ...],
+) -> tuple[tuple[str, re.Pattern[str] | None], ...]:
+    """Compile and cache custom blocklist patterns.
+
+    Returns tuples of (raw_pattern, compiled_or_None).  Invalid regexes
+    produce a ``None`` compiled value and a warning log.
+    """
+    result: list[tuple[str, re.Pattern[str] | None]] = []
+    for raw in patterns:
+        try:
+            result.append((raw, re.compile(raw, re.IGNORECASE)))
+        except re.error:
+            logger.warning("Invalid custom blocklist pattern: %r", raw)
+            result.append((raw, None))
+    return tuple(result)

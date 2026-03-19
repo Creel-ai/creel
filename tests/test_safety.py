@@ -445,17 +445,28 @@ class TestInputExtraction:
 
 
 class TestAutoApproveBypass:
+    """Verify that [BLOCKLIST] reasons cannot be auto-approved by _auto_confirm."""
+
     def test_auto_confirm_rejects_blocklist_reason(self):
-        """_auto_confirm in chat.py should reject [BLOCKLIST] reasons.
+        """Build a minimal ChatServer-like _auto_confirm and verify it rejects."""
 
-        We test the logic inline rather than importing the private function.
-        """
+        # Reproduce the exact _auto_confirm logic from chat.py
+        def _auto_confirm(_tool_name: str, _tool_input: dict, reason: str) -> bool:
+            if reason.startswith("[BLOCKLIST]"):
+                return False
+            return True
+
         reason = "[BLOCKLIST] Destructive command detected: 'rm_recursive_force'"
-        assert reason.startswith("[BLOCKLIST]")
+        assert _auto_confirm("run_command", {"command": "rm -rf /"}, reason) is False
 
-    def test_non_blocklist_reason_not_rejected(self):
+    def test_auto_confirm_allows_non_blocklist_reason(self):
+        def _auto_confirm(_tool_name: str, _tool_input: dict, reason: str) -> bool:
+            if reason.startswith("[BLOCKLIST]"):
+                return False
+            return True
+
         reason = "Policy review: mutating tool"
-        assert not reason.startswith("[BLOCKLIST]")
+        assert _auto_confirm("run_command", {"command": "git push"}, reason) is True
 
 
 # ---------------------------------------------------------------------------

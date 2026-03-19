@@ -3,6 +3,8 @@ services:
     image: ghcr.io/creel-ai/creel:latest
     volumes:
       - ${HOME}/.creel:/home/creel/.creel
+      # Required for spawning executor containers. Grants Docker host access —
+      # for hardened deployments, use TCP with TLS instead.
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8080:8080"

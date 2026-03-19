@@ -43,12 +43,13 @@ jobs:
 
       - name: Determine tags
         id: tags
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           TAGS="${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_NAME }}:${{ github.sha }}"
 
           if [[ "${{ github.event_name }}" == "release" ]]; then
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
+            VERSION="${RELEASE_TAG#v}"
             TAGS+=",${{ env.IMAGE_NAME }}:${VERSION}"
           fi
 

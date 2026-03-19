@@ -159,6 +159,15 @@ class PipelineConfig(BaseModel):
     timeout: float = 5.0  # max seconds for the entire pipeline
 
 
+class OverrideConfig(BaseModel):
+    """Configuration for temporary policy overrides."""
+
+    enabled: bool = True
+    absolute_max_duration_hours: float = 24.0
+    excluded_tools: list[str] = Field(default_factory=lambda: ["delete_*"])
+    require_confirmation_for_wildcard: bool = True
+
+
 class GuardianConfig(BaseModel):
     """Top-level guardian configuration."""
 
@@ -173,3 +182,4 @@ class GuardianConfig(BaseModel):
     review: ReviewConfig = Field(default_factory=ReviewConfig)
     network_policy: NetworkPolicyConfig = Field(default_factory=NetworkPolicyConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    overrides: OverrideConfig = Field(default_factory=OverrideConfig)

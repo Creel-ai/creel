@@ -14,7 +14,9 @@ flowchart TD
     blocked -- yes --> reject["Return rejection,\nskip agent loop"]
     blocked -- no --> agent["Agent loop → LLM returns tool_use"]
     agent --> VA["validate_action(tool, args)\n← before execute_tool_call"]
-    VA --> PE["PolicyEngine\nYAML rules, <1ms"]
+    VA --> OV{"Temporary\noverride?"}
+    OV -- match --> ovResult["Use override verdict\n(skip static policy)"]
+    OV -- no match --> PE["PolicyEngine\nYAML rules, <1ms"]
     VA --> CC["CoherenceCheck\nHaiku, ~300ms"]
     PE -- allow --> execute["Execute"]
     PE -- review --> approval["Human approval\nor auto_approve"]
@@ -29,7 +31,8 @@ flowchart TD
 |-------|-----------|--------------|
 | 1 | Fast classifier | Local DeBERTa model scores prompt-injection likelihood against a confidence threshold |
 | 2 | LLM judge | Secondary Haiku-based check (disabled by default) |
-| 3 | Policy engine | `fnmatch` rules in `policies/default.yaml` map tool names to allow/review/deny |
+| 3a | Temporary overrides | Time-limited allow/deny rules checked before static policy (`/allow`, `/deny` commands) |
+| 3b | Policy engine | `fnmatch` rules in `policies/default.yaml` map tool names to allow/review/deny |
 | 4 | Coherence check | LLM-based check that tool calls match the user's original intent (catches prompt injection causing unrelated actions) |
 | 5 | Network policy | Domain allowlist/blocklist, request/response size limits, and per-executor rate limiting for outbound HTTP requests |
 
@@ -49,6 +52,47 @@ auto_approve:
 ```
 
 Deny wins over review, review wins over allow. Unknown tools default to review. Tools listed in `auto_approve` skip the human confirmation prompt even when matched by a review rule.
+
+## Temporary Overrides
+
+Temporary overrides let you pre-approve (or block) tool patterns for a limited time, avoiding repeated approval prompts during batch work. Overrides are checked **before** the static policy — if a match is found, the static policy is skipped entirely.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/allow <pattern> [Nx] [duration]` | Auto-approve matching tools for a duration (default 30m). Optional `Nx` limits to N uses. |
+| `/deny <pattern>` | Revoke an active override |
+| `/allows` | List all active overrides with remaining time and usage |
+
+Examples:
+
+```
+/allow weather 5m           # auto-approve weather for 5 minutes
+/allow github.* 10x 1h     # auto-approve github tools, max 10 uses, 1 hour
+/allow gmail_send 30m       # auto-approve gmail sends for 30 minutes
+/deny gmail_send            # revoke the gmail_send override
+/allows                     # list what's active
+```
+
+### Safety Guardrails
+
+- **Excluded tools**: Patterns matching `delete_*` (configurable) are always rejected, even via broad globs like `del*` or `*`.
+- **Deny wins**: If both an allow and deny override match, deny takes priority.
+- **Duration cap**: Overrides cannot exceed `absolute_max_duration_hours` (default 24h).
+- **Wildcard confirmation**: `/allow *` requires appending `confirm` to proceed.
+- **Audit trail**: All override lifecycle events (create, hit, revoke, expire) are logged.
+
+### Configuration
+
+```yaml
+guardian:
+  overrides:
+    enabled: true
+    absolute_max_duration_hours: 24.0
+    excluded_tools: ["delete_*"]
+    require_confirmation_for_wildcard: true
+```
 
 ## Human-in-the-Loop Review
 
@@ -161,4 +205,9 @@ guardian:
     log_file: guardian_audit.jsonl
   network_policy:
     enabled: false
+  overrides:
+    enabled: true
+    absolute_max_duration_hours: 24.0
+    excluded_tools: ["delete_*"]
+    require_confirmation_for_wildcard: true
 ```

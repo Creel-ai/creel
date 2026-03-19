@@ -390,6 +390,45 @@ class TestBuiltinHandlers:
         assert "Context injection" in result
         assert "recent" in result
 
+    def test_cmd_sessions(self, server):
+        server._format_sessions_list = MagicMock(return_value="Sessions:\n  sess1  (3 msgs)")
+        ctx = ChatContext(sender_id="test", server=server)
+        result = server._command_registry.handle("/sessions", ctx)
+        assert "Sessions" in result
+        server._format_sessions_list.assert_called_once_with("test")
+
+    def test_cmd_status(self, server):
+        server._format_status = MagicMock(return_value="Status:\n  Model: claude")
+        ctx = ChatContext(sender_id="test", server=server)
+        result = server._command_registry.handle("/status", ctx)
+        assert "Status" in result
+        server._format_status.assert_called_once_with("test")
+
+    def test_cmd_model(self, server):
+        server._format_model = MagicMock(return_value="Model:\n  Name: claude-sonnet-4-6")
+        ctx = ChatContext(sender_id="test", server=server)
+        result = server._command_registry.handle("/model", ctx)
+        assert "claude-sonnet-4-6" in result
+
+    def test_cmd_compact(self, server):
+        server._handle_compact = MagicMock(return_value="Compacted 6 messages → 2.")
+        ctx = ChatContext(sender_id="test", server=server)
+        result = server._command_registry.handle("/compact", ctx)
+        assert "Compacted" in result
+        server._handle_compact.assert_called_once_with("test")
+
+    def test_cmd_resume_no_args(self, server):
+        ctx = ChatContext(sender_id="test", server=server)
+        result = server._command_registry.handle("/resume", ctx)
+        assert "Usage" in result
+
+    def test_cmd_resume_with_id(self, server):
+        server._handle_resume = MagicMock(return_value="Resumed session abc123: Weather")
+        ctx = ChatContext(sender_id="test", server=server)
+        result = server._command_registry.handle("/resume abc123", ctx)
+        assert "abc123" in result
+        server._handle_resume.assert_called_once_with("test", "/resume abc123")
+
     def test_cmd_audit_no_guardian(self, server):
         ctx = ChatContext(sender_id="test", server=server)
         result = server._command_registry.handle("/audit", ctx)

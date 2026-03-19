@@ -51,20 +51,6 @@ _LOG_POLL_INTERVAL = 0.25
 # TUI-only commands that are never sent to the backend
 _TUI_LOCAL_COMMANDS = {"/exit", "/quit"}
 
-_SHORTCUTS_TEXT = """\
-
-[bold]Shortcuts:[/bold]
-  [cyan]ctrl+n[/cyan]        New session
-  [cyan]ctrl+s[/cyan]        Switch session
-  [cyan]ctrl+l[/cyan]        Clear display
-  [cyan]ctrl+c/d[/cyan]      Quit
-  [cyan]enter[/cyan]         Send message
-  [cyan]shift+enter[/cyan]   New line
-
-[bold]Tips:[/bold]
-  Hold [cyan]shift[/cyan] and drag to select/copy text
-  Use [cyan]↑[/cyan]/[cyan]↓[/cyan] to recall previous messages\
-"""
 
 # Syntax highlighting theme for code blocks in Markdown rendering
 _CODE_THEME = "monokai"

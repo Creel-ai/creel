@@ -33,7 +33,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install coding agents globally (|| true: optional, build succeeds without them)
-RUN npm install -g @anthropic-ai/claude-code @openai/codex || true
+# --ignore-scripts: prevent postinstall execution from untrusted packages
+RUN npm install -g --ignore-scripts @anthropic-ai/claude-code @openai/codex || true
 
 # Default workspace directory
 RUN mkdir -p /workspace && chown executor:executor /workspace

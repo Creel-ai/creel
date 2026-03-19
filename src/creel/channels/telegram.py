@@ -237,21 +237,12 @@ class TelegramChannel(
         """After an /approve command, replay held messages for the approved sender."""
         if self._gate is None:
             return
-        m = re.match(r"^/approve\s+(\S+)", command_text.strip(), re.IGNORECASE)
-        if not m:
-            return
-        target_id = m.group(1)
-        held = self._gate.release_held_messages(target_id)
-        for held_msg in held:
-            sender: str = held_msg.get("sender_id") or target_id
-            text: str = held_msg.get("text") or ""
-            if text:
-                self._allowed_recipients.add(sender)
-                try:
-                    response = callback(sender, text)
-                    self.send(sender, response)
-                except Exception:
-                    logger.exception("Error replaying held message for %s", sender)
+
+        def _send_and_register(recipient: str, text: str) -> None:
+            self._allowed_recipients.add(recipient)
+            self.send(recipient, text)
+
+        self._gate.replay_held(command_text, callback, _send_and_register)
 
     # --- Access control ---
 
@@ -271,9 +262,6 @@ class TelegramChannel(
                 display_name=f"@{msg.sender_username}" if msg.sender_username else "",
                 text=msg.text or "",
             )
-            if not result.allowed and self._allowed_chats and msg.is_group:
-                if msg.chat_id not in self._allowed_chats:
-                    return False
             return result.allowed
 
         # Legacy path — no gate
@@ -474,12 +462,9 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
             owner_id = cfg.owner or (cfg.allowed_senders[0] if cfg.allowed_senders else "")
             owner_ids = {owner_id} if owner_id else set()
 
-            if cfg.notify_owner:
-
-                def _notify(recipient: str, text: str) -> None:
+            def _notify(recipient: str, text: str) -> None:
+                if cfg.notify_owner:
                     bridge.send_message(recipient, text)
-            else:
-                _notify = lambda r, t: None  # noqa: E731
 
             gate = SenderGate(
                 policy=SenderPolicy(cfg.sender_policy),

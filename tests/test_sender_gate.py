@@ -426,6 +426,45 @@ class TestHandleOwnerResponse:
         assert len(held) == 1
         assert held[0]["text"] == "msg1"
 
+    def test_replay_held_calls_callback_and_send(self, tmp_path: Path):
+        store = SenderStore(tmp_path, "ch")
+        store.add_pending("u1")
+        store.hold_message("u1", {"sender_id": "u1", "text": "hello"})
+        store.hold_message("u1", {"sender_id": "u1", "text": "world"})
+        gate = SenderGate(
+            policy=SenderPolicy.ALLOWLIST,
+            static_senders={"owner"},
+            store=store,
+            owner_sender_ids={"owner"},
+            notify_fn=lambda r, t: None,
+        )
+
+        replies: list[tuple[str, str]] = []
+        sent: list[tuple[str, str]] = []
+
+        def callback(sender, text):
+            replies.append((sender, text))
+            return f"re: {text}"
+
+        def send_fn(recipient, text):
+            sent.append((recipient, text))
+
+        gate.replay_held("/approve u1", callback, send_fn)
+        assert replies == [("u1", "hello"), ("u1", "world")]
+        assert sent == [("u1", "re: hello"), ("u1", "re: world")]
+
+    def test_replay_held_ignores_non_approve(self, tmp_path: Path):
+        store = SenderStore(tmp_path, "ch")
+        gate = SenderGate(
+            policy=SenderPolicy.ALLOWLIST,
+            static_senders={"owner"},
+            store=store,
+            owner_sender_ids={"owner"},
+            notify_fn=lambda r, t: None,
+        )
+        # Should be a no-op
+        gate.replay_held("/deny u1", lambda s, t: "x", lambda r, t: None)
+
 
 # ---------------------------------------------------------------------------
 # Config model tests
@@ -660,6 +699,132 @@ class TestTelegramChannelGateIntegration:
         # And the reply was sent
         assert ("stranger", "replying to hello from stranger") in bridge.sent
 
+    @pytest.mark.asyncio
+    async def test_webhook_gate_intercepts_owner_command(self, tmp_path: Path):
+        """Gate commands via webhook are intercepted and don't reach the callback."""
+        import json
+        from unittest.mock import MagicMock
+
+        from creel.channels.telegram import TelegramChannel
+        from tests.test_telegram_channel import MockBridge
+
+        store = SenderStore(tmp_path, "tg")
+        gate = SenderGate(
+            policy=SenderPolicy.ALLOWLIST,
+            static_senders={"42"},
+            store=store,
+            owner_sender_ids={"42"},
+            notify_fn=lambda r, t: None,
+        )
+
+        # Queue a pending sender first
+        gate.check("99", display_name="@stranger", text="hi from webhook")
+
+        bridge = MockBridge()
+        channel = TelegramChannel(
+            bridge=bridge,
+            mode="webhook",
+            webhook_secret="",
+            allowed_senders=["42"],
+            sender_gate=gate,
+        )
+        channel.set_webhook_callback(lambda s, t: "should not be called")
+
+        # Owner sends /approve 99 via webhook
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "from": {"id": 42, "username": "owner"},
+                "chat": {"id": 42, "type": "private"},
+                "text": "/approve 99",
+            },
+        }
+        raw = json.dumps(payload).encode()
+        request = MagicMock()
+
+        async def _body():
+            return raw
+
+        request.body = _body
+        request.headers = {}
+
+        result = await channel._handle_webhook(request)
+        assert result == {"status": "ok"}
+        assert store.is_approved("99")
+        # The gate reply was sent back to the owner
+        assert any("Approved" in text for _, text in bridge.sent)
+
+
+class TestBlueBubblesChannelGateIntegration:
+    def test_check_sender_delegates_to_gate(self, tmp_path: Path):
+        from creel.channels.bluebubbles import BlueBubblesChannel
+
+        store = SenderStore(tmp_path, "bb")
+        notifications: list = []
+        gate = SenderGate(
+            policy=SenderPolicy.ALLOWLIST,
+            static_senders={"owner@icloud.com"},
+            store=store,
+            owner_sender_ids={"owner@icloud.com"},
+            notify_fn=lambda r, t: notifications.append((r, t)),
+        )
+        channel = BlueBubblesChannel(
+            server_url="http://localhost:1234",
+            password="pw",
+            allowed_senders=["owner@icloud.com"],
+            sender_gate=gate,
+        )
+
+        # Static sender allowed
+        assert channel._check_sender("owner@icloud.com") is True
+
+        # Unknown sender held
+        assert channel._check_sender("stranger@icloud.com", "hello") is False
+        assert len(notifications) == 1
+        assert store.get("stranger@icloud.com") is not None
+
+    def test_closed_mode_backward_compatible(self):
+        from creel.channels.bluebubbles import BlueBubblesChannel
+
+        channel = BlueBubblesChannel(
+            server_url="http://localhost:1234",
+            password="pw",
+            allowed_senders=["allowed@icloud.com"],
+        )
+        assert channel._check_sender("allowed@icloud.com") is True
+        assert channel._check_sender("blocked@icloud.com") is False
+
+
+class TestIMessageChannelGateIntegration:
+    def test_check_sender_delegates_to_gate(self, tmp_path: Path):
+        from creel.channels.imessage import IMessageChannel
+
+        store = SenderStore(tmp_path, "im")
+        notifications: list = []
+        gate = SenderGate(
+            policy=SenderPolicy.ALLOWLIST,
+            static_senders={"+1234"},
+            store=store,
+            owner_sender_ids={"+1234"},
+            notify_fn=lambda r, t: notifications.append((r, t)),
+        )
+        channel = IMessageChannel(
+            allowed_senders=["+1234"],
+            sender_gate=gate,
+        )
+
+        assert channel._check_sender("+1234") is True
+        assert channel._check_sender("+9999", "hello") is False
+        assert len(notifications) == 1
+
+    def test_closed_mode_backward_compatible(self):
+        from creel.channels.imessage import IMessageChannel
+
+        channel = IMessageChannel(allowed_senders=["+1234"])
+        assert channel._check_sender("+1234") is True
+        assert channel._check_sender("+9999") is False
+
 
 class TestWhatsAppChannelGateIntegration:
     def test_allowlist_mode_basic_flow(self, tmp_path: Path):
@@ -683,3 +848,26 @@ class TestWhatsAppChannelGateIntegration:
         assert result.allowed is False
         assert result.pending is True
         assert len(notifications) == 1
+
+    def test_check_sender_delegates_to_gate(self, tmp_path: Path):
+        from creel.channels.whatsapp import WhatsAppChannel
+        from tests.test_whatsapp_channel import MockBridge
+
+        store = SenderStore(tmp_path, "wa")
+        gate = SenderGate(
+            policy=SenderPolicy.ALLOWLIST,
+            static_senders={"+owner"},
+            store=store,
+            owner_sender_ids={"+owner"},
+            notify_fn=lambda r, t: None,
+        )
+        bridge = MockBridge()
+        channel = WhatsAppChannel(
+            bridge=bridge,
+            phone_number="+9999",
+            allowed_senders=["+owner"],
+            sender_gate=gate,
+        )
+
+        assert channel._check_sender("+owner") is True
+        assert channel._check_sender("+stranger", "hi") is False

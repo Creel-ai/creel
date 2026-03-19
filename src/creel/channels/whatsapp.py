@@ -238,22 +238,7 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
     def _replay_held_messages(self, command_text: str, callback: Callable[[str, str], str]) -> None:
         if self._gate is None:
             return
-        import re
-
-        m = re.match(r"^/approve\s+(\S+)", command_text.strip(), re.IGNORECASE)
-        if not m:
-            return
-        target_id = m.group(1)
-        held = self._gate.release_held_messages(target_id)
-        for held_msg in held:
-            sender: str = held_msg.get("sender_id") or target_id
-            text: str = held_msg.get("text") or ""
-            if text:
-                try:
-                    response = callback(sender, text)
-                    self.send(sender, response)
-                except Exception:
-                    logger.exception("Error replaying held message for %s", sender)
+        self._gate.replay_held(command_text, callback, self.send)
 
     # --- Health ---
 
@@ -294,12 +279,9 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
             owner_id = cfg.owner or (cfg.allowed_senders[0] if cfg.allowed_senders else "")
             owner_ids = {owner_id} if owner_id else set()
 
-            if cfg.notify_owner:
-
-                def _notify(recipient: str, text: str) -> None:
+            def _notify(recipient: str, text: str) -> None:
+                if cfg.notify_owner:
                     bridge.send_message(recipient, text)
-            else:
-                _notify = lambda r, t: None  # noqa: E731
 
             gate = SenderGate(
                 policy=SenderPolicy(cfg.sender_policy),

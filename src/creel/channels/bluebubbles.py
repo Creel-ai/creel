@@ -120,22 +120,7 @@ class BlueBubblesChannel(RetryMixin, Channel):
     def _replay_held_messages(self, command_text: str, callback: Callable[[str, str], str]) -> None:
         if self._gate is None:
             return
-        import re
-
-        m = re.match(r"^/approve\s+(\S+)", command_text.strip(), re.IGNORECASE)
-        if not m:
-            return
-        target_id = m.group(1)
-        held = self._gate.release_held_messages(target_id)
-        for held_msg in held:
-            sender: str = held_msg.get("sender_id") or target_id
-            text: str = held_msg.get("text") or ""
-            if text:
-                try:
-                    response = callback(sender, text)
-                    self.send(sender, response)
-                except Exception:
-                    logger.exception("Error replaying held message for %s", sender)
+        self._gate.replay_held(command_text, callback, self.send)
 
     def _get_latest_timestamp(self) -> int:
         """Get the timestamp of the most recent message."""
@@ -211,13 +196,9 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
 
             channel_ref: list[BlueBubblesChannel] = []
 
-            if cfg.notify_owner:
-
-                def _notify(recipient: str, text: str) -> None:
-                    if channel_ref:
-                        channel_ref[0].send(recipient, text)
-            else:
-                _notify = lambda r, t: None  # noqa: E731
+            def _notify(recipient: str, text: str) -> None:
+                if cfg.notify_owner and channel_ref:
+                    channel_ref[0].send(recipient, text)
 
             gate = SenderGate(
                 policy=SenderPolicy(cfg.sender_policy),
@@ -236,7 +217,7 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
             sender_gate=gate,
         )
         if gate is not None:
-            channel_ref.append(ch)  # noqa: F821 — assigned above
+            channel_ref.append(ch)
         return ch
 
     return meta, factory

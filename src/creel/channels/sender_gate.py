@@ -144,9 +144,37 @@ class SenderGate:
 
         return None  # pragma: no cover
 
+    _APPROVE_RE = re.compile(r"^/approve\s+(\S+)", re.IGNORECASE)
+
     def release_held_messages(self, sender_id: str) -> list[dict]:
         """Return and clear held messages for *sender_id*."""
         return self._store.release_held_messages(sender_id)
+
+    def replay_held(
+        self,
+        command_text: str,
+        callback: Callable[[str, str], str],
+        send_fn: Callable[[str, str], None],
+    ) -> None:
+        """Parse an ``/approve`` command and replay held messages.
+
+        For each held message, calls *callback* to get a response and then
+        *send_fn* to deliver it.  Channels that need extra bookkeeping
+        (e.g. Telegram's ``_allowed_recipients``) can wrap *send_fn*.
+        """
+        m = self._APPROVE_RE.match(command_text.strip())
+        if not m:
+            return
+        target_id = m.group(1)
+        for held_msg in self.release_held_messages(target_id):
+            sender: str = held_msg.get("sender_id") or target_id
+            text: str = held_msg.get("text") or ""
+            if text:
+                try:
+                    response = callback(sender, text)
+                    send_fn(sender, response)
+                except Exception:
+                    logger.exception("Error replaying held message for %s", sender)
 
     # --- internals ---
 

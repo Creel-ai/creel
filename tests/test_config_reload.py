@@ -40,7 +40,7 @@ def _make_agent_def(**overrides) -> AgentDefinition:
         system_prompt="You are a helpful assistant.",
         llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
         agent=AgentConfig(max_turns=5),
-        session=SessionConfig(sessions_dir="/tmp/test-sessions", max_history=50),
+        session=SessionConfig(sessions_dir="/tmp/test-sessions"),
         workspace=WorkspaceConfig(path="/tmp/test-workspace"),
         channels=ChannelsConfig(),
     )
@@ -108,22 +108,12 @@ class TestClassifyChanges:
     def test_non_reloadable_sessions_dir(self):
         change = ConfigChange(
             field="session",
-            old_value={"sessions_dir": "/old", "max_history": 50},
-            new_value={"sessions_dir": "/new", "max_history": 50},
+            old_value={"sessions_dir": "/old"},
+            new_value={"sessions_dir": "/new"},
         )
         reloadable, non_reloadable = classify_changes([change])
         assert len(non_reloadable) == 1
         assert non_reloadable[0].field == "session.sessions_dir"
-
-    def test_session_max_history_is_reloadable(self):
-        change = ConfigChange(
-            field="session",
-            old_value={"sessions_dir": "/same", "max_history": 50},
-            new_value={"sessions_dir": "/same", "max_history": 100},
-        )
-        reloadable, non_reloadable = classify_changes([change])
-        assert len(reloadable) == 1
-        assert len(non_reloadable) == 0
 
     def test_mixed_changes(self):
         changes = [
@@ -282,7 +272,6 @@ class TestServiceReload:
             system_prompt="Updated prompt",
             session=SessionConfig(
                 sessions_dir=minimal_agent_def.session.sessions_dir,
-                max_history=50,
             ),
         )
         _write_config(config_file, new_def)
@@ -322,7 +311,6 @@ class TestServiceReload:
             system_prompt="From other path",
             session=SessionConfig(
                 sessions_dir=minimal_agent_def.session.sessions_dir,
-                max_history=50,
             ),
         )
         _write_config(config_file, new_def)
@@ -345,7 +333,6 @@ class TestServiceReload:
             system_prompt="Concurrent test",
             session=SessionConfig(
                 sessions_dir=minimal_agent_def.session.sessions_dir,
-                max_history=50,
             ),
         )
         _write_config(config_file, new_def)

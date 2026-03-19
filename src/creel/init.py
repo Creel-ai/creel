@@ -501,7 +501,6 @@ def _generate_agent_yaml(config: InitConfig, secret_paths: dict[str, str]) -> st
     # Session
     doc["session"] = {
         "sessions_dir": "sessions",
-        "max_history": 50,
         "summarize_on_trim": True,
     }
 

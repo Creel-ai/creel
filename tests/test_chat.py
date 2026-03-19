@@ -27,7 +27,6 @@ def _make_agent_def(tmp_path: Path, **overrides) -> AgentDefinition:
         agent=AgentConfig(max_turns=3),
         session=SessionConfig(
             sessions_dir=str(sessions_dir),
-            max_history=50,
             summarize_on_trim=False,
         ),
         workspace=WorkspaceConfig(path=str(tmp_path / "nonexistent-workspace")),
@@ -43,7 +42,7 @@ def _make_agent_result(text: str = "response", **kwargs):
     result.turns_used = kwargs.get("turns_used", 1)
     result.tool_calls_made = kwargs.get("tool_calls_made", 0)
     result.stop_reason = kwargs.get("stop_reason", "end_turn")
-    result.pending_approval = kwargs.get("pending_approval", None)
+    result.pending_approvals = kwargs.get("pending_approvals", [])
     result.last_input_tokens = kwargs.get("last_input_tokens", 0)
     return result
 
@@ -424,7 +423,7 @@ class TestApprovalFlow:
             turns_used=1,
             tool_calls_made=0,
             stop_reason="approval_required",
-            pending_approval=pending,
+            pending_approvals=[pending],
         )
 
         with patch("creel.chat.run_agent_loop", return_value=mock_result):

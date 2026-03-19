@@ -81,7 +81,6 @@ def _make_agent_def(tmp_path: Path) -> AgentDefinition:
         agent=AgentConfig(max_turns=3),
         session=SessionConfig(
             sessions_dir=str(sessions_dir),
-            max_history=50,
             summarize_on_trim=False,
         ),
         workspace=WorkspaceConfig(path=str(tmp_path / "nonexistent-workspace")),
@@ -96,7 +95,7 @@ def _make_agent_result(text: str = "response"):
     result.turns_used = 1
     result.tool_calls_made = 0
     result.stop_reason = "end_turn"
-    result.pending_approval = None
+    result.pending_approvals = []
     result.last_input_tokens = 100
     return result
 
@@ -725,7 +724,6 @@ class TestE2EIMessageImage:
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),
-                max_history=50,
                 summarize_on_trim=False,
             ),
             workspace=WorkspaceConfig(path=str(tmp_path / "nonexistent-workspace")),

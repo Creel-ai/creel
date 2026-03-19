@@ -92,7 +92,6 @@ class TestAgentDefinitionMedia:
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),
-                max_history=50,
                 summarize_on_trim=False,
             ),
             workspace=WorkspaceConfig(path=str(tmp_path / "ws")),
@@ -194,7 +193,6 @@ class TestChatServerMediaConfig:
             agent=AgentConfig(max_turns=3),
             session=SessionConfig(
                 sessions_dir=str(sessions_dir),
-                max_history=50,
                 summarize_on_trim=False,
             ),
             workspace=WorkspaceConfig(path=str(tmp_path / "ws")),

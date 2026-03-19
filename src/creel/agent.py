@@ -43,7 +43,7 @@ class AgentResult:
     tool_calls_made: int
     stop_reason: str  # "end_turn" | "max_turns" | "error" | "approval_required"
     tool_history: list[dict] = field(default_factory=list)
-    pending_approval: PendingApproval | None = None
+    pending_approvals: list[PendingApproval] = field(default_factory=list)
     last_input_tokens: int = 0
 
 
@@ -382,6 +382,161 @@ def _ensure_tool_call_integrity(messages: list[dict]) -> int:
     return inserted_blocks
 
 
+def _execute_single_tool(
+    block: Any,
+    *,
+    tools_config: dict[str, ToolConfig],
+    use_containers: bool,
+    memory_manager: Any,
+    bridge_config: Any,
+    session_state: Any,
+    cron_manager: object | None,
+    subagent_manager: object | None,
+    guardian: Any | None,
+    tool_cache: ToolResultCache | None,
+    tool_history: list[dict],
+) -> dict:
+    """Execute a single tool call and return a tool_result block.
+
+    Handles caching, auditing, drift detection, output classification,
+    memory screening, and credential scanning.
+    """
+    tool_name = block.name
+    tool_input = block.input
+
+    # Check tool result cache before executing.
+    cached_result = None
+    if tool_cache is not None:
+        cached_result = tool_cache.get(tool_name, tool_input)
+    if cached_result is not None:
+        result = cached_result
+        is_error = False
+        elapsed_ms = 0.0
+        logger.info("Tool %s served from cache", tool_name)
+    else:
+        t0 = time.perf_counter()
+        try:
+            result = execute_tool_call(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                tools_config=tools_config,
+                use_containers=use_containers,
+                memory_manager=memory_manager,
+                bridge_config=bridge_config,
+                session_state=session_state,
+                cron_manager=cron_manager,
+                subagent_manager=subagent_manager,
+            )
+            is_error = False
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+        except Exception as e:
+            logger.exception("Tool %s failed", tool_name)
+            result = f"Error: {e}"
+            is_error = True
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+
+        # Cache successful results only.
+        if tool_cache is not None and not is_error:
+            tool_cache.put(tool_name, tool_input, result)
+
+    # Audit tool execution result
+    if guardian is not None and hasattr(guardian, "_audit") and guardian._audit:
+        guardian._audit.log_tool_result(
+            tool_name=tool_name,
+            success=not is_error,
+            duration_ms=elapsed_ms,
+            output_length=len(result) if result else 0,
+            error=str(result)[:200] if is_error else None,
+        )
+
+    # Drift detection — check for behavioral anomalies
+    if guardian is not None:
+        drift_alerts = guardian.check_drift(
+            tool_name=tool_name,
+            output_length=len(result) if result else 0,
+            success=not is_error,
+        )
+        for alert in drift_alerts:
+            logger.warning(
+                "Drift alert (%s): %s",
+                alert.alert_type,
+                alert.detail,
+            )
+
+    # Classify executor output for tools that return untrusted content
+    tool_cfg = tools_config.get(tool_name)
+    if not is_error and guardian is not None and tool_cfg is not None and tool_cfg.classify_output:
+        screen_result = guardian.screen_tool_result(tool_name, result)
+        if screen_result.blocked:
+            logger.warning(
+                "Guardian blocked output from %s (confidence=%.3f)",
+                tool_name,
+                screen_result.classifier_result.confidence
+                if screen_result.classifier_result
+                else 0.0,
+            )
+            result = (
+                f"[Guardian] Output from '{tool_name}' was blocked by the "
+                f"security classifier. The content may contain prompt injection."
+            )
+            is_error = True
+
+    # Screen search_memory results for stored injection payloads
+    if not is_error and guardian is not None and tool_name == "search_memory":
+        screen_result = guardian.screen_tool_result(tool_name, result)
+        if screen_result.blocked:
+            logger.warning(
+                "Guardian blocked search_memory output (confidence=%.3f)",
+                screen_result.classifier_result.confidence
+                if screen_result.classifier_result
+                else 0.0,
+            )
+            result = (
+                "[Guardian] Memory search results were blocked by the "
+                "security classifier. The stored content may contain "
+                "prompt injection."
+            )
+            is_error = True
+
+    # Post-execution credential scanning — redact leaked secrets
+    if not is_error and guardian is not None:
+        from guardian.credential_scanner import redact_credentials
+
+        redacted_result, cred_matches = redact_credentials(result)
+        if cred_matches:
+            logger.warning(
+                "Credential leak detected in %s output: %d pattern(s)",
+                tool_name,
+                len(cred_matches),
+            )
+            if hasattr(guardian, "_audit") and guardian._audit:
+                guardian._audit.log_credential_leak(
+                    tool_name=tool_name,
+                    patterns_found=[
+                        {"pattern": m.pattern_name, "redacted": m.matched_text}
+                        for m in cred_matches
+                    ],
+                    count=len(cred_matches),
+                )
+            result = redacted_result
+
+    tool_history.append(
+        {
+            "tool": tool_name,
+            "input": tool_input,
+            "output": result,
+            "is_error": is_error,
+        }
+    )
+
+    return {
+        "type": "tool_result",
+        "tool_use_id": block.id,
+        "content": result,
+        "is_error": is_error,
+    }
+
+
 def run_agent_loop(
     messages: list[dict],
     llm_config: LLMConfig,
@@ -520,7 +675,10 @@ def run_agent_loop(
         # Append the assistant message (with tool_use blocks) to history
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
-        # Execute each tool call and collect results
+        # Phase 1: Pre-screen all tool calls through Guardian and scoping.
+        # Buckets: execute (allowed), review (need async approval), deny (error).
+        execute_blocks = []
+        review_blocks: list[tuple[Any, str]] = []  # (block, reason)
         tool_results: list[dict] = []
         for block in tool_use_blocks:
             tool_calls_made += 1
@@ -567,180 +725,78 @@ def run_agent_loop(
                     )
                     continue
                 if gd.action == "needs_approval":
-                    # No synchronous callback — inject synthetic tool_results
-                    # for ALL tool_use blocks and return for async approval.
-                    synthetic_results = []
-                    for b in tool_use_blocks:
-                        if b.id == block.id:
-                            approval_msg = f"Action requires approval: {gd.error_message}"
-                        else:
-                            approval_msg = (
-                                "Action skipped — another tool in this batch requires approval."
-                            )
-                        synthetic_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": b.id,
-                                "content": approval_msg,
-                                "is_error": True,
-                            }
-                        )
-                    messages.append({"role": "user", "content": synthetic_results})
-                    return AgentResult(
-                        text="This action requires approval before proceeding.",
-                        turns_used=turns_used,
-                        tool_calls_made=tool_calls_made,
-                        stop_reason="approval_required",
-                        tool_history=tool_history,
-                        pending_approval=PendingApproval(
-                            tool_name=tool_name,
-                            tool_input=tool_input,
-                            reason=gd.error_message,
-                            tool_use_id=block.id,
-                        ),
-                        last_input_tokens=last_input_tokens,
+                    review_blocks.append((block, gd.error_message))
+                    continue
+
+            execute_blocks.append(block)
+
+        # Phase 2: If any tools need async approval, execute the allowed
+        # ones and return with all review tools as pending approvals.
+        if review_blocks:
+            # Execute allowed tools so their results aren't lost
+            for block in execute_blocks:
+                _result = _execute_single_tool(
+                    block,
+                    tools_config=tools_config,
+                    use_containers=use_containers,
+                    memory_manager=memory_manager,
+                    bridge_config=bridge_config,
+                    session_state=session_state,
+                    cron_manager=cron_manager,
+                    subagent_manager=subagent_manager,
+                    guardian=guardian,
+                    tool_cache=tool_cache,
+                    tool_history=tool_history,
+                )
+                tool_results.append(_result)
+
+            # Inject synthetic "awaiting approval" results for review tools
+            pending = []
+            for block, reason in review_blocks:
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": f"Awaiting approval: {reason}",
+                        "is_error": True,
+                    }
+                )
+                pending.append(
+                    PendingApproval(
+                        tool_name=block.name,
+                        tool_input=block.input,
+                        reason=reason,
+                        tool_use_id=block.id,
                     )
-
-            # Check tool result cache before executing.
-            cached_result = None
-            if tool_cache is not None:
-                cached_result = tool_cache.get(tool_name, tool_input)
-            if cached_result is not None:
-                result = cached_result
-                is_error = False
-                elapsed_ms = 0.0
-                logger.info("Tool %s served from cache", tool_name)
-            else:
-                t0 = time.perf_counter()
-                try:
-                    result = execute_tool_call(
-                        tool_name=tool_name,
-                        tool_input=tool_input,
-                        tools_config=tools_config,
-                        use_containers=use_containers,
-                        memory_manager=memory_manager,
-                        bridge_config=bridge_config,
-                        session_state=session_state,
-                        cron_manager=cron_manager,
-                        subagent_manager=subagent_manager,
-                        kb_manager=kb_manager,
-                    )
-                    is_error = False
-                    elapsed_ms = (time.perf_counter() - t0) * 1000
-                except Exception as e:
-                    logger.exception("Tool %s failed", tool_name)
-                    result = f"Error: {e}"
-                    is_error = True
-                    elapsed_ms = (time.perf_counter() - t0) * 1000
-
-                # Cache successful results only.
-                if tool_cache is not None and not is_error:
-                    tool_cache.put(tool_name, tool_input, result)
-
-            # Audit tool execution result
-            if guardian is not None and hasattr(guardian, "_audit") and guardian._audit:
-                guardian._audit.log_tool_result(
-                    tool_name=tool_name,
-                    success=not is_error,
-                    duration_ms=elapsed_ms,
-                    output_length=len(result) if result else 0,
-                    error=str(result)[:200] if is_error else None,
                 )
 
-            # Drift detection — check for behavioral anomalies
-            if guardian is not None:
-                drift_alerts = guardian.check_drift(
-                    tool_name=tool_name,
-                    output_length=len(result) if result else 0,
-                    success=not is_error,
-                )
-                for alert in drift_alerts:
-                    logger.warning(
-                        "Drift alert (%s): %s",
-                        alert.alert_type,
-                        alert.detail,
-                    )
-
-            # Classify executor output for tools that return untrusted content
-            tool_cfg = tools_config.get(tool_name)
-            if (
-                not is_error
-                and guardian is not None
-                and tool_cfg is not None
-                and tool_cfg.classify_output
-            ):
-                screen_result = guardian.screen_tool_result(tool_name, result)
-                if screen_result.blocked:
-                    logger.warning(
-                        "Guardian blocked output from %s (confidence=%.3f)",
-                        tool_name,
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
-                    )
-                    result = (
-                        f"[Guardian] Output from '{tool_name}' was blocked by the "
-                        f"security classifier. The content may contain prompt injection."
-                    )
-                    is_error = True
-
-            # Screen search_memory results for stored injection payloads
-            if not is_error and guardian is not None and tool_name == "search_memory":
-                screen_result = guardian.screen_tool_result(tool_name, result)
-                if screen_result.blocked:
-                    logger.warning(
-                        "Guardian blocked search_memory output (confidence=%.3f)",
-                        screen_result.classifier_result.confidence
-                        if screen_result.classifier_result
-                        else 0.0,
-                    )
-                    result = (
-                        "[Guardian] Memory search results were blocked by the "
-                        "security classifier. The stored content may contain "
-                        "prompt injection."
-                    )
-                    is_error = True
-
-            # Post-execution credential scanning — redact leaked secrets
-            if not is_error and guardian is not None:
-                from guardian.credential_scanner import redact_credentials
-
-                redacted_result, cred_matches = redact_credentials(result)
-                if cred_matches:
-                    logger.warning(
-                        "Credential leak detected in %s output: %d pattern(s)",
-                        tool_name,
-                        len(cred_matches),
-                    )
-                    # Log to audit using already-detected matches (no re-scan)
-                    if hasattr(guardian, "_audit") and guardian._audit:
-                        guardian._audit.log_credential_leak(
-                            tool_name=tool_name,
-                            patterns_found=[
-                                {"pattern": m.pattern_name, "redacted": m.matched_text}
-                                for m in cred_matches
-                            ],
-                            count=len(cred_matches),
-                        )
-                    result = redacted_result
-
-            tool_history.append(
-                {
-                    "tool": tool_name,
-                    "input": tool_input,
-                    "output": result,
-                    "is_error": is_error,
-                }
+            messages.append({"role": "user", "content": tool_results})
+            return AgentResult(
+                text="Actions require approval before proceeding.",
+                turns_used=turns_used,
+                tool_calls_made=tool_calls_made,
+                stop_reason="approval_required",
+                tool_history=tool_history,
+                pending_approvals=pending,
+                last_input_tokens=last_input_tokens,
             )
 
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                    "is_error": is_error,
-                }
+        # Phase 3: No reviews needed — execute all tools.
+        for block in execute_blocks:
+            tool_result_block = _execute_single_tool(
+                block,
+                tools_config=tools_config,
+                use_containers=use_containers,
+                memory_manager=memory_manager,
+                bridge_config=bridge_config,
+                session_state=session_state,
+                cron_manager=cron_manager,
+                subagent_manager=subagent_manager,
+                guardian=guardian,
+                tool_cache=tool_cache,
+                tool_history=tool_history,
             )
+            tool_results.append(tool_result_block)
 
         # Append tool results as a user message
         messages.append({"role": "user", "content": tool_results})

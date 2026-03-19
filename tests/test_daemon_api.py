@@ -14,7 +14,7 @@ from creel.session import SessionManager
 
 class _StubChatServer:
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir))
         self._guardian = None
 
     def handle_message(

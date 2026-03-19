@@ -18,7 +18,7 @@ class _StubChatServer:
     """Minimal chat-server shape used by DaemonService tests."""
 
     def __init__(self, sessions_dir: Path) -> None:
-        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir), max_history=50)
+        self._session_mgr = SessionManager(sessions_dir=str(sessions_dir))
         self._guardian = None
         self.calls: list[tuple[str, str]] = []
 

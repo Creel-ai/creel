@@ -287,7 +287,7 @@ class TestSessionManagerWithStore:
 
     def test_total_tokens_accumulated(self, tmp_path: Path):
         """update_token_count should accumulate total_tokens."""
-        mgr = SessionManager(sessions_dir=str(tmp_path), max_history=200)
+        mgr = SessionManager(sessions_dir=str(tmp_path))
         mgr.add_user_message("cli", "Hello")
         mgr.add_assistant_response("cli", [{"type": "text", "text": "Hi"}])
         mgr.add_user_message("cli", "More")

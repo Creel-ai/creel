@@ -414,18 +414,19 @@ class FileSessionStore(SessionStore):
 
 
 class SessionManager:
-    """Manages conversation sessions with persistence, trimming, and compaction.
+    """Manages conversation sessions with persistence and compaction.
 
     Delegates raw storage to a :class:`SessionStore` backend (default:
     :class:`FileSessionStore`).  Handles higher-level concerns: active
-    session tracking, message trimming, tool-pair preservation, compaction
-    with summarization, and TTL management.
+    session tracking, compaction with summarization, and TTL management.
+
+    Context window management is handled by the context pruner in the
+    agent loop, not by message trimming on save/load.
     """
 
     def __init__(
         self,
         sessions_dir: str = "sessions",
-        max_history: int = 50,
         ttl_hours: float = 0,
         summarize_on_trim: bool = False,
         summarize_fn: Callable[[list[dict]], str] | None = None,
@@ -446,7 +447,6 @@ class SessionManager:
             self._store = file_store
             self._dir = file_store.dir
 
-        self._max_history = max_history
         self._ttl_seconds = ttl_hours * 3600 if ttl_hours > 0 else 0
         self._summarize_fn = summarize_fn
         self._max_context_tokens = max_context_tokens
@@ -550,11 +550,6 @@ class SessionManager:
             raise SessionNotFoundError(f"Session {session_id} not found") from exc
         if session.sender_id != sender_id:
             raise SessionNotFoundError(f"Session {session_id} not found")
-        if len(session.messages) > self._max_history:
-            session.messages = self._trim_preserving_tool_pairs(
-                session.messages,
-                self._max_history,
-            )
         self._set_active_session_id(sender_id, session_id)
         logger.info("Resumed session %s for %s", session_id, sender_id)
         return session
@@ -656,13 +651,7 @@ class SessionManager:
     def _compact_with_summary(self, session: Session) -> None:
         """Compact older messages into a summary, keeping recent messages."""
         if not self._summarize_fn:
-            logger.warning(
-                "Compaction requested but no summarize_fn configured, falling back to trim"
-            )
-            session.messages = self._trim_preserving_tool_pairs(
-                session.messages,
-                self._max_history,
-            )
+            logger.warning("Compaction requested but no summarize_fn configured; skipping")
             return
 
         keep_count = len(session.messages) // 2
@@ -683,11 +672,7 @@ class SessionManager:
         try:
             summary_text = self._summarize_fn(older)
         except Exception:
-            logger.warning("Summarization failed, falling back to trim", exc_info=True)
-            session.messages = self._trim_preserving_tool_pairs(
-                session.messages,
-                self._max_history,
-            )
+            logger.warning("Summarization failed; messages unchanged", exc_info=True)
             return
 
         summary_msg = {
@@ -780,27 +765,13 @@ class SessionManager:
         return trimmed[i:]
 
     def _save(self, session: Session) -> None:
-        """Write session via store, trimming to max_history as safety net."""
-        if len(session.messages) > self._max_history:
-            session.messages = self._trim_preserving_tool_pairs(
-                session.messages,
-                self._max_history,
-            )
+        """Write session via store."""
         self._store.save(session)
 
     def _load(self, session_id: str) -> Session | None:
-        """Load a session, returning None on missing or corrupt.
-
-        Applies max_history trimming on load.
-        """
+        """Load a session, returning None on missing or corrupt."""
         try:
-            session = self._store.load(session_id)
-            if len(session.messages) > self._max_history:
-                session.messages = self._trim_preserving_tool_pairs(
-                    session.messages,
-                    self._max_history,
-                )
-            return session
+            return self._store.load(session_id)
         except SessionNotFoundError:
             return None
         except SessionCorruptedError:

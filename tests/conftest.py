@@ -67,7 +67,7 @@ def minimal_agent_def(tmp_sessions_dir: str) -> AgentDefinition:
         system_prompt="You are a helpful assistant.",
         llm=LLMConfig(model="claude-sonnet-4-20250514", max_tokens=100),
         agent=AgentConfig(max_turns=5),
-        session=SessionConfig(sessions_dir=tmp_sessions_dir, max_history=50),
+        session=SessionConfig(sessions_dir=tmp_sessions_dir),
         workspace=WorkspaceConfig(path="/tmp/nonexistent-workspace"),
         channels=ChannelsConfig(),
     )

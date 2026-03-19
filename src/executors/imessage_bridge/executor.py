@@ -15,6 +15,65 @@ from typing import Any
 import requests
 
 
+def register_skill():
+    """Register the imessage_bridge skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="imessage_bridge",
+        label="iMessage Bridge",
+        tools=(
+            ToolSpec(
+                name="imessage_send",
+                description="Send an iMessage via the bridge",
+                params=(
+                    Param(
+                        name="recipient",
+                        type="string",
+                        description="Recipient phone number or email",
+                        required=True,
+                    ),
+                    Param(
+                        name="text",
+                        type="string",
+                        description="Message text to send",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "send"},
+            ),
+        ),
+        needs_bridge=True,
+        bridge_scope="IMESSAGE",
+        platform="darwin",
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "send")
+
+        if action == "send":
+            recipient = config.args.get("recipient", "")
+            text = config.args.get("text", "")
+            result = send_message(recipient, text)
+        elif action == "recent":
+            limit = int(config.args.get("limit", "20"))
+            result = get_recent(limit)
+        elif action == "chats":
+            result = get_chats()
+        else:
+            raise ValueError(f"Unknown imessage action: {action}")
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def call_bridge(endpoint: str, data: dict[str, Any] | None = None, timeout: int = 30) -> dict:
     """Make an HTTP call to the bridge server.
 

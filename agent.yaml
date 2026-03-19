@@ -1152,6 +1152,100 @@ tools:
     fixed_args:
       action: "send"
 
+# Skills section — per-skill deployment overrides.
+# Each key is a skill ID matching a registered executor.
+# Intrinsic metadata (tool names, descriptions, params) comes from
+# the executor's register_skill() function.
+skills:
+  weather: {}
+  gcal:
+    secrets: secrets/gcal.env.enc
+  gcal_write:
+    secrets: secrets/gcal_write.env.enc
+  gmail_readonly:
+    secrets: secrets/gmail.env.enc
+  gmail_send:
+    secrets: secrets/gmail_send.env.enc
+  gmail_modify:
+    secrets: secrets/gmail_modify.env.enc
+  drive:
+    secrets: secrets/drive.env.enc
+  drive_write:
+    secrets: secrets/drive_write.env.enc
+  google_docs:
+    secrets: secrets/docs_read.env.enc
+    tools:
+      create_doc:
+        secrets: secrets/docs_write.env.enc
+      append_to_doc:
+        secrets: secrets/docs_write.env.enc
+      replace_in_doc:
+        secrets: secrets/docs_write.env.enc
+  google_sheets:
+    secrets: secrets/sheets_read.env.enc
+    tools:
+      create_sheet:
+        secrets: secrets/sheets_write.env.enc
+      write_to_sheet:
+        secrets: secrets/sheets_write.env.enc
+      append_to_sheet:
+        secrets: secrets/sheets_write.env.enc
+  google_slides:
+    secrets: secrets/slides_read.env.enc
+    tools:
+      create_slides:
+        secrets: secrets/slides_write.env.enc
+      add_slide:
+        secrets: secrets/slides_write.env.enc
+      replace_in_slides:
+        secrets: secrets/slides_write.env.enc
+  apple_notes: {}
+  apple_reminders: {}
+  brave_search:
+    secrets: secrets/brave.env.enc
+  tts: {}
+  notion:
+    secrets: secrets/notion_read.env.enc
+    classify_output: true
+  notion_write:
+    secrets: secrets/notion_write.env.enc
+    classify_output: true
+  fetch_url: {}
+  github:
+    secrets: secrets/github.env.enc
+  exec:
+    timeout: 60
+    mounts:
+      - path: ~/.creel/workspace
+        mode: rw
+  exec_interactive:
+    timeout: 300
+  coding:
+    writable: true
+    memory: "512m"
+    cpus: "1.0"
+    tmpfs_size: "256M"
+    timeout: 300
+  file_ops: {}
+  things: {}
+  browser:
+    tools:
+      browser_navigate:
+        classify_output: true
+      browser_get_content:
+        classify_output: true
+      browser_click:
+        classify_output: true
+      browser_type:
+        classify_output: true
+      browser_screenshot:
+        classify_output: true
+      browser_links:
+        classify_output: true
+  git_ops:
+    classify_output: true
+  imessage_bridge: {}
+
 llm:
   model: claude-sonnet-4-20250514
   max_tokens: 4096

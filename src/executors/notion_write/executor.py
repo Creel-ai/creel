@@ -19,6 +19,70 @@ from executors.notion.executor import (
     _validate_notion_id,
 )
 
+
+def register_skill():
+    """Register the notion_write skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="notion_write",
+        label="Notion Write",
+        tools=(
+            ToolSpec(
+                name="notion_write",
+                description="Create, update, and delete Notion pages",
+                params=(
+                    Param(
+                        name="action",
+                        type="string",
+                        description="Action to perform (create_page, update_page, append_blocks, delete_page)",
+                        required=True,
+                    ),
+                    Param(
+                        name="page_id",
+                        type="string",
+                        description="Notion page ID",
+                    ),
+                    Param(
+                        name="database_id",
+                        type="string",
+                        description="Notion database ID",
+                    ),
+                    Param(
+                        name="properties_json",
+                        type="string",
+                        description="JSON object of page properties",
+                    ),
+                    Param(
+                        name="children_json",
+                        type="string",
+                        description="JSON array of child blocks",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        result = run_action(
+            action=config.args.get("action", ""),
+            page_id=config.args.get("page_id", ""),
+            database_id=config.args.get("database_id", ""),
+            properties_json=config.args.get("properties_json", ""),
+            children_json=config.args.get("children_json", ""),
+        )
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 WRITE_ACTIONS = {
     "create_page",
     "update_page",

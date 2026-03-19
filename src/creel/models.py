@@ -614,12 +614,42 @@ class MonitorDefinition(BaseModel):
         return v
 
 
+class SkillToolOverride(BaseModel):
+    """Per-tool overrides within a skill config."""
+
+    secrets: str | None = None
+    classify_output: bool | None = None
+    cache_ttl: int | None = None
+
+
+class SkillOverride(BaseModel):
+    """Per-skill deployment config in agent.yaml skills: section."""
+
+    secrets: str | None = None
+    enabled: bool = True
+    timeout: int | None = None
+    memory: str | None = None
+    cpus: str | None = None
+    tmpfs_size: str | None = None
+    writable: bool | None = None
+    mounts: list[MountConfig] | None = None
+    host_auth: bool | None = None
+    image: str | None = None
+    dockerfile: str | None = None
+    network: bool | None = None
+    classify_output: bool | None = None
+    cache_ttl: int | None = None
+    http: HttpConfig | None = None
+    tools: dict[str, SkillToolOverride] | None = None
+
+
 class AgentDefinition(BaseModel):
     """Global agent config loaded from agent.yaml."""
 
     system_prompt: str
     system_prompt_file: str | None = None
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
+    skills: dict[str, SkillOverride] = Field(default_factory=dict)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
@@ -714,5 +744,13 @@ def load_agent_config(path: str | Path | None = None) -> AgentDefinition:
 
     if not isinstance(raw, dict):
         raise ValueError(f"Agent config must contain a YAML mapping, got {type(raw)}")
+
+    # Backward compatibility: if tools: is present but skills: is absent,
+    # log a deprecation warning. Both sections can coexist during migration.
+    if "tools" in raw and "skills" not in raw:
+        logger.warning(
+            "agent.yaml uses 'tools:' without 'skills:'. "
+            "Consider migrating to the 'skills:' section for self-describing executors."
+        )
 
     return AgentDefinition(**raw)

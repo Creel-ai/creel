@@ -20,6 +20,53 @@ import shutil
 import subprocess
 import sys
 
+
+def register_skill():
+    """Register the github skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="github",
+        label="GitHub",
+        tools=(
+            ToolSpec(
+                name="github",
+                description="Run GitHub CLI commands for issues, PRs, CI runs, and code search",
+                params=(
+                    Param(
+                        name="command",
+                        type="string",
+                        description="The gh CLI subcommand to run",
+                        required=True,
+                    ),
+                    Param(
+                        name="repo",
+                        type="string",
+                        description="Repository in owner/repo format",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        command = config.args.get("command", "")
+        if not command:
+            raise ValueError("github requires a 'command' argument")
+        repo = config.args.get("repo") or None
+        result = run_gh_command(command, repo)
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 DEFAULT_MAX_CHARS = 50_000
 
 # Subcommands that are always allowed (read-only operations)

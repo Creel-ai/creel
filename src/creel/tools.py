@@ -8,11 +8,19 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from creel.containers import _run_executor_container
-from creel.models import BridgeConfig, ExecutorConfig, SessionState, ToolConfig
+from creel.models import (
+    BridgeConfig,
+    ExecutorConfig,
+    HttpConfig,
+    SessionState,
+    SkillOverride,
+    ToolConfig,
+)
 from creel.orchestrator import _run_executor_inline
 
 if TYPE_CHECKING:
     from creel.container_pool import ContainerPool
+    from creel.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -299,17 +307,18 @@ def build_tool_definitions(
     include_cron_tools: bool = False,
     include_subagent_tool: bool = False,
     include_kb_tools: bool = False,
+    registry: SkillRegistry | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> list[dict]:
-    """Convert YAML tool configs to Anthropic API tool definitions.
+    """Convert tool configs to Anthropic API tool definitions.
 
-    Args:
-        tools_config: Mapping of tool name -> ToolConfig.
-        include_memory_tools: If True, include built-in memory tools.
-        include_workspace_tools: If True, include built-in workspace tools
-            (set_workspace).
-        include_cron_tools: If True, include built-in cron scheduling tool.
-        include_subagent_tool: If True, include built-in sub-agent tool.
-        include_kb_tools: If True, include built-in knowledge base tools.
+    Supports two modes:
+    - Legacy: builds defs from ``tools_config`` (dict[str, ToolConfig])
+    - Skills: builds defs from ``registry`` + ``skill_overrides``
+
+    When a registry is provided and skill_overrides is non-empty, skill-based
+    tools are generated from the registry metadata.  Legacy tools_config entries
+    are still emitted (for backward compat during migration).
 
     Returns:
         List of Anthropic tool definition dicts ready for the API.
@@ -328,22 +337,67 @@ def build_tool_definitions(
         tool_defs.append(BUILTIN_SUBAGENT_TOOL)
     if include_kb_tools:
         tool_defs.extend(BUILTIN_KB_TOOLS)
-    for name, cfg in tools_config.items():
-        properties: dict[str, dict] = {}
-        required: list[str] = []
 
-        for param_name, param in cfg.parameters.items():
-            # Skip parameters that are overridden by fixed_args
+    # Collect tool names already emitted by skills to avoid duplicates
+    skill_tool_names: set[str] = set()
+
+    # --- Skills-based tool definitions ---
+    if registry is not None and skill_overrides:
+        for skill_id, override in skill_overrides.items():
+            if not override.enabled:
+                continue
+            entry = registry.get_skill(skill_id)
+            if entry is None:
+                logger.warning("Skill '%s' in config but not registered — skipping", skill_id)
+                continue
+            for tool_spec in entry.meta.tools:
+                skill_tool_names.add(tool_spec.name)
+                properties: dict[str, dict] = {}
+                required: list[str] = []
+                for param in tool_spec.params:
+                    # Skip parameters that are overridden by fixed_args
+                    if param.name in tool_spec.fixed_args:
+                        continue
+                    properties[param.name] = {
+                        "type": param.type,
+                        "description": param.description,
+                    }
+                    if param.required:
+                        required.append(param.name)
+
+                schema: dict = {
+                    "type": "object",
+                    "properties": properties,
+                }
+                if required:
+                    schema["required"] = required
+
+                tool_defs.append(
+                    {
+                        "name": tool_spec.name,
+                        "description": tool_spec.description,
+                        "input_schema": schema,
+                    }
+                )
+
+    # --- Legacy tools_config definitions ---
+    for name, cfg in tools_config.items():
+        if name in skill_tool_names:
+            continue  # Already provided by skill registry
+        properties = {}
+        required = []
+
+        for param_name, tool_param in cfg.parameters.items():
             if param_name in cfg.fixed_args:
                 continue
             properties[param_name] = {
-                "type": param.type,
-                "description": param.description,
+                "type": tool_param.type,
+                "description": tool_param.description,
             }
-            if param.required:
+            if tool_param.required:
                 required.append(param_name)
 
-        schema: dict = {
+        schema = {
             "type": "object",
             "properties": properties,
         }
@@ -409,32 +463,24 @@ def execute_tool_call(
     subagent_manager: Any | None = None,
     container_pool: ContainerPool | None = None,
     kb_manager: Any | None = None,
+    registry: SkillRegistry | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> str:
     """Execute a tool call via the corresponding executor.
+
+    Supports two modes:
+    - Legacy: looks up tool in ``tools_config``
+    - Skills: looks up tool in ``registry``, gets config from ``skill_overrides``
 
     Merges fixed_args over LLM-provided input (fixed_args always win).
     Converts the tool config into a ExecutorConfig and delegates to
     the existing executor infrastructure.
 
-    Args:
-        tool_name: Name of the tool to execute.
-        tool_input: Arguments provided by the LLM.
-        tools_config: All tool configurations.
-        use_containers: If True, run in Docker container.
-        memory_manager: Optional memory manager for memory tools.
-        bridge_config: Optional bridge configuration.
-        session_state: Optional per-session state. Used to store/read
-            workspace path for file_ops tools.
-        cron_manager: Optional CronManager for cron tool.
-        subagent_manager: Optional SubAgentManager for sub-agent tool.
-        container_pool: Optional ContainerPool for persistent coding containers.
-        kb_manager: Optional KnowledgeBase for knowledge base tools.
-
     Returns:
         The executor output as a string.
 
     Raises:
-        ValueError: If tool_name is not found in tools_config.
+        ValueError: If tool_name is not found in tools_config or registry.
     """
     # Handle set_workspace built-in
     if tool_name == "set_workspace":
@@ -506,6 +552,22 @@ def execute_tool_call(
     if tool_name in ("kb_search", "kb_add", "kb_list", "kb_stats") and kb_manager is not None:
         return _handle_kb_tool(tool_name, tool_input, kb_manager)
 
+    # --- Skill-based execution path ---
+    if registry is not None and skill_overrides is not None:
+        skill_result = registry.get_tool(tool_name)
+        if skill_result is not None:
+            return _execute_skill_tool(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                skill_result=skill_result,
+                skill_overrides=skill_overrides,
+                use_containers=use_containers,
+                bridge_config=bridge_config,
+                session_state=session_state,
+                container_pool=container_pool,
+            )
+
+    # --- Legacy tools_config execution path ---
     if tool_name not in tools_config:
         raise ValueError(f"Unknown tool: {tool_name}")
 
@@ -561,6 +623,126 @@ def execute_tool_call(
             return _run_interactive_via_container(executor_config, cfg)
         return _run_executor_container(executor_config, cfg, bridge_config)
     return _run_executor_inline(cfg.executor, executor_config)
+
+
+def _execute_skill_tool(
+    tool_name: str,
+    tool_input: dict,
+    skill_result: tuple,
+    skill_overrides: dict[str, SkillOverride],
+    use_containers: bool,
+    bridge_config: BridgeConfig | None,
+    session_state: SessionState | None,
+    container_pool: Any | None,
+) -> str:
+    """Execute a tool via the skill registry.
+
+    Merges fixed_args, builds an ExecutorConfig, and delegates to
+    _run_executor_inline_skill() which handles secrets/bridge injection
+    and calls the skill's execute function.
+    """
+
+    tool_spec, entry = skill_result
+    skill_id = entry.meta.id
+    override = skill_overrides.get(skill_id, SkillOverride())
+
+    # Security: strip 'workspace' from LLM-provided input for file_ops
+    if skill_id == "file_ops":
+        tool_input = {k: v for k, v in tool_input.items() if k != "workspace"}
+
+    # Merge: LLM input as base, fixed_args override
+    merged_args = {**tool_input, **tool_spec.fixed_args}
+
+    # Inject workspace from session_state for file_ops tools
+    _ws = (
+        (
+            session_state.get("workspace")
+            if isinstance(session_state, dict)
+            else getattr(session_state, "workspace", None)
+        )
+        if session_state
+        else None
+    )
+    if skill_id == "file_ops" and _ws:
+        workspace = _ws
+        if not os.path.isdir(workspace):
+            return json.dumps(
+                {"error": "Workspace is no longer valid (directory removed or inaccessible)"}
+            )
+        merged_args["workspace"] = workspace
+
+    # Convert all values to strings (executors expect string args)
+    string_args = {k: str(v) for k, v in merged_args.items()}
+
+    # Build ExecutorConfig from skill override
+    executor_config = ExecutorConfig(
+        name=skill_id,
+        secrets=override.secrets,
+        args=string_args,
+        timeout=override.timeout or 60,
+        http=override.http or HttpConfig(),
+    )
+
+    logger.info("Executing skill tool %s (skill: %s)", tool_name, skill_id)
+
+    if use_containers:
+        # Build a ToolConfig from skill metadata + override for container execution
+        tool_config = _build_tool_config_from_skill(entry.meta, override, tool_spec)
+        if skill_id == "coding" and container_pool is not None and container_pool.enabled:
+            return _run_coding_via_pool(container_pool, executor_config, tool_config)
+        if skill_id == "exec_interactive":
+            return _run_interactive_via_container(executor_config, tool_config)
+        return _run_executor_container(executor_config, tool_config, bridge_config)
+
+    return _run_executor_inline_skill(entry, tool_name, executor_config)
+
+
+def _run_executor_inline_skill(entry: Any, tool_name: str, config: ExecutorConfig) -> str:
+    """Run a skill executor inline: decrypt secrets, inject bridge env, call execute."""
+    from creel.orchestrator import _env_override, _replace_google_credentials_with_access_token
+    from creel.secrets import decrypt_env_file
+
+    env_overrides: dict[str, str] = {}
+    if config.secrets:
+        env_overrides = decrypt_env_file(config.secrets)
+        _replace_google_credentials_with_access_token(env_overrides)
+
+    meta = entry.meta
+    if meta.needs_bridge or meta.bridge_scope:
+        if "BRIDGE_URL" not in env_overrides and not os.environ.get("BRIDGE_URL"):
+            env_overrides["BRIDGE_URL"] = os.environ.get(
+                "CREEL_BRIDGE_URL", "http://localhost:8099"
+            )
+        scope = meta.bridge_scope or meta.id.upper()
+        if "BRIDGE_TOKEN" not in env_overrides and not os.environ.get("BRIDGE_TOKEN"):
+            scoped_token = os.environ.get(f"BRIDGE_TOKEN_{scope}", "")
+            if scoped_token:
+                env_overrides["BRIDGE_TOKEN"] = scoped_token
+
+    with _env_override(env_overrides):
+        return entry.execute(config)
+
+
+def _build_tool_config_from_skill(meta: Any, override: SkillOverride, tool_spec: Any) -> ToolConfig:
+    """Synthesize a ToolConfig from SkillMeta + SkillOverride for container execution."""
+    return ToolConfig(
+        executor=meta.id,
+        description=tool_spec.description,
+        secrets=override.secrets,
+        network=override.network if override.network is not None else meta.needs_network,
+        writable=override.writable or False,
+        memory=override.memory or "256m",
+        cpus=override.cpus or "0.5",
+        tmpfs_size=override.tmpfs_size or "16M",
+        timeout=override.timeout or 60,
+        image=override.image,
+        dockerfile=override.dockerfile,
+        host_auth=override.host_auth or False,
+        mounts=override.mounts or [],
+        classify_output=override.classify_output or False,
+        cache_ttl=override.cache_ttl or 0,
+        http=override.http or HttpConfig(),
+    )
 
 
 _KB_BLOCKED_PATHS = frozenset(

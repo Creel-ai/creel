@@ -15,6 +15,88 @@ from typing import Any
 
 import requests
 
+
+def register_skill():
+    """Register the notion skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="notion",
+        label="Notion",
+        tools=(
+            ToolSpec(
+                name="notion_api",
+                description="Read-only access to Notion pages and databases",
+                params=(
+                    Param(
+                        name="action",
+                        type="string",
+                        description="Action to perform (search, retrieve_page, query_database)",
+                        required=True,
+                    ),
+                    Param(
+                        name="query",
+                        type="string",
+                        description="Search query string",
+                    ),
+                    Param(
+                        name="page_id",
+                        type="string",
+                        description="Notion page ID",
+                    ),
+                    Param(
+                        name="database_id",
+                        type="string",
+                        description="Notion database ID",
+                    ),
+                    Param(
+                        name="filter_json",
+                        type="string",
+                        description="JSON filter object for database queries",
+                    ),
+                    Param(
+                        name="sorts_json",
+                        type="string",
+                        description="JSON sorts array for database queries",
+                    ),
+                    Param(
+                        name="page_size",
+                        type="string",
+                        description="Number of results per page (default: 20, max: 100)",
+                    ),
+                    Param(
+                        name="start_cursor",
+                        type="string",
+                        description="Pagination cursor for next page of results",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        result = run_action(
+            action=config.args.get("action", ""),
+            query=config.args.get("query", ""),
+            page_id=config.args.get("page_id", ""),
+            database_id=config.args.get("database_id", ""),
+            filter_json=config.args.get("filter_json", ""),
+            sorts_json=config.args.get("sorts_json", ""),
+            page_size=config.args.get("page_size", ""),
+            start_cursor=config.args.get("start_cursor", ""),
+        )
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 NOTION_API_URL = "https://api.notion.com/v1"
 DEFAULT_NOTION_VERSION = "2022-06-28"
 

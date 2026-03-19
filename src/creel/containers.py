@@ -406,19 +406,32 @@ def collect_required_images(agent_def: AgentDefinition) -> list[str]:
     """
     images: set[str] = set()
     has_local_executor_images = False
+    # Legacy tools
     for _tool_name, tool_config in agent_def.tools.items():
         if tool_config.dockerfile:
-            # Custom Dockerfile — tag derived from tool name
             image = f"custom-{tool_config.executor.replace('_', '-')}:latest"
             images.add(image)
         elif tool_config.image:
             images.add(tool_config.image)
-            # Custom image overrides (local or remote) don't need the base
         else:
             image = f"executor-{tool_config.executor.replace('_', '-')}:latest"
             images.add(image)
             has_local_executor_images = True
-    if agent_def.tools:
+    # Skill-based tools
+    for skill_id, override in agent_def.skills.items():
+        if not override.enabled:
+            continue
+        if override.dockerfile:
+            image = f"custom-{skill_id.replace('_', '-')}:latest"
+            images.add(image)
+        elif override.image:
+            images.add(override.image)
+        else:
+            image = f"executor-{skill_id.replace('_', '-')}:latest"
+            images.add(image)
+            has_local_executor_images = True
+    has_tools = bool(agent_def.tools) or bool(agent_def.skills)
+    if has_tools:
         images.add("llm-runner:latest")
     if has_local_executor_images and _BASE_DOCKERFILE.exists():
         images.add(f"{_BASE_IMAGE_NAME}:latest")

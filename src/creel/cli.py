@@ -582,10 +582,16 @@ def cmd_daemon_run(args: argparse.Namespace) -> int:
 
         config_path = args.agent_config or _default_agent_config()
 
+        from creel.skills import SkillRegistry
+
+        _registry = SkillRegistry()
+        _registry.discover()
+
         server = ChatServer(
             agent_def,
             use_containers=args.containers,
             reply_channel=reply_channel,
+            registry=_registry,
         )
         service = DaemonService(
             agent_def,

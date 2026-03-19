@@ -19,6 +19,80 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the gmail_modify skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="gmail_modify",
+        label="Gmail (modify)",
+        tools=(
+            ToolSpec(
+                name="trash_email",
+                description="Move an email to trash",
+                params=(
+                    Param(
+                        name="message_id",
+                        type="string",
+                        description="Gmail message ID",
+                        required=True,
+                    ),
+                    Param(
+                        name="subject",
+                        type="string",
+                        description="Email subject (for confirmation context)",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "trash"},
+            ),
+            ToolSpec(
+                name="mark_read",
+                description="Mark an email as read",
+                params=(
+                    Param(
+                        name="message_id",
+                        type="string",
+                        description="Gmail message ID",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "modify", "remove_labels": "UNREAD"},
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        action = config.args.get("action", "")
+        message_id = config.args.get("message_id", "")
+
+        if action == "modify":
+            add_raw = config.args.get("add_labels", "")
+            remove_raw = config.args.get("remove_labels", "")
+            add_labels = [label.strip() for label in add_raw.split(",") if label.strip()] or None
+            remove_labels = [
+                label.strip() for label in remove_raw.split(",") if label.strip()
+            ] or None
+            result = modify_message(message_id, add_labels, remove_labels)
+        elif action == "trash":
+            result = trash_message(message_id)
+        elif action == "delete":
+            result = delete_message(message_id)
+        else:
+            raise ValueError(f"gmail_modify: unknown action '{action}' (use modify/trash/delete)")
+
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def modify_message(
     message_id: str,
     add_labels: list[str] | None = None,

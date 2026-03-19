@@ -6,7 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from creel.context import estimate_messages_tokens, prune_messages
 from creel.llm import call_llm, extract_text
@@ -16,10 +16,14 @@ from creel.models import (
     ContextPruningConfig,
     LLMConfig,
     SessionState,
+    SkillOverride,
     ToolConfig,
 )
 from creel.tool_cache import ToolResultCache
 from creel.tools import build_tool_definitions, execute_tool_call
+
+if TYPE_CHECKING:
+    from creel.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +152,7 @@ def _check_guardian_pre_execution(
     messages: list[dict],
     tools_config: dict[str, ToolConfig],
     confirm_action: Callable[[str, dict, str], bool] | None,
+    registry: SkillRegistry | None = None,
 ) -> _GuardianDecision:
     """Run all Guardian pre-execution checks for a single tool call.
 
@@ -195,13 +200,16 @@ def _check_guardian_pre_execution(
     user_request = _extract_last_user_text(messages)
     if user_request:
         prior_tools = _extract_prior_tools(messages)
-        available_tool_names = list(tools_config.keys()) if tools_config else None
+        # Gather available tool names from both legacy config and registry
+        available_tool_names = list(tools_config.keys()) if tools_config else []
+        if registry is not None:
+            available_tool_names.extend(registry.all_tool_names())
         coherence = guardian.check_coherence(
             user_request,
             tool_name,
             tool_input,
             prior_tools=prior_tools,
-            available_tools=available_tool_names,
+            available_tools=available_tool_names or None,
         )
         if not coherence.coherent:
             logger.warning(
@@ -414,6 +422,8 @@ def _execute_single_tool(
     guardian: Any | None,
     tool_cache: ToolResultCache | None,
     tool_history: list[dict],
+    registry: SkillRegistry | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> dict:
     """Execute a single tool call and return a tool_result block.
 
@@ -445,6 +455,8 @@ def _execute_single_tool(
                 session_state=session_state,
                 cron_manager=cron_manager,
                 subagent_manager=subagent_manager,
+                registry=registry,
+                skill_overrides=skill_overrides,
             )
             is_error = False
             elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -484,7 +496,22 @@ def _execute_single_tool(
 
     # Classify executor output for tools that return untrusted content
     tool_cfg = tools_config.get(tool_name)
-    if not is_error and guardian is not None and tool_cfg is not None and tool_cfg.classify_output:
+    _classify = False
+    if tool_cfg is not None:
+        _classify = tool_cfg.classify_output
+    elif registry is not None and skill_overrides is not None:
+        _skill_result = registry.get_tool(tool_name)
+        if _skill_result is not None:
+            _skill_id = _skill_result[1].meta.id
+            _so = skill_overrides.get(_skill_id)
+            if _so is not None:
+                _classify = _so.classify_output or False
+                # Check per-tool override
+                if _so.tools and tool_name in _so.tools:
+                    _tool_override = _so.tools[tool_name]
+                    if _tool_override.classify_output is not None:
+                        _classify = _tool_override.classify_output
+    if not is_error and guardian is not None and _classify:
         screen_result = guardian.screen_tool_result(tool_name, result)
         if screen_result.blocked:
             logger.warning(
@@ -577,6 +604,8 @@ def run_agent_loop(
     context_pruning: ContextPruningConfig | None = None,
     max_context_tokens: int = 180_000,
     summarize_fn: Callable[[list[dict]], str] | None = None,
+    registry: SkillRegistry | None = None,
+    skill_overrides: dict[str, SkillOverride] | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -604,7 +633,8 @@ def run_agent_loop(
     include_memory = memory_manager is not None
     include_workspace = bool(
         tools_config and any(tc.executor == "file_ops" for tc in tools_config.values())
-    )
+    ) or (skill_overrides is not None and "file_ops" in skill_overrides)
+    has_tools = bool(tools_config) or bool(skill_overrides)
     tool_defs = (
         build_tool_definitions(
             tools_config,
@@ -613,8 +643,10 @@ def run_agent_loop(
             include_cron_tools=cron_manager is not None,
             include_subagent_tool=subagent_manager is not None,
             include_kb_tools=kb_manager is not None,
+            registry=registry,
+            skill_overrides=skill_overrides,
         )
-        if tools_config
+        if has_tools
         else []
     )
     turns_used = 0
@@ -739,6 +771,7 @@ def run_agent_loop(
                     messages,
                     tools_config,
                     confirm_action,
+                    registry=registry,
                 )
                 if gd.action == "deny":
                     _record_tool_error(
@@ -779,6 +812,8 @@ def run_agent_loop(
                     guardian=guardian,
                     tool_cache=tool_cache,
                     tool_history=tool_history,
+                    registry=registry,
+                    skill_overrides=skill_overrides,
                 )
                 tool_results.append(_result)
 
@@ -827,6 +862,8 @@ def run_agent_loop(
                 guardian=guardian,
                 tool_cache=tool_cache,
                 tool_history=tool_history,
+                registry=registry,
+                skill_overrides=skill_overrides,
             )
             tool_results.append(tool_result_block)
 

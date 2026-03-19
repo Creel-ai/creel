@@ -14,6 +14,144 @@ import os
 import sys
 
 
+def register_skill():
+    """Register the file_ops skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="file_ops",
+        label="File Operations",
+        tools=(
+            ToolSpec(
+                name="read_file",
+                description="Read a file from the workspace",
+                params=(
+                    Param(
+                        name="file_path",
+                        type="string",
+                        description="Path to the file to read",
+                        required=True,
+                    ),
+                    Param(
+                        name="offset",
+                        type="string",
+                        description="Line number to start reading from",
+                    ),
+                    Param(
+                        name="limit",
+                        type="string",
+                        description="Number of lines to read",
+                    ),
+                ),
+                fixed_args={"action": "read"},
+            ),
+            ToolSpec(
+                name="write_file",
+                description="Write content to a file in the workspace",
+                params=(
+                    Param(
+                        name="file_path",
+                        type="string",
+                        description="Path to the file to write",
+                        required=True,
+                    ),
+                    Param(
+                        name="content",
+                        type="string",
+                        description="Content to write to the file",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "write"},
+            ),
+            ToolSpec(
+                name="edit_file",
+                description="Replace text in a file",
+                params=(
+                    Param(
+                        name="file_path",
+                        type="string",
+                        description="Path to the file to edit",
+                        required=True,
+                    ),
+                    Param(
+                        name="old_text",
+                        type="string",
+                        description="Text to find and replace",
+                        required=True,
+                    ),
+                    Param(
+                        name="new_text",
+                        type="string",
+                        description="Replacement text",
+                        required=True,
+                    ),
+                ),
+                fixed_args={"action": "edit"},
+            ),
+            ToolSpec(
+                name="list_files",
+                description="List files in a directory",
+                params=(
+                    Param(
+                        name="directory",
+                        type="string",
+                        description="Directory to list (default: workspace root)",
+                    ),
+                    Param(
+                        name="pattern",
+                        type="string",
+                        description="Glob pattern to filter files (default: *)",
+                    ),
+                    Param(
+                        name="recursive",
+                        type="string",
+                        description="Recursively list files (default: false)",
+                    ),
+                ),
+                fixed_args={"action": "list"},
+            ),
+        ),
+        needs_network=False,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        from creel.orchestrator import _env_override
+
+        action = config.args.get("action", "")
+        if action not in ACTIONS:
+            raise ValueError(f"file_ops: unknown action '{action}'")
+        env_map = {
+            "workspace": "WORKSPACE",
+            "action": "ACTION",
+            "file_path": "FILE_PATH",
+            "content": "CONTENT",
+            "old_text": "OLD_TEXT",
+            "new_text": "NEW_TEXT",
+            "offset": "OFFSET",
+            "limit": "LIMIT",
+            "directory": "DIRECTORY",
+            "pattern": "PATTERN",
+            "recursive": "RECURSIVE",
+        }
+        env_vars = {
+            env_key: str(config.args[arg_key])
+            for arg_key, env_key in env_map.items()
+            if config.args.get(arg_key, "")
+        }
+        with _env_override(env_vars):
+            result = ACTIONS[action]()
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def _workspace() -> str:
     """Return resolved workspace root path."""
     return os.path.realpath(os.environ.get("WORKSPACE", "/workspace"))

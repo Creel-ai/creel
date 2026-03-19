@@ -14,6 +14,52 @@ import sys
 from pathlib import Path
 
 
+def register_skill():
+    """Register the exec skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="exec",
+        label="Shell Exec",
+        tools=(
+            ToolSpec(
+                name="exec",
+                description="Run a shell command via bash",
+                params=(
+                    Param(
+                        name="command",
+                        type="string",
+                        description="Shell command to execute",
+                        required=True,
+                    ),
+                    Param(
+                        name="workdir",
+                        type="string",
+                        description="Working directory for command execution",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=False,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        command = config.args.get("command", "")
+        if not command:
+            raise ValueError("exec requires a 'command' argument")
+        workdir = config.args.get("workdir") or None
+        result = run_command(command, workdir)
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 def run_command(command: str, workdir: str | None = None) -> dict:
     """Run a shell command via bash and return structured results.
 

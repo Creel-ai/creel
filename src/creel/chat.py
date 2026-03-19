@@ -46,10 +46,12 @@ class ChatServer:
         # Backward compat alias
         imessage_channel: Any | None = None,
         cron_manager: object | None = None,
+        registry: Any | None = None,
     ):
         self._agent_def = agent_def
         self._use_containers = use_containers
         self._cron_manager = cron_manager
+        self._registry = registry
         self._start_time = datetime.now(UTC)
         self._reply_channel = reply_channel or imessage_channel
         self._confirm_fn = confirm_fn
@@ -608,6 +610,8 @@ class ChatServer:
             context_pruning=self._agent_def.session.context_pruning,
             max_context_tokens=self._agent_def.session.max_context_tokens,
             summarize_fn=self._summarize_fn,
+            registry=self._registry,
+            skill_overrides=self._agent_def.skills or None,
         )
 
     def _handle_approval_response(
@@ -659,6 +663,8 @@ class ChatServer:
                     session_state=session_state,
                     cron_manager=self._cron_manager,
                     subagent_manager=self._subagent_manager,
+                    registry=self._registry,
+                    skill_overrides=self._agent_def.skills or None,
                 )
             except Exception as e:
                 logger.exception("Tool execution failed after approval: %s", pa.tool_name)

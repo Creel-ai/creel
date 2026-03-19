@@ -15,6 +15,59 @@ import requests
 from bs4 import BeautifulSoup
 
 USER_AGENT = "Creel/1.0 (URL Fetcher)"
+
+
+def register_skill():
+    """Register the fetch_url skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="fetch_url",
+        label="Fetch URL",
+        tools=(
+            ToolSpec(
+                name="fetch_url",
+                description="Fetch and extract text content from a URL",
+                params=(
+                    Param(
+                        name="url",
+                        type="string",
+                        description="URL to fetch",
+                        required=True,
+                    ),
+                    Param(
+                        name="max_chars",
+                        type="string",
+                        description="Max characters to return (default: 10000)",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        url = config.args.get("url", "")
+        max_chars = int(config.args.get("max_chars", "10000"))
+        result = fetch_url(
+            url,
+            max_chars,
+            timeout=config.http.timeout,
+            connect_timeout=config.http.connect_timeout,
+            max_redirects=config.http.max_redirects,
+            max_size_mb=config.http.max_size_mb,
+        )
+        return json.dumps(result, indent=2)
+
+    return meta, execute
+
+
 DEFAULT_MAX_CHARS = 10000
 
 # Default HTTP settings

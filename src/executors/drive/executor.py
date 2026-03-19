@@ -19,6 +19,49 @@ except ModuleNotFoundError:
     from google_creds import get_credentials  # type: ignore[no-redef]
 
 
+def register_skill():
+    """Register the drive skill with the skill registry."""
+    import json
+    from typing import TYPE_CHECKING
+
+    from creel.skills.models import Param, SkillMeta, ToolSpec
+
+    if TYPE_CHECKING:
+        from creel.models import ExecutorConfig
+
+    meta = SkillMeta(
+        id="drive",
+        label="Google Drive",
+        tools=(
+            ToolSpec(
+                name="check_drive",
+                description="Search Google Drive files",
+                params=(
+                    Param(
+                        name="query",
+                        type="string",
+                        description="Drive search query",
+                    ),
+                    Param(
+                        name="max_results",
+                        type="string",
+                        description="Max files to return",
+                    ),
+                ),
+            ),
+        ),
+        needs_network=True,
+    )
+
+    def execute(config: ExecutorConfig) -> str:
+        query = config.args.get("query", "")
+        max_results = int(config.args.get("max_results", 20))
+        files = list_files(query, max_results)
+        return json.dumps(files, indent=2)
+
+    return meta, execute
+
+
 def list_files(query: str = "", max_results: int = 20) -> list[dict]:
     """List files from Google Drive.
 

@@ -198,11 +198,12 @@ class PairingManager:
                 raise RuntimeError(
                     f"Too many pending pairing sessions (max {_MAX_PENDING_SESSIONS})"
                 )
+        now = time.time()
         session = PairingSession(
             pairing_code=secrets.token_hex(_PAIRING_CODE_LENGTH).upper(),
             totp_secret=secrets.token_urlsafe(32),
-            created_at=time.time(),
-            expires_at=time.time() + timeout_seconds,
+            created_at=now,
+            expires_at=now + timeout_seconds,
         )
         self._save_session(session)
         logger.info(

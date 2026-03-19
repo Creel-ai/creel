@@ -57,6 +57,9 @@ _EXECUTOR_TO_BRIDGE_SCOPE: dict[str, str] = {
     "imessage_bridge": "IMESSAGE",
     "browser": "BROWSER",
     "git_ops": "GIT",
+    "host_exec": "EXEC",
+    "host_process": "EXEC",
+    "host_sessions": "EXEC",
 }
 
 
@@ -267,6 +270,9 @@ def _dispatch_executor(name: str, config: ExecutorConfig) -> str:
         "github": _exec_github_inline,
         "coding": _exec_coding_inline,
         "tts": _exec_tts_inline,
+        "host_exec": _exec_host_exec_inline,
+        "host_process": _exec_host_process_inline,
+        "host_sessions": _exec_host_sessions_inline,
     }
 
     # BlueBubbles variants share one handler with different actions.
@@ -929,6 +935,51 @@ def _exec_tts_inline(config: ExecutorConfig) -> str:
         output_format=output_format,
         output_path=output_path,
     )
+    return json.dumps(result, indent=2)
+
+
+def _exec_host_exec_inline(config: ExecutorConfig) -> str:
+    """Run host exec executor inline."""
+    from executors.host_exec.executor import host_exec
+
+    command = config.args.get("command", "")
+    if not command:
+        raise ValueError("host_exec executor requires a 'command' argument")
+
+    background = str(config.args.get("background", "false")).lower() in ("true", "1", "yes")
+    workdir = config.args.get("workdir") or None
+    timeout = int(config.args.get("timeout", "300"))
+    env_json = config.args.get("env") or None
+    env = json.loads(env_json) if isinstance(env_json, str) else env_json
+    if env is not None and not isinstance(env, dict):
+        raise ValueError(f"host_exec 'env' must be a JSON object, got {type(env).__name__}")
+
+    result = host_exec(command, background=background, workdir=workdir, timeout=timeout, env=env)
+    return json.dumps(result, indent=2)
+
+
+def _exec_host_process_inline(config: ExecutorConfig) -> str:
+    """Run host process management executor inline."""
+    from executors.host_exec.executor import host_process
+
+    session_id = config.args.get("session_id", "")
+    if not session_id:
+        raise ValueError("host_process executor requires a 'session_id' argument")
+
+    action = config.args.get("action", "poll")
+    limit = int(config.args.get("limit", "100"))
+    offset = int(config.args.get("offset", "0"))
+    data = config.args.get("data") or None
+
+    result = host_process(session_id, action, limit=limit, offset=offset, data=data)
+    return json.dumps(result, indent=2)
+
+
+def _exec_host_sessions_inline(config: ExecutorConfig) -> str:
+    """Run host sessions listing executor inline."""
+    from executors.host_exec.executor import host_sessions
+
+    result = host_sessions()
     return json.dumps(result, indent=2)
 
 

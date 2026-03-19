@@ -23,6 +23,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
 from bridge.browser import SessionDead
+from bridge.process_manager import ProcessManager
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +255,33 @@ class GitPushRequest(BaseModel):
         return v
 
 
+class ExecRequest(BaseModel):
+    """Request for spawning a command on the host."""
+
+    command: str = Field(min_length=1, max_length=65536)
+    background: bool = False
+    workdir: str | None = None
+    timeout: int = Field(default=300, le=3600)
+    env: dict[str, str] | None = None
+
+    @field_validator("workdir")
+    @classmethod
+    def workdir_no_traversal(cls, v: str | None) -> str | None:
+        if v is not None and ".." in PurePosixPath(v).parts:
+            raise ValueError("workdir must not contain '..' traversal")
+        return v
+
+
+class ProcessActionRequest(BaseModel):
+    """Request for managing a running process."""
+
+    session_id: str
+    action: str = Field(pattern=r"^(log|poll|write|kill)$")
+    limit: int = Field(default=100, le=5000)
+    offset: int = Field(default=0, ge=0)
+    data: str | None = Field(default=None, max_length=1_048_576)  # 1 MB
+
+
 class IMessageRecentRequest(BaseModel):
     """Request for recent iMessages."""
 
@@ -281,6 +309,8 @@ def get_required_scope(request_path: str) -> str:
         return "BROWSER"
     elif request_path.startswith("/git/"):
         return "GIT"
+    elif request_path.startswith(("/exec", "/process", "/sessions")):
+        return "EXEC"
     else:
         return "UNKNOWN"
 
@@ -322,6 +352,7 @@ authenticate_things = create_scoped_authenticator("THINGS")
 authenticate_imessage = create_scoped_authenticator("IMESSAGE")
 authenticate_browser = create_scoped_authenticator("BROWSER")
 authenticate_git = create_scoped_authenticator("GIT")
+authenticate_exec = create_scoped_authenticator("EXEC")
 
 
 def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> BridgeResponse:
@@ -390,14 +421,14 @@ async def lifespan(app: FastAPI):
     global SCOPED_TOKENS
 
     # Generate scoped auth tokens
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT"]
+    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT", "EXEC"]
 
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
         token = os.environ.get(env_var)
         if not token:
             token = secrets.token_urlsafe(32)
-            logger.info("Generated %s bridge token: %s", scope.lower(), token)
+            logger.info("Generated %s bridge token (prefix): %s...", scope.lower(), token[:8])
             logger.warning(
                 "Consider setting %s environment variable to persist this token", env_var
             )
@@ -439,7 +470,21 @@ async def lifespan(app: FastAPI):
         logger.info("Playwright not installed — browser endpoints disabled")
         app.state.browser_relay = None
 
+    # Initialize ProcessManager
+    allowed_workdirs_str = os.environ.get("EXEC_ALLOWED_WORKDIRS", "")
+    allowed_workdirs = [d.strip() for d in allowed_workdirs_str.split(",") if d.strip()] or None
+    process_manager = ProcessManager(
+        max_sessions=int(os.environ.get("EXEC_MAX_SESSIONS", "10")),
+        max_age_hours=int(os.environ.get("EXEC_MAX_AGE_HOURS", "4")),
+        allowed_workdirs=allowed_workdirs,
+    )
+    app.state.process_manager = process_manager
+    logger.info("ProcessManager initialized")
+
     yield
+
+    # Shut down ProcessManager
+    process_manager.shutdown()
 
     # Shut down BrowserRelay
     if browser_relay:
@@ -935,6 +980,88 @@ async def git_push(
     if request.branch:
         cmd.append(request.branch)
     return run_command(cmd, cwd=GIT_REPO_DIR, timeout=60)
+
+
+def _get_process_manager() -> ProcessManager:
+    """Get the ProcessManager from app state."""
+    pm = getattr(app.state, "process_manager", None)
+    if pm is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ProcessManager not initialized",
+        )
+    return pm
+
+
+# Exec endpoints
+@app.post("/exec")
+async def exec_command(
+    body: ExecRequest,
+    _: bool = Depends(authenticate_exec),
+):
+    """Spawn a command on the host."""
+    pm = _get_process_manager()
+    try:
+        result = pm.spawn(
+            command=body.command,
+            workdir=body.workdir,
+            background=body.background,
+            timeout=body.timeout,
+            env=body.env,
+        )
+        return {"ok": True, **result}
+    except (ValueError, RuntimeError) as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        logger.warning("Exec error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/process")
+async def process_action(
+    body: ProcessActionRequest,
+    _: bool = Depends(authenticate_exec),
+):
+    """Manage a running process."""
+    pm = _get_process_manager()
+    try:
+        if body.action == "poll":
+            result = pm.poll(body.session_id)
+            return {"ok": True, **result}
+
+        elif body.action == "log":
+            lines = pm.log(body.session_id, limit=body.limit, offset=body.offset)
+            return {"ok": True, "session_id": body.session_id, "lines": lines}
+
+        elif body.action == "write":
+            if body.data is None:
+                return {"ok": False, "error": "data is required for write action"}
+            result = pm.write(body.session_id, body.data)
+            return {"ok": True, **result}
+
+        elif body.action == "kill":
+            result = pm.kill(body.session_id)
+            return {"ok": True, **result}
+
+        else:
+            return {"ok": False, "error": f"Unknown action: {body.action}"}
+
+    except KeyError as e:
+        return {"ok": False, "error": str(e)}
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        logger.warning("Process action error: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/sessions")
+async def list_sessions(
+    _: bool = Depends(authenticate_exec),
+):
+    """List all active process sessions."""
+    pm = _get_process_manager()
+    return {"ok": True, "sessions": pm.list_sessions()}
 
 
 def main():

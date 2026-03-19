@@ -24,6 +24,8 @@ allow:
   - web_search
   - fetch_url
   - synthesize_speech
+  # Host exec (read-only listing)
+  - host_sessions
   # File operations (read-only)
   - read_file
   - list_files
@@ -67,6 +69,9 @@ review:
   - browser_screenshot
   # Coding tool (runs arbitrary commands)
   - coding
+  # Host exec (command execution and process management on host)
+  - host_exec
+  - host_process
   # Interactive PTY sessions (requires explicit approval)
   - exec_interactive
 
@@ -146,6 +151,72 @@ deny_when:
     arg: command
     pattern: "*chmod 777*"
   - tool: exec
+    arg: command
+    pattern: "*chmod -R 777*"
+  # Host exec tool: block same dangerous patterns as exec
+  # NOTE: ProcessManager also enforces a regex blocklist internally
+  # (see src/bridge/process_manager.py). Keep both in sync.
+  - tool: host_exec
+    arg: command
+    pattern: "*rm -rf*"
+  - tool: host_exec
+    arg: command
+    pattern: "*rm -fr*"
+  - tool: host_exec
+    arg: command
+    pattern: "*mkfs*"
+  - tool: host_exec
+    arg: command
+    pattern: "*dd if=*of=/dev/*"
+  - tool: host_exec
+    arg: command
+    pattern: "*>/dev/tcp/*"
+  - tool: host_exec
+    arg: command
+    pattern: "*/dev/udp/*"
+  - tool: host_exec
+    arg: command
+    pattern: "*bash -i*"
+  - tool: host_exec
+    arg: command
+    pattern: "*nc -e*"
+  - tool: host_exec
+    arg: command
+    pattern: "*ncat -e*"
+  - tool: host_exec
+    arg: command
+    pattern: "*| bash*"
+  - tool: host_exec
+    arg: command
+    pattern: "*| sh*"
+  - tool: host_exec
+    arg: command
+    pattern: "*|bash*"
+  - tool: host_exec
+    arg: command
+    pattern: "*|sh*"
+  - tool: host_exec
+    arg: command
+    pattern: "*curl*|*sh*"
+  - tool: host_exec
+    arg: command
+    pattern: "*wget*|*sh*"
+  - tool: host_exec
+    arg: command
+    pattern: "*$(curl*"
+  - tool: host_exec
+    arg: command
+    pattern: "*$(wget*"
+  - tool: host_exec
+    arg: command
+    pattern: "*:(){ :|:& };:*"
+  - tool: host_exec
+    arg: command
+    pattern: "*crontab*"
+  - tool: host_exec
+    arg: command
+    pattern: "*chmod 777*"
+  - tool: host_exec
     arg: command
     pattern: "*chmod -R 777*"
   # Interactive PTY: block same dangerous patterns as exec
@@ -407,6 +478,43 @@ review_when:
     arg: command
     pattern: "*tar*|*curl*"
   - tool: exec
+    arg: command
+    pattern: "*zip*|*curl*"
+  # Host exec tool: flag risky but legitimate commands for review
+  - tool: host_exec
+    arg: command
+    pattern: "*env*KEY*"
+  - tool: host_exec
+    arg: command
+    pattern: "*env*SECRET*"
+  - tool: host_exec
+    arg: command
+    pattern: "*env*TOKEN*"
+  - tool: host_exec
+    arg: command
+    pattern: "*env*PASSWORD*"
+  - tool: host_exec
+    arg: command
+    pattern: "*git push --force*"
+  - tool: host_exec
+    arg: command
+    pattern: "*git push -f*"
+  - tool: host_exec
+    arg: command
+    pattern: "*git reset --hard*"
+  - tool: host_exec
+    arg: command
+    pattern: "*sudo*"
+  - tool: host_exec
+    arg: command
+    pattern: "*ssh *"
+  - tool: host_exec
+    arg: command
+    pattern: "*scp *"
+  - tool: host_exec
+    arg: command
+    pattern: "*tar*|*curl*"
+  - tool: host_exec
     arg: command
     pattern: "*zip*|*curl*"
   # Interactive PTY: flag risky but legitimate commands for review

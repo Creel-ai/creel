@@ -237,8 +237,6 @@ class TelegramChannel(
         """After an /approve command, replay held messages for the approved sender."""
         if self._gate is None:
             return
-        import re
-
         m = re.match(r"^/approve\s+(\S+)", command_text.strip(), re.IGNORECASE)
         if not m:
             return
@@ -476,8 +474,12 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
             owner_id = cfg.owner or (cfg.allowed_senders[0] if cfg.allowed_senders else "")
             owner_ids = {owner_id} if owner_id else set()
 
-            def _notify(recipient: str, text: str) -> None:
-                bridge.send_message(recipient, text)
+            if cfg.notify_owner:
+
+                def _notify(recipient: str, text: str) -> None:
+                    bridge.send_message(recipient, text)
+            else:
+                _notify = lambda r, t: None  # noqa: E731
 
             gate = SenderGate(
                 policy=SenderPolicy(cfg.sender_policy),

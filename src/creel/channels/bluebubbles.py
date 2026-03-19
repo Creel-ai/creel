@@ -211,9 +211,13 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
 
             channel_ref: list[BlueBubblesChannel] = []
 
-            def _notify(recipient: str, text: str) -> None:
-                if channel_ref:
-                    channel_ref[0].send(recipient, text)
+            if cfg.notify_owner:
+
+                def _notify(recipient: str, text: str) -> None:
+                    if channel_ref:
+                        channel_ref[0].send(recipient, text)
+            else:
+                _notify = lambda r, t: None  # noqa: E731
 
             gate = SenderGate(
                 policy=SenderPolicy(cfg.sender_policy),

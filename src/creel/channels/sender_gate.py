@@ -90,9 +90,9 @@ class SenderGate:
 
         # Unknown sender — auto-approve or queue
         if self._auto_approve:
-            new_record = self._store.add_pending(sender_id, display_name)
-            self._store.approve(sender_id, resolved_by="auto")
-            return GateResult(allowed=True, sender_record=new_record)
+            self._store.add_pending(sender_id, display_name)
+            approved_record = self._store.approve(sender_id, resolved_by="auto")
+            return GateResult(allowed=True, sender_record=approved_record)
 
         # Queue as pending, notify owners
         new_record = self._store.add_pending(sender_id, display_name)
@@ -110,7 +110,7 @@ class SenderGate:
         Returns a status message string if the text was a gate command,
         or ``None`` if it wasn't (so normal dispatch can proceed).
         """
-        if sender_id not in self._owner_ids and sender_id not in self._static_senders:
+        if sender_id not in self._owner_ids:
             return None
 
         m = self._CMD_RE.match(text.strip())

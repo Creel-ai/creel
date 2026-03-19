@@ -100,6 +100,8 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
 
                 for msg in messages:
                     if not self._check_sender(msg.sender, msg.text):
+                        if msg.timestamp > last_ts:
+                            last_ts = msg.timestamp
                         continue
                     # Intercept gate commands from owners
                     if self._gate is not None:
@@ -107,6 +109,8 @@ class WhatsAppChannel(HealthCheckMixin, RetryMixin, WebhookChannelMixin, Channel
                         if gate_reply is not None:
                             self.send(msg.sender, gate_reply)
                             self._replay_held_messages(msg.text, callback)
+                            if msg.timestamp > last_ts:
+                                last_ts = msg.timestamp
                             continue
                     logger.info("WhatsApp from %s: %s", msg.sender, msg.text[:80])
                     response = callback(msg.sender, msg.text)
@@ -290,8 +294,12 @@ def register_plugin() -> tuple[ChannelPluginMeta, Callable[[dict[str, Any]], Cha
             owner_id = cfg.owner or (cfg.allowed_senders[0] if cfg.allowed_senders else "")
             owner_ids = {owner_id} if owner_id else set()
 
-            def _notify(recipient: str, text: str) -> None:
-                bridge.send_message(recipient, text)
+            if cfg.notify_owner:
+
+                def _notify(recipient: str, text: str) -> None:
+                    bridge.send_message(recipient, text)
+            else:
+                _notify = lambda r, t: None  # noqa: E731
 
             gate = SenderGate(
                 policy=SenderPolicy(cfg.sender_policy),

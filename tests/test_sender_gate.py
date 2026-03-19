@@ -359,6 +359,21 @@ class TestHandleOwnerResponse:
         assert reply is None
         assert not store.is_approved("u1")
 
+    def test_static_sender_non_owner_cannot_approve(self, tmp_path: Path):
+        """A static sender who is NOT the owner should not be able to approve."""
+        store = SenderStore(tmp_path, "ch")
+        store.add_pending("u1")
+        gate = SenderGate(
+            policy=SenderPolicy.ALLOWLIST,
+            static_senders={"owner", "other_static"},
+            store=store,
+            owner_sender_ids={"owner"},
+            notify_fn=lambda r, t: None,
+        )
+        reply = gate.handle_owner_response("/approve u1", "other_static")
+        assert reply is None
+        assert not store.is_approved("u1")
+
     def test_unrelated_message_returns_none(self, tmp_path: Path):
         store = SenderStore(tmp_path, "ch")
         gate = SenderGate(

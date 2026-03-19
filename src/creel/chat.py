@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -193,6 +194,27 @@ class ChatServer:
                 summarize=agent_def.workspace.compact_summarize,
             )
             logger.info("Memory system enabled (workspace: %s)", agent_def.workspace.path)
+
+        # Initialize knowledge base if configured and enabled
+        self._kb: Any = None
+        kb_config = agent_def.knowledge_base
+        if kb_config.enabled:
+            from creel.knowledge_base import KnowledgeBase
+
+            kb_db_path = kb_config.db_path or str(ws_path / ".kb_index.sqlite")
+            try:
+                self._kb = KnowledgeBase(
+                    db_path=kb_db_path,
+                    chunk_size=kb_config.chunk_size,
+                    chunk_overlap=kb_config.chunk_overlap,
+                    embedding_model=kb_config.embedding_model,
+                )
+                # Auto-index configured directories
+                if kb_config.auto_index:
+                    self._kb.reindex_auto_paths(kb_config.auto_index)
+                logger.info("Knowledge base enabled (db: %s)", kb_db_path)
+            except (sqlite3.Error, OSError):
+                logger.error("Failed to initialize knowledge base", exc_info=True)
 
         # Per-sender session state (e.g. workspace path for file_ops)
         self._session_states: dict[str, SessionState] = {}
@@ -584,6 +606,7 @@ class ChatServer:
             session_state=session_state,
             cron_manager=self._cron_manager,
             subagent_manager=self._subagent_manager,
+            kb_manager=self._kb,
             tool_cache=self._tool_cache,
             context_pruning=self._agent_def.session.context_pruning,
             max_context_tokens=self._agent_def.session.max_context_tokens,

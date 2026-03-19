@@ -278,6 +278,41 @@ class QuietHoursConfig(BaseModel):
     allow_urgent: bool = True  # still allow messages marked urgent
 
 
+class KnowledgeBaseConfig(BaseModel):
+    """Knowledge base (RAG) configuration for document search."""
+
+    enabled: bool = False
+    store: str = "sqlite"
+    db_path: str = ""  # default: workspace/.kb_index.sqlite
+    embedding_model: str = "all-MiniLM-L6-v2"
+    chunk_size: int = Field(default=512, ge=50)
+    chunk_overlap: int = Field(default=50, ge=0)
+    auto_index: list[str] = Field(default_factory=list)
+
+    @field_validator("store")
+    @classmethod
+    def validate_store(cls, v: str) -> str:
+        if v != "sqlite":
+            raise ValueError(f"Only 'sqlite' store is supported, got '{v}'")
+        return v
+
+    @model_validator(mode="after")
+    def check_overlap_less_than_size(self) -> KnowledgeBaseConfig:
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError(
+                f"chunk_overlap ({self.chunk_overlap}) must be less than "
+                f"chunk_size ({self.chunk_size})"
+            )
+        return self
+
+    @field_validator("auto_index", mode="before")
+    @classmethod
+    def expand_auto_index(cls, v: list[str] | str) -> list[str]:
+        if isinstance(v, str):
+            v = [v]
+        return [os.path.expandvars(os.path.expanduser(s)) for s in v]
+
+
 class WorkspaceConfig(BaseModel):
     """Workspace directory settings for personality/memory files."""
 
@@ -528,6 +563,38 @@ class ChannelsConfig(BaseModel):
         return None
 
 
+class MonitorDefinition(BaseModel):
+    """Monitor definition from agent.yaml monitors section."""
+
+    executor: str
+    prompt: str
+    schedule: str  # cron expression
+    delivery: str | None = None  # channel name
+    delivery_mode: Literal["announce", "webhook", "none"] = "announce"
+    delivery_url: str | None = None
+    alert_level: str = "notice"  # info, notice, urgent
+    quiet_hours: str | None = None  # "HH:MM-HH:MM"
+    cooldown_seconds: int = 3600
+    description: str = ""
+    enabled: bool = True
+
+    @field_validator("schedule")
+    @classmethod
+    def validate_cron(cls, v: str) -> str:
+        parts = v.split()
+        if len(parts) != 5:
+            raise ValueError(f"schedule must be a 5-part cron expression, got {len(parts)} parts")
+        return v
+
+    @field_validator("alert_level")
+    @classmethod
+    def validate_alert_level(cls, v: str) -> str:
+        allowed = {"info", "notice", "urgent"}
+        if v not in allowed:
+            raise ValueError(f"alert_level must be one of {allowed}, got '{v}'")
+        return v
+
+
 class AgentDefinition(BaseModel):
     """Global agent config loaded from agent.yaml."""
 
@@ -544,6 +611,8 @@ class AgentDefinition(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     media: MediaConfig | None = None
     guardian: GuardianConfig | None = None
+    knowledge_base: KnowledgeBaseConfig = Field(default_factory=KnowledgeBaseConfig)
+    monitors: dict[str, MonitorDefinition] = Field(default_factory=dict)
 
 
 # --- Task definition ---

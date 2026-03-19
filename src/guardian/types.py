@@ -122,6 +122,18 @@ class ReviewConfig(BaseModel):
     max_pending_age_hours: int = 24
 
 
+class NetworkPolicyConfig(BaseModel):
+    """Configuration for network traffic monitoring and control."""
+
+    enabled: bool = False
+    allowed_domains: list[str] = Field(default_factory=list)
+    blocked_domains: list[str] = Field(default_factory=list)
+    max_request_size_mb: float = 10.0
+    max_response_size_mb: float = 50.0
+    rate_limit_per_minute: int = 100
+    alert_on_unknown: bool = True
+
+
 class PipelineConfig(BaseModel):
     """Configuration for parallel/sequential pipeline execution.
 
@@ -159,4 +171,5 @@ class GuardianConfig(BaseModel):
     coherence: CoherenceConfig = Field(default_factory=CoherenceConfig)
     drift: DriftConfig = Field(default_factory=DriftConfig)
     review: ReviewConfig = Field(default_factory=ReviewConfig)
+    network_policy: NetworkPolicyConfig = Field(default_factory=NetworkPolicyConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)

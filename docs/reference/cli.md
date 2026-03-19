@@ -21,6 +21,8 @@ creel <command> [options]
 | `doctor` | Check system health and dependencies |
 | `reload` | Reload agent configuration without restarting |
 | `audit` | Query the guardian audit log |
+| `network ...` | Network traffic monitoring and policy management |
+| `monitor ...` | Manage proactive monitors and alerts |
 
 ## Global Options
 
@@ -139,6 +141,48 @@ Temporarily bypass all rate limits. Duration accepts `h`, `m`, or `s` suffixes (
 !!! warning
     Overrides disable **all** rate limits for the specified duration. Cost caps will not be enforced.
 
+## Monitor Commands
+
+```bash
+creel monitor <subcommand> [options]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all monitors |
+| `add` | Add a new monitor |
+| `add-template <name>` | Add a monitor from a built-in template |
+| `templates` | List available templates |
+| `enable <id>` | Enable a monitor |
+| `disable <id>` | Disable a monitor |
+| `remove <id>` | Remove a monitor |
+| `run <id>` | Trigger a monitor check immediately |
+| `history <id>` | Show run and alert history |
+
+### Monitor Add Options
+
+| Option | Description |
+|--------|-------------|
+| `--name NAME` | Monitor name (required) |
+| `--executor NAME` | Executor to use (required) |
+| `--prompt TEXT` | What to check for (required) |
+| `--cron EXPR` | Cron expression (e.g., `*/15 * * * *`) |
+| `--every N` | Check interval in seconds |
+| `--delivery-channel NAME` | Channel for alert delivery |
+| `--delivery-url URL` | Webhook URL for alert delivery |
+| `--alert-level LEVEL` | `info`, `notice`, or `urgent` (default: `notice`) |
+| `--quiet-hours RANGE` | Quiet hours range (e.g., `23:00-07:00`) |
+| `--cooldown N` | Dedup cooldown in seconds (default: `3600`) |
+| `--tz TIMEZONE` | Timezone (default: `UTC`) |
+| `--disabled` | Create in disabled state |
+
+### Monitor History Options
+
+| Option | Description |
+|--------|-------------|
+| `--type TYPE` | `all`, `runs`, or `alerts` (default: `all`) |
+| `--tail N` | Show last N entries (default: `20`) |
+
 ## Audit Options
 
 | Option | Description |
@@ -150,3 +194,33 @@ Temporarily bypass all rate limits. Duration accepts `h`, `m`, or `s` suffixes (
 | `--event TYPE` | Filter by event type (`screen_input`, `validate_action`, `tool_result`) |
 | `--tool NAME` | Filter by tool name |
 | `--since DATE` | Show entries since date (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`) |
+
+## Network Commands
+
+```bash
+creel network <subcommand> [options]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `log` | Show network request audit log |
+| `policy` | Show current network policy configuration |
+| `allow <domain>` | Check if a domain is allowed by the network policy |
+| `block <domain>` | Check if a domain is blocked by the network policy |
+
+### Network Log Options
+
+| Option | Description |
+|--------|-------------|
+| `--tail N` | Show last N entries (default: 20) |
+| `--all` | Show all entries (no tail limit) |
+| `--executor NAME` | Filter by executor name |
+
+Example output:
+
+```
+[2026-03-15T10:23:01] OK POST api.openai.com executor=gmail_readonly [200]
+[2026-03-15T10:23:05] BLOCKED GET evil.pastebin.com executor=fetch_url (domain 'evil.pastebin.com' matches blocked pattern '*.pastebin.com')
+
+2 entries shown.
+```

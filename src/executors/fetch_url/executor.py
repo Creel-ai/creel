@@ -187,7 +187,7 @@ def _resolve_and_validate(url: str) -> str | None:
         return f"Blocked: DNS resolution failed for '{hostname}'"
 
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
-        ip_str = sockaddr[0]
+        ip_str = str(sockaddr[0])
         if _is_blocked_ip(ip_str):
             return "Blocked: URL resolves to a private/internal IP address"
 

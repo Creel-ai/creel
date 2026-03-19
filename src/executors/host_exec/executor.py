@@ -123,6 +123,9 @@ def register_skill():
             timeout = int(config.args.get("timeout", "300"))
             env_str = config.args.get("env")
             env = json.loads(env_str) if env_str else None
+            if env is not None and not isinstance(env, dict):
+                raise ValueError("env must be a JSON object")
+
             result = host_exec(
                 command, background=background, workdir=workdir, timeout=timeout, env=env
             )

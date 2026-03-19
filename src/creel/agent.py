@@ -720,7 +720,8 @@ def run_agent_loop(
             tool_calls_made += 1
             tool_name = block.name
             tool_input = block.input
-            logger.info("Tool call: %s(%s)", tool_name, tool_input)
+            logger.info("Tool call: %s", tool_name)
+            logger.debug("Tool input: %s(%s)", tool_name, tool_input)
 
             # Per-task tool scoping — reject tools not in the whitelist
             if allowed_tools is not None and tool_name not in allowed_tools:

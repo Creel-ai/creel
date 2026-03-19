@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -587,9 +588,12 @@ def _run_executor_container(
         mode="w", suffix=".env", delete=True, prefix="creel-"
     ) as env_file:
         for key, value in env_vars.items():
-            # Sanitize values to prevent env-file newline injection
+            # Sanitize keys and values to prevent env-file newline injection
+            safe_key = re.sub(r"[^A-Za-z0-9_]", "", key)
+            if not safe_key:
+                continue
             sanitized = value.replace("\n", "").replace("\r", "")
-            env_file.write(f"{key}={sanitized}\n")
+            env_file.write(f"{safe_key}={sanitized}\n")
         env_file.flush()
 
         # Build docker run command with per-tool resource overrides

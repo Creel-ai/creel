@@ -1,6 +1,6 @@
 """Destructive command blocklist — hardcoded safety floor.
 
-Regex patterns for known-destructive commands that ALWAYS require approval,
+Regex patterns for known-destructive commands that are ALWAYS denied,
 regardless of Guardian policy. This is a non-overridable hard block that
 applies only to exec/shell-type tools (exec, host_exec, coding).
 """
@@ -44,7 +44,7 @@ _DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "Git hard reset (destroys uncommitted changes)",
     ),
     (
-        re.compile(r"\bgit\s+push\s+.*--force\b|\bgit\s+push\s+-f\b", re.IGNORECASE),
+        re.compile(r"\bgit\s+push\s+.*--force\b(?!-)|\bgit\s+push\s+-f\b", re.IGNORECASE),
         "Git force push (rewrites remote history)",
     ),
     (

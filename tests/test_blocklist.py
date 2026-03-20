@@ -49,7 +49,6 @@ class TestCheckBlocklist:
         [
             "git push --force",
             "git push -f origin main",
-            "git push --force-with-lease origin main",
         ],
     )
     def test_blocks_git_force_push(self, command: str) -> None:
@@ -163,6 +162,8 @@ class TestCheckBlocklist:
             ("git status", "git status"),
             ("git commit -m 'fix bug'", "git commit"),
             ("git push origin main", "git push (no force)"),
+            ("git push --force-with-lease origin main", "git push --force-with-lease (safe)"),
+            ("git push --force-if-includes origin main", "git push --force-if-includes (safe)"),
             ("git reset --soft HEAD~1", "git soft reset"),
             ("python -m pytest tests/", "run tests"),
             ("rm temp.txt", "rm single file (no -rf)"),

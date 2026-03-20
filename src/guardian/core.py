@@ -284,9 +284,7 @@ class Guardian:
         # Hard safety floor: destructive command blocklist (not overridable)
         blocklist_result = check_blocklist(tool_name, tool_args)
         if blocklist_result.blocked:
-            logger.warning(
-                "Blocklist denied %s: %s", tool_name, blocklist_result.reason
-            )
+            logger.warning("Blocklist denied %s: %s", tool_name, blocklist_result.reason)
             if self._audit:
                 self._audit.log_action(
                     tool_name=tool_name,

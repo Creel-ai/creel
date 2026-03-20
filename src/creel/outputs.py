@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ def send_output(text: str, config: OutputConfig) -> None:
         "imessage": _send_imessage,
         "stdout": _send_stdout,
         "file": _send_file,
+        "telegram": _send_telegram,
     }
 
     handler = handlers.get(config.type)
@@ -75,3 +77,24 @@ def _send_file(text: str, to: str) -> None:
     path = Path(to)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+def _send_telegram(text: str, to: str) -> None:
+    """Send a message via the Telegram Bot API.
+
+    Requires TELEGRAM_BOT_TOKEN in the environment.
+    ``to`` is the Telegram chat ID.
+    """
+    import httpx
+
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not bot_token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable not set")
+
+    if not to:
+        raise ValueError("Telegram chat ID must be provided in output.to")
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": to, "text": text, "parse_mode": "Markdown"}
+    response = httpx.post(url, json=payload, timeout=30)
+    response.raise_for_status()

@@ -158,6 +158,7 @@ class SkillRegistry:
         "executors.git_ops.executor",
         "executors.imessage_bridge.executor",
         "executors.host_exec.executor",
+        "executors.pdf_reader.executor",
     ]
 
     def discover(self) -> None:

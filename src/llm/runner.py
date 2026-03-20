@@ -21,8 +21,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _provider import (  # noqa: E402
-    CLAUDE_CODE_SYSTEM_PREFIX,
-    AnthropicContainerProvider,
     ContainerProvider,
     get_container_provider,
 )
@@ -64,15 +62,10 @@ def main() -> None:
         print("Error: No prompt provided on stdin", file=sys.stderr)
         sys.exit(1)
 
-    system = None
-    if isinstance(provider, AnthropicContainerProvider) and provider.uses_oauth:
-        system = CLAUDE_CODE_SYSTEM_PREFIX
-
     response = provider.create(
         messages=[{"role": "user", "content": prompt}],
         model=model,
         max_tokens=max_tokens,
-        system=system,
     )
 
     for block in response.content:
@@ -101,8 +94,6 @@ def _run_keepalive(
     first_msg: dict,
 ) -> None:
     """Run in keepalive mode: process JSON-line requests in a loop."""
-    # Determine if we should inject the OAuth system prefix
-    inject_system = isinstance(provider, AnthropicContainerProvider) and provider.uses_oauth
 
     def _handle(msg: dict) -> bool:
         """Handle a single message. Returns False to exit."""
@@ -124,14 +115,11 @@ def _run_keepalive(
             req_model = msg.get("model", model)
             req_max_tokens = msg.get("max_tokens", max_tokens)
 
-            system = CLAUDE_CODE_SYSTEM_PREFIX if inject_system else None
-
             try:
                 response = provider.create(
                     messages=[{"role": "user", "content": prompt}],
                     model=req_model,
                     max_tokens=req_max_tokens,
-                    system=system,
                 )
                 text_parts = []
                 for block in response.content:

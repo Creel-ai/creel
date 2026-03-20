@@ -22,7 +22,6 @@ from creel.providers import (
     TextBlock,
     Usage,
 )
-from creel.providers.anthropic import _CLAUDE_CODE_SYSTEM_PREFIX
 
 
 def _make_config(**overrides) -> LLMConfig:
@@ -260,7 +259,7 @@ class TestCallLlm:
         assert kwargs["system"] == "You are helpful."
 
     @patch("creel.providers.anthropic._get_client")
-    def test_oauth_prefix_injection(self, mock_get_client, monkeypatch) -> None:
+    def test_oauth_system_prefix_injection(self, mock_get_client, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
@@ -276,12 +275,13 @@ class TestCallLlm:
         mock_get_client.return_value = mock_client
 
         messages = [{"role": "user", "content": "hi"}]
-        # No explicit system prompt — should inject Claude Code prefix
         call_llm(messages, _make_config())
 
         create_call = mock_client.messages.create
         kwargs = create_call.call_args[1]
-        assert kwargs["system"] == _CLAUDE_CODE_SYSTEM_PREFIX
+        assert kwargs["system"].startswith(
+            "You are Claude Code, Anthropic's official CLI for Claude."
+        )
 
     def test_no_credentials_raises(self, monkeypatch) -> None:
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)

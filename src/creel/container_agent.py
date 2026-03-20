@@ -30,6 +30,7 @@ from creel.models import (
     AgentConfig,
     BridgeConfig,
     LLMConfig,
+    SafetyConfig,
     SessionState,
     SkillOverride,
 )
@@ -108,6 +109,7 @@ def run_agent_loop_container(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    safety_config: SafetyConfig | None = None,
 ) -> AgentResult:
     """Run the agent loop inside an isolated Docker container.
 
@@ -159,6 +161,7 @@ def run_agent_loop_container(
             bridge_config,
             session_state,
             env_vars,
+            safety_config=safety_config,
         )
 
     # Cold-start path (original behavior)
@@ -174,6 +177,7 @@ def run_agent_loop_container(
         bridge_config,
         session_state,
         env_vars,
+        safety_config=safety_config,
     )
 
 
@@ -190,6 +194,7 @@ def _run_with_pool(
     bridge_config: BridgeConfig | None,
     session_state: SessionState | None,
     env_vars: dict[str, str],
+    safety_config: SafetyConfig | None = None,
 ) -> AgentResult:
     """Run the agent loop using a warm container from the pool."""
     container = pool.acquire(
@@ -213,6 +218,7 @@ def _run_with_pool(
             bridge_config,
             session_state,
             container_pool=pool,
+            safety_config=safety_config,
         )
         # Return container to pool for reuse
         pool.release(container)
@@ -244,6 +250,7 @@ def _run_cold_start(
     bridge_config: BridgeConfig | None,
     session_state: SessionState | None,
     env_vars: dict[str, str],
+    safety_config: SafetyConfig | None = None,
 ) -> AgentResult:
     """Run the agent loop with a fresh ephemeral container (original path)."""
     with tempfile.NamedTemporaryFile(
@@ -284,6 +291,7 @@ def _run_cold_start(
                 memory_manager,
                 bridge_config,
                 session_state,
+                safety_config=safety_config,
             )
         except Exception as e:
             logger.exception("Container agent protocol error")
@@ -332,6 +340,7 @@ def _run_protocol(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    safety_config: SafetyConfig | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol with the container."""
     _send_to_container(proc, start_msg)
@@ -390,6 +399,7 @@ def _run_protocol(
                 bridge_config=bridge_config,
                 session_state=session_state,
                 container_pool=container_pool,
+                safety_config=safety_config,
             )
 
             # Check if any result requires async approval
@@ -427,6 +437,7 @@ def _run_protocol_pooled(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    safety_config: SafetyConfig | None = None,
 ) -> AgentResult:
     """Run the JSON-over-stdio protocol using a pooled ManagedContainer.
 
@@ -482,6 +493,7 @@ def _run_protocol_pooled(
                 bridge_config=bridge_config,
                 session_state=session_state,
                 container_pool=container_pool,
+                safety_config=safety_config,
             )
 
             if results is None:
@@ -513,6 +525,7 @@ def _handle_tool_request(
     bridge_config: BridgeConfig | None = None,
     session_state: SessionState | None = None,
     container_pool: ContainerPool | None = None,
+    safety_config: SafetyConfig | None = None,
 ) -> tuple[list[dict] | None, AgentResult | None]:
     """Process tool calls from the container, applying Guardian checks.
 
@@ -525,6 +538,62 @@ def _handle_tool_request(
         tool_name = call["name"]
         tool_input = call["input"]
         tool_id = call["id"]
+
+        # Safety floor: destructive command blocklist (runs before Guardian)
+        if safety_config and safety_config.destructive_blocklist.enabled:
+            from creel.safety import check_destructive_blocklist
+
+            _skill_entry = registry.get_tool(tool_name) if registry else None
+            _executor_id = _skill_entry[1].meta.id if _skill_entry else None
+            blocklist_match = check_destructive_blocklist(
+                tool_name,
+                tool_input,
+                _executor_id,
+                safety_config.destructive_blocklist,
+            )
+            if blocklist_match is not None:
+                reason = (
+                    f"[BLOCKLIST] Destructive command detected: '{blocklist_match.pattern_name}'"
+                )
+                if confirm_action is not None:
+                    if not confirm_action(tool_name, tool_input, reason):
+                        if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                            guardian._audit.log_blocklist_match(
+                                tool_name=tool_name,
+                                pattern_name=blocklist_match.pattern_name,
+                                outcome="denied",
+                            )
+                        results.append(
+                            {
+                                "tool_use_id": tool_id,
+                                "content": f"Blocked: {reason}",
+                                "is_error": True,
+                            }
+                        )
+                        continue
+                    # Approved — log and fall through to Guardian
+                    if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                        guardian._audit.log_blocklist_match(
+                            tool_name=tool_name,
+                            pattern_name=blocklist_match.pattern_name,
+                            outcome="approved",
+                        )
+                else:
+                    # No callback — needs async approval
+                    if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                        guardian._audit.log_blocklist_match(
+                            tool_name=tool_name,
+                            pattern_name=blocklist_match.pattern_name,
+                            outcome="pending_review",
+                        )
+                    results.append(
+                        {
+                            "tool_use_id": tool_id,
+                            "content": f"Action requires approval: {reason}",
+                            "is_error": True,
+                        }
+                    )
+                    continue
 
         # Guardian action validation
         if guardian is not None:

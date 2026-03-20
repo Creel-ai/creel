@@ -15,6 +15,7 @@ from creel.models import (
     BridgeConfig,
     ContextPruningConfig,
     LLMConfig,
+    SafetyConfig,
     SessionState,
     SkillOverride,
 )
@@ -593,6 +594,7 @@ def run_agent_loop(
     context_pruning: ContextPruningConfig | None = None,
     max_context_tokens: int = 180_000,
     summarize_fn: Callable[[list[dict]], str] | None = None,
+    safety_config: SafetyConfig | None = None,
 ) -> AgentResult:
     """Run the agent loop: call LLM, execute tools, repeat until done.
 
@@ -762,6 +764,57 @@ def run_agent_loop(
                     tool_results,
                 )
                 continue
+
+            # Safety floor: destructive command blocklist (runs before Guardian)
+            if safety_config and safety_config.destructive_blocklist.enabled:
+                from creel.safety import check_destructive_blocklist
+
+                _skill_entry = registry.get_tool(tool_name)
+                _executor_id = _skill_entry[1].meta.id if _skill_entry else None
+                blocklist_match = check_destructive_blocklist(
+                    tool_name,
+                    tool_input,
+                    _executor_id,
+                    safety_config.destructive_blocklist,
+                )
+                if blocklist_match is not None:
+                    reason = (
+                        f"[BLOCKLIST] Destructive command detected: "
+                        f"'{blocklist_match.pattern_name}'"
+                    )
+                    if confirm_action is not None:
+                        if not confirm_action(tool_name, tool_input, reason):
+                            if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                                guardian._audit.log_blocklist_match(
+                                    tool_name=tool_name,
+                                    pattern_name=blocklist_match.pattern_name,
+                                    outcome="denied",
+                                )
+                            _record_tool_error(
+                                block.id,
+                                tool_name,
+                                tool_input,
+                                f"Blocked: {reason}",
+                                tool_history,
+                                tool_results,
+                            )
+                            continue
+                        # Approved — log and fall through to Guardian
+                        if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                            guardian._audit.log_blocklist_match(
+                                tool_name=tool_name,
+                                pattern_name=blocklist_match.pattern_name,
+                                outcome="approved",
+                            )
+                    else:
+                        if guardian and hasattr(guardian, "_audit") and guardian._audit:
+                            guardian._audit.log_blocklist_match(
+                                tool_name=tool_name,
+                                pattern_name=blocklist_match.pattern_name,
+                                outcome="pending_review",
+                            )
+                        review_blocks.append((block, reason))
+                        continue
 
             # Guardian pre-execution checks (policy, coherence, memory screening)
             if guardian is not None:

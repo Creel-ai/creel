@@ -563,6 +563,11 @@ class TestBuiltinRegisterSkill:
                 "host_exec",
                 ["host_exec", "host_process", "host_sessions"],
             ),
+            (
+                "executors.pdf_reader.executor",
+                "pdf_reader",
+                ["read_pdf", "search_pdf"],
+            ),
         ],
     )
     def test_register_skill_returns_valid_meta(self, module_path, expected_id, expected_tools):
@@ -607,6 +612,7 @@ class TestBuiltinRegisterSkill:
             "executors.git_ops.executor",
             "executors.imessage_bridge.executor",
             "executors.host_exec.executor",
+            "executors.pdf_reader.executor",
         ],
     )
     def test_register_skill_integrates_with_registry(self, module_path):

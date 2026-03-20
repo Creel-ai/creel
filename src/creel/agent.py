@@ -674,6 +674,7 @@ def run_agent_loop(
                 model_override=_model_override,
             )
         except Exception as e:
+            logger.error("LLM call failed on turn %d: %s: %s", turns_used, type(e).__name__, e)
             logger.exception("LLM call failed on turn %d", turns_used)
             return AgentResult(
                 text=f"Error calling LLM: {e}",

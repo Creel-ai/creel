@@ -85,6 +85,18 @@ class RemindersCompleteRequest(BaseModel):
 
 
 # Things 3 request models
+class ContactsSearchRequest(BaseModel):
+    """Request for searching contacts."""
+
+    query: str
+
+
+class ContactsGetRequest(BaseModel):
+    """Request for getting contact details."""
+
+    name: str
+
+
 class ThingsInboxRequest(BaseModel):
     """Request for Things 3 inbox."""
 
@@ -297,7 +309,9 @@ class IMessageSendRequest(BaseModel):
 
 def get_required_scope(request_path: str) -> str:
     """Determine required token scope based on request path."""
-    if request_path.startswith("/notes/"):
+    if request_path.startswith("/contacts/"):
+        return "CONTACTS"
+    elif request_path.startswith("/notes/"):
         return "NOTES"
     elif request_path.startswith("/reminders/"):
         return "REMINDERS"
@@ -346,6 +360,7 @@ def create_scoped_authenticator(required_scope: str):
 
 
 # Create scoped authenticators for each tool group
+authenticate_contacts = create_scoped_authenticator("CONTACTS")
 authenticate_notes = create_scoped_authenticator("NOTES")
 authenticate_reminders = create_scoped_authenticator("REMINDERS")
 authenticate_things = create_scoped_authenticator("THINGS")
@@ -421,7 +436,16 @@ async def lifespan(app: FastAPI):
     global SCOPED_TOKENS
 
     # Generate scoped auth tokens
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT", "EXEC"]
+    scopes = [
+        "CONTACTS",
+        "NOTES",
+        "REMINDERS",
+        "THINGS",
+        "IMESSAGE",
+        "BROWSER",
+        "GIT",
+        "EXEC",
+    ]
 
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -507,6 +531,57 @@ app = FastAPI(
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "creel-bridge"}
+
+
+# Contacts endpoints (via osascript / AppleScript)
+@app.post("/contacts/search", response_model=BridgeResponse)
+async def contacts_search(
+    request: ContactsSearchRequest, _: bool = Depends(authenticate_contacts)
+) -> BridgeResponse:
+    """Search contacts via AppleScript."""
+    query = request.query.replace('"', '\\"')
+    script = (
+        f'tell application "Contacts" to get name of every person whose name contains "{query}"'
+    )
+    return run_command(["osascript", "-e", script])
+
+
+@app.post("/contacts/get", response_model=BridgeResponse)
+async def contacts_get(
+    request: ContactsGetRequest, _: bool = Depends(authenticate_contacts)
+) -> BridgeResponse:
+    """Get contact details via AppleScript."""
+    name = request.name.replace('"', '\\"')
+    script = (
+        'tell application "Contacts"\n'
+        f'  set matchedPeople to every person whose name is "{name}"\n'
+        "  if (count of matchedPeople) is 0 then\n"
+        f'    set matchedPeople to every person whose name contains "{name}"\n'
+        "  end if\n"
+        "  set output to {}\n"
+        "  repeat with p in matchedPeople\n"
+        '    set info to "Name: " & (name of p)\n'
+        "    try\n"
+        '      set info to info & linefeed & "Emails: " & (value of every email of p)\n'
+        "    end try\n"
+        "    try\n"
+        '      set info to info & linefeed & "Phones: " & (value of every phone of p)\n'
+        "    end try\n"
+        "    try\n"
+        '      set info to info & linefeed & "Organization: " & (organization of p)\n'
+        "    end try\n"
+        "    try\n"
+        '      set info to info & linefeed & "Title: " & (job title of p)\n'
+        "    end try\n"
+        "    try\n"
+        '      set info to info & linefeed & "Note: " & (note of p)\n'
+        "    end try\n"
+        "    copy info to end of output\n"
+        "  end repeat\n"
+        "  return output as text\n"
+        "end tell"
+    )
+    return run_command(["osascript", "-e", script])
 
 
 # Notes endpoints (via memo CLI)

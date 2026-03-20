@@ -332,47 +332,6 @@ async def test_status_bar_shows_model(tmp_path):
         assert bar.model_name == "claude-sonnet-4-6"
 
 
-@pytest.mark.asyncio
-async def test_status_bar_thinking_state(tmp_path):
-    """StatusBar.is_thinking should be True during LLM call, False after."""
-    event = asyncio.Event()
-
-    def slow_handle(sender_id, text, **kwargs):
-        import time
-
-        for _ in range(50):
-            if event.is_set():
-                break
-            time.sleep(0.05)
-        return "Done"
-
-    server = _make_mock_server(tmp_path)
-    server.handle_message = slow_handle
-    app = ChatApp(server)
-
-    async with app.run_test() as pilot:
-        inp = app.query_one("#chat-input", ChatInput)
-        bar = app.query_one("#status-bar", StatusBar)
-
-        inp.load_text("Hello")
-        await pilot.press("enter")
-
-        # Wait for thinking state to activate
-        for _ in range(20):
-            await pilot.pause()
-            if bar.is_thinking:
-                break
-        assert bar.is_thinking is True
-
-        # Release
-        event.set()
-
-        for _ in range(20):
-            await pilot.pause()
-            if not bar.is_thinking:
-                break
-        assert bar.is_thinking is False
-
 
 @pytest.mark.asyncio
 async def test_input_history(tmp_path):

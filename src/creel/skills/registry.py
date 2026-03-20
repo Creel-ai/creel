@@ -142,6 +142,7 @@ class SkillRegistry:
         "executors.google_slides.executor",
         "executors.apple_notes.executor",
         "executors.apple_reminders.executor",
+        "executors.apple_photos.executor",
         "executors.brave_search.executor",
         "executors.notion.executor",
         "executors.notion_write.executor",

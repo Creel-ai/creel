@@ -120,7 +120,9 @@ class AnthropicContainerProvider(ContainerProvider):
         )
 
     def _resolve_for_oauth(
-        self, system: str | None, messages: list[dict],
+        self,
+        system: str | None,
+        messages: list[dict],
     ) -> tuple[str | None, list[dict]]:
         if not self._is_oauth:
             return system, messages
@@ -129,8 +131,7 @@ class AnthropicContainerProvider(ContainerProvider):
         preamble = {
             "role": "user",
             "content": (
-                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n"
-                f"{system}"
+                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n{system}"
             ),
         }
         ack = {"role": "assistant", "content": "Understood. I'll follow those instructions."}

@@ -163,9 +163,18 @@ def _safe_path(file_path: str) -> str:
     Resolves symlinks via os.path.realpath so that symlink-based
     traversal is blocked.
 
+    Strips a leading 'workspace/' prefix from the path to avoid
+    double-prefixing when the workspace is already mounted at /workspace.
+
     Raises ValueError if the resolved path escapes the workspace.
     """
     workspace = _workspace()
+    # Strip leading 'workspace/' to prevent /workspace/workspace/... paths
+    # when the LLM includes the workspace prefix in the file path.
+    stripped = file_path.lstrip("/")
+    if stripped.startswith("workspace/") or stripped == "workspace":
+        stripped = stripped[len("workspace") :].lstrip("/") or "."
+        file_path = stripped
     resolved = os.path.realpath(os.path.join(workspace, file_path))
     # Ensure resolved path is workspace itself or a child of it
     if resolved != workspace and not resolved.startswith(workspace + os.sep):

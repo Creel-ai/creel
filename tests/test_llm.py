@@ -283,6 +283,43 @@ class TestCallLlm:
             "You are Claude Code, Anthropic's official CLI for Claude."
         )
 
+    @patch("creel.providers.anthropic._get_client")
+    def test_oauth_custom_system_injected_as_user_message(
+        self, mock_get_client, monkeypatch
+    ) -> None:
+        """When OAuth + custom system prompt, system is injected as a user message."""
+        monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-token")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        mock_client = MagicMock()
+        mock_resp = MagicMock()
+        block = MagicMock()
+        block.type = "text"
+        block.text = "Hello"
+        mock_resp.content = [block]
+        mock_resp.stop_reason = "end_turn"
+        mock_resp.usage = MagicMock(input_tokens=10, output_tokens=5)
+        mock_client.messages.create.return_value = mock_resp
+        mock_get_client.return_value = mock_client
+
+        messages = [{"role": "user", "content": "hi"}]
+        call_llm(messages, _make_config(), system="You are a helpful assistant.")
+
+        create_call = mock_client.messages.create
+        kwargs = create_call.call_args[1]
+        # System should be the Claude Code prefix, not the custom prompt
+        assert kwargs["system"].startswith(
+            "You are Claude Code, Anthropic's official CLI for Claude."
+        )
+        # Custom system prompt injected as first user message
+        sent_messages = kwargs["messages"]
+        assert sent_messages[0]["role"] == "user"
+        assert "You are a helpful assistant." in sent_messages[0]["content"]
+        # Followed by an assistant acknowledgment
+        assert sent_messages[1]["role"] == "assistant"
+        # Original user message is third
+        assert sent_messages[2] == {"role": "user", "content": "hi"}
+
     def test_no_credentials_raises(self, monkeypatch) -> None:
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

@@ -587,10 +587,9 @@ def _run_executor_container(
 
     # Write tool args as a JSON file so multiline values (e.g. file content)
     # are preserved.  The env-file format cannot represent newlines.
-    args_file = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=True, prefix="creel-args-"
-    )
-    try:
+    ) as args_file:
         json.dump(config.args, args_file)
         args_file.flush()
 
@@ -681,8 +680,6 @@ def _run_executor_container(
                 raise RuntimeError(
                     f"Executor '{config.name}' timed out after {config.timeout}s"
                 ) from e
-    finally:
-        args_file.close()
 
     # Log stderr regardless of exit code
     stderr = result.stderr.strip() if result.stderr else ""

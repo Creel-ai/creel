@@ -83,13 +83,12 @@ class AnthropicContainerProvider(ContainerProvider):
         system: str | None = None,
         tools: list[dict] | None = None,
     ) -> ContainerLLMResponse:
+        resolved_system, resolved_messages = self._resolve_for_oauth(system, messages)
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "messages": messages,
+            "messages": resolved_messages,
         }
-        resolved_system, messages = self._resolve_for_oauth(system, messages)
-        kwargs["messages"] = messages
         if resolved_system:
             kwargs["system"] = resolved_system
         if tools:
@@ -120,7 +119,9 @@ class AnthropicContainerProvider(ContainerProvider):
         )
 
     def _resolve_for_oauth(
-        self, system: str | None, messages: list[dict],
+        self,
+        system: str | None,
+        messages: list[dict],
     ) -> tuple[str | None, list[dict]]:
         if not self._is_oauth:
             return system, messages
@@ -129,8 +130,7 @@ class AnthropicContainerProvider(ContainerProvider):
         preamble = {
             "role": "user",
             "content": (
-                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n"
-                f"{system}"
+                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n{system}"
             ),
         }
         ack = {"role": "assistant", "content": "Understood. I'll follow those instructions."}

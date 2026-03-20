@@ -202,7 +202,8 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _resolve_for_oauth(
-        system: str | None, messages: list[dict],
+        system: str | None,
+        messages: list[dict],
     ) -> tuple[str | None, list[dict]]:
         """Handle OAuth token constraints.
 
@@ -222,10 +223,8 @@ class AnthropicProvider(LLMProvider):
         preamble = {
             "role": "user",
             "content": (
-                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n"
-                f"{system}"
+                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n{system}"
             ),
         }
         ack = {"role": "assistant", "content": "Understood. I'll follow those instructions."}
         return _CLAUDE_CODE_SYSTEM_PREFIX, [preamble, ack, *messages]
-

@@ -332,7 +332,6 @@ async def test_status_bar_shows_model(tmp_path):
         assert bar.model_name == "claude-sonnet-4-6"
 
 
-
 @pytest.mark.asyncio
 async def test_input_history(tmp_path):
     """Up arrow should recall previous messages in order."""

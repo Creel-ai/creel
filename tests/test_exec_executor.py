@@ -201,10 +201,13 @@ class TestContainerExecution:
         assert "--network=none" in docker_cmd
         assert "-v" in docker_cmd
 
-        # Find the mount argument
-        mount_idx = docker_cmd.index("-v")
-        mount_arg = docker_cmd[mount_idx + 1]
-        assert "/home/user/workspace:/mnt/home/user/workspace:rw" == mount_arg
+        # Find the workspace mount argument (skip the args file mount)
+        mount_args = [
+            docker_cmd[i + 1]
+            for i, arg in enumerate(docker_cmd)
+            if arg == "-v" and "/mnt/" in docker_cmd[i + 1]
+        ]
+        assert "/home/user/workspace:/mnt/home/user/workspace:rw" in mount_args
 
     @patch("creel.containers._ensure_image")
     @patch("subprocess.run")

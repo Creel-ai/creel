@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,7 @@ from creel.containers import (
     _compute_base_image_hash,
     _compute_executor_hash,
     _ensure_base_image,
+    _run_executor_container,
     collect_required_images,
     prebuild_images,
 )
@@ -154,3 +156,53 @@ class TestPrebuildOrder:
         # start_prebuild should not include the base image
         prebuild_call = mock_cache.start_prebuild.call_args[0][0]
         assert "creel-executor-base:latest" not in prebuild_call
+
+
+class TestRunExecutorContainerArgsFile:
+    """Tests that _run_executor_container passes args via a JSON file."""
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_docker_cmd_mounts_json_args_file(
+        self, mock_run: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """The docker run command should mount a JSON args file with full content."""
+        from creel.models import ExecutorConfig
+
+        captured = {}
+
+        def capture_run(cmd, **kwargs):
+            captured["cmd"] = list(cmd)
+            # Read the env file and args file while they still exist
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            for arg in cmd:
+                if isinstance(arg, str) and arg.endswith("/creel-input.json:ro"):
+                    host_path = arg.split(":/creel-input.json")[0]
+                    with open(host_path) as f:
+                        captured["args"] = json.load(f)
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        multiline_content = "line1\nline2\nline3\n"
+        config = ExecutorConfig(
+            name="file_ops",
+            args={
+                "action": "write",
+                "file_path": "test.py",
+                "content": multiline_content,
+            },
+        )
+
+        _run_executor_container(config)
+
+        # Verify the args file is mounted at /creel-input.json
+        assert "/creel-input.json:ro" in " ".join(captured["cmd"])
+
+        # Verify CREEL_INPUT_FILE is set in the env file
+        assert "CREEL_INPUT_FILE=/creel-input.json" in captured["env"]
+
+        # Verify the JSON args file preserves newlines
+        assert captured["args"]["content"] == multiline_content
+        assert "\n" in captured["args"]["content"]

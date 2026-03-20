@@ -326,7 +326,27 @@ ACTIONS = {
 }
 
 
+def _load_args_from_input_file() -> None:
+    """Load executor args from the JSON input file into env vars.
+
+    When running inside a Docker container, multiline values (like file
+    content) cannot survive the env-file format.  The container runner
+    mounts the original args as ``/creel-input.json`` and sets
+    ``CREEL_INPUT_FILE`` so we can recover the full values here.
+    """
+    input_file = os.environ.get("CREEL_INPUT_FILE", "")
+    if not input_file or not os.path.isfile(input_file):
+        return
+    with open(input_file, encoding="utf-8") as f:
+        args: dict = json.load(f)
+    for key, value in args.items():
+        env_key = key.upper()
+        os.environ[env_key] = str(value)
+
+
 def main() -> None:
+    _load_args_from_input_file()
+
     action = os.environ.get("ACTION", "").lower()
     if action not in ACTIONS:
         result = {"error": f"Unknown action: {action!r}. Valid: {', '.join(ACTIONS)}"}

@@ -6,6 +6,7 @@ the core task execution and inline executor logic.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -584,84 +585,104 @@ def _run_executor_container(
         _workspace_mount = (resolved_ws, mount_mode)
         env_vars["WORKSPACE"] = "/workspace"
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".env", delete=True, prefix="creel-"
-    ) as env_file:
-        for key, value in env_vars.items():
-            # Sanitize keys and values to prevent env-file newline injection
-            safe_key = re.sub(r"[^A-Za-z0-9_]", "", key)
-            if not safe_key:
-                continue
-            sanitized = value.replace("\n", "").replace("\r", "")
-            env_file.write(f"{safe_key}={sanitized}\n")
-        env_file.flush()
+    # Write tool args as a JSON file so multiline values (e.g. file content)
+    # are preserved.  The env-file format cannot represent newlines.
+    args_file = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=True, prefix="creel-args-"
+    )
+    try:
+        json.dump(config.args, args_file)
+        args_file.flush()
 
-        # Build docker run command with per-tool resource overrides
-        writable = tool_config.writable if tool_config else False
-        tmpfs_size = tool_config.tmpfs_size if tool_config else "16M"
-        memory = tool_config.memory if tool_config else "256m"
-        cpus = tool_config.cpus if tool_config else "0.5"
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".env", delete=True, prefix="creel-"
+        ) as env_file:
+            for key, value in env_vars.items():
+                # Sanitize keys and values to prevent env-file newline injection
+                safe_key = re.sub(r"[^A-Za-z0-9_]", "", key)
+                if not safe_key:
+                    continue
+                sanitized = value.replace("\n", "").replace("\r", "")
+                env_file.write(f"{safe_key}={sanitized}\n")
+            # Point executor at the mounted JSON args file
+            env_file.write("CREEL_INPUT_FILE=/creel-input.json\n")
+            env_file.flush()
 
-        docker_cmd = [
-            "docker",
-            "run",
-            "--rm",
-        ]
-        if not writable:
-            docker_cmd.append("--read-only")
-        docker_cmd.extend(
-            [
-                "--tmpfs",
-                f"/tmp:rw,noexec,nosuid,size={tmpfs_size}",
-                "--cap-drop=ALL",
-                "--security-opt=no-new-privileges",
-                f"--memory={memory}",
-                f"--cpus={cpus}",
-                "--env-file",
-                env_file.name,
+            # Build docker run command with per-tool resource overrides
+            writable = tool_config.writable if tool_config else False
+            tmpfs_size = tool_config.tmpfs_size if tool_config else "16M"
+            memory = tool_config.memory if tool_config else "256m"
+            cpus = tool_config.cpus if tool_config else "0.5"
+
+            docker_cmd = [
+                "docker",
+                "run",
+                "--rm",
             ]
-        )
-
-        # Add mount options from tool config
-        if tool_config and tool_config.mounts:
-            for mount in tool_config.mounts:
-                # Expand ~ to home directory
-                host_path = os.path.expanduser(mount.path)
-                docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
-
-        # Mount host CLI auth directory (validated above, before image build)
-        if _host_auth_entry is not None:
-            auth_host_path = Path(os.path.expanduser(_host_auth_entry["host_path"]))
-            docker_cmd.extend(["-v", f"{auth_host_path}:{_host_auth_entry['container_path']}:ro"])
-
-        # Mount dynamic workspace for file_ops executor
-        if _workspace_mount:
-            docker_cmd.extend(["-v", f"{_workspace_mount[0]}:/workspace:{_workspace_mount[1]}"])
-
-        # Add network isolation if disabled
-        if tool_config and not tool_config.network:
-            docker_cmd.extend(["--network=none"])
-
-        # Add image name
-        docker_cmd.append(image)
-
-        try:
-            result = subprocess.run(
-                docker_cmd,
-                capture_output=True,
-                text=True,
-                timeout=config.timeout,
+            if not writable:
+                docker_cmd.append("--read-only")
+            docker_cmd.extend(
+                [
+                    "--tmpfs",
+                    f"/tmp:rw,noexec,nosuid,size={tmpfs_size}",
+                    "--cap-drop=ALL",
+                    "--security-opt=no-new-privileges",
+                    f"--memory={memory}",
+                    f"--cpus={cpus}",
+                    "--env-file",
+                    env_file.name,
+                    # Mount JSON args file so multiline content is preserved
+                    "-v",
+                    f"{args_file.name}:/creel-input.json:ro",
+                ]
             )
-        except subprocess.TimeoutExpired as e:
-            stderr = (e.stderr or "").strip() if isinstance(e.stderr, str) else ""
-            if stderr:
-                logger.error(
-                    "Executor %s stderr (timeout after %ds):\n%s",
-                    config.name,
-                    config.timeout,
-                    stderr,
+
+            # Add mount options from tool config
+            if tool_config and tool_config.mounts:
+                for mount in tool_config.mounts:
+                    # Expand ~ to home directory
+                    host_path = os.path.expanduser(mount.path)
+                    docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
+
+            # Mount host CLI auth directory (validated above, before image build)
+            if _host_auth_entry is not None:
+                auth_host_path = Path(os.path.expanduser(_host_auth_entry["host_path"]))
+                docker_cmd.extend(
+                    ["-v", f"{auth_host_path}:{_host_auth_entry['container_path']}:ro"]
                 )
-            raise RuntimeError(f"Executor '{config.name}' timed out after {config.timeout}s") from e
+
+            # Mount dynamic workspace for file_ops executor
+            if _workspace_mount:
+                docker_cmd.extend(["-v", f"{_workspace_mount[0]}:/workspace:{_workspace_mount[1]}"])
+
+            # Add network isolation if disabled
+            if tool_config and not tool_config.network:
+                docker_cmd.extend(["--network=none"])
+
+            # Add image name
+            docker_cmd.append(image)
+
+            try:
+                result = subprocess.run(
+                    docker_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=config.timeout,
+                )
+            except subprocess.TimeoutExpired as e:
+                stderr = (e.stderr or "").strip() if isinstance(e.stderr, str) else ""
+                if stderr:
+                    logger.error(
+                        "Executor %s stderr (timeout after %ds):\n%s",
+                        config.name,
+                        config.timeout,
+                        stderr,
+                    )
+                raise RuntimeError(
+                    f"Executor '{config.name}' timed out after {config.timeout}s"
+                ) from e
+    finally:
+        args_file.close()
 
     # Log stderr regardless of exit code
     stderr = result.stderr.strip() if result.stderr else ""

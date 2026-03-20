@@ -75,6 +75,7 @@ skills:
         secrets: secrets/slides_write.env.enc
   apple_notes: {}
   apple_reminders: {}
+  apple_photos: {}
   brave_search:
     secrets: secrets/brave.env.enc
   tts: {}

@@ -182,6 +182,22 @@ def _validate_git_ref(value: str) -> str:
     return value
 
 
+# Apple Photos request models
+class PhotosRecentRequest(BaseModel):
+    """Request for recent photos metadata."""
+
+    count: int = Field(default=10, ge=1, le=100)
+
+
+class PhotosSearchRequest(BaseModel):
+    """Request for searching photos by keyword and/or date range."""
+
+    keyword: str | None = None
+    date_from: str | None = None  # ISO date: YYYY-MM-DD
+    date_to: str | None = None  # ISO date: YYYY-MM-DD
+    count: int = Field(default=20, ge=1, le=100)
+
+
 # iMessage request models
 class GitStatusRequest(BaseModel):
     """Request for git status."""
@@ -303,6 +319,8 @@ def get_required_scope(request_path: str) -> str:
         return "REMINDERS"
     elif request_path.startswith("/things/"):
         return "THINGS"
+    elif request_path.startswith("/photos/"):
+        return "PHOTOS"
     elif request_path.startswith("/imessage/"):
         return "IMESSAGE"
     elif request_path.startswith("/browser/"):
@@ -349,6 +367,7 @@ def create_scoped_authenticator(required_scope: str):
 authenticate_notes = create_scoped_authenticator("NOTES")
 authenticate_reminders = create_scoped_authenticator("REMINDERS")
 authenticate_things = create_scoped_authenticator("THINGS")
+authenticate_photos = create_scoped_authenticator("PHOTOS")
 authenticate_imessage = create_scoped_authenticator("IMESSAGE")
 authenticate_browser = create_scoped_authenticator("BROWSER")
 authenticate_git = create_scoped_authenticator("GIT")
@@ -421,7 +440,7 @@ async def lifespan(app: FastAPI):
     global SCOPED_TOKENS
 
     # Generate scoped auth tokens
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT", "EXEC"]
+    scopes = ["NOTES", "REMINDERS", "THINGS", "PHOTOS", "IMESSAGE", "BROWSER", "GIT", "EXEC"]
 
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -674,6 +693,82 @@ async def things_update(
         cmd.extend(["--tags", request.tags])
 
     return run_command(cmd)
+
+
+# Apple Photos endpoints (via osascript / Photos.app)
+_PHOTOS_RECENT_SCRIPT = """\
+tell application "Photos"
+    set n to {count}
+    set totalItems to count of media items
+    if totalItems < n then set n to totalItems
+    if n = 0 then return "[]"
+    set output to "["
+    repeat with i from 1 to n
+        set p to media item i
+        set pid to id of p
+        set fname to filename of p
+        set d to date of p
+        set w to width of p
+        set h to height of p
+        if i > 1 then set output to output & ","
+        set output to output & "{{\\"id\\":\\"" & pid & \\
+            "\\",\\"filename\\":\\"" & fname & \\
+            "\\",\\"date\\":\\"" & (d as text) & \\
+            "\\",\\"width\\":" & w & ",\\"height\\":" & h & "}}"
+    end repeat
+    set output to output & "]"
+    return output
+end tell
+"""
+
+_PHOTOS_SEARCH_SCRIPT = """\
+tell application "Photos"
+    set results to search for "{keyword}"
+    set n to count of results
+    set maxN to {count}
+    if n > maxN then set n to maxN
+    if n = 0 then return "[]"
+    set output to "["
+    repeat with i from 1 to n
+        set p to item i of results
+        set pid to id of p
+        set fname to filename of p
+        set d to date of p
+        set w to width of p
+        set h to height of p
+        if i > 1 then set output to output & ","
+        set output to output & "{{\\"id\\":\\"" & pid & \\
+            "\\",\\"filename\\":\\"" & fname & \\
+            "\\",\\"date\\":\\"" & (d as text) & \\
+            "\\",\\"width\\":" & w & ",\\"height\\":" & h & "}}"
+    end repeat
+    set output to output & "]"
+    return output
+end tell
+"""
+
+
+@app.post("/photos/recent", response_model=BridgeResponse)
+async def photos_recent(
+    request: PhotosRecentRequest = PhotosRecentRequest(),
+    _: bool = Depends(authenticate_photos),
+) -> BridgeResponse:
+    """Get recent photos metadata via osascript/Photos.app."""
+    script = _PHOTOS_RECENT_SCRIPT.format(count=request.count)
+    return run_command(["osascript", "-e", script], timeout=30)
+
+
+@app.post("/photos/search", response_model=BridgeResponse)
+async def photos_search(
+    request: PhotosSearchRequest, _: bool = Depends(authenticate_photos)
+) -> BridgeResponse:
+    """Search photos by keyword via osascript/Photos.app."""
+    if not request.keyword:
+        return BridgeResponse(ok=False, error="keyword is required for search")
+    # Sanitize keyword: strip quotes to prevent AppleScript injection
+    safe_keyword = request.keyword.replace('"', "").replace("\\", "")
+    script = _PHOTOS_SEARCH_SCRIPT.format(keyword=safe_keyword, count=request.count)
+    return run_command(["osascript", "-e", script], timeout=30)
 
 
 # iMessage endpoints (via imsg CLI)

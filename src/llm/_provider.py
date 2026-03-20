@@ -12,14 +12,18 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-# Anthropic OAuth headers (kept here so runner.py doesn't duplicate them)
-OAUTH_HEADERS = {
+# OAuth tokens (sk-ant-oat) authenticate via Claude Code's subscription path.
+_OAUTH_HEADERS = {
     "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-    "user-agent": "claude-cli/2.1.2 (external, cli)",
+    "user-agent": "claude-cli/2.1.59 (external, cli)",
     "x-app": "cli",
 }
 
-CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+_CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
+def _is_oauth_token(token: str) -> bool:
+    return "sk-ant-oat" in token
 
 
 @dataclass
@@ -60,19 +64,15 @@ class AnthropicContainerProvider(ContainerProvider):
 
         auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
         api_key = os.environ.get("ANTHROPIC_API_KEY")
-        self._auth_token = auth_token
+        self._is_oauth = bool(auth_token and _is_oauth_token(auth_token))
 
         if auth_token:
-            headers = OAUTH_HEADERS if "sk-ant-oat" in auth_token else {}
+            headers = _OAUTH_HEADERS if self._is_oauth else {}
             self._client = anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
         elif api_key:
             self._client = anthropic.Anthropic(api_key=api_key)
         else:
             raise RuntimeError("Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY")
-
-    @property
-    def uses_oauth(self) -> bool:
-        return bool(self._auth_token and "sk-ant-oat" in self._auth_token)
 
     def create(
         self,
@@ -88,8 +88,10 @@ class AnthropicContainerProvider(ContainerProvider):
             "max_tokens": max_tokens,
             "messages": messages,
         }
-        if system:
-            kwargs["system"] = system
+        resolved_system, messages = self._resolve_for_oauth(system, messages)
+        kwargs["messages"] = messages
+        if resolved_system:
+            kwargs["system"] = resolved_system
         if tools:
             kwargs["tools"] = tools
 
@@ -116,6 +118,23 @@ class AnthropicContainerProvider(ContainerProvider):
             input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
             output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
         )
+
+    def _resolve_for_oauth(
+        self, system: str | None, messages: list[dict],
+    ) -> tuple[str | None, list[dict]]:
+        if not self._is_oauth:
+            return system, messages
+        if not system:
+            return _CLAUDE_CODE_SYSTEM_PREFIX, messages
+        preamble = {
+            "role": "user",
+            "content": (
+                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n"
+                f"{system}"
+            ),
+        }
+        ack = {"role": "assistant", "content": "Understood. I'll follow those instructions."}
+        return _CLAUDE_CODE_SYSTEM_PREFIX, [preamble, ack, *messages]
 
 
 class OpenAIContainerProvider(ContainerProvider):

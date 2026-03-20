@@ -12,15 +12,6 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-# Anthropic OAuth headers (kept here so runner.py doesn't duplicate them)
-OAUTH_HEADERS = {
-    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-    "user-agent": "claude-cli/2.1.2 (external, cli)",
-    "x-app": "cli",
-}
-
-CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
-
 
 @dataclass
 class ContainerLLMResponse:
@@ -60,19 +51,13 @@ class AnthropicContainerProvider(ContainerProvider):
 
         auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
         api_key = os.environ.get("ANTHROPIC_API_KEY")
-        self._auth_token = auth_token
 
         if auth_token:
-            headers = OAUTH_HEADERS if "sk-ant-oat" in auth_token else {}
-            self._client = anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
+            self._client = anthropic.Anthropic(auth_token=auth_token)
         elif api_key:
             self._client = anthropic.Anthropic(api_key=api_key)
         else:
             raise RuntimeError("Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY")
-
-    @property
-    def uses_oauth(self) -> bool:
-        return bool(self._auth_token and "sk-ant-oat" in self._auth_token)
 
     def create(
         self,

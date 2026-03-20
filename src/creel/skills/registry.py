@@ -154,6 +154,7 @@ class SkillRegistry:
         "executors.coding.executor",
         "executors.tts.executor",
         "executors.bluebubbles.executor",
+        "executors.clipboard.executor",
         "executors.things.executor",
         "executors.git_ops.executor",
         "executors.imessage_bridge.executor",

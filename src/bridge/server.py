@@ -64,6 +64,12 @@ class NotesCreateRequest(BaseModel):
     folder: str | None = None
 
 
+class ClipboardWriteRequest(BaseModel):
+    """Request for writing text to clipboard."""
+
+    text: str
+
+
 class RemindersListRequest(BaseModel):
     """Request for listing reminders."""
 
@@ -297,7 +303,9 @@ class IMessageSendRequest(BaseModel):
 
 def get_required_scope(request_path: str) -> str:
     """Determine required token scope based on request path."""
-    if request_path.startswith("/notes/"):
+    if request_path.startswith("/clipboard/"):
+        return "CLIPBOARD"
+    elif request_path.startswith("/notes/"):
         return "NOTES"
     elif request_path.startswith("/reminders/"):
         return "REMINDERS"
@@ -346,6 +354,7 @@ def create_scoped_authenticator(required_scope: str):
 
 
 # Create scoped authenticators for each tool group
+authenticate_clipboard = create_scoped_authenticator("CLIPBOARD")
 authenticate_notes = create_scoped_authenticator("NOTES")
 authenticate_reminders = create_scoped_authenticator("REMINDERS")
 authenticate_things = create_scoped_authenticator("THINGS")
@@ -421,7 +430,16 @@ async def lifespan(app: FastAPI):
     global SCOPED_TOKENS
 
     # Generate scoped auth tokens
-    scopes = ["NOTES", "REMINDERS", "THINGS", "IMESSAGE", "BROWSER", "GIT", "EXEC"]
+    scopes = [
+        "CLIPBOARD",
+        "NOTES",
+        "REMINDERS",
+        "THINGS",
+        "IMESSAGE",
+        "BROWSER",
+        "GIT",
+        "EXEC",
+    ]
 
     for scope in scopes:
         env_var = f"BRIDGE_TOKEN_{scope}"
@@ -507,6 +525,46 @@ app = FastAPI(
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "creel-bridge"}
+
+
+# Clipboard endpoints (via pbcopy/pbpaste)
+@app.post("/clipboard/read", response_model=BridgeResponse)
+async def clipboard_read(_: bool = Depends(authenticate_clipboard)) -> BridgeResponse:
+    """Read clipboard contents via pbpaste."""
+    return run_command(["pbpaste"])
+
+
+@app.post("/clipboard/write", response_model=BridgeResponse)
+async def clipboard_write(
+    request: ClipboardWriteRequest, _: bool = Depends(authenticate_clipboard)
+) -> BridgeResponse:
+    """Write text to clipboard via pbcopy."""
+    execution_id = str(uuid.uuid4())
+    try:
+        result = subprocess.run(
+            ["pbcopy"],
+            input=request.text,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode == 0:
+            return BridgeResponse(
+                ok=True, output="Text copied to clipboard", execution_id=execution_id
+            )
+        else:
+            return BridgeResponse(
+                ok=False,
+                error=f"pbcopy failed with exit code {result.returncode}: {result.stderr.strip()}",
+                execution_id=execution_id,
+            )
+    except subprocess.TimeoutExpired:
+        return BridgeResponse(ok=False, error="pbcopy timed out", execution_id=execution_id)
+    except FileNotFoundError:
+        return BridgeResponse(
+            ok=False, error="pbcopy not found (not macOS?)", execution_id=execution_id
+        )
 
 
 # Notes endpoints (via memo CLI)

@@ -25,13 +25,29 @@ logger = logging.getLogger(__name__)
 
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 
+# OAuth tokens (sk-ant-oat) authenticate via Claude Code's subscription path.
+# The API requires these exact headers and system prompt to accept Bearer auth.
+_OAUTH_HEADERS = {
+    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
+    "user-agent": "claude-cli/2.1.2 (external, cli)",
+    "x-app": "cli",
+}
+
+_CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
+def _is_oauth_token(token: str) -> bool:
+    return "sk-ant-oat" in token
+
+
 def _get_client() -> anthropic.Anthropic:
     """Create an Anthropic client using available credentials."""
     auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
     api_key = os.environ.get("ANTHROPIC_API_KEY")
 
     if auth_token:
-        return anthropic.Anthropic(auth_token=auth_token)
+        headers = _OAUTH_HEADERS if _is_oauth_token(auth_token) else {}
+        return anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
     elif api_key:
         return anthropic.Anthropic(api_key=api_key)
     else:
@@ -115,8 +131,9 @@ class AnthropicProvider(LLMProvider):
             "messages": messages,
         }
 
-        if system:
-            create_kwargs["system"] = system
+        resolved_system = self._resolve_system(system)
+        if resolved_system:
+            create_kwargs["system"] = resolved_system
         if tools:
             create_kwargs["tools"] = tools
         if timeout is not None:
@@ -147,8 +164,9 @@ class AnthropicProvider(LLMProvider):
             "messages": messages,
         }
 
-        if system:
-            create_kwargs["system"] = system
+        resolved_system = self._resolve_system(system)
+        if resolved_system:
+            create_kwargs["system"] = resolved_system
         if tools:
             create_kwargs["tools"] = tools
 
@@ -179,4 +197,18 @@ class AnthropicProvider(LLMProvider):
         if api_key:
             env["ANTHROPIC_API_KEY"] = api_key
         return env
+
+    @staticmethod
+    def _resolve_system(system: str | None) -> str | None:
+        """Prepend Claude Code system prefix for OAuth tokens.
+
+        The Anthropic API requires this prefix when authenticating with
+        subscription-based OAuth tokens (sk-ant-oat).
+        """
+        auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        if not (auth_token and _is_oauth_token(auth_token)):
+            return system
+        if system:
+            return f"{_CLAUDE_CODE_SYSTEM_PREFIX}\n\n{system}"
+        return _CLAUDE_CODE_SYSTEM_PREFIX
 

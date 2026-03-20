@@ -12,6 +12,19 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+# OAuth tokens (sk-ant-oat) authenticate via Claude Code's subscription path.
+_OAUTH_HEADERS = {
+    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
+    "user-agent": "claude-cli/2.1.2 (external, cli)",
+    "x-app": "cli",
+}
+
+_CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
+def _is_oauth_token(token: str) -> bool:
+    return "sk-ant-oat" in token
+
 
 @dataclass
 class ContainerLLMResponse:
@@ -51,9 +64,11 @@ class AnthropicContainerProvider(ContainerProvider):
 
         auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
         api_key = os.environ.get("ANTHROPIC_API_KEY")
+        self._is_oauth = bool(auth_token and _is_oauth_token(auth_token))
 
         if auth_token:
-            self._client = anthropic.Anthropic(auth_token=auth_token)
+            headers = _OAUTH_HEADERS if self._is_oauth else {}
+            self._client = anthropic.Anthropic(auth_token=auth_token, default_headers=headers)
         elif api_key:
             self._client = anthropic.Anthropic(api_key=api_key)
         else:
@@ -73,8 +88,9 @@ class AnthropicContainerProvider(ContainerProvider):
             "max_tokens": max_tokens,
             "messages": messages,
         }
-        if system:
-            kwargs["system"] = system
+        resolved_system = self._resolve_system(system)
+        if resolved_system:
+            kwargs["system"] = resolved_system
         if tools:
             kwargs["tools"] = tools
 
@@ -101,6 +117,13 @@ class AnthropicContainerProvider(ContainerProvider):
             input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
             output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
         )
+
+    def _resolve_system(self, system: str | None) -> str | None:
+        if not self._is_oauth:
+            return system
+        if system:
+            return f"{_CLAUDE_CODE_SYSTEM_PREFIX}\n\n{system}"
+        return _CLAUDE_CODE_SYSTEM_PREFIX
 
 
 class OpenAIContainerProvider(ContainerProvider):

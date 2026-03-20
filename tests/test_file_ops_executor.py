@@ -80,6 +80,21 @@ class TestSafePath:
         result = _safe_path(".")
         assert result == str(workspace)
 
+    def test_workspace_prefix_stripped(self, workspace):
+        """Paths starting with 'workspace/' should not double-prefix."""
+        result = _safe_path("workspace/scripts/hello.py")
+        assert result == str(workspace / "scripts" / "hello.py")
+
+    def test_workspace_prefix_bare(self, workspace):
+        """Bare 'workspace' path resolves to workspace root."""
+        result = _safe_path("workspace")
+        assert result == str(workspace)
+
+    def test_workspace_prefix_with_leading_slash(self, workspace):
+        """'/workspace/file.txt' should also be stripped."""
+        result = _safe_path("/workspace/file.txt")
+        assert result == str(workspace / "file.txt")
+
 
 class TestActionRead:
     """Tests for the read action."""
@@ -197,6 +212,18 @@ class TestActionWrite:
             result = action_write()
             assert "error" in result
             assert "escapes workspace" in result["error"]
+        finally:
+            cleanup()
+
+    def test_write_workspace_prefixed_path(self, workspace):
+        """Writing to 'workspace/scripts/hello.py' should not double-prefix."""
+        cleanup = _set_env({"FILE_PATH": "workspace/scripts/hello.py", "CONTENT": "print('hi')"})
+        try:
+            result = action_write()
+            assert "error" not in result
+            assert (workspace / "scripts" / "hello.py").read_text() == "print('hi')"
+            # Ensure no double-prefixed path was created
+            assert not (workspace / "workspace").exists()
         finally:
             cleanup()
 

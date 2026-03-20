@@ -73,6 +73,13 @@ class TelegramBridge(ABC):
         callers (and must never be passed to the LLM).
         """
 
+    def set_my_commands(self, commands: list[tuple[str, str]]) -> None:  # noqa: B027
+        """Register bot commands with Telegram (shown in the ``/`` menu).
+
+        Args:
+            commands: List of ``(command, description)`` pairs.
+        """
+
     def health(self) -> dict:
         """Return bridge health status."""
         return {"healthy": True}
@@ -152,6 +159,11 @@ class HttpTelegramBridge(TelegramBridge):
     def delete_webhook(self) -> None:
         self._call("deleteWebhook")
         logger.info("Telegram webhook deleted")
+
+    def set_my_commands(self, commands: list[tuple[str, str]]) -> None:
+        bot_commands = [{"command": c, "description": d} for c, d in commands]
+        self._call("setMyCommands", commands=bot_commands)
+        logger.info("Registered %d bot commands with Telegram", len(bot_commands))
 
     def download_file(self, file_id: str) -> bytes:
         import httpx

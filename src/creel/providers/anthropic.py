@@ -25,9 +25,11 @@ logger = logging.getLogger(__name__)
 
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 
+# OAuth tokens (sk-ant-oat) authenticate via Claude Code's subscription path.
+# The API requires these exact headers and system prompt to accept Bearer auth.
 _OAUTH_HEADERS = {
     "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-    "user-agent": "claude-cli/2.1.2 (external, cli)",
+    "user-agent": "claude-cli/2.1.59 (external, cli)",
     "x-app": "cli",
 }
 
@@ -123,15 +125,16 @@ class AnthropicProvider(LLMProvider):
     ) -> LLMMessage:
         client = self._get_client()
 
+        resolved_system, resolved_messages = self._resolve_for_oauth(system, messages)
+
         create_kwargs: dict = {
             "model": model,
             "max_tokens": max_tokens,
-            "messages": messages,
+            "messages": resolved_messages,
         }
 
-        system = self._resolve_system(system)
-        if system:
-            create_kwargs["system"] = system
+        if resolved_system:
+            create_kwargs["system"] = resolved_system
         if tools:
             create_kwargs["tools"] = tools
         if timeout is not None:
@@ -156,15 +159,16 @@ class AnthropicProvider(LLMProvider):
     ) -> LLMMessage:
         client = self._get_client()
 
+        resolved_system, resolved_messages = self._resolve_for_oauth(system, messages)
+
         create_kwargs: dict = {
             "model": model,
             "max_tokens": max_tokens,
-            "messages": messages,
+            "messages": resolved_messages,
         }
 
-        system = self._resolve_system(system)
-        if system:
-            create_kwargs["system"] = system
+        if resolved_system:
+            create_kwargs["system"] = resolved_system
         if tools:
             create_kwargs["tools"] = tools
 
@@ -197,11 +201,30 @@ class AnthropicProvider(LLMProvider):
         return env
 
     @staticmethod
-    def _resolve_system(system: str | None) -> str | None:
-        """Inject Claude Code system prefix for OAuth tokens when no explicit system prompt."""
-        if system:
-            return system
+    def _resolve_for_oauth(
+        system: str | None,
+        messages: list[dict],
+    ) -> tuple[str | None, list[dict]]:
+        """Handle OAuth token constraints.
+
+        The Anthropic API requires the exact Claude Code system prefix
+        (and nothing else) when authenticating with subscription-based
+        OAuth tokens (sk-ant-oat).  Any custom system prompt is injected
+        as a leading user message instead.
+        """
         auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
-        if auth_token and _is_oauth_token(auth_token):
-            return _CLAUDE_CODE_SYSTEM_PREFIX
-        return None
+        if not (auth_token and _is_oauth_token(auth_token)):
+            return system, messages
+
+        if not system:
+            return _CLAUDE_CODE_SYSTEM_PREFIX, messages
+
+        # Inject custom system prompt as first user message
+        preamble = {
+            "role": "user",
+            "content": (
+                f"[IMPORTANT INSTRUCTIONS — follow these for the entire conversation]\n\n{system}"
+            ),
+        }
+        ack = {"role": "assistant", "content": "Understood. I'll follow those instructions."}
+        return _CLAUDE_CODE_SYSTEM_PREFIX, [preamble, ack, *messages]

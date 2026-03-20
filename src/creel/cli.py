@@ -172,7 +172,7 @@ def _build_daemon_run_command(
     cmd.extend(
         [
             "--tasks-dir",
-            str(Path(args.tasks_dir).resolve()),
+            str(_tasks_dir(args).resolve()),
             "--agent-config",
             str(Path(args.agent_config or _default_agent_config()).resolve()),
         ]

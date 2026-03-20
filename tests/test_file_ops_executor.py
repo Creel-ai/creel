@@ -9,6 +9,7 @@ import pytest
 
 from creel.models import ExecutorConfig
 from executors.file_ops.executor import (
+    _load_args_from_input_file,
     _safe_path,
     action_edit,
     action_list,
@@ -557,3 +558,68 @@ class TestExecFileOpsInline:
         )
         self._execute(config)
         assert os.environ.get("WORKSPACE") == old_workspace
+
+    def test_write_multiline_preserves_newlines(self, workspace):
+        """Multiline content should be written with newlines intact."""
+        content = "line1\nline2\nline3\n"
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "write", "file_path": "multi.py", "content": content},
+        )
+        result = json.loads(self._execute(config))
+        assert "error" not in result
+        assert (workspace / "multi.py").read_text() == content
+
+
+class TestLoadArgsFromInputFile:
+    """Tests for _load_args_from_input_file (JSON input for containers)."""
+
+    def test_loads_args_into_env(self, tmp_path):
+        """Args from the JSON file should be set as env vars."""
+        input_file = tmp_path / "input.json"
+        input_file.write_text(json.dumps({"action": "write", "content": "a\nb\nc\n"}))
+        cleanup = _set_env({"CREEL_INPUT_FILE": str(input_file)})
+        try:
+            _load_args_from_input_file()
+            assert os.environ["ACTION"] == "write"
+            assert os.environ["CONTENT"] == "a\nb\nc\n"
+        finally:
+            os.environ.pop("ACTION", None)
+            os.environ.pop("CONTENT", None)
+            cleanup()
+
+    def test_multiline_content_preserved(self, tmp_path, workspace):
+        """Multiline file content should survive the JSON input path."""
+        content = "def hello():\n    print('world')\n\nhello()\n"
+        input_file = tmp_path / "input.json"
+        input_file.write_text(
+            json.dumps({"action": "write", "file_path": "script.py", "content": content})
+        )
+        cleanup = _set_env({"CREEL_INPUT_FILE": str(input_file)})
+        try:
+            _load_args_from_input_file()
+            result = action_write()
+            assert "error" not in result
+            assert (workspace / "script.py").read_text() == content
+        finally:
+            os.environ.pop("ACTION", None)
+            os.environ.pop("FILE_PATH", None)
+            os.environ.pop("CONTENT", None)
+            cleanup()
+
+    def test_noop_when_no_input_file(self):
+        """Should be a no-op when CREEL_INPUT_FILE is not set."""
+        old = os.environ.pop("CREEL_INPUT_FILE", None)
+        try:
+            _load_args_from_input_file()  # should not raise
+        finally:
+            if old is not None:
+                os.environ["CREEL_INPUT_FILE"] = old
+
+    def test_noop_when_file_missing(self):
+        """Should be a no-op when the input file doesn't exist."""
+        cleanup = _set_env({"CREEL_INPUT_FILE": "/nonexistent/input.json"})
+        try:
+            _load_args_from_input_file()  # should not raise
+        finally:
+            cleanup()

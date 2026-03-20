@@ -117,6 +117,9 @@ class TelegramChannel(
         bot_info = self._bridge.get_me()
         self._bot_username = bot_info.get("username", "")
 
+        # Register slash commands with Telegram's command menu
+        self._register_bot_commands()
+
         if self._mode == "webhook":
             self.set_webhook_callback(callback)
             logger.info("Telegram channel listening in webhook mode")
@@ -128,6 +131,22 @@ class TelegramChannel(
             self._run_poll_loop(callback)
 
         logger.info("Telegram channel stopped")
+
+    def _register_bot_commands(self) -> None:
+        """Push slash commands to Telegram so they appear in the ``/`` menu."""
+        try:
+            from creel.commands import build_default_registry
+
+            registry = build_default_registry()
+            commands = [
+                (cmd.name, cmd.description[:256])
+                for cmd in registry._commands.values()
+                if not cmd.hidden
+            ]
+            # Telegram limits to 100 commands
+            self._bridge.set_my_commands(commands[:100])
+        except Exception:
+            logger.warning("Failed to register bot commands with Telegram", exc_info=True)
 
     def send(self, recipient: str, text: str) -> None:
         if not text:

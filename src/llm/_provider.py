@@ -44,6 +44,31 @@ class ContainerLLMResponse:
 class ContainerProvider:
     """Base interface for container LLM providers."""
 
+    @staticmethod
+    def _sanitize_messages(messages: list[dict]) -> list[dict]:
+        """Remove empty text content blocks that would cause API 400 errors."""
+        sanitized: list[dict] = []
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                cleaned = [
+                    block
+                    for block in content
+                    if not (
+                        isinstance(block, dict)
+                        and block.get("type") == "text"
+                        and not (block.get("text") or "").strip()
+                    )
+                ]
+                if not cleaned:
+                    cleaned = [{"type": "text", "text": "(empty)"}]
+                sanitized.append({**msg, "content": cleaned})
+            elif isinstance(content, str) and not content.strip():
+                sanitized.append({**msg, "content": "(empty)"})
+            else:
+                sanitized.append(msg)
+        return sanitized
+
     def create(
         self,
         *,
@@ -84,6 +109,7 @@ class AnthropicContainerProvider(ContainerProvider):
         tools: list[dict] | None = None,
     ) -> ContainerLLMResponse:
         resolved_system, resolved_messages = self._resolve_for_oauth(system, messages)
+        resolved_messages = self._sanitize_messages(resolved_messages)
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
@@ -212,10 +238,11 @@ class BedrockContainerProvider(ContainerProvider):
         system: str | None = None,
         tools: list[dict] | None = None,
     ) -> ContainerLLMResponse:
+        sanitized_messages = self._sanitize_messages(messages)
         body: dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,
-            "messages": messages,
+            "messages": sanitized_messages,
         }
         if system:
             body["system"] = system

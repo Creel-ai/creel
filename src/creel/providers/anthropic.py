@@ -113,6 +113,38 @@ class AnthropicProvider(LLMProvider):
             self._client = _get_client()
         return self._client
 
+    @staticmethod
+    def _sanitize_messages(messages: list[dict]) -> list[dict]:
+        """Remove empty text content blocks that would cause API 400 errors.
+
+        The Anthropic API rejects messages containing text blocks with empty
+        or whitespace-only text.  This can happen when Guardian blocks a tool
+        call and synthetic error results are stored in conversation history.
+        """
+        sanitized: list[dict] = []
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                cleaned = [
+                    block
+                    for block in content
+                    if not (
+                        isinstance(block, dict)
+                        and block.get("type") == "text"
+                        and not (block.get("text") or "").strip()
+                    )
+                ]
+                if not cleaned:
+                    # All blocks were empty — replace with a placeholder so
+                    # the message isn't dropped (preserves conversation flow).
+                    cleaned = [{"type": "text", "text": "(empty)"}]
+                sanitized.append({**msg, "content": cleaned})
+            elif isinstance(content, str) and not content.strip():
+                sanitized.append({**msg, "content": "(empty)"})
+            else:
+                sanitized.append(msg)
+        return sanitized
+
     def create(
         self,
         *,
@@ -126,6 +158,7 @@ class AnthropicProvider(LLMProvider):
         client = self._get_client()
 
         resolved_system, resolved_messages = self._resolve_for_oauth(system, messages)
+        resolved_messages = self._sanitize_messages(resolved_messages)
 
         create_kwargs: dict = {
             "model": model,
@@ -160,6 +193,7 @@ class AnthropicProvider(LLMProvider):
         client = self._get_client()
 
         resolved_system, resolved_messages = self._resolve_for_oauth(system, messages)
+        resolved_messages = self._sanitize_messages(resolved_messages)
 
         create_kwargs: dict = {
             "model": model,

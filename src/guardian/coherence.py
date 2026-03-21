@@ -173,7 +173,9 @@ class CoherenceChecker:
             # Coherence is a defense-in-depth layer — blocking legitimate
             # tool calls on every API hiccup makes the agent unusable.
             # The Guardian policy layer still enforces hard security rules.
-            logger.warning("Coherence check failed — defaulting to coherent (fail-open)", exc_info=True)
+            logger.warning(
+                "Coherence check failed — defaulting to coherent (fail-open)", exc_info=True
+            )
             return CoherenceResult(
                 coherent=True,
                 confidence=0.0,

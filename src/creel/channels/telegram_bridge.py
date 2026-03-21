@@ -140,8 +140,9 @@ class HttpTelegramBridge(TelegramBridge):
         while standard Markdown uses ** for bold and * for italic.
         """
         import re
+
         # Convert **bold** → *bold* (standard MD bold → Telegram bold)
-        text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+        text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
         return text
 
     def send_message(self, chat_id: str, text: str, reply_to_message_id: int | None = None) -> None:

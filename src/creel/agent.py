@@ -195,9 +195,17 @@ def _check_guardian_pre_execution(
                 error_message=decision.reason,
             )
 
-    # Stage 2: Coherence check
+    # Stage 2: Coherence check — skip if tool has an active /allow override
+    _has_allow_override = False
+    if hasattr(guardian, "override_manager"):
+        from guardian.types import ActionVerdict
+
+        override_result = guardian.override_manager.check(tool_name, tool_input)
+        if override_result and override_result.verdict == ActionVerdict.ALLOW:
+            _has_allow_override = True
+
     user_request = _extract_last_user_text(messages)
-    if user_request:
+    if user_request and not _has_allow_override:
         prior_tools = _extract_prior_tools(messages)
         available_tool_names = registry.all_tool_names() if registry is not None else None
         coherence = guardian.check_coherence(

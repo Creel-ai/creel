@@ -678,8 +678,18 @@ def _handle_tool_request(
                     )
                     return None, pending_result
 
-        # Guardian coherence check
-        if guardian is not None and hasattr(guardian, "check_coherence"):
+        # Guardian coherence check — skip if tool has an active /allow override
+        _has_allow_override = False
+        if guardian is not None and hasattr(guardian, "override_manager"):
+            override_result = guardian.override_manager.check(tool_name, tool_input)
+            if override_result and override_result.verdict == ActionVerdict.ALLOW:
+                _has_allow_override = True
+
+        if (
+            guardian is not None
+            and hasattr(guardian, "check_coherence")
+            and not _has_allow_override
+        ):
             user_request = _extract_user_request_for_coherence(messages)
 
             if user_request:

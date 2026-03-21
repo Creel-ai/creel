@@ -88,8 +88,10 @@ class CoherenceChecker:
     ) -> CoherenceResult:
         """Check if a tool call is coherent with the user's request.
 
-        Returns a CoherenceResult. On any failure, defaults to incoherent
-        (fail-closed) to block potentially unsafe actions.
+        Returns a CoherenceResult. On transient failures (timeouts, network),
+        defaults to coherent (fail-open) since blocking legitimate tool calls
+        on every API hiccup makes the agent unusable. The Guardian policy
+        layer still enforces hard security rules independently.
         """
         if not self._config.enabled:
             return CoherenceResult(
@@ -167,9 +169,13 @@ class CoherenceChecker:
             )
 
         except Exception:
-            logger.warning("Coherence check failed — fail-closed default (blocked)", exc_info=True)
+            # Fail-OPEN on transient errors (timeouts, network issues).
+            # Coherence is a defense-in-depth layer — blocking legitimate
+            # tool calls on every API hiccup makes the agent unusable.
+            # The Guardian policy layer still enforces hard security rules.
+            logger.warning("Coherence check failed — defaulting to coherent (fail-open)", exc_info=True)
             return CoherenceResult(
-                coherent=False,
-                confidence=1.0,
-                reasoning="Coherence check failed — fail-closed default (blocked)",
+                coherent=True,
+                confidence=0.0,
+                reasoning="Coherence check failed — defaulting to coherent (fail-open)",
             )

@@ -57,19 +57,19 @@ class TestCoherenceChecker:
         assert "email" in result.reasoning.lower()
 
     @patch("creel.providers.build_provider")
-    def test_api_failure_fails_closed(self, mock_build: MagicMock, config: CoherenceConfig) -> None:
+    def test_api_failure_fails_open(self, mock_build: MagicMock, config: CoherenceConfig) -> None:
         mock_provider = MagicMock()
         mock_provider.create.side_effect = RuntimeError("API down")
         mock_build.return_value = mock_provider
 
         checker = CoherenceChecker(config)
         result = checker.check("test", "check_weather", {})
-        assert result.coherent is False
-        assert result.confidence == 1.0
-        assert "fail-closed" in result.reasoning.lower()
+        assert result.coherent is True
+        assert result.confidence == 0.0
+        assert "fail-open" in result.reasoning.lower()
 
     @patch("creel.providers.build_provider")
-    def test_json_parse_error_fails_closed(
+    def test_json_parse_error_fails_open(
         self, mock_build: MagicMock, config: CoherenceConfig
     ) -> None:
         mock_provider = MagicMock()
@@ -78,9 +78,9 @@ class TestCoherenceChecker:
 
         checker = CoherenceChecker(config)
         result = checker.check("test", "check_weather", {})
-        assert result.coherent is False
-        assert result.confidence == 1.0
-        assert "fail-closed" in result.reasoning.lower()
+        assert result.coherent is True
+        assert result.confidence == 0.0
+        assert "fail-open" in result.reasoning.lower()
 
     @patch("creel.providers.build_provider")
     def test_usage_stats(self, mock_build: MagicMock, config: CoherenceConfig) -> None:

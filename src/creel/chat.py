@@ -328,10 +328,21 @@ class ChatServer:
         # However, built-in security commands (/allow, /allows, /deny, /help,
         # /new, /status) are exempt since they come from the authenticated user
         # and blocking them defeats their purpose.
-        _GUARDIAN_EXEMPT_COMMANDS = frozenset({
-            "allow", "allows", "deny", "help", "new", "status",
-            "sessions", "resume", "model", "tools", "memory",
-        })
+        _GUARDIAN_EXEMPT_COMMANDS = frozenset(
+            {
+                "allow",
+                "allows",
+                "deny",
+                "help",
+                "new",
+                "status",
+                "sessions",
+                "resume",
+                "model",
+                "tools",
+                "memory",
+            }
+        )
         if stripped.startswith("/") and self._guardian:
             cmd_name = stripped.lstrip("/").split()[0].lower()
             if cmd_name not in _GUARDIAN_EXEMPT_COMMANDS:

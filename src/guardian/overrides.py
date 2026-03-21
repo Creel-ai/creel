@@ -142,11 +142,21 @@ class TemporaryOverrideManager:
                     "Revoke an existing override first."
                 )
 
-        # Check excluded tools — bidirectional match to prevent bypass via
-        # broad globs (e.g. "del*" bypassing excluded "delete_*").
-        for excluded in self._config.excluded_tools:
-            if fnmatch(pattern, excluded) or fnmatch(excluded, pattern):
-                raise ValueError(f"Pattern {pattern!r} matches excluded tool pattern {excluded!r}")
+        # Check excluded tools — for wildcards like "*", silently skip
+        # excluded patterns rather than rejecting outright.  For specific
+        # patterns that target excluded tools (e.g. "del*"), still reject.
+        if pattern == "*":
+            # Wildcard allows everything EXCEPT excluded tools.
+            # The match() method already respects excluded_tools, so this
+            # just needs to pass through.  Log a note so the user knows.
+            excluded_str = ", ".join(self._config.excluded_tools)
+            logger.info("Wildcard override excludes: %s", excluded_str)
+        else:
+            for excluded in self._config.excluded_tools:
+                if fnmatch(pattern, excluded) or fnmatch(excluded, pattern):
+                    raise ValueError(
+                        f"Pattern {pattern!r} matches excluded tool pattern {excluded!r}"
+                    )
 
         # Cap duration
         max_seconds = int(self._config.absolute_max_duration_hours * 3600)
@@ -258,6 +268,10 @@ class TemporaryOverrideManager:
                 if sender_id and override.created_by and override.created_by != sender_id:
                     continue
                 if fnmatch(tool_name, override.pattern):
+                    # Wildcard overrides skip excluded tools
+                    if override.pattern == "*" and override.action == ActionVerdict.ALLOW:
+                        if any(fnmatch(tool_name, exc) for exc in self._config.excluded_tools):
+                            continue
                     if override.action == ActionVerdict.DENY:
                         deny_match = override
                     elif override.action == ActionVerdict.ALLOW and deny_match is None:

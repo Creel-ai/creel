@@ -132,9 +132,22 @@ class HttpTelegramBridge(TelegramBridge):
                 messages.append(msg)
         return messages
 
+    @staticmethod
+    def _to_telegram_markdown(text: str) -> str:
+        """Convert standard Markdown to Telegram legacy Markdown.
+
+        Telegram's legacy Markdown uses single * for bold and _ for italic,
+        while standard Markdown uses ** for bold and * for italic.
+        """
+        import re
+        # Convert **bold** → *bold* (standard MD bold → Telegram bold)
+        text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+        return text
+
     def send_message(self, chat_id: str, text: str, reply_to_message_id: int | None = None) -> None:
         for chunk in _chunk_text(text, MAX_MESSAGE_LENGTH):
-            params: dict = {"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}
+            formatted = self._to_telegram_markdown(chunk)
+            params: dict = {"chat_id": chat_id, "text": formatted, "parse_mode": "Markdown"}
             if reply_to_message_id is not None:
                 params["reply_to_message_id"] = reply_to_message_id
                 reply_to_message_id = None  # only reply to the first chunk

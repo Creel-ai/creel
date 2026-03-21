@@ -52,9 +52,10 @@ class TestEnsureBaseImage:
         mock_run.return_value = MagicMock(returncode=0)  # docker inspect succeeds
         result = _ensure_base_image()
         assert result.startswith("creel-executor-base:")
-        # Only docker inspect was called, not docker build
-        assert mock_run.call_count == 1
-        assert "inspect" in mock_run.call_args[0][0][2]
+        # docker inspect + docker tag (to ensure :latest alias)
+        assert mock_run.call_count == 2
+        assert "inspect" in mock_run.call_args_list[0][0][0][2]
+        assert "tag" in mock_run.call_args_list[1][0][0][1]
 
     @patch("creel.containers._build_image")
     @patch("subprocess.run")

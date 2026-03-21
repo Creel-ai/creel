@@ -125,8 +125,21 @@ def run_command(command: str, workdir: str | None = None) -> dict:
         }
 
 
+def _load_args_from_input_file() -> None:
+    """Load executor args from the JSON input file into env vars."""
+    input_file = os.environ.get("CREEL_INPUT_FILE", "")
+    if not input_file or not os.path.isfile(input_file):
+        return
+    with open(input_file, encoding="utf-8") as f:
+        args: dict = json.load(f)
+    for key, value in args.items():
+        env_key = key.upper()
+        os.environ[env_key] = str(value)
+
+
 def main() -> None:
     """Main entry point - reads command from env or CLI args."""
+    _load_args_from_input_file()
     command = os.environ.get("COMMAND", "")
     workdir = os.environ.get("WORKDIR")
 

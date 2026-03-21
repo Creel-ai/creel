@@ -62,11 +62,59 @@ def register_skill():
                     ),
                 ),
             ),
+            ToolSpec(
+                name="coding_write_file",
+                description="Write content to a file in the workspace. Preserves newlines and special characters perfectly — use this instead of echo/cat/heredoc commands.",
+                params=(
+                    Param(
+                        name="path",
+                        type="string",
+                        description="File path relative to workspace (e.g. 'src/main.py')",
+                        required=True,
+                    ),
+                    Param(
+                        name="content",
+                        type="string",
+                        description="Full file content to write",
+                        required=True,
+                    ),
+                ),
+            ),
+            ToolSpec(
+                name="coding_agent",
+                description="Spawn a Claude Code agent to autonomously handle a complex coding task. The agent can read/write files, run commands, and iterate on solutions. Use for multi-step tasks like 'build a REST API', 'refactor this module', or 'fix failing tests'.",
+                params=(
+                    Param(
+                        name="task",
+                        type="string",
+                        description="Natural language description of the coding task to accomplish",
+                        required=True,
+                    ),
+                    Param(
+                        name="workdir",
+                        type="string",
+                        description="Working directory for the agent (default: /workspace)",
+                    ),
+                    Param(
+                        name="timeout",
+                        type="string",
+                        description="Agent timeout in seconds (default: 600, max: 1800)",
+                    ),
+                ),
+            ),
         ),
         needs_network=True,
     )
 
     def execute(config: ExecutorConfig) -> str:
+        tool_name = config.args.get("_tool_name", "coding")
+
+        if tool_name == "coding_write_file":
+            return _execute_write_file(config)
+
+        if tool_name == "coding_agent":
+            return _execute_agent(config)
+
         command = config.args.get("command", "")
         if not command:
             raise ValueError("coding requires a 'command' argument")
@@ -79,11 +127,51 @@ def register_skill():
         result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
         return json.dumps(result, indent=2)
 
+    def _execute_agent(config: ExecutorConfig) -> str:
+        """Spawn Claude Code CLI to handle a complex coding task."""
+        task = config.args.get("task", "")
+        if not task:
+            raise ValueError("coding_agent requires a 'task' argument")
+        workdir = config.args.get("workdir") or None
+        timeout = None
+        timeout_str = config.args.get("timeout")
+        if timeout_str:
+            timeout = int(timeout_str)
+        result = run_agent(task, workdir=workdir, timeout=timeout)
+        return json.dumps(result, indent=2)
+
+    def _execute_write_file(config: ExecutorConfig) -> str:
+        """Write content to a file in the workspace."""
+        path = config.args.get("path", "")
+        content = config.args.get("content", "")
+        if not path:
+            raise ValueError("coding_write_file requires a 'path' argument")
+
+        full_path = _safe_workspace_path(path)
+
+        # Create parent directories
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write the file
+        full_path.write_text(content, encoding="utf-8")
+
+        return json.dumps(
+            {
+                "status": "ok",
+                "path": str(full_path),
+                "bytes_written": len(content.encode("utf-8")),
+            },
+            indent=2,
+        )
+
     return meta, execute
 
 
 # Default timeout: 5 minutes
 DEFAULT_TIMEOUT = 300
+
+# Default agent timeout: 10 minutes
+AGENT_DEFAULT_TIMEOUT = 600
 
 # Maximum timeout: 30 minutes
 MAX_TIMEOUT = 1800
@@ -135,6 +223,23 @@ BLOCKED_PATTERNS = [
     # chmod 777
     re.compile(r"\bchmod\s+(-R\s+)?777\b"),
 ]
+
+
+def _safe_workspace_path(file_path: str) -> Path:
+    """Resolve a path and verify it stays within the workspace.
+
+    Strips a leading 'workspace/' prefix to avoid double-pathing.
+    Raises ValueError if the resolved path escapes the workspace.
+    """
+    workspace = Path(os.environ.get("WORKSPACE", "/workspace")).resolve()
+    stripped = file_path.lstrip("/")
+    if stripped.startswith("workspace/") or stripped == "workspace":
+        stripped = stripped[len("workspace") :].lstrip("/") or "."
+        file_path = stripped
+    resolved = (workspace / file_path).resolve()
+    if resolved != workspace and not str(resolved).startswith(str(workspace) + os.sep):
+        raise ValueError(f"Path escapes workspace: {file_path}")
+    return resolved
 
 
 def _error_result(error: str, *, command: str = "", **extra) -> dict:
@@ -372,8 +477,149 @@ def run_command(
         )
 
 
+def run_agent(
+    task: str,
+    workdir: str | None = None,
+    timeout: int | None = None,
+) -> dict:
+    """Spawn Claude Code CLI to handle a complex coding task.
+
+    Args:
+        task: Natural language description of the task.
+        workdir: Working directory for the agent (default: /workspace or cwd).
+        timeout: Agent timeout in seconds (default: 600, max: 1800).
+
+    Returns:
+        Dict with stdout, stderr, exit_code, task, and success.
+    """
+    if not task:
+        return _error_result("Empty task", command="claude --print")
+
+    # Resolve working directory
+    effective_workdir = workdir
+    if not effective_workdir:
+        workspace = os.environ.get("WORKSPACE", "/workspace")
+        if os.path.isdir(workspace):
+            effective_workdir = workspace
+        else:
+            effective_workdir = os.getcwd()
+
+    # Resolve timeout
+    if timeout is None:
+        timeout = AGENT_DEFAULT_TIMEOUT
+    timeout = max(1, min(timeout, MAX_TIMEOUT))
+
+    try:
+        result = subprocess.run(
+            ["claude", "--print", "--permission-mode", "plan", "--", task],
+            cwd=effective_workdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        return {
+            "task": task,
+            "workdir": effective_workdir,
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "success": result.returncode == 0,
+        }
+
+    except subprocess.TimeoutExpired as e:
+        return {
+            "task": task,
+            "workdir": effective_workdir,
+            "exit_code": -1,
+            "stdout": e.stdout.decode() if e.stdout else "",
+            "stderr": e.stderr.decode() if e.stderr else "",
+            "error": f"Agent timed out after {timeout} seconds",
+            "success": False,
+        }
+    except FileNotFoundError:
+        return _error_result(
+            "Claude Code CLI not found. Install with: npm install -g @anthropic-ai/claude-code",
+            command="claude --print",
+            workdir=effective_workdir,
+        )
+    except Exception as e:
+        return _error_result(
+            f"Agent execution failed: {e}",
+            command="claude --print",
+            workdir=effective_workdir,
+        )
+
+
+def _load_args_from_input_file() -> None:
+    """Load executor args from the JSON input file into env vars.
+
+    When running inside a Docker container, multiline values (like file
+    content) cannot survive the env-file format.  The container runner
+    mounts the original args as ``/creel-input.json`` and sets
+    ``CREEL_INPUT_FILE`` so we can recover the full values here.
+    """
+    input_file = os.environ.get("CREEL_INPUT_FILE", "")
+    if not input_file or not os.path.isfile(input_file):
+        return
+    with open(input_file, encoding="utf-8") as f:
+        args: dict = json.load(f)
+    for key, value in args.items():
+        env_key = key.upper()
+        os.environ[env_key] = str(value)
+
+
 def main() -> None:
     """Main entry point — reads parameters from env vars or CLI args."""
+    _load_args_from_input_file()
+
+    # _load_args_from_input_file() already loaded JSON args into env vars above,
+    # so all branches below just read from os.environ.
+
+    action = os.environ.get("ACTION", "").lower()
+    if action == "write_file":
+        path = os.environ.get("PATH_ARG", "")
+        content = os.environ.get("CONTENT", "")
+        if not path:
+            print(json.dumps({"error": "path required"}), file=sys.stderr)
+            sys.exit(1)
+        full_path = _safe_workspace_path(path)
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "path": str(full_path),
+                    "bytes_written": len(content.encode("utf-8")),
+                },
+                indent=2,
+            )
+        )
+        return
+
+    if action == "agent":
+        task = os.environ.get("TASK", "")
+        workdir = os.environ.get("WORKDIR") or None
+        timeout_str = os.environ.get("TIMEOUT") or None
+        if not task:
+            print(json.dumps({"error": "task required"}), file=sys.stderr)
+            sys.exit(1)
+        timeout = None
+        if timeout_str:
+            try:
+                timeout = int(timeout_str)
+            except ValueError:
+                pass
+        try:
+            result = run_agent(task, workdir=workdir, timeout=timeout)
+            print(json.dumps(result, indent=2))
+        except Exception as e:
+            result = _error_result(str(e), command="claude --print", exit_code=1)
+            print(json.dumps(result, indent=2), file=sys.stderr)
+            sys.exit(1)
+        return
+
     command = os.environ.get("COMMAND", "")
     workdir = os.environ.get("WORKDIR") or None
     mount = os.environ.get("MOUNT") or None

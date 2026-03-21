@@ -100,7 +100,7 @@ class CoherenceConfig(BaseModel):
     provider: str | None = None  # None = inherit from main LLM config
     model: str = "claude-haiku-4-5"
     max_tokens: int = 256
-    timeout: float = 3.0
+    timeout: float = 10.0
 
 
 class DriftConfig(BaseModel):

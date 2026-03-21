@@ -276,14 +276,22 @@ class TestOverrideManager:
                 created_by="test",
             )
 
-    def test_wildcard_rejected_when_excluded_exist(self, manager):
-        with pytest.raises(ValueError, match="excluded"):
-            manager.create_override(
-                pattern="*",
-                action=ActionVerdict.ALLOW,
-                duration_seconds=1800,
-                created_by="test",
-            )
+    def test_wildcard_allows_but_excludes_delete(self, manager):
+        """Wildcard override is accepted but excluded tools are skipped at check time."""
+        override = manager.create_override(
+            pattern="*",
+            action=ActionVerdict.ALLOW,
+            duration_seconds=1800,
+            created_by="test",
+        )
+        assert override is not None
+        # Non-excluded tool is allowed
+        result = manager.check("check_weather", {})
+        assert result is not None
+        assert result.verdict == ActionVerdict.ALLOW
+        # Excluded tool (delete_*) falls through to policy
+        result = manager.check("delete_file", {})
+        assert result is None
 
     def test_disabled_config(self):
         config = OverrideConfig(enabled=False)
@@ -501,9 +509,9 @@ class TestChatOverrideCommands:
         assert "confirm" in result.lower()
 
     def test_wildcard_with_confirm(self, chat_server):
-        # Wildcard is still blocked by excluded_tools (delete_*)
+        # Wildcard is accepted — excluded tools (delete_*) are skipped at check time
         result = chat_server._handle_allow("user1", "/allow * 30m confirm")
-        assert "Cannot create" in result
+        assert "Allowing" in result
 
 
 # --- _build_approval_hint ---

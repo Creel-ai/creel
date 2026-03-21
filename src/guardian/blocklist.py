@@ -2,7 +2,13 @@
 
 Regex patterns for known-destructive commands that are ALWAYS denied,
 regardless of Guardian policy. This is a non-overridable hard block that
-applies only to exec/shell-type tools (exec, host_exec, coding).
+applies only to exec/shell-type tools (exec, host_exec, coding,
+exec_interactive).
+
+Note: This is a static regex-based check. It does NOT detect commands hidden
+behind encoding (base64), variable expansion ($X), command substitution
+($(cmd)), or scripting-language wrappers (python -c ...). Those evasion
+vectors are partially covered by deny_when rules in policies/default.yaml.
 """
 
 from __future__ import annotations
@@ -14,13 +20,14 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 # Tools whose arguments should be checked against the blocklist.
-SHELL_TOOLS = frozenset({"exec", "host_exec", "coding"})
+# Keep in sync with deny_when tool entries in policies/default.yaml.
+SHELL_TOOLS = frozenset({"exec", "host_exec", "coding", "exec_interactive"})
 
 # Argument keys that may contain shell commands.
 _COMMAND_ARG_KEYS = ("command", "cmd", "script", "code", "shell_command")
 
 
-@dataclass
+@dataclass(frozen=True)
 class BlocklistResult:
     """Result of a destructive-command blocklist check."""
 
@@ -31,12 +38,21 @@ class BlocklistResult:
 
 # Each entry: (compiled regex, human-readable description).
 _DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # Catches -rf, -fr, -rfi etc. in a single flag cluster.
     (
         re.compile(r"\brm\s+.*-\s*[^\s]*r[^\s]*f|rm\s+.*-\s*[^\s]*f[^\s]*r", re.IGNORECASE),
         "Recursive force delete (rm -rf)",
     ),
+    # Catches -r and -f as separate arguments (rm -r -f, rm -v -r -f, etc.).
     (
-        re.compile(r"\brm\s+(-[^\s]*\s+)*(/|~/?\s)", re.IGNORECASE),
+        re.compile(
+            r"\brm\s+(-\S+\s+)*-\S*r\b.*\s+-\S*f\b|\brm\s+(-\S+\s+)*-\S*f\b.*\s+-\S*r\b",
+            re.IGNORECASE,
+        ),
+        "Recursive force delete (rm -r -f, split flags)",
+    ),
+    (
+        re.compile(r"\brm\s+(-[^\s]*\s+)*(/|~/?(?:\s|$))", re.IGNORECASE),
         "Delete root or home directory",
     ),
     (
@@ -60,7 +76,7 @@ _DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "Format filesystem (mkfs)",
     ),
     (
-        re.compile(r"\bdd\s+if=", re.IGNORECASE),
+        re.compile(r"\bdd\s+.*\b(if|of)=", re.IGNORECASE),
         "Raw disk write (dd)",
     ),
     (
@@ -80,7 +96,7 @@ _DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "chmod 777 on root paths (dangerous permissions)",
     ),
     (
-        re.compile(r"\b(shutdown|poweroff|reboot|init\s+[06])\b", re.IGNORECASE),
+        re.compile(r"(?:^|[;&|]\s*)(shutdown|poweroff|reboot|init\s+[06])\b", re.IGNORECASE),
         "System shutdown/reboot",
     ),
     (
@@ -142,7 +158,7 @@ def check_blocklist(tool_name: str, tool_input: dict) -> BlocklistResult:
             )
             return BlocklistResult(
                 blocked=True,
-                pattern_matched=pattern.pattern,
+                pattern_matched=description,
                 reason=f"Destructive command blocked: {description}",
             )
 

@@ -24,6 +24,9 @@ class TestCheckBlocklist:
             ("rm -fr /tmp/data", "rm -fr variant"),
             ("sudo rm -rf /var", "sudo rm -rf"),
             ("rm -rf --no-preserve-root /", "rm -rf with flags"),
+            ("rm -r -f /", "rm -r -f split flags"),
+            ("rm -f -r /tmp", "rm -f -r split flags reversed"),
+            ("rm -v -r -f /data", "rm -v -r -f with extra flag"),
         ],
     )
     def test_blocks_rm_rf(self, command: str, description: str) -> None:
@@ -31,6 +34,18 @@ class TestCheckBlocklist:
         assert result.blocked, f"Should block: {description}"
         assert result.pattern_matched
         assert result.reason
+
+    @pytest.mark.parametrize(
+        "command,description",
+        [
+            ("rm ~/", "rm home dir at end of string"),
+            ("rm ~/ ", "rm home dir with trailing space"),
+            ("rm /", "rm root"),
+        ],
+    )
+    def test_blocks_rm_root_or_home(self, command: str, description: str) -> None:
+        result = check_blocklist("exec", {"command": command})
+        assert result.blocked, f"Should block: {description}"
 
     @pytest.mark.parametrize(
         "command",
@@ -88,6 +103,7 @@ class TestCheckBlocklist:
         [
             "dd if=/dev/zero of=/dev/sda",
             "dd if=image.iso of=/dev/sdb bs=4M",
+            "dd of=/dev/sda if=/dev/zero",
         ],
     )
     def test_blocks_dd(self, command: str) -> None:
@@ -182,6 +198,8 @@ class TestCheckBlocklist:
             ("SELECT * FROM users;", "SQL SELECT"),
             ("CREATE TABLE users (id INT);", "SQL CREATE"),
             ("dd --help", "dd help"),
+            ("echo 'please reboot the server'", "reboot in string argument"),
+            ("grep reboot /var/log/syslog", "reboot in grep pattern"),
         ],
     )
     def test_allows_safe_commands(self, command: str, description: str) -> None:
@@ -201,6 +219,10 @@ class TestCheckBlocklist:
 
     def test_checks_coding(self) -> None:
         result = check_blocklist("coding", {"command": "rm -rf /"})
+        assert result.blocked
+
+    def test_checks_exec_interactive(self) -> None:
+        result = check_blocklist("exec_interactive", {"command": "rm -rf /"})
         assert result.blocked
 
     # --- Argument key handling ---
@@ -229,6 +251,38 @@ class TestCheckBlocklist:
         result = check_blocklist("exec", {"format": "json", "verbose": True})
         assert not result.blocked
 
+    # --- Edge cases ---
+
+    @pytest.mark.parametrize(
+        "command,description",
+        [
+            ("echo foo && rm -rf /", "chained with &&"),
+            ("echo foo; rm -rf /", "chained with ;"),
+            ("ls | rm -rf /", "piped"),
+        ],
+    )
+    def test_blocks_chained_commands(self, command: str, description: str) -> None:
+        result = check_blocklist("exec", {"command": command})
+        assert result.blocked, f"Should block: {description}"
+
+    def test_blocks_across_multiple_arg_keys(self) -> None:
+        """Dangerous command in script key should be caught even if command is safe."""
+        result = check_blocklist("exec", {"command": "ls", "script": "rm -rf /"})
+        assert result.blocked
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            (None, "None value"),
+            (123, "integer value"),
+            (["rm", "-rf", "/"], "list value"),
+            ("", "empty string"),
+        ],
+    )
+    def test_non_string_values_pass(self, value, description: str) -> None:
+        result = check_blocklist("exec", {"command": value})
+        assert not result.blocked, f"Should pass: {description}"
+
 
 class TestBlocklistResult:
     """Test the BlocklistResult dataclass."""
@@ -242,8 +296,8 @@ class TestBlocklistResult:
     def test_blocked_with_details(self) -> None:
         r = BlocklistResult(
             blocked=True,
-            pattern_matched=r"\brm\s+.*",
-            reason="Destructive command blocked: rm -rf",
+            pattern_matched="Recursive force delete (rm -rf)",
+            reason="Destructive command blocked: Recursive force delete (rm -rf)",
         )
         assert r.blocked
         assert r.pattern_matched
@@ -262,6 +316,7 @@ class TestGuardianIntegration:
               - exec
               - host_exec
               - coding
+              - exec_interactive
               - check_weather
             review:
               - send_*

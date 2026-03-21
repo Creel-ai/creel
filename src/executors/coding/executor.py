@@ -80,6 +80,28 @@ def register_skill():
                     ),
                 ),
             ),
+            ToolSpec(
+                name="coding_agent",
+                description="Spawn a Claude Code agent to autonomously handle a complex coding task. The agent can read/write files, run commands, and iterate on solutions. Use for multi-step tasks like 'build a REST API', 'refactor this module', or 'fix failing tests'.",
+                params=(
+                    Param(
+                        name="task",
+                        type="string",
+                        description="Natural language description of the coding task to accomplish",
+                        required=True,
+                    ),
+                    Param(
+                        name="workdir",
+                        type="string",
+                        description="Working directory for the agent (default: /workspace)",
+                    ),
+                    Param(
+                        name="timeout",
+                        type="string",
+                        description="Agent timeout in seconds (default: 600, max: 1800)",
+                    ),
+                ),
+            ),
         ),
         needs_network=True,
     )
@@ -89,6 +111,9 @@ def register_skill():
 
         if tool_name == "coding_write_file":
             return _execute_write_file(config)
+
+        if tool_name == "coding_agent":
+            return _execute_agent(config)
 
         command = config.args.get("command", "")
         if not command:
@@ -100,6 +125,19 @@ def register_skill():
         if timeout_str:
             timeout = int(timeout_str)
         result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
+        return json.dumps(result, indent=2)
+
+    def _execute_agent(config: ExecutorConfig) -> str:
+        """Spawn Claude Code CLI to handle a complex coding task."""
+        task = config.args.get("task", "")
+        if not task:
+            raise ValueError("coding_agent requires a 'task' argument")
+        workdir = config.args.get("workdir") or None
+        timeout = None
+        timeout_str = config.args.get("timeout")
+        if timeout_str:
+            timeout = int(timeout_str)
+        result = run_agent(task, workdir=workdir, timeout=timeout)
         return json.dumps(result, indent=2)
 
     def _execute_write_file(config: ExecutorConfig) -> str:
@@ -136,6 +174,9 @@ def register_skill():
 
 # Default timeout: 5 minutes
 DEFAULT_TIMEOUT = 300
+
+# Default agent timeout: 10 minutes
+AGENT_DEFAULT_TIMEOUT = 600
 
 # Maximum timeout: 30 minutes
 MAX_TIMEOUT = 1800
@@ -424,6 +465,80 @@ def run_command(
         )
 
 
+def run_agent(
+    task: str,
+    workdir: str | None = None,
+    timeout: int | None = None,
+) -> dict:
+    """Spawn Claude Code CLI to handle a complex coding task.
+
+    Args:
+        task: Natural language description of the task.
+        workdir: Working directory for the agent (default: /workspace or cwd).
+        timeout: Agent timeout in seconds (default: 600, max: 1800).
+
+    Returns:
+        Dict with stdout, stderr, exit_code, task, and success.
+    """
+    if not task:
+        return _error_result("Empty task", command="claude --print")
+
+    # Resolve working directory
+    effective_workdir = workdir
+    if not effective_workdir:
+        workspace = os.environ.get("WORKSPACE", "/workspace")
+        if os.path.isdir(workspace):
+            effective_workdir = workspace
+        else:
+            effective_workdir = os.getcwd()
+
+    # Resolve timeout
+    if timeout is None:
+        timeout = AGENT_DEFAULT_TIMEOUT
+    timeout = max(1, min(timeout, MAX_TIMEOUT))
+
+    try:
+        result = subprocess.run(
+            ["claude", "--print", "--permission-mode", "bypassPermissions", task],
+            cwd=effective_workdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        return {
+            "task": task,
+            "workdir": effective_workdir,
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "success": result.returncode == 0,
+        }
+
+    except subprocess.TimeoutExpired as e:
+        return {
+            "task": task,
+            "workdir": effective_workdir,
+            "exit_code": -1,
+            "stdout": e.stdout.decode() if e.stdout else "",
+            "stderr": e.stderr.decode() if e.stderr else "",
+            "error": f"Agent timed out after {timeout} seconds",
+            "success": False,
+        }
+    except FileNotFoundError:
+        return _error_result(
+            "Claude Code CLI not found. Install with: npm install -g @anthropic-ai/claude-code",
+            command="claude --print",
+            workdir=effective_workdir,
+        )
+    except Exception as e:
+        return _error_result(
+            f"Agent execution failed: {e}",
+            command="claude --print",
+            workdir=effective_workdir,
+        )
+
+
 def _load_args_from_input_file() -> None:
     """Load executor args from the JSON input file into env vars.
 
@@ -477,6 +592,36 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+
+    if action == "agent":
+        # Read task from env or JSON args file
+        task = os.environ.get("TASK", "")
+        workdir = os.environ.get("WORKDIR") or None
+        timeout_str = os.environ.get("TIMEOUT") or None
+        input_file = os.environ.get("CREEL_INPUT_FILE", "")
+        if input_file and os.path.isfile(input_file):
+            with open(input_file, encoding="utf-8") as f:
+                args = json.load(f)
+            task = args.get("task", task)
+            workdir = args.get("workdir", workdir) or None
+            timeout_str = args.get("timeout", timeout_str) or None
+        if not task:
+            print(json.dumps({"error": "task required"}), file=sys.stderr)
+            sys.exit(1)
+        timeout = None
+        if timeout_str:
+            try:
+                timeout = int(timeout_str)
+            except ValueError:
+                pass
+        try:
+            result = run_agent(task, workdir=workdir, timeout=timeout)
+            print(json.dumps(result, indent=2))
+        except Exception as e:
+            result = _error_result(str(e), command="claude --print", exit_code=1)
+            print(json.dumps(result, indent=2), file=sys.stderr)
+            sys.exit(1)
         return
 
     command = os.environ.get("COMMAND", "")

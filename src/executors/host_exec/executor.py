@@ -318,10 +318,8 @@ def _load_args_from_input_file() -> None:
     input_file = os.environ.get("CREEL_INPUT_FILE", "")
     if not input_file or not os.path.isfile(input_file):
         return
-    import json as _json
-
     with open(input_file, encoding="utf-8") as f:
-        args: dict = _json.load(f)
+        args: dict = json.load(f)
     for key, value in args.items():
         env_key = key.upper()
         os.environ[env_key] = str(value)

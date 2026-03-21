@@ -147,12 +147,7 @@ def register_skill():
         if not path:
             raise ValueError("coding_write_file requires a 'path' argument")
 
-        # Resolve relative to workspace
-        workspace = Path(os.environ.get("WORKSPACE", "/workspace"))
-        # Strip leading workspace/ if present to avoid double-pathing
-        if path.startswith("workspace/"):
-            path = path[len("workspace/") :]
-        full_path = workspace / path
+        full_path = _safe_workspace_path(path)
 
         # Create parent directories
         full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +223,23 @@ BLOCKED_PATTERNS = [
     # chmod 777
     re.compile(r"\bchmod\s+(-R\s+)?777\b"),
 ]
+
+
+def _safe_workspace_path(file_path: str) -> Path:
+    """Resolve a path and verify it stays within the workspace.
+
+    Strips a leading 'workspace/' prefix to avoid double-pathing.
+    Raises ValueError if the resolved path escapes the workspace.
+    """
+    workspace = Path(os.environ.get("WORKSPACE", "/workspace")).resolve()
+    stripped = file_path.lstrip("/")
+    if stripped.startswith("workspace/") or stripped == "workspace":
+        stripped = stripped[len("workspace") :].lstrip("/") or "."
+        file_path = stripped
+    resolved = (workspace / file_path).resolve()
+    if resolved != workspace and not str(resolved).startswith(str(workspace) + os.sep):
+        raise ValueError(f"Path escapes workspace: {file_path}")
+    return resolved
 
 
 def _error_result(error: str, *, command: str = "", **extra) -> dict:
@@ -499,7 +511,7 @@ def run_agent(
 
     try:
         result = subprocess.run(
-            ["claude", "--print", "--permission-mode", "bypassPermissions", task],
+            ["claude", "--print", "--permission-mode", "plan", "--", task],
             cwd=effective_workdir,
             capture_output=True,
             text=True,
@@ -561,25 +573,17 @@ def main() -> None:
     """Main entry point — reads parameters from env vars or CLI args."""
     _load_args_from_input_file()
 
-    # Handle write_file action
+    # _load_args_from_input_file() already loaded JSON args into env vars above,
+    # so all branches below just read from os.environ.
+
     action = os.environ.get("ACTION", "").lower()
     if action == "write_file":
-        path = os.environ.get("PATH_ARG", "") or os.environ.get("PATH", "")
+        path = os.environ.get("PATH_ARG", "")
         content = os.environ.get("CONTENT", "")
-        # Also try reading content from the JSON args file directly
-        input_file = os.environ.get("CREEL_INPUT_FILE", "")
-        if input_file and os.path.isfile(input_file):
-            with open(input_file, encoding="utf-8") as f:
-                args = json.load(f)
-            path = args.get("path", path)
-            content = args.get("content", content)
         if not path:
             print(json.dumps({"error": "path required"}), file=sys.stderr)
             sys.exit(1)
-        workspace = Path(os.environ.get("WORKSPACE", "/workspace"))
-        if path.startswith("workspace/"):
-            path = path[len("workspace/") :]
-        full_path = workspace / path
+        full_path = _safe_workspace_path(path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
         print(
@@ -595,17 +599,9 @@ def main() -> None:
         return
 
     if action == "agent":
-        # Read task from env or JSON args file
         task = os.environ.get("TASK", "")
         workdir = os.environ.get("WORKDIR") or None
         timeout_str = os.environ.get("TIMEOUT") or None
-        input_file = os.environ.get("CREEL_INPUT_FILE", "")
-        if input_file and os.path.isfile(input_file):
-            with open(input_file, encoding="utf-8") as f:
-                args = json.load(f)
-            task = args.get("task", task)
-            workdir = args.get("workdir", workdir) or None
-            timeout_str = args.get("timeout", timeout_str) or None
         if not task:
             print(json.dumps({"error": "task required"}), file=sys.stderr)
             sys.exit(1)

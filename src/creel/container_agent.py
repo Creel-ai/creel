@@ -816,6 +816,11 @@ def _handle_tool_request(
                 )
                 is_error = True
 
+        # Ensure content is never empty — the Anthropic API rejects
+        # text content blocks with empty strings.
+        if not result or (isinstance(result, str) and not result.strip()):
+            result = "Tool execution failed (no details available)" if is_error else "(no output)"
+
         results.append(
             {
                 "tool_use_id": tool_id,

@@ -563,6 +563,11 @@ def _execute_single_tool(
                 )
             result = redacted_result
 
+    # Ensure content is never empty — the Anthropic API rejects
+    # text content blocks with empty strings.
+    if not result or (isinstance(result, str) and not result.strip()):
+        result = "Tool execution failed (no details available)" if is_error else "(no output)"
+
     tool_history.append(
         {
             "tool": tool_name,

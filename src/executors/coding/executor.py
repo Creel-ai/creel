@@ -551,35 +551,47 @@ def run_agent(
         )
 
 
-def _load_args_from_input_file() -> None:
-    """Load executor args from the JSON input file into env vars.
+def _load_args() -> dict:
+    """Load executor args from the JSON input file, falling back to env vars.
 
-    When running inside a Docker container, multiline values (like file
-    content) cannot survive the env-file format.  The container runner
-    mounts the original args as ``/creel-input.json`` and sets
-    ``CREEL_INPUT_FILE`` so we can recover the full values here.
+    The container runner mounts args as /creel-input.json. Reading directly
+    from JSON preserves multiline content without env var round-tripping.
     """
     input_file = os.environ.get("CREEL_INPUT_FILE", "")
-    if not input_file or not os.path.isfile(input_file):
-        return
-    with open(input_file, encoding="utf-8") as f:
-        args: dict = json.load(f)
-    for key, value in args.items():
-        env_key = key.upper()
-        os.environ[env_key] = str(value)
+    if input_file and os.path.isfile(input_file):
+        with open(input_file, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
 
 def main() -> None:
     """Main entry point — reads parameters from env vars or CLI args."""
-    _load_args_from_input_file()
+    args = _load_args()
 
-    # _load_args_from_input_file() already loaded JSON args into env vars above,
-    # so all branches below just read from os.environ.
+    # Dispatch based on args from JSON - no env var middle-man
+    if "task" in args:
+        task = args["task"]
+        workdir = args.get("workdir")
+        timeout_str = args.get("timeout")
+        if not task:
+            print(json.dumps({"error": "task required"}), file=sys.stderr)
+            sys.exit(1)
+        timeout = None
+        if timeout_str:
+            try:
+                timeout = int(timeout_str)
+            except ValueError:
+                pass
+        result = run_agent(task, workdir=workdir, timeout=timeout)
+        if "error" in result:
+            print(json.dumps(result, indent=2), file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(result, indent=2))
+        return
 
-    action = os.environ.get("ACTION", "").lower()
-    if action == "write_file":
-        path = os.environ.get("PATH_ARG", "")
-        content = os.environ.get("CONTENT", "")
+    if "content" in args and "path" in args:
+        path = args["path"]
+        content = args["content"]
         if not path:
             print(json.dumps({"error": "path required"}), file=sys.stderr)
             sys.exit(1)
@@ -598,32 +610,11 @@ def main() -> None:
         )
         return
 
-    if action == "agent":
-        task = os.environ.get("TASK", "")
-        workdir = os.environ.get("WORKDIR") or None
-        timeout_str = os.environ.get("TIMEOUT") or None
-        if not task:
-            print(json.dumps({"error": "task required"}), file=sys.stderr)
-            sys.exit(1)
-        timeout = None
-        if timeout_str:
-            try:
-                timeout = int(timeout_str)
-            except ValueError:
-                pass
-        try:
-            result = run_agent(task, workdir=workdir, timeout=timeout)
-            print(json.dumps(result, indent=2))
-        except Exception as e:
-            result = _error_result(str(e), command="claude --print", exit_code=1)
-            print(json.dumps(result, indent=2), file=sys.stderr)
-            sys.exit(1)
-        return
-
-    command = os.environ.get("COMMAND", "")
-    workdir = os.environ.get("WORKDIR") or None
-    mount = os.environ.get("MOUNT") or None
-    timeout_str = os.environ.get("TIMEOUT") or None
+    # Default: coding tool (shell command)
+    command = args.get("command", "") or os.environ.get("COMMAND", "")
+    workdir = args.get("workdir") or os.environ.get("WORKDIR")
+    mount = args.get("mount") or os.environ.get("MOUNT")
+    timeout_str = args.get("timeout") or os.environ.get("TIMEOUT")
 
     # Also accept as CLI args
     if len(sys.argv) > 1:

@@ -62,11 +62,34 @@ def register_skill():
                     ),
                 ),
             ),
+            ToolSpec(
+                name="coding_write_file",
+                description="Write content to a file in the workspace. Preserves newlines and special characters perfectly — use this instead of echo/cat/heredoc commands.",
+                params=(
+                    Param(
+                        name="path",
+                        type="string",
+                        description="File path relative to workspace (e.g. 'src/main.py')",
+                        required=True,
+                    ),
+                    Param(
+                        name="content",
+                        type="string",
+                        description="Full file content to write",
+                        required=True,
+                    ),
+                ),
+            ),
         ),
         needs_network=True,
     )
 
     def execute(config: ExecutorConfig) -> str:
+        tool_name = config.args.get("_tool_name", "coding")
+
+        if tool_name == "coding_write_file":
+            return _execute_write_file(config)
+
         command = config.args.get("command", "")
         if not command:
             raise ValueError("coding requires a 'command' argument")
@@ -78,6 +101,35 @@ def register_skill():
             timeout = int(timeout_str)
         result = run_command(command, workdir=workdir, mount=mount, timeout=timeout)
         return json.dumps(result, indent=2)
+
+    def _execute_write_file(config: ExecutorConfig) -> str:
+        """Write content to a file in the workspace."""
+        path = config.args.get("path", "")
+        content = config.args.get("content", "")
+        if not path:
+            raise ValueError("coding_write_file requires a 'path' argument")
+
+        # Resolve relative to workspace
+        workspace = Path(os.environ.get("WORKSPACE", "/workspace"))
+        # Strip leading workspace/ if present to avoid double-pathing
+        if path.startswith("workspace/"):
+            path = path[len("workspace/") :]
+        full_path = workspace / path
+
+        # Create parent directories
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write the file
+        full_path.write_text(content, encoding="utf-8")
+
+        return json.dumps(
+            {
+                "status": "ok",
+                "path": str(full_path),
+                "bytes_written": len(content.encode("utf-8")),
+            },
+            indent=2,
+        )
 
     return meta, execute
 
@@ -372,8 +424,61 @@ def run_command(
         )
 
 
+def _load_args_from_input_file() -> None:
+    """Load executor args from the JSON input file into env vars.
+
+    When running inside a Docker container, multiline values (like file
+    content) cannot survive the env-file format.  The container runner
+    mounts the original args as ``/creel-input.json`` and sets
+    ``CREEL_INPUT_FILE`` so we can recover the full values here.
+    """
+    input_file = os.environ.get("CREEL_INPUT_FILE", "")
+    if not input_file or not os.path.isfile(input_file):
+        return
+    with open(input_file, encoding="utf-8") as f:
+        args: dict = json.load(f)
+    for key, value in args.items():
+        env_key = key.upper()
+        os.environ[env_key] = str(value)
+
+
 def main() -> None:
     """Main entry point — reads parameters from env vars or CLI args."""
+    _load_args_from_input_file()
+
+    # Handle write_file action
+    action = os.environ.get("ACTION", "").lower()
+    if action == "write_file":
+        path = os.environ.get("PATH_ARG", "") or os.environ.get("PATH", "")
+        content = os.environ.get("CONTENT", "")
+        # Also try reading content from the JSON args file directly
+        input_file = os.environ.get("CREEL_INPUT_FILE", "")
+        if input_file and os.path.isfile(input_file):
+            with open(input_file, encoding="utf-8") as f:
+                args = json.load(f)
+            path = args.get("path", path)
+            content = args.get("content", content)
+        if not path:
+            print(json.dumps({"error": "path required"}), file=sys.stderr)
+            sys.exit(1)
+        workspace = Path(os.environ.get("WORKSPACE", "/workspace"))
+        if path.startswith("workspace/"):
+            path = path[len("workspace/") :]
+        full_path = workspace / path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "path": str(full_path),
+                    "bytes_written": len(content.encode("utf-8")),
+                },
+                indent=2,
+            )
+        )
+        return
+
     command = os.environ.get("COMMAND", "")
     workdir = os.environ.get("WORKDIR") or None
     mount = os.environ.get("MOUNT") or None

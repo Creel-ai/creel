@@ -313,8 +313,23 @@ def host_sessions() -> dict[str, Any]:
     return call_bridge("/sessions", method="GET")
 
 
+def _load_args_from_input_file() -> None:
+    """Load executor args from the JSON input file into env vars."""
+    input_file = os.environ.get("CREEL_INPUT_FILE", "")
+    if not input_file or not os.path.isfile(input_file):
+        return
+    import json as _json
+
+    with open(input_file, encoding="utf-8") as f:
+        args: dict = _json.load(f)
+    for key, value in args.items():
+        env_key = key.upper()
+        os.environ[env_key] = str(value)
+
+
 def main() -> None:
     """Main executor entry point."""
+    _load_args_from_input_file()
     action = os.environ.get("ACTION", "exec")
 
     try:

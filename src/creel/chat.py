@@ -325,11 +325,20 @@ class ChatServer:
         # Screen slash command input through Guardian before dispatch.
         # Commands like /allow modify security policy — their arguments
         # must be screened for prompt injection.
+        # However, built-in security commands (/allow, /allows, /deny, /help,
+        # /new, /status) are exempt since they come from the authenticated user
+        # and blocking them defeats their purpose.
+        _GUARDIAN_EXEMPT_COMMANDS = frozenset({
+            "allow", "allows", "deny", "help", "new", "status",
+            "sessions", "resume", "model", "tools", "memory",
+        })
         if stripped.startswith("/") and self._guardian:
-            screen_result = self._guardian.screen_input(text)
-            if screen_result.blocked:
-                logger.warning("Guardian blocked slash command input from %s", sender_id)
-                return screen_result.rejection_message
+            cmd_name = stripped.lstrip("/").split()[0].lower()
+            if cmd_name not in _GUARDIAN_EXEMPT_COMMANDS:
+                screen_result = self._guardian.screen_input(text)
+                if screen_result.blocked:
+                    logger.warning("Guardian blocked slash command input from %s", sender_id)
+                    return screen_result.rejection_message
 
         # Dispatch slash commands via registry
         if stripped.startswith("/"):

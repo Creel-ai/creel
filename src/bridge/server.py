@@ -67,7 +67,7 @@ class NotesCreateRequest(BaseModel):
 class ClipboardWriteRequest(BaseModel):
     """Request for writing text to clipboard."""
 
-    text: str
+    text: str = Field(max_length=1_048_576)
 
 
 class RemindersListRequest(BaseModel):

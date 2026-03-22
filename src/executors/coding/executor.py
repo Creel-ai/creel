@@ -568,12 +568,6 @@ def main() -> None:
     """Main entry point — reads parameters from env vars or CLI args."""
     args = _load_args()
     
-    # Debug: log what we received
-    import sys as _sys
-    print(f"DEBUG: args={args}", file=_sys.stderr)
-    print(f"DEBUG: CREEL_INPUT_FILE={os.environ.get('CREEL_INPUT_FILE', 'NOT SET')}", file=_sys.stderr)
-    print(f"DEBUG: COMMAND={os.environ.get('COMMAND', 'NOT SET')}", file=_sys.stderr)
-
     # Dispatch based on args from JSON - no env var middle-man
     if "task" in args:
         task = args["task"]

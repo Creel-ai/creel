@@ -12,6 +12,7 @@ from creel.models import (
     ChannelsConfig,
     LLMConfig,
     SessionConfig,
+    SessionState,
     WorkspaceConfig,
 )
 
@@ -559,3 +560,133 @@ class TestSendIMessage:
 
         # Direct replies should still go through
         mock_channel.send.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Interrupt word tests
+# ---------------------------------------------------------------------------
+
+
+class TestInterruptSender:
+    def test_interrupt_active_loop_returns_true(self, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        state = SessionState(sender_id="user1")
+        with server._active_loops_lock:
+            server._active_loops["user1"] = state
+
+        assert server.interrupt_sender("user1") is True
+        assert state.interrupt.is_set()
+
+    def test_interrupt_no_active_loop_returns_false(self, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        assert server.interrupt_sender("user1") is False
+
+    def test_interrupt_words_cached(self, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path, agent=AgentConfig(interrupt_words=["halt", "ABORT"]))
+        server = ChatServer(agent_def)
+        assert server._interrupt_words == frozenset({"halt", "abort"})
+
+    def test_interrupt_words_updated_on_reload(self, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+        assert "stop" in server._interrupt_words
+
+        new_def = _make_agent_def(tmp_path, agent=AgentConfig(interrupt_words=["halt"]))
+        server.update_agent_def(new_def)
+        assert server._interrupt_words == frozenset({"halt"})
+
+
+class TestHandleMessageInterrupt:
+    @patch("creel.chat.run_agent_loop")
+    def test_interrupt_word_stops_active_loop(self, mock_loop, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        state = SessionState(sender_id="user1")
+        with server._active_loops_lock:
+            server._active_loops["user1"] = state
+
+        result = server.handle_message("user1", "stop")
+        assert result == "Stopping..."
+        assert state.interrupt.is_set()
+        mock_loop.assert_not_called()
+
+    @patch("creel.chat.run_agent_loop")
+    def test_interrupt_word_case_insensitive(self, mock_loop, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        state = SessionState(sender_id="user1")
+        with server._active_loops_lock:
+            server._active_loops["user1"] = state
+
+        result = server.handle_message("user1", "  STOP  ")
+        assert result == "Stopping..."
+
+    @patch("creel.chat.run_agent_loop")
+    def test_interrupt_word_without_active_loop_falls_through(self, mock_loop, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        mock_loop.return_value = _make_agent_result("I stopped something.")
+        result = server.handle_message("user1", "stop")
+        # No active loop — "stop" should be treated as a normal message
+        assert result != "Stopping..."
+        mock_loop.assert_called_once()
+
+    @patch("creel.chat.run_agent_loop")
+    def test_active_loop_registered_and_cleaned_up(self, mock_loop, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        registered_during_loop = []
+
+        def _capture_loop(*args, **kwargs):
+            registered_during_loop.append("user1" in server._active_loops)
+            return _make_agent_result()
+
+        mock_loop.side_effect = _capture_loop
+        server.handle_message("user1", "hello")
+
+        assert registered_during_loop == [True]
+        assert "user1" not in server._active_loops
+
+    @patch("creel.chat.run_agent_loop")
+    def test_active_loop_cleaned_up_on_exception(self, mock_loop, tmp_path) -> None:
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        mock_loop.side_effect = RuntimeError("boom")
+        try:
+            server.handle_message("user1", "hello")
+        except RuntimeError:
+            pass
+
+        assert "user1" not in server._active_loops
+
+    @patch("creel.chat.run_agent_loop")
+    def test_interrupt_cleared_before_loop(self, mock_loop, tmp_path) -> None:
+        """A stale interrupt signal should be cleared before the loop starts."""
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        # Pre-set interrupt to simulate a stale signal
+        state = server._session_states.setdefault("user1", SessionState(sender_id="user1"))
+        state.interrupt.set()
+
+        interrupt_was_set = []
+
+        def _capture_loop(*args, **kwargs):
+            ss = kwargs.get("session_state")
+            interrupt_was_set.append(ss.interrupt.is_set() if ss else None)
+            return _make_agent_result()
+
+        mock_loop.side_effect = _capture_loop
+        server.handle_message("user1", "hello")
+
+        # Interrupt should have been cleared before entering the loop
+        assert interrupt_was_set == [False]

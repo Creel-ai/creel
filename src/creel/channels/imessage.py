@@ -99,8 +99,8 @@ class IMessageChannel(MediaHandlerMixin, Channel):
                             self._interrupt_fn is not None
                             and text
                             and text.strip().lower() in self._interrupt_words
+                            and self._interrupt_fn(sender)
                         ):
-                            self._interrupt_fn(sender)
                             self.send(sender, "Stopping...")
                         else:
                             logger.info(

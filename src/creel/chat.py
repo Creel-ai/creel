@@ -227,6 +227,9 @@ class ChatServer:
         # Track active agent loops per sender for interrupt word detection.
         self._active_loops: dict[str, SessionState] = {}
         self._active_loops_lock = threading.Lock()
+        self._interrupt_words: frozenset[str] = frozenset(
+            w.lower() for w in agent_def.agent.interrupt_words
+        )
 
         # Rate limiter for inject_system_event: per-sender list of timestamps.
         # Note: stale sender entries are never pruned from this dict. This is
@@ -299,6 +302,7 @@ class ChatServer:
         non-reloadable or don't benefit from live swaps.
         """
         self._agent_def = agent_def
+        self._interrupt_words = frozenset(w.lower() for w in agent_def.agent.interrupt_words)
         # SubAgentManager holds config refs used when spawning new agents.
         self._subagent_manager._llm_config = agent_def.llm
         self._subagent_manager._skill_overrides = agent_def.skills
@@ -337,9 +341,11 @@ class ChatServer:
 
         stripped = text.strip()
 
-        # Check if this is an interrupt word for an active agent loop
-        interrupt_words = frozenset(w.lower() for w in self._agent_def.agent.interrupt_words)
-        if stripped.lower() in interrupt_words:
+        # Check if this is an interrupt word for an active agent loop.
+        # The interrupt check here is the authoritative layer; DaemonService
+        # also checks before its lock as a fast-path so interrupt words can
+        # signal a running loop without blocking.
+        if stripped.lower() in self._interrupt_words:
             if self.interrupt_sender(sender_id):
                 return "Stopping..."
 

@@ -472,6 +472,9 @@ class TestChatServerRegistryIntegration:
         server._session_states = {}
         server._approval_queue = MagicMock()
         server._approval_queue.get_pending.return_value = None
+        server._interrupt_words = frozenset()
+        server._active_loops = {}
+        server._active_loops_lock = __import__("threading").Lock()
         return server
 
     def test_slash_command_dispatched(self, chat_server):

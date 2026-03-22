@@ -32,9 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install coding agents globally (|| true: optional, build succeeds without them)
+# Install coding agents globally
 # --ignore-scripts: prevent postinstall execution from untrusted packages
-RUN npm install -g --ignore-scripts @anthropic-ai/claude-code @openai/codex || true
+RUN npm install -g --ignore-scripts @anthropic-ai/claude-code @openai/codex
 
 # Default workspace directory
 RUN mkdir -p /workspace && chown executor:executor /workspace
@@ -45,5 +45,8 @@ WORKDIR /workspace
 # Copy executor scripts
 COPY --chown=executor:executor coding/executor.py /app/executor.py
 COPY --chown=executor:executor coding/dev_runner.py /app/dev_runner.py
+
+# Ensure python symlink exists (some base image variants only have python3)
+RUN ln -sf $(which python3) /usr/local/bin/python 2>/dev/null || true
 
 ENTRYPOINT ["python", "/app/executor.py"]

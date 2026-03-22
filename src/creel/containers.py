@@ -181,6 +181,13 @@ def _ensure_base_image() -> str:
         capture_output=True,
     )
     if inspect.returncode == 0:
+        # Ensure :latest alias points to this image so child Dockerfiles
+        # using FROM creel-executor-base:latest resolve correctly.
+        latest = f"{_BASE_IMAGE_NAME}:latest"
+        subprocess.run(
+            ["docker", "tag", tagged, latest],
+            capture_output=True,
+        )
         return tagged
 
     if not _BASE_DOCKERFILE.exists():
@@ -388,8 +395,16 @@ def _build_image(
     )
     if build_result.returncode != 0:
         build_err = build_result.stderr.strip() if build_result.stderr else "unknown error"
+        build_out = build_result.stdout.strip() if build_result.stdout else ""
         logger.error("Docker build failed for %s:\n%s", tags[0], build_err)
+        if build_out:
+            logger.error("Docker build stdout for %s:\n%s", tags[0], build_out)
         raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
+
+    # Log build output for debugging (npm install failures, warnings, etc.)
+    build_out = build_result.stdout.strip() if build_result.stdout else ""
+    if build_out:
+        logger.debug("Docker build output for %s:\n%s", tags[0], build_out)
 
 
 def collect_required_images(agent_def: AgentDefinition) -> list[str]:

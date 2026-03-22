@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,6 +29,7 @@ class SessionState:
     sender_id: str = ""
     workspace: str | None = None
     model_override: str | None = None
+    interrupt: threading.Event = field(default_factory=threading.Event)
 
 
 class HttpConfig(BaseModel):
@@ -224,6 +226,10 @@ class AgentConfig(BaseModel):
     """Agent loop settings."""
 
     max_turns: int = Field(default=10, ge=1, le=50)
+    interrupt_words: list[str] = Field(
+        default_factory=lambda: ["stop", "cancel", "nevermind", "never mind"],
+        description="Words that interrupt a running agent loop",
+    )
 
 
 class ToolCacheConfig(BaseModel):

@@ -45,7 +45,7 @@ class AgentResult:
     text: str
     turns_used: int
     tool_calls_made: int
-    stop_reason: str  # "end_turn" | "max_turns" | "error" | "approval_required"
+    stop_reason: str  # "end_turn" | "max_turns" | "error" | "approval_required" | "interrupted"
     tool_history: list[dict] = field(default_factory=list)
     pending_approvals: list[PendingApproval] = field(default_factory=list)
     last_input_tokens: int = 0
@@ -656,6 +656,20 @@ def run_agent_loop(
 
     for _turn in range(agent_config.max_turns):
         turns_used += 1
+
+        # Interrupt checkpoint — stop before starting the next turn
+        if session_state is not None and session_state.interrupt.is_set():
+            logger.info("Agent loop interrupted at turn %d", turns_used)
+            _ensure_tool_call_integrity(messages)
+            return AgentResult(
+                text="Stopped.",
+                turns_used=turns_used,
+                tool_calls_made=tool_calls_made,
+                stop_reason="interrupted",
+                tool_history=tool_history,
+                last_input_tokens=last_input_tokens,
+            )
+
         logger.info("Agent turn %d/%d", turns_used, agent_config.max_turns)
         _ensure_tool_call_integrity(messages)
 
@@ -914,7 +928,23 @@ def run_agent_loop(
             )
 
         # Phase 3: No reviews needed — execute all tools.
-        for block in execute_blocks:
+        _interrupted = False
+        for i, block in enumerate(execute_blocks):
+            # Interrupt checkpoint — stop before executing the next tool
+            if session_state is not None and session_state.interrupt.is_set():
+                logger.info("Agent loop interrupted during tool execution")
+                for remaining in execute_blocks[i:]:
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": remaining.id,
+                            "content": "Tool execution interrupted by user.",
+                            "is_error": True,
+                        }
+                    )
+                _interrupted = True
+                break
+
             tool_result_block = _execute_single_tool(
                 block,
                 registry=registry,
@@ -933,6 +963,17 @@ def run_agent_loop(
 
         # Append tool results as a user message
         messages.append({"role": "user", "content": tool_results})
+
+        if _interrupted:
+            _ensure_tool_call_integrity(messages)
+            return AgentResult(
+                text="Stopped.",
+                turns_used=turns_used,
+                tool_calls_made=tool_calls_made,
+                stop_reason="interrupted",
+                tool_history=tool_history,
+                last_input_tokens=last_input_tokens,
+            )
 
     # Max turns reached - do a final call without tools to force a summary.
     # Don't stream the forced summary — it's an internal wrap-up, not a direct

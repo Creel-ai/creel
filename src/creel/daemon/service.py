@@ -92,6 +92,13 @@ class DaemonService:
 
     # --- Message and session API ---
 
+    def interrupt_sender(self, sender_id: str) -> bool:
+        """Signal a running agent loop to stop for the given sender.
+
+        Thread-safe — does not acquire the main service lock.
+        """
+        return self._server.interrupt_sender(sender_id)
+
     def send_message(
         self,
         sender_id_or_msg: str | IncomingMessage,
@@ -104,6 +111,21 @@ class DaemonService:
         Accepts either ``(sender_id, text)`` for plain text messages or a
         single :class:`IncomingMessage` for messages with media attachments.
         """
+        # Check for interrupt words before acquiring the lock so we can
+        # signal a running agent loop without blocking.
+        if isinstance(sender_id_or_msg, str):
+            _sender = sender_id_or_msg
+            _text = text
+        else:
+            _sender = sender_id_or_msg.sender_id
+            _text = sender_id_or_msg.text or ""
+        _agent_def = getattr(self, "_agent_def", None)
+        if _agent_def is not None:
+            interrupt_words = frozenset(w.lower() for w in _agent_def.agent.interrupt_words)
+            if _text.strip().lower() in interrupt_words:
+                if self.interrupt_sender(_sender):
+                    return "Stopping..."
+
         if isinstance(sender_id_or_msg, IncomingMessage):
             msg: IncomingMessage = sender_id_or_msg
             with self._lock:

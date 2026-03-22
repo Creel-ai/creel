@@ -550,9 +550,32 @@ def _run_executor_container(
     if config.secrets:
         env_vars.update(decrypt_env_file(config.secrets))
 
-    # Pass args as env vars
+    # Pass args as env vars, but skip names that would clobber critical
+    # system environment variables (e.g. "path" → PATH breaks containers).
+    # Args are also available via the mounted JSON file (/creel-input.json).
+    _RESERVED_ENV_NAMES = frozenset(
+        {
+            "PATH",
+            "HOME",
+            "USER",
+            "SHELL",
+            "LANG",
+            "TERM",
+            "HOSTNAME",
+            "PWD",
+            "OLDPWD",
+            "SHLVL",
+            "LD_LIBRARY_PATH",
+            "PYTHONPATH",
+        }
+    )
     for key, value in config.args.items():
-        env_vars[key.upper()] = value
+        env_key = key.upper()
+        if env_key in _RESERVED_ENV_NAMES:
+            # Use a prefixed name so the executor can still find it
+            env_vars[f"ARG_{env_key}"] = value
+        else:
+            env_vars[env_key] = value
 
     _replace_google_credentials_with_access_token(env_vars)
 
@@ -676,6 +699,7 @@ def _run_executor_container(
             # Add image name
             docker_cmd.append(image)
 
+            logger.error("DOCKER CMD: %s", " ".join(docker_cmd))
             try:
                 result = subprocess.run(
                     docker_cmd,

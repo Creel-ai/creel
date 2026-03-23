@@ -26,6 +26,7 @@ class TestRunExecutorContainer:
         """Stderr on success should be logged at DEBUG level."""
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-test-executor:latest"
         mock_run.return_value = MagicMock(
             stdout="result data\n",
             stderr="some debug output\n",
@@ -47,6 +48,7 @@ class TestRunExecutorContainer:
         """Non-zero exit should raise RuntimeError with stderr content."""
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-test-executor:latest"
         mock_run.return_value = MagicMock(
             stdout="",
             stderr="ImportError: No module named 'requests'\n",
@@ -63,6 +65,7 @@ class TestRunExecutorContainer:
         """Non-zero exit with empty stderr should still include exit code."""
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-test-executor:latest"
         mock_run.return_value = MagicMock(
             stdout="",
             stderr="",
@@ -79,6 +82,7 @@ class TestRunExecutorContainer:
         """Timeout should raise RuntimeError with executor name and timeout."""
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-test-executor:latest"
         mock_run.side_effect = subprocess.TimeoutExpired(
             cmd=["docker", "run"], timeout=30, stderr="partial output"
         )
@@ -93,6 +97,7 @@ class TestRunExecutorContainer:
         """Timeout should use config.timeout, not hardcoded 60."""
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-slow-executor:latest"
         config = ExecutorConfig(name="slow_executor", timeout=120)
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
 
@@ -112,6 +117,7 @@ class TestRunExecutorContainer:
         from creel.log import request_id_var
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-test-executor:latest"
         token = request_id_var.set("abc12345")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
 
@@ -131,6 +137,7 @@ class TestRunExecutorContainer:
         """Very long stderr should be truncated in the error message."""
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-test-executor:latest"
         long_stderr = "x" * 1000
         mock_run.return_value = MagicMock(
             stdout="",
@@ -167,6 +174,7 @@ class TestRunExecutorContainer:
         """Container env file should include only GOOGLE_ACCESS_TOKEN."""
         from creel.orchestrator import _run_executor_container
 
+        mock_ensure.return_value = "executor-test-executor:latest"
         config = ExecutorConfig(
             name="test_executor",
             secrets="secrets/google.env.enc",

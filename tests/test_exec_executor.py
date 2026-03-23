@@ -173,6 +173,7 @@ class TestContainerExecution:
     @patch("tempfile.NamedTemporaryFile")
     def test_container_with_mounts(self, mock_tempfile, mock_subprocess, mock_ensure_image) -> None:
         """Test container execution with mount configuration."""
+        mock_ensure_image.return_value = "executor-exec:latest"
         # Mock tempfile
         mock_env_file = MagicMock()
         mock_env_file.name = "/tmp/test.env"
@@ -216,6 +217,7 @@ class TestContainerExecution:
         self, mock_tempfile, mock_subprocess, mock_ensure_image
     ) -> None:
         """Test container execution with network enabled."""
+        mock_ensure_image.return_value = "executor-exec:latest"
         # Mock tempfile
         mock_env_file = MagicMock()
         mock_env_file.name = "/tmp/test.env"
@@ -365,6 +367,7 @@ class TestContainerResourceOverrides:
     @patch("tempfile.NamedTemporaryFile")
     def test_writable_omits_read_only(self, mock_tempfile, mock_subprocess, mock_ensure_image):
         """Test that writable=True omits --read-only from docker command."""
+        mock_ensure_image.return_value = "executor-coding:latest"
         mock_env_file = MagicMock()
         mock_env_file.name = "/tmp/test.env"
         mock_tempfile.return_value.__enter__.return_value = mock_env_file
@@ -388,6 +391,7 @@ class TestContainerResourceOverrides:
     @patch("tempfile.NamedTemporaryFile")
     def test_readonly_default(self, mock_tempfile, mock_subprocess, mock_ensure_image):
         """Test that writable=False (default) includes --read-only."""
+        mock_ensure_image.return_value = "executor-weather:latest"
         mock_env_file = MagicMock()
         mock_env_file.name = "/tmp/test.env"
         mock_tempfile.return_value.__enter__.return_value = mock_env_file
@@ -406,6 +410,7 @@ class TestContainerResourceOverrides:
     @patch("tempfile.NamedTemporaryFile")
     def test_custom_memory_cpus_tmpfs(self, mock_tempfile, mock_subprocess, mock_ensure_image):
         """Test custom memory, cpus, and tmpfs_size are passed to docker."""
+        mock_ensure_image.return_value = "executor-coding:latest"
         mock_env_file = MagicMock()
         mock_env_file.name = "/tmp/test.env"
         mock_tempfile.return_value.__enter__.return_value = mock_env_file
@@ -435,6 +440,7 @@ class TestContainerResourceOverrides:
     @patch("tempfile.NamedTemporaryFile")
     def test_cap_drop_always_present(self, mock_tempfile, mock_subprocess, mock_ensure_image):
         """Test that --cap-drop=ALL is always present regardless of writable."""
+        mock_ensure_image.return_value = "executor-coding:latest"
         mock_env_file = MagicMock()
         mock_env_file.name = "/tmp/test.env"
         mock_tempfile.return_value.__enter__.return_value = mock_env_file

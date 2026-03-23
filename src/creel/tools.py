@@ -603,6 +603,8 @@ def _execute_skill_tool(
             return _run_coding_via_pool(container_pool, executor_config, tool_config)
         if skill_id == "exec_interactive":
             return _run_interactive_via_container(executor_config, tool_config)
+        if skill_id == "dev_session":
+            return _run_dev_session(executor_config, tool_config)
         return _run_executor_container(executor_config, tool_config, bridge_config)
 
     return _run_executor_inline_skill(entry, tool_name, executor_config)
@@ -823,3 +825,17 @@ def _run_interactive_via_container(
     from creel.interactive_sessions import get_session_manager
 
     return get_session_manager().execute(executor_config, tool_config)
+
+
+def _run_dev_session(
+    executor_config: ExecutorConfig,
+    tool_config: ToolConfig,
+) -> str:
+    """Execute a dev session action via a long-lived Docker container.
+
+    The container runs ``dev_session_runner.py`` with an in-container
+    ProcessManager that manages multiple concurrent processes.
+    """
+    from creel.dev_session_manager import get_dev_session_manager
+
+    return get_dev_session_manager().execute(executor_config, tool_config)

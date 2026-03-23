@@ -26,6 +26,8 @@ allow:
   - synthesize_speech
   # Host exec (read-only listing)
   - host_sessions
+  # Dev session (read-only listing)
+  - dev_sessions
   # File operations (read-only)
   - read_file
   - list_files
@@ -74,6 +76,9 @@ review:
   - host_process
   # Interactive PTY sessions (requires explicit approval)
   - exec_interactive
+  # Dev session (containerized process management)
+  - dev_exec
+  - dev_process
 
 deny:
   - delete_*
@@ -457,6 +462,90 @@ deny_when:
   - tool: coding
     arg: mount
     pattern: "/proc*"
+  # Dev session: block same dangerous patterns as host_exec
+  # NOTE: The in-container ProcessManager also enforces a regex blocklist
+  # (see src/executors/dev_session/process_manager.py). Keep both in sync.
+  - tool: dev_exec
+    arg: command
+    pattern: "*python -c*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*python3 -c*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*perl -e*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*ruby -e*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*osascript*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*eval $(*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*rm -rf*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*rm -fr*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*mkfs*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*dd if=*of=/dev/*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*>/dev/tcp/*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*/dev/udp/*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*bash -i*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*nc -e*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*ncat -e*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*| bash*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*| sh*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*|bash*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*|sh*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*curl*|*sh*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*wget*|*sh*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*$(curl*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*$(wget*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*:(){ :|:& };:*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*crontab*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*chmod 777*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*chmod -R 777*"
   # GitHub: block destructive operations
   # NOTE: The executor also enforces an allowlist of subcommands
   # (see src/executors/github/executor.py). Keep both in sync.
@@ -619,6 +708,18 @@ review_when:
   - tool: exec_interactive
     arg: command
     pattern: "*sudo*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*ssh *"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*scp *"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*tar*|*curl*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*zip*|*curl*"
   # Coding tool: flag risky but legitimate commands for review
   - tool: coding
     arg: command
@@ -650,6 +751,49 @@ review_when:
   - tool: coding
     arg: command
     pattern: "*scp *"
+  - tool: coding
+    arg: command
+    pattern: "*tar*|*curl*"
+  - tool: coding
+    arg: command
+    pattern: "*zip*|*curl*"
+  # Dev session: flag risky but legitimate commands for review
+  - tool: dev_exec
+    arg: command
+    pattern: "*env*KEY*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*env*SECRET*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*env*TOKEN*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*env*PASSWORD*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*git push --force*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*git push -f*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*git reset --hard*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*sudo*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*ssh *"
+  - tool: dev_exec
+    arg: command
+    pattern: "*scp *"
+  - tool: dev_exec
+    arg: command
+    pattern: "*tar*|*curl*"
+  - tool: dev_exec
+    arg: command
+    pattern: "*zip*|*curl*"
   # GitHub: flag state-changing operations for review
   # NOTE: The executor also enforces an allowlist of subcommands
   # (see src/executors/github/executor.py). Keep both in sync.

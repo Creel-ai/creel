@@ -1053,6 +1053,10 @@ class ChatServer:
             self._container_pool.shutdown()
             self._container_pool = None
 
+        from creel.dev_session_manager import shutdown_dev_session_manager
+
+        shutdown_dev_session_manager()
+
     def _build_system_prompt(self, *, user_message: str | None = None) -> str:
         """Build the system prompt from workspace files, memory, and config.
 

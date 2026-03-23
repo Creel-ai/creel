@@ -538,6 +538,10 @@ class DaemonService:
             except Exception:
                 logger.exception("Failed to stop channel '%s'", name)
 
+        from creel.dev_session_manager import shutdown_dev_session_manager
+
+        shutdown_dev_session_manager()
+
     # --- Config reload ---
 
     @property

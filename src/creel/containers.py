@@ -558,32 +558,10 @@ def _run_executor_container(
         token = env_vars.pop("ANTHROPIC_AUTH_TOKEN")
         env_vars.setdefault("CLAUDE_CODE_OAUTH_TOKEN", token)
 
-    # Pass args as env vars, but skip names that would clobber critical
-    # system environment variables (e.g. "path" → PATH breaks containers).
-    # Args are also available via the mounted JSON file (/creel-input.json).
-    _RESERVED_ENV_NAMES = frozenset(
-        {
-            "PATH",
-            "HOME",
-            "USER",
-            "SHELL",
-            "LANG",
-            "TERM",
-            "HOSTNAME",
-            "PWD",
-            "OLDPWD",
-            "SHLVL",
-            "LD_LIBRARY_PATH",
-            "PYTHONPATH",
-        }
-    )
-    for key, value in config.args.items():
-        env_key = key.upper()
-        if env_key in _RESERVED_ENV_NAMES:
-            # Use a prefixed name so the executor can still find it
-            env_vars[f"ARG_{env_key}"] = value
-        else:
-            env_vars[env_key] = value
+    # Issue #305: Don't write args to env vars — all executors now read
+    # args from the mounted JSON file (CREEL_INPUT_FILE=/creel-input.json).
+    # Writing args to the env-file caused newline stripping that broke
+    # multiline values like coding commands and file content.
 
     _replace_google_credentials_with_access_token(env_vars)
 
@@ -698,6 +676,16 @@ def _run_executor_container(
                     # Expand ~ to home directory
                     host_path = os.path.expanduser(mount.path)
                     docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
+
+                # Issue #304: For coding executor, set WORKSPACE to the first rw
+                # mount so coding_write_file uses the mounted host path instead
+                # of the ephemeral /workspace.
+                if config.name == "coding":
+                    for mount in tool_config.mounts:
+                        if mount.mode == "rw":
+                            host_path = os.path.expanduser(mount.path)
+                            env_vars["WORKSPACE"] = f"/mnt{host_path}"
+                            break
 
             # Mount host CLI auth directory (validated above, before image build)
             if _host_auth_entry is not None:

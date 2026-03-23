@@ -17,6 +17,7 @@ allow:
   - list_reminders
   - get_reminder_lists
   - list_things
+  - read_clipboard
   - git_status
   - git_diff
   - git_log
@@ -71,6 +72,8 @@ review:
   - browser_screenshot
   # Coding tool (runs arbitrary commands)
   - coding
+  # Clipboard (write)
+  - write_clipboard
   # Host exec (command execution and process management on host)
   - host_exec
   - host_process
@@ -858,6 +861,8 @@ auto_approve:
   # Things 3 task management
   - create_things_task
   - complete_things_task
+  # Clipboard
+  - write_clipboard
   # Notes
   - create_note
   # Reminders

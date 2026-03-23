@@ -558,9 +558,11 @@ def _run_executor_container(
         token = env_vars.pop("ANTHROPIC_AUTH_TOKEN")
         env_vars.setdefault("CLAUDE_CODE_OAUTH_TOKEN", token)
 
-    # Pass args as env vars, but skip names that would clobber critical
-    # system environment variables (e.g. "path" → PATH breaks containers).
-    # Args are also available via the mounted JSON file (/creel-input.json).
+    # Pass args as env vars for backwards compatibility.  Most executors
+    # read args from os.environ in their main().  Multiline values are
+    # stripped here (env-file format cannot represent newlines) but the
+    # mounted JSON file (CREEL_INPUT_FILE) preserves them — executors that
+    # need multiline support should call _load_args_from_input_file().
     _RESERVED_ENV_NAMES = frozenset(
         {
             "PATH",
@@ -580,7 +582,6 @@ def _run_executor_container(
     for key, value in config.args.items():
         env_key = key.upper()
         if env_key in _RESERVED_ENV_NAMES:
-            # Use a prefixed name so the executor can still find it
             env_vars[f"ARG_{env_key}"] = value
         else:
             env_vars[env_key] = value
@@ -631,15 +632,14 @@ def _run_executor_container(
         _workspace_mount = (resolved_ws, mount_mode)
         env_vars["WORKSPACE"] = "/workspace"
 
-    # Auto-set WORKSPACE for coding executor when project mounts are configured.
-    # Mounts land at /mnt/<host-path> inside the container; without this the agent
-    # defaults to /workspace (ephemeral) and files are lost on container exit.
+    # Issue #304: For coding executor, set WORKSPACE to the first rw mount
+    # so coding_write_file uses the mounted host path instead of ephemeral
+    # /workspace.  Must be set before env-file write so the value is included.
     if config.name == "coding" and tool_config and tool_config.mounts:
-        for mount in tool_config.mounts:
-            if mount.mode == "rw":
-                host_path = os.path.expanduser(mount.path)
-                env_vars["WORKSPACE"] = f"/mnt{host_path}"
-                break
+        rw_mount = next((m for m in tool_config.mounts if m.mode == "rw"), None)
+        if rw_mount:
+            ws_host_path = os.path.expanduser(rw_mount.path)
+            env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
 
     # Write tool args as a JSON file so multiline values (e.g. file content)
     # are preserved.  The env-file format cannot represent newlines.

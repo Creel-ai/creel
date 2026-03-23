@@ -122,6 +122,13 @@ skills:
     enabled: false
   imessage_bridge: {}
   host_exec: {}
+  dev_session:
+    writable: true
+    memory: "512m"
+    cpus: "1.0"
+    tmpfs_size: "256M"
+    timeout: 300
+    network: true
 
 llm:
   model: claude-sonnet-4-20250514

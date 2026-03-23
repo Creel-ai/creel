@@ -631,6 +631,16 @@ def _run_executor_container(
         _workspace_mount = (resolved_ws, mount_mode)
         env_vars["WORKSPACE"] = "/workspace"
 
+    # Auto-set WORKSPACE for coding executor when project mounts are configured.
+    # Mounts land at /mnt/<host-path> inside the container; without this the agent
+    # defaults to /workspace (ephemeral) and files are lost on container exit.
+    if config.name == "coding" and tool_config and tool_config.mounts:
+        for mount in tool_config.mounts:
+            if mount.mode == "rw":
+                host_path = os.path.expanduser(mount.path)
+                env_vars["WORKSPACE"] = f"/mnt{host_path}"
+                break
+
     # Write tool args as a JSON file so multiline values (e.g. file content)
     # are preserved.  The env-file format cannot represent newlines.
     with tempfile.NamedTemporaryFile(

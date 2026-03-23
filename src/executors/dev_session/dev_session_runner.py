@@ -143,12 +143,15 @@ def main() -> None:
             if msg_type == "process":
                 try:
                     _send(_handle_process(pm, msg))
-                except (KeyError, RuntimeError, ValueError) as e:
+                except Exception as e:
                     _send({"type": "error", "message": str(e)})
                 continue
 
             if msg_type == "sessions":
-                _send({"type": "sessions_result", "sessions": pm.list_sessions()})
+                try:
+                    _send({"type": "sessions_result", "sessions": pm.list_sessions()})
+                except Exception as e:
+                    _send({"type": "error", "message": str(e)})
                 continue
 
             _send({"type": "error", "message": f"Unknown message type: {msg_type}"})

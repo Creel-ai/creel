@@ -112,9 +112,8 @@ class DevSessionManager:
         if self._closed:
             raise RuntimeError("DevSessionManager has been shut down")
 
-        # Clean up any previous container (release lock briefly for cleanup
-        # I/O, then re-acquire — safe because _ensure_container holds the
-        # lock and is the only caller).
+        # Snapshot and clear the old container reference so cleanup can
+        # proceed without the lock (Docker I/O can be slow).
         old_container = self._container
         old_name = self._container_name
         old_env = self._env_file_path
@@ -124,8 +123,7 @@ class DevSessionManager:
 
         if old_container is not None:
             # Release lock for potentially slow Docker cleanup, then
-            # re-acquire.  No other thread can enter _start because
-            # _ensure_container holds the outer lock.
+            # re-acquire.
             # NOTE: This relies on _lock being a plain threading.Lock (not
             # RLock).  Do NOT change to RLock — the release/acquire here
             # would decrement/increment the recursion count instead of
@@ -138,6 +136,16 @@ class DevSessionManager:
                 self._unlink(old_env)
             finally:
                 self._lock.acquire()
+
+            # Another thread may have started a container during the
+            # lock-release window.  If so, use theirs instead of starting
+            # a duplicate.
+            if self._container is not None and self._container.alive:
+                return self._container
+
+            # Also re-check shutdown in case it was called during cleanup.
+            if self._closed:
+                raise RuntimeError("DevSessionManager has been shut down")
 
         # Build/ensure the Docker image
         raw_image = tool_config.image or "executor-dev-session:latest"
@@ -244,9 +252,32 @@ class DevSessionManager:
     # ------------------------------------------------------------------
 
     def _mark_unhealthy(self) -> None:
-        """Mark the container as unhealthy so the next call restarts it."""
+        """Mark the current container as unhealthy and schedule cleanup.
+
+        Swaps ``self._container`` to ``None`` atomically under the lock so
+        the next ``execute()`` call will start a fresh container.  The old
+        container is cleaned up in a daemon thread to avoid blocking the
+        caller.
+        """
         with self._lock:
+            container = self._container
+            container_name = self._container_name
+            env_file_path = self._env_file_path
             self._container = None
+            self._container_name = ""
+            self._env_file_path = ""
+
+        if container is not None:
+            # Clean up in a background thread to avoid blocking the caller.
+            def _bg_cleanup() -> None:
+                try:
+                    container.shutdown()
+                    self._docker_rm(container_name)
+                    self._unlink(env_file_path)
+                except Exception:
+                    logger.warning("Background cleanup failed for %s", container_name)
+
+            threading.Thread(target=_bg_cleanup, daemon=True).start()
 
     def _exec(self, container: ManagedContainer, config: ExecutorConfig) -> str:
         """Handle a dev_exec tool call."""
@@ -330,9 +361,20 @@ class DevSessionManager:
     # Internal: cleanup
     # ------------------------------------------------------------------
 
-    def _cleanup_container(self) -> None:
-        """Shut down the current container if one exists."""
+    def _cleanup_container(
+        self,
+        *,
+        expected: ManagedContainer | None = None,
+    ) -> None:
+        """Shut down the current container if one exists.
+
+        If *expected* is given, only clean up if ``self._container`` is still
+        the same object.  This prevents the reaper from destroying a
+        freshly-started container that replaced the one it intended to reap.
+        """
         with self._lock:
+            if expected is not None and self._container is not expected:
+                return  # Container was already replaced; nothing to do.
             container = self._container
             container_name = self._container_name
             env_file_path = self._env_file_path
@@ -392,7 +434,10 @@ class DevSessionManager:
                                 container.alive,
                                 elapsed,
                             )
-                            self._cleanup_container()
+                            # Pass expected= so we only clean up this
+                            # specific container, not a freshly-started
+                            # replacement.
+                            self._cleanup_container(expected=container)
                 except Exception:
                     logger.warning("Dev session reaper error", exc_info=True)
 

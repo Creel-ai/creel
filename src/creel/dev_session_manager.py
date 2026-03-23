@@ -33,7 +33,7 @@ _IDLE_CHECK_INTERVAL = 60  # seconds
 _CONTAINER_TIMEOUT = 14400  # 4 hours — max container lifetime
 
 
-def _safe_int(value: str, default: int) -> int:
+def _safe_int(value: str | None, default: int) -> int:
     """Parse an int from a string, returning *default* on failure."""
     try:
         return int(value)
@@ -126,6 +126,10 @@ class DevSessionManager:
             # Release lock for potentially slow Docker cleanup, then
             # re-acquire.  No other thread can enter _start because
             # _ensure_container holds the outer lock.
+            # NOTE: This relies on _lock being a plain threading.Lock (not
+            # RLock).  Do NOT change to RLock — the release/acquire here
+            # would decrement/increment the recursion count instead of
+            # truly releasing.
             self._lock.release()
             try:
                 logger.info("Cleaning up previous dev session container %s", old_name)

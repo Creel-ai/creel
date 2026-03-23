@@ -36,6 +36,14 @@ except ImportError:
     from executors.dev_session.process_manager import ProcessManager
 
 
+def _safe_int(value: Any, default: int) -> int:
+    """Parse an int, returning *default* on failure."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 def _send(obj: dict[str, Any]) -> None:
     """Write a JSON line to stdout."""
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -58,7 +66,7 @@ def _handle_exec(pm: ProcessManager, msg: dict[str, Any]) -> dict[str, Any]:
 
     background = msg.get("background", False)
     workdir = msg.get("workdir")
-    timeout = int(msg.get("timeout", 300))
+    timeout = _safe_int(msg.get("timeout", 300), 300)
 
     result = pm.spawn(
         command=command,
@@ -82,8 +90,8 @@ def _handle_process(pm: ProcessManager, msg: dict[str, Any]) -> dict[str, Any]:
         return {"type": "process_result", **result}
 
     if action == "log":
-        limit = int(msg.get("limit", 100))
-        offset = int(msg.get("offset", 0))
+        limit = _safe_int(msg.get("limit", 100), 100)
+        offset = _safe_int(msg.get("offset", 0), 0)
         lines = pm.log(session_id, limit=limit, offset=offset)
         return {"type": "process_result", "session_id": session_id, "lines": lines}
 

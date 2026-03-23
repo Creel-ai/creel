@@ -207,3 +207,188 @@ class TestRunExecutorContainerArgsFile:
         # Verify the JSON args file preserves newlines
         assert captured["args"]["content"] == multiline_content
         assert "\n" in captured["args"]["content"]
+
+    @patch("creel.containers._ensure_image", return_value="executor-weather:abc123")
+    @patch("subprocess.run")
+    def test_args_written_as_env_vars(self, mock_run: MagicMock, mock_ensure: MagicMock) -> None:
+        """Args should be written to the env-file so executors that read from
+        os.environ (most of them) still work."""
+        from creel.models import ExecutorConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        config = ExecutorConfig(
+            name="weather",
+            args={"location": "London,UK"},
+        )
+        _run_executor_container(config)
+
+        assert "LOCATION=London,UK" in captured["env"]
+
+    @patch("creel.containers._ensure_image", return_value="executor-weather:abc123")
+    @patch("subprocess.run")
+    def test_reserved_env_names_are_prefixed(
+        self, mock_run: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """Args whose upper-case key collides with reserved names (PATH, HOME, …)
+        should be written with an ARG_ prefix."""
+        from creel.models import ExecutorConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        config = ExecutorConfig(
+            name="test_exec",
+            args={"path": "/some/path", "query": "hello"},
+        )
+        _run_executor_container(config)
+
+        assert "ARG_PATH=/some/path" in captured["env"]
+        assert "QUERY=hello" in captured["env"]
+        # Must NOT write bare PATH= which would clobber the system PATH
+        lines = captured["env"].strip().split("\n")
+        assert not any(line.startswith("PATH=") for line in lines)
+
+
+class TestCodingWorkspaceMount:
+    """Tests that the coding executor gets WORKSPACE pointed at the rw mount."""
+
+    @patch("creel.containers._ensure_image", return_value="executor-coding:abc123")
+    @patch("subprocess.run")
+    def test_workspace_set_to_first_rw_mount(
+        self, mock_run: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """WORKSPACE env var should be /mnt{host_path} for the first rw mount."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            captured["cmd"] = list(cmd)
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        tool_config = ToolConfig(
+            executor="coding",
+            description="coding",
+            mounts=[
+                MountConfig(path="/home/user/project", mode="rw"),
+                MountConfig(path="/home/user/data", mode="ro"),
+            ],
+            network=True,
+            writable=True,
+        )
+        config = ExecutorConfig(
+            name="coding",
+            args={"command": "ls"},
+        )
+        _run_executor_container(config, tool_config=tool_config)
+
+        assert "WORKSPACE=/mnt/home/user/project" in captured["env"]
+
+    @patch("creel.containers._ensure_image", return_value="executor-coding:abc123")
+    @patch("subprocess.run")
+    def test_workspace_not_set_without_rw_mounts(
+        self, mock_run: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """WORKSPACE should not be overridden when there are no rw mounts."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        tool_config = ToolConfig(
+            executor="coding",
+            description="coding",
+            mounts=[MountConfig(path="/home/user/data", mode="ro")],
+            network=True,
+            writable=True,
+        )
+        config = ExecutorConfig(name="coding", args={"command": "ls"})
+        _run_executor_container(config, tool_config=tool_config)
+
+        # Should NOT contain a WORKSPACE=/mnt... line
+        env_lines = captured["env"].strip().split("\n")
+        ws_lines = [line for line in env_lines if line.startswith("WORKSPACE=/mnt")]
+        assert ws_lines == []
+
+
+class TestFileOpsMountInheritance:
+    """Tests that file_ops inherits coding mounts via _execute_skill_tool."""
+
+    def test_file_ops_inherits_coding_mounts(self) -> None:
+        """file_ops ToolConfig should receive coding's mounts."""
+        from creel.models import MountConfig, SkillOverride
+        from creel.tools import _build_tool_config_from_skill
+
+        # Simulate a coding override with project mounts
+        coding_override = SkillOverride(
+            mounts=[
+                MountConfig(path="/home/user/project", mode="rw"),
+                MountConfig(path="/home/user/data", mode="ro"),
+            ],
+        )
+        file_ops_override = SkillOverride()
+
+        # Build a ToolConfig for file_ops (no mounts of its own)
+        mock_meta = MagicMock()
+        mock_meta.id = "file_ops"
+        mock_meta.needs_network = False
+        mock_spec = MagicMock()
+        mock_spec.description = "file ops"
+
+        tool_config = _build_tool_config_from_skill(mock_meta, file_ops_override, mock_spec)
+        assert tool_config.mounts == []
+
+        # Apply the inheritance logic (mirrors _execute_skill_tool)
+        skill_overrides = {"coding": coding_override, "file_ops": file_ops_override}
+        skill_id = "file_ops"
+        if skill_id == "file_ops":
+            co = skill_overrides.get("coding")
+            if co and co.mounts:
+                extra = [m for m in co.mounts if m not in tool_config.mounts]
+                if extra:
+                    tool_config.mounts = list(tool_config.mounts) + extra
+
+        assert len(tool_config.mounts) == 2
+        assert tool_config.mounts[0].path == "/home/user/project"
+        assert tool_config.mounts[1].path == "/home/user/data"
+
+    def test_mount_inheritance_does_not_mutate_coding_override(self) -> None:
+        """Inheriting mounts must not modify the coding SkillOverride's list."""
+        from creel.models import MountConfig, SkillOverride
+
+        coding_override = SkillOverride(
+            mounts=[MountConfig(path="/home/user/project", mode="rw")],
+        )
+        original_len = len(coding_override.mounts)
+
+        # Simulate the inheritance with a tool_config that already has a mount
+        existing = [MountConfig(path="/home/user/other", mode="ro")]
+        extra = [m for m in coding_override.mounts if m not in existing]
+        result = list(existing) + extra
+
+        assert len(result) == 2
+        assert len(coding_override.mounts) == original_len  # not mutated

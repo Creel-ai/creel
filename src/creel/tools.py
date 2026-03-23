@@ -600,14 +600,15 @@ def _execute_skill_tool(
         # Build a ToolConfig from skill metadata + override for container execution
         tool_config = _build_tool_config_from_skill(entry.meta, override, tool_spec)
 
-        # Issue #303: file_ops needs access to the same project directories as coding.
-        # Pull rw mounts from the coding skill so file_ops can write to project dirs.
+        # Issue #303: file_ops needs access to the same project directories
+        # as coding.  Coupled to the "coding" skill — if the skill is renamed
+        # or project dirs move to a different skill, update this block.
         if skill_id == "file_ops":
             coding_override = skill_overrides.get("coding")
             if coding_override and coding_override.mounts:
-                for m in coding_override.mounts:
-                    if m not in tool_config.mounts:
-                        tool_config.mounts.append(m)
+                extra = [m for m in coding_override.mounts if m not in tool_config.mounts]
+                if extra:
+                    tool_config.mounts = list(tool_config.mounts) + extra
 
         if skill_id == "coding" and container_pool is not None and container_pool.enabled:
             return _run_coding_via_pool(container_pool, executor_config, tool_config)

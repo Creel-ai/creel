@@ -558,10 +558,33 @@ def _run_executor_container(
         token = env_vars.pop("ANTHROPIC_AUTH_TOKEN")
         env_vars.setdefault("CLAUDE_CODE_OAUTH_TOKEN", token)
 
-    # Issue #305: Don't write args to env vars — all executors now read
-    # args from the mounted JSON file (CREEL_INPUT_FILE=/creel-input.json).
-    # Writing args to the env-file caused newline stripping that broke
-    # multiline values like coding commands and file content.
+    # Pass args as env vars for backwards compatibility.  Most executors
+    # read args from os.environ in their main().  Multiline values are
+    # stripped here (env-file format cannot represent newlines) but the
+    # mounted JSON file (CREEL_INPUT_FILE) preserves them — executors that
+    # need multiline support should call _load_args_from_input_file().
+    _RESERVED_ENV_NAMES = frozenset(
+        {
+            "PATH",
+            "HOME",
+            "USER",
+            "SHELL",
+            "LANG",
+            "TERM",
+            "HOSTNAME",
+            "PWD",
+            "OLDPWD",
+            "SHLVL",
+            "LD_LIBRARY_PATH",
+            "PYTHONPATH",
+        }
+    )
+    for key, value in config.args.items():
+        env_key = key.upper()
+        if env_key in _RESERVED_ENV_NAMES:
+            env_vars[f"ARG_{env_key}"] = value
+        else:
+            env_vars[env_key] = value
 
     _replace_google_credentials_with_access_token(env_vars)
 
@@ -609,15 +632,14 @@ def _run_executor_container(
         _workspace_mount = (resolved_ws, mount_mode)
         env_vars["WORKSPACE"] = "/workspace"
 
-    # Auto-set WORKSPACE for coding executor when project mounts are configured.
-    # Mounts land at /mnt/<host-path> inside the container; without this the agent
-    # defaults to /workspace (ephemeral) and files are lost on container exit.
+    # Issue #304: For coding executor, set WORKSPACE to the first rw mount
+    # so coding_write_file uses the mounted host path instead of ephemeral
+    # /workspace.  Must be set before env-file write so the value is included.
     if config.name == "coding" and tool_config and tool_config.mounts:
-        for mount in tool_config.mounts:
-            if mount.mode == "rw":
-                host_path = os.path.expanduser(mount.path)
-                env_vars["WORKSPACE"] = f"/mnt{host_path}"
-                break
+        rw_mount = next((m for m in tool_config.mounts if m.mode == "rw"), None)
+        if rw_mount:
+            ws_host_path = os.path.expanduser(rw_mount.path)
+            env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
 
     # Write tool args as a JSON file so multiline values (e.g. file content)
     # are preserved.  The env-file format cannot represent newlines.
@@ -676,16 +698,6 @@ def _run_executor_container(
                     # Expand ~ to home directory
                     host_path = os.path.expanduser(mount.path)
                     docker_cmd.extend(["-v", f"{host_path}:/mnt{host_path}:{mount.mode}"])
-
-                # Issue #304: For coding executor, set WORKSPACE to the first rw
-                # mount so coding_write_file uses the mounted host path instead
-                # of the ephemeral /workspace.
-                if config.name == "coding":
-                    for mount in tool_config.mounts:
-                        if mount.mode == "rw":
-                            host_path = os.path.expanduser(mount.path)
-                            env_vars["WORKSPACE"] = f"/mnt{host_path}"
-                            break
 
             # Mount host CLI auth directory (validated above, before image build)
             if _host_auth_entry is not None:

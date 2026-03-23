@@ -35,6 +35,8 @@ _CONTAINER_TIMEOUT = 14400  # 4 hours — max container lifetime
 
 def _safe_int(value: str | None, default: int) -> int:
     """Parse an int from a string, returning *default* on failure."""
+    if value is None:
+        return default
     try:
         return int(value)
     except (ValueError, TypeError):

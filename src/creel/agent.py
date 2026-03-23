@@ -743,6 +743,29 @@ def run_agent_loop(
         # Append the assistant message (with tool_use blocks) to history
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
+        # Interrupt checkpoint — skip screening/execution if already interrupted
+        if session_state is not None and session_state.interrupt.is_set():
+            logger.info("Agent loop interrupted after LLM call (before tool screening)")
+            tool_results = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "content": "Tool execution interrupted by user.",
+                    "is_error": True,
+                }
+                for b in tool_use_blocks
+            ]
+            messages.append({"role": "user", "content": tool_results})
+            _ensure_tool_call_integrity(messages)
+            return AgentResult(
+                text="Stopped.",
+                turns_used=turns_used,
+                tool_calls_made=tool_calls_made,
+                stop_reason="interrupted",
+                tool_history=tool_history,
+                last_input_tokens=last_input_tokens,
+            )
+
         # Phase 1: Pre-screen all tool calls through Guardian and scoping.
         # Buckets: execute (allowed), review (need async approval), deny (error).
         execute_blocks = []
@@ -879,7 +902,20 @@ def run_agent_loop(
         # ones and return with all review tools as pending approvals.
         if review_blocks:
             # Execute allowed tools so their results aren't lost
-            for block in execute_blocks:
+            _phase2_interrupted = False
+            for pi, block in enumerate(execute_blocks):
+                if session_state is not None and session_state.interrupt.is_set():
+                    for remaining in execute_blocks[pi:]:
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": remaining.id,
+                                "content": "Tool execution interrupted by user.",
+                                "is_error": True,
+                            }
+                        )
+                    _phase2_interrupted = True
+                    break
                 _result = _execute_single_tool(
                     block,
                     registry=registry,
@@ -895,6 +931,28 @@ def run_agent_loop(
                     tool_history=tool_history,
                 )
                 tool_results.append(_result)
+
+            if _phase2_interrupted:
+                # Fill review tools with interrupt results too
+                for block, _reason in review_blocks:
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": "Tool execution interrupted by user.",
+                            "is_error": True,
+                        }
+                    )
+                messages.append({"role": "user", "content": tool_results})
+                _ensure_tool_call_integrity(messages)
+                return AgentResult(
+                    text="Stopped.",
+                    turns_used=turns_used,
+                    tool_calls_made=tool_calls_made,
+                    stop_reason="interrupted",
+                    tool_history=tool_history,
+                    last_input_tokens=last_input_tokens,
+                )
 
             # Inject synthetic "awaiting approval" results for review tools
             pending = []

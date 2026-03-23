@@ -155,7 +155,7 @@ class DaemonService:
         if text.strip().lower() in self._interrupt_words:
             if self.interrupt_sender(sender_id):
                 yield {
-                    "type": "done",
+                    "type": "final",
                     "sender_id": sender_id,
                     "session_id": session_id,
                     "payload": {"text": "Stopping..."},

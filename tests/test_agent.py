@@ -510,3 +510,30 @@ def test_no_interrupt_when_event_not_set(mock_call_llm):
 
     assert result.stop_reason == "end_turn"
     assert result.text == "All good!"
+
+
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
+def test_interrupt_after_llm_skips_screening(mock_call_llm, mock_execute):
+    """Interrupt set during LLM call should skip Phase 1 screening and tool execution."""
+    session_state = SessionState(sender_id="test")
+
+    # Set interrupt before call_llm returns (simulating interrupt during LLM call)
+    def _llm_side_effect(**kwargs):
+        session_state.interrupt.set()
+        return _tool_use_message("check_weather", {"location": "Denver"})
+
+    mock_call_llm.side_effect = _llm_side_effect
+
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "Weather?"}],
+        llm_config=_make_llm_config(),
+        registry=_weather_registry(),
+        skill_overrides=_weather_overrides(),
+        agent_config=AgentConfig(max_turns=10),
+        session_state=session_state,
+    )
+
+    assert result.stop_reason == "interrupted"
+    # Tool should never have been executed
+    mock_execute.assert_not_called()

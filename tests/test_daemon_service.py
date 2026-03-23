@@ -210,6 +210,15 @@ def test_interrupt_words_cached(daemon_service: DaemonService) -> None:
     assert "cancel" in daemon_service._interrupt_words
 
 
+def test_stream_message_interrupt_yields_final(daemon_service: DaemonService) -> None:
+    """stream_message interrupt should yield a 'final' event, not 'done'."""
+    daemon_service._server._active_senders.add("cli")
+    events = list(daemon_service.stream_message("cli", "stop"))
+    assert len(events) == 1
+    assert events[0]["type"] == "final"
+    assert events[0]["payload"]["text"] == "Stopping..."
+
+
 def test_start_channel_configures_interrupt(minimal_agent_def, tmp_path: Path) -> None:
     """start_channel should call configure_interrupt on the channel."""
     server = _StubChatServer(tmp_path / "sessions")

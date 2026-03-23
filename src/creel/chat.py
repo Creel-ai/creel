@@ -509,6 +509,11 @@ class ChatServer:
         # Save the updated messages (agent loop mutates the list)
         self._session_mgr.save_session(session)
 
+        # When interrupted, the channel already sent "Stopping..." to the user.
+        # Return empty string so the worker thread doesn't send a duplicate reply.
+        if result.stop_reason == "interrupted":
+            return ""
+
         return result.text
 
     def _process_attachments(

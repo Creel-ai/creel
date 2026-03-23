@@ -690,3 +690,14 @@ class TestHandleMessageInterrupt:
 
         # Interrupt should have been cleared before entering the loop
         assert interrupt_was_set == [False]
+
+    @patch("creel.chat.run_agent_loop")
+    def test_interrupted_result_returns_empty_string(self, mock_loop, tmp_path) -> None:
+        """When agent is interrupted, handle_message returns empty string to avoid double reply."""
+        agent_def = _make_agent_def(tmp_path)
+        server = ChatServer(agent_def)
+
+        mock_loop.return_value = _make_agent_result("Stopped.", stop_reason="interrupted")
+        result = server.handle_message("user1", "do something")
+
+        assert result == ""

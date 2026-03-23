@@ -124,6 +124,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lowercase IMAGE_PREFIX for GHCR
+        run: echo "IMAGE_PREFIX=${IMAGE_PREFIX,,}" >> "$GITHUB_ENV"
+
       - name: Set up QEMU (multi-arch)
         uses: docker/setup-qemu-action@v3
 
@@ -164,6 +167,9 @@ jobs:
           ) }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Lowercase IMAGE_PREFIX for GHCR
+        run: echo "IMAGE_PREFIX=${IMAGE_PREFIX,,}" >> "$GITHUB_ENV"
 
       - name: Set up QEMU (multi-arch)
         uses: docker/setup-qemu-action@v3
@@ -223,7 +229,7 @@ jobs:
 
       # Scan before push — fail on CRITICAL/HIGH vulnerabilities
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: "${{ env.IMAGE_PREFIX }}-${{ steps.meta.outputs.image_name }}:${{ github.sha }}"
           format: "sarif"

@@ -28,6 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lowercase IMAGE_NAME for GHCR
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
       - name: Set up QEMU (multi-arch)
         uses: docker/setup-qemu-action@v3
 
@@ -68,7 +71,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=core
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           format: "sarif"

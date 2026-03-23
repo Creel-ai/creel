@@ -71,9 +71,21 @@ class ManagedContainer:
         if timeout is not None:
             import select
 
-            ready, _, _ = select.select([self.proc.stdout], [], [], timeout)
-            if not ready:
-                raise TimeoutError(f"Container {self.id} did not respond within {timeout}s")
+            # When text=True, proc.stdout is a TextIOWrapper wrapping a
+            # BufferedReader.  A previous readline() may have pulled more
+            # than one line into Python's internal buffer.  select.select()
+            # only checks the OS file descriptor and would miss that
+            # buffered data, causing a spurious timeout.  Check the
+            # underlying BufferedReader first.
+            has_buffered = False
+            buf = getattr(self.proc.stdout, "buffer", None)
+            if buf is not None:
+                has_buffered = bool(buf.peek(1))
+
+            if not has_buffered:
+                ready, _, _ = select.select([self.proc.stdout], [], [], timeout)
+                if not ready:
+                    raise TimeoutError(f"Container {self.id} did not respond within {timeout}s")
 
         assert self.proc.stdout is not None, "Container process has no stdout"
         line = self.proc.stdout.readline()

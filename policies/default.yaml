@@ -708,6 +708,18 @@ review_when:
   - tool: exec_interactive
     arg: command
     pattern: "*sudo*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*ssh *"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*scp *"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*tar*|*curl*"
+  - tool: exec_interactive
+    arg: command
+    pattern: "*zip*|*curl*"
   # Coding tool: flag risky but legitimate commands for review
   - tool: coding
     arg: command
@@ -739,6 +751,12 @@ review_when:
   - tool: coding
     arg: command
     pattern: "*scp *"
+  - tool: coding
+    arg: command
+    pattern: "*tar*|*curl*"
+  - tool: coding
+    arg: command
+    pattern: "*zip*|*curl*"
   # Dev session: flag risky but legitimate commands for review
   - tool: dev_exec
     arg: command

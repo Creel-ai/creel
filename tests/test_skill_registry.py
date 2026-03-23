@@ -531,7 +531,7 @@ class TestBuiltinRegisterSkill:
             (
                 "executors.coding.executor",
                 "coding",
-                ["coding"],
+                ["coding", "coding_write_file", "coding_agent"],
             ),
             (
                 "executors.tts.executor",

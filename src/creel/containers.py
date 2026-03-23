@@ -181,6 +181,13 @@ def _ensure_base_image() -> str:
         capture_output=True,
     )
     if inspect.returncode == 0:
+        # Ensure :latest alias points to this image so child Dockerfiles
+        # using FROM creel-executor-base:latest resolve correctly.
+        latest = f"{_BASE_IMAGE_NAME}:latest"
+        subprocess.run(
+            ["docker", "tag", tagged, latest],
+            capture_output=True,
+        )
         return tagged
 
     if not _BASE_DOCKERFILE.exists():
@@ -388,8 +395,16 @@ def _build_image(
     )
     if build_result.returncode != 0:
         build_err = build_result.stderr.strip() if build_result.stderr else "unknown error"
+        build_out = build_result.stdout.strip() if build_result.stdout else ""
         logger.error("Docker build failed for %s:\n%s", tags[0], build_err)
+        if build_out:
+            logger.error("Docker build stdout for %s:\n%s", tags[0], build_out)
         raise RuntimeError(f"Docker build failed for {tags[0]}: {build_err[:500]}")
+
+    # Log build output for debugging (npm install failures, warnings, etc.)
+    build_out = build_result.stdout.strip() if build_result.stdout else ""
+    if build_out:
+        logger.debug("Docker build output for %s:\n%s", tags[0], build_out)
 
 
 def collect_required_images(agent_def: AgentDefinition) -> list[str]:
@@ -535,9 +550,40 @@ def _run_executor_container(
     if config.secrets:
         env_vars.update(decrypt_env_file(config.secrets))
 
-    # Pass args as env vars
+    # Claude Code CLI uses CLAUDE_CODE_OAUTH_TOKEN, not ANTHROPIC_AUTH_TOKEN.
+    # When both are present, Claude Code prefers ANTHROPIC_AUTH_TOKEN and fails
+    # with "OAuth authentication is currently not supported". Remove the old
+    # var and set the correct one so coding_agent can authenticate.
+    if config.name == "coding" and "ANTHROPIC_AUTH_TOKEN" in env_vars:
+        token = env_vars.pop("ANTHROPIC_AUTH_TOKEN")
+        env_vars.setdefault("CLAUDE_CODE_OAUTH_TOKEN", token)
+
+    # Pass args as env vars, but skip names that would clobber critical
+    # system environment variables (e.g. "path" → PATH breaks containers).
+    # Args are also available via the mounted JSON file (/creel-input.json).
+    _RESERVED_ENV_NAMES = frozenset(
+        {
+            "PATH",
+            "HOME",
+            "USER",
+            "SHELL",
+            "LANG",
+            "TERM",
+            "HOSTNAME",
+            "PWD",
+            "OLDPWD",
+            "SHLVL",
+            "LD_LIBRARY_PATH",
+            "PYTHONPATH",
+        }
+    )
     for key, value in config.args.items():
-        env_vars[key.upper()] = value
+        env_key = key.upper()
+        if env_key in _RESERVED_ENV_NAMES:
+            # Use a prefixed name so the executor can still find it
+            env_vars[f"ARG_{env_key}"] = value
+        else:
+            env_vars[env_key] = value
 
     _replace_google_credentials_with_access_token(env_vars)
 

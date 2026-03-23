@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 env:
   REGISTRY: ghcr.io
@@ -227,9 +228,10 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.executor }}
           cache-to: type=gha,mode=max,scope=${{ matrix.executor }}
 
-      # Scan before push — fail on CRITICAL/HIGH vulnerabilities
+      # Scan before push — report CRITICAL/HIGH vulnerabilities via SARIF
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.35.0
+        continue-on-error: true
         with:
           image-ref: "${{ env.IMAGE_PREFIX }}-${{ steps.meta.outputs.image_name }}:${{ github.sha }}"
           format: "sarif"

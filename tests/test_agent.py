@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from creel.agent import run_agent_loop
-from creel.models import AgentConfig, LLMConfig, SkillOverride
+from creel.models import AgentConfig, LLMConfig, SessionState, SkillOverride
 from creel.skills.registry import SkillRegistry
 
 
@@ -353,3 +353,187 @@ def test_last_input_tokens_from_final_call(mock_call_llm, mock_execute):
     )
 
     assert result.last_input_tokens == 2500
+
+
+# --- Interrupt tests ---
+
+
+@patch("creel.agent.call_llm")
+def test_interrupt_at_turn_boundary(mock_call_llm):
+    """Agent should stop immediately when interrupt is set before a turn."""
+    session_state = SessionState(sender_id="test")
+    session_state.interrupt.set()
+
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "Do something long"}],
+        llm_config=_make_llm_config(),
+        registry=_empty_registry(),
+        skill_overrides={},
+        agent_config=AgentConfig(max_turns=10),
+        session_state=session_state,
+    )
+
+    assert result.stop_reason == "interrupted"
+    assert result.text == "Stopped."
+    assert result.turns_used == 1
+    mock_call_llm.assert_not_called()
+
+
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
+def test_interrupt_between_tools(mock_call_llm, mock_execute):
+    """Interrupt set during tool execution should skip remaining tools."""
+    # LLM returns 3 tool calls
+    tool_block_1 = MagicMock()
+    tool_block_1.type = "tool_use"
+    tool_block_1.name = "check_weather"
+    tool_block_1.input = {"location": "A"}
+    tool_block_1.id = "tool_1"
+
+    tool_block_2 = MagicMock()
+    tool_block_2.type = "tool_use"
+    tool_block_2.name = "check_weather"
+    tool_block_2.input = {"location": "B"}
+    tool_block_2.id = "tool_2"
+
+    tool_block_3 = MagicMock()
+    tool_block_3.type = "tool_use"
+    tool_block_3.name = "check_weather"
+    tool_block_3.input = {"location": "C"}
+    tool_block_3.id = "tool_3"
+
+    msg = MagicMock()
+    msg.content = [tool_block_1, tool_block_2, tool_block_3]
+    msg.stop_reason = "tool_use"
+    msg.usage = MagicMock()
+    msg.usage.input_tokens = 100
+
+    mock_call_llm.return_value = msg
+
+    session_state = SessionState(sender_id="test")
+
+    # After first tool execution, set interrupt
+    def _execute_side_effect(**kwargs):
+        session_state.interrupt.set()
+        return '{"result": "ok"}'
+
+    mock_execute.side_effect = _execute_side_effect
+
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "Check weather everywhere"}],
+        llm_config=_make_llm_config(),
+        registry=_weather_registry(),
+        skill_overrides=_weather_overrides(),
+        agent_config=AgentConfig(max_turns=10),
+        session_state=session_state,
+    )
+
+    assert result.stop_reason == "interrupted"
+    assert result.text == "Stopped."
+    # Only tool_1 was actually executed
+    assert mock_execute.call_count == 1
+
+
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
+def test_interrupt_preserves_message_integrity(mock_call_llm, mock_execute):
+    """After interrupt, every tool_use should have a matching tool_result."""
+    tool_block = MagicMock()
+    tool_block.type = "tool_use"
+    tool_block.name = "check_weather"
+    tool_block.input = {"location": "Denver"}
+    tool_block.id = "tool_abc"
+
+    msg = MagicMock()
+    msg.content = [tool_block]
+    msg.stop_reason = "tool_use"
+    msg.usage = MagicMock()
+    msg.usage.input_tokens = 100
+
+    mock_call_llm.return_value = msg
+
+    session_state = SessionState(sender_id="test")
+
+    # Set interrupt before tool executes
+    def _execute_side_effect(**kwargs):
+        session_state.interrupt.set()
+        return '{"result": "ok"}'
+
+    mock_execute.side_effect = _execute_side_effect
+
+    messages = [{"role": "user", "content": "Weather?"}]
+    result = run_agent_loop(
+        messages=messages,
+        llm_config=_make_llm_config(),
+        registry=_weather_registry(),
+        skill_overrides=_weather_overrides(),
+        agent_config=AgentConfig(max_turns=10),
+        session_state=session_state,
+    )
+
+    assert result.stop_reason == "interrupted"
+
+    # Find the assistant message with tool_use
+    tool_use_ids = set()
+    tool_result_ids = set()
+    for msg in messages:
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "tool_use":
+                    tool_use_ids.add(block["id"])
+                elif block.get("type") == "tool_result":
+                    tool_result_ids.add(block.get("tool_use_id"))
+
+    # Every tool_use should have a matching tool_result
+    assert tool_use_ids <= tool_result_ids
+
+
+@patch("creel.agent.call_llm")
+def test_no_interrupt_when_event_not_set(mock_call_llm):
+    """Agent should run normally when interrupt Event exists but is not set."""
+    mock_call_llm.return_value = _text_message("All good!")
+
+    session_state = SessionState(sender_id="test")
+    # interrupt is not set — should not interfere
+
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "Hello"}],
+        llm_config=_make_llm_config(),
+        registry=_empty_registry(),
+        skill_overrides={},
+        agent_config=AgentConfig(max_turns=5),
+        session_state=session_state,
+    )
+
+    assert result.stop_reason == "end_turn"
+    assert result.text == "All good!"
+
+
+@patch("creel.agent.execute_tool_call")
+@patch("creel.agent.call_llm")
+def test_interrupt_after_llm_skips_screening(mock_call_llm, mock_execute):
+    """Interrupt set during LLM call should skip Phase 1 screening and tool execution."""
+    session_state = SessionState(sender_id="test")
+
+    # Set interrupt before call_llm returns (simulating interrupt during LLM call)
+    def _llm_side_effect(**kwargs):
+        session_state.interrupt.set()
+        return _tool_use_message("check_weather", {"location": "Denver"})
+
+    mock_call_llm.side_effect = _llm_side_effect
+
+    result = run_agent_loop(
+        messages=[{"role": "user", "content": "Weather?"}],
+        llm_config=_make_llm_config(),
+        registry=_weather_registry(),
+        skill_overrides=_weather_overrides(),
+        agent_config=AgentConfig(max_turns=10),
+        session_state=session_state,
+    )
+
+    assert result.stop_reason == "interrupted"
+    # Tool should never have been executed
+    mock_execute.assert_not_called()

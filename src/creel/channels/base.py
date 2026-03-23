@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -49,6 +49,24 @@ class Channel(ABC):
     """Base class for communication channels."""
 
     _stop_requested: bool = False
+    _interrupt_fn: Callable[[str], bool] | None = None
+    _interrupt_words: frozenset[str] = frozenset()
+
+    def configure_interrupt(
+        self,
+        interrupt_fn: Callable[[str], bool],
+        interrupt_words: Iterable[str],
+    ) -> None:
+        """Configure interrupt word detection for this channel.
+
+        Args:
+            interrupt_fn: Callable that takes a sender_id and signals
+                the running agent loop to stop. Returns True if interrupted.
+            interrupt_words: Words that trigger interruption when sent
+                while an agent loop is active for the sender.
+        """
+        self._interrupt_fn = interrupt_fn
+        self._interrupt_words = frozenset(w.lower() for w in interrupt_words)
 
     @abstractmethod
     def listen(self, callback: LegacyCallback) -> None:

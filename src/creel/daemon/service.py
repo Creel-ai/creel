@@ -90,7 +90,19 @@ class DaemonService:
         if getattr(self._server, "_cron_manager", None) is None:
             self._server._cron_manager = self._cron_manager
 
+        # Cache interrupt words for fast pre-lock checking in send_message.
+        self._interrupt_words: frozenset[str] = frozenset(
+            w.lower() for w in agent_def.agent.interrupt_words
+        )
+
     # --- Message and session API ---
+
+    def interrupt_sender(self, sender_id: str) -> bool:
+        """Signal a running agent loop to stop for the given sender.
+
+        Thread-safe — does not acquire the main service lock.
+        """
+        return self._server.interrupt_sender(sender_id)
 
     def send_message(
         self,
@@ -104,6 +116,19 @@ class DaemonService:
         Accepts either ``(sender_id, text)`` for plain text messages or a
         single :class:`IncomingMessage` for messages with media attachments.
         """
+        # Fast-path: check for interrupt words before acquiring the lock so
+        # we can signal a running agent loop without blocking.  ChatServer
+        # also checks inside handle_message as the authoritative layer.
+        if isinstance(sender_id_or_msg, str):
+            _sender = sender_id_or_msg
+            _text = text
+        else:
+            _sender = sender_id_or_msg.sender_id
+            _text = sender_id_or_msg.text or ""
+        if _text.strip().lower() in self._interrupt_words:
+            if self.interrupt_sender(_sender):
+                return "Stopping..."
+
         if isinstance(sender_id_or_msg, IncomingMessage):
             msg: IncomingMessage = sender_id_or_msg
             with self._lock:
@@ -126,6 +151,17 @@ class DaemonService:
         auto_approve: bool = False,
     ):
         """Yield daemon streaming events for a single request."""
+        # Fast-path interrupt check (same as send_message).
+        if text.strip().lower() in self._interrupt_words:
+            if self.interrupt_sender(sender_id):
+                yield {
+                    "type": "final",
+                    "sender_id": sender_id,
+                    "session_id": session_id,
+                    "payload": {"text": "Stopping..."},
+                }
+                return
+
         active_session_id: str | None = None
         try:
             if session_id:
@@ -426,6 +462,13 @@ class DaemonService:
             existing = self._channel_threads.get(name)
             if existing and existing.is_alive():
                 return False
+
+            # Configure interrupt word detection before starting the listener
+            # so the channel can detect interrupt words while a callback is active.
+            channel.configure_interrupt(
+                self.interrupt_sender,
+                self._agent_def.agent.interrupt_words,
+            )
 
             def _run_channel() -> None:
                 self._set_channel_state(name, running=True, detail="listening")

@@ -674,3 +674,29 @@ class TestPollingUsesRetryBackoff:
         """PollingChannelMixin should not expose retry methods directly."""
         channel = _StubPollingChannel()
         assert not hasattr(channel, "_retry_with_backoff")
+
+
+# ---------------------------------------------------------------------------
+# Channel.configure_interrupt
+# ---------------------------------------------------------------------------
+
+
+class TestConfigureInterrupt:
+    def test_defaults(self):
+        channel = _StubPollingChannel()
+        assert channel._interrupt_fn is None
+        assert channel._interrupt_words == frozenset()
+
+    def test_configure_sets_attrs(self):
+        channel = _StubPollingChannel()
+        fn = lambda sender_id: True  # noqa: E731
+        channel.configure_interrupt(fn, ["STOP", "Cancel", "halt"])
+        assert channel._interrupt_fn is fn
+        assert channel._interrupt_words == frozenset({"stop", "cancel", "halt"})
+
+    def test_configure_with_empty_words(self):
+        channel = _StubPollingChannel()
+        fn = lambda sender_id: False  # noqa: E731
+        channel.configure_interrupt(fn, [])
+        assert channel._interrupt_fn is fn
+        assert channel._interrupt_words == frozenset()

@@ -588,6 +588,7 @@ class TestDaemonServiceIncomingMessage:
         service = DaemonService.__new__(DaemonService)
         service._server = mock_server
         service._lock = __import__("threading").RLock()
+        service._interrupt_words = frozenset()
 
         attachment = Attachment(
             type=AttachmentType.IMAGE,
@@ -623,6 +624,7 @@ class TestDaemonServiceIncomingMessage:
         service = DaemonService.__new__(DaemonService)
         service._server = mock_server
         service._lock = __import__("threading").RLock()
+        service._interrupt_words = frozenset()
 
         result = service.send_message("user1", "hello")
 
@@ -640,6 +642,7 @@ class TestDaemonServiceIncomingMessage:
         service = DaemonService.__new__(DaemonService)
         service._server = mock_server
         service._lock = __import__("threading").RLock()
+        service._interrupt_words = frozenset()
 
         incoming = IncomingMessage(
             sender_id="user1",

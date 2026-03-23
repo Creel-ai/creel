@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -223,6 +224,13 @@ class ChatServer:
         self._default_workspace: str | None = str(ws_path.resolve()) if ws_path.is_dir() else None
         self._session_states: dict[str, SessionState] = {}
 
+        # Track active agent loops per sender for interrupt word detection.
+        self._active_loops: dict[str, SessionState] = {}
+        self._active_loops_lock = threading.Lock()
+        self._interrupt_words: frozenset[str] = frozenset(
+            w.lower() for w in agent_def.agent.interrupt_words
+        )
+
         # Rate limiter for inject_system_event: per-sender list of timestamps.
         # Note: stale sender entries are never pruned from this dict. This is
         # fine because only cron_sender_id typically injects events, so the
@@ -294,11 +302,26 @@ class ChatServer:
         non-reloadable or don't benefit from live swaps.
         """
         self._agent_def = agent_def
+        self._interrupt_words = frozenset(w.lower() for w in agent_def.agent.interrupt_words)
         # SubAgentManager holds config refs used when spawning new agents.
         self._subagent_manager._llm_config = agent_def.llm
         self._subagent_manager._skill_overrides = agent_def.skills
         self._subagent_manager._agent_config = agent_def.agent
         self._subagent_manager._bridge_config = agent_def.bridge
+
+    def interrupt_sender(self, sender_id: str) -> bool:
+        """Set the interrupt signal for a sender's active agent loop.
+
+        Thread-safe — uses a lightweight lock, not the main service lock.
+        Returns True if an active loop was found and signalled.
+        """
+        with self._active_loops_lock:
+            active_state = self._active_loops.get(sender_id)
+        if active_state is not None:
+            active_state.interrupt.set()
+            logger.info("Interrupt signal sent for %s", sender_id)
+            return True
+        return False
 
     def handle_message(
         self,
@@ -317,6 +340,14 @@ class ChatServer:
         logger.info("Handling message from %s [request_id=%s]", sender_id, rid)
 
         stripped = text.strip()
+
+        # Check if this is an interrupt word for an active agent loop.
+        # The interrupt check here is the authoritative layer; DaemonService
+        # also checks before its lock as a fast-path so interrupt words can
+        # signal a running loop without blocking.
+        if stripped.lower() in self._interrupt_words:
+            if self.interrupt_sender(sender_id):
+                return "Stopping..."
 
         # Legacy bare-word aliases (backward compat: "clear" and "reset" without /)
         if stripped.lower() in {"clear", "reset"}:
@@ -428,14 +459,24 @@ class ChatServer:
             SessionState(sender_id=sender_id, workspace=self._default_workspace),
         )
 
+        # Clear any stale interrupt signal and register as active
+        session_state.interrupt.clear()
+        with self._active_loops_lock:
+            self._active_loops[sender_id] = session_state
+
         # Run the agent loop (containerized or direct)
-        result = self._invoke_agent_loop(
-            session.messages,
-            session_state,
-            user_message=text,
-            confirm_action=confirm_action,
-            on_text_delta=on_text_delta,
-        )
+        try:
+            result = self._invoke_agent_loop(
+                session.messages,
+                session_state,
+                user_message=text,
+                confirm_action=confirm_action,
+                on_text_delta=on_text_delta,
+            )
+        finally:
+            with self._active_loops_lock:
+                self._active_loops.pop(sender_id, None)
+            session_state.interrupt.clear()
 
         logger.info(
             "Agent response for %s: %d chars, %d turns, %d tool calls (%s)",
@@ -467,6 +508,11 @@ class ChatServer:
 
         # Save the updated messages (agent loop mutates the list)
         self._session_mgr.save_session(session)
+
+        # When interrupted, the channel already sent "Stopping..." to the user.
+        # Return empty string so the worker thread doesn't send a duplicate reply.
+        if result.stop_reason == "interrupted":
+            return ""
 
         return result.text
 
@@ -708,7 +754,15 @@ class ChatServer:
                     )
 
         # Resume the agent loop so the LLM can process the tool outputs
-        result = self._invoke_agent_loop(session.messages, session_state)
+        session_state.interrupt.clear()
+        with self._active_loops_lock:
+            self._active_loops[sender_id] = session_state
+        try:
+            result = self._invoke_agent_loop(session.messages, session_state)
+        finally:
+            with self._active_loops_lock:
+                self._active_loops.pop(sender_id, None)
+            session_state.interrupt.clear()
 
         # Track token usage for session metadata
         last_tokens = getattr(result, "last_input_tokens", 0)

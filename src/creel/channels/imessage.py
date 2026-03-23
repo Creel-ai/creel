@@ -6,6 +6,7 @@ import logging
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -44,7 +45,11 @@ class IMessageChannel(MediaHandlerMixin, Channel):
         self._gate = sender_gate
 
     def listen(self, callback: Callable[[str, str], str]) -> None:
-        """Poll chat.db for new incoming messages and respond."""
+        """Poll chat.db for new incoming messages and respond.
+
+        Callbacks run in worker threads so the poll loop can continue
+        detecting interrupt words while the agent is running.
+        """
         if sys.platform != "darwin":
             raise RuntimeError("iMessage channel is only available on macOS")
 
@@ -63,11 +68,18 @@ class IMessageChannel(MediaHandlerMixin, Channel):
 
         consecutive_errors = 0
         max_backoff = 60  # seconds
+        active_workers: dict[str, threading.Thread] = {}
 
         while not self._stop_requested:
             try:
                 new_messages = self._poll(last_rowid)
                 consecutive_errors = 0  # reset on success
+
+                # Clean up finished workers
+                for sid in list(active_workers):
+                    if not active_workers[sid].is_alive():
+                        del active_workers[sid]
+
                 for msg in new_messages:
                     # Always advance rowid so we never reprocess a message
                     last_rowid = max(last_rowid, msg["rowid"])
@@ -80,6 +92,24 @@ class IMessageChannel(MediaHandlerMixin, Channel):
                         continue
                     if not self._check_sender(sender, text):
                         continue
+
+                    # If a worker is active for this sender, check for interrupt
+                    if sender in active_workers and active_workers[sender].is_alive():
+                        if (
+                            self._interrupt_fn is not None
+                            and text
+                            and text.strip().lower() in self._interrupt_words
+                            and self._interrupt_fn(sender)
+                        ):
+                            self.send(sender, "Stopping...")
+                        else:
+                            logger.info(
+                                "Message from %s while agent active (ignored): %s",
+                                sender,
+                                (text or "")[:40],
+                            )
+                        continue
+
                     # Intercept gate commands from owners
                     if self._gate is not None and text:
                         gate_reply = self._gate.handle_owner_response(text, sender)
@@ -87,21 +117,34 @@ class IMessageChannel(MediaHandlerMixin, Channel):
                             self.send(sender, gate_reply)
                             self._replay_held_messages(text, callback)
                             continue
+
                     logger.info("Message from %s: %s", sender, (text or "")[:80])
-                    try:
-                        if attachments:
-                            incoming = IncomingMessage(
-                                sender_id=sender,
-                                text=text or None,
-                                attachments=attachments,
-                                channel="imessage",
-                            )
-                            response = callback(incoming)  # type: ignore[call-arg,arg-type]
-                        else:
-                            response = callback(sender, text)
-                        self.send(sender, response)
-                    except Exception:
-                        logger.exception("Error handling message from %s", sender)
+
+                    # Dispatch callback in a worker thread
+                    def _worker(
+                        _sender: str = sender,
+                        _text: str = text,
+                        _attachments: list[Attachment] = attachments,
+                    ) -> None:
+                        try:
+                            if _attachments:
+                                incoming = IncomingMessage(
+                                    sender_id=_sender,
+                                    text=_text or None,
+                                    attachments=_attachments,
+                                    channel="imessage",
+                                )
+                                response = callback(incoming)  # type: ignore[call-arg,arg-type]
+                            else:
+                                response = callback(_sender, _text)
+                            if response:
+                                self.send(_sender, response)
+                        except Exception:
+                            logger.exception("Error handling message from %s", _sender)
+
+                    thread = threading.Thread(target=_worker, daemon=True)
+                    active_workers[sender] = thread
+                    thread.start()
             except Exception:
                 consecutive_errors += 1
                 backoff = min(self._poll_interval * (2**consecutive_errors), max_backoff)

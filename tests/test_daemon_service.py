@@ -20,7 +20,10 @@ class _StubChatServer:
     def __init__(self, sessions_dir: Path) -> None:
         self._session_mgr = SessionManager(sessions_dir=str(sessions_dir))
         self._guardian = None
+        self._cron_manager = None
         self.calls: list[tuple[str, str]] = []
+        self._interrupt_calls: list[str] = []
+        self._active_senders: set[str] = set()
 
     def handle_message(
         self,
@@ -29,6 +32,8 @@ class _StubChatServer:
         on_text_delta=None,
         *,
         auto_approve: bool = False,
+        attachments=None,
+        channel: str = "unknown",
     ) -> str:
         self.calls.append((sender_id, text))
         session = self._session_mgr.add_user_message(sender_id, text)
@@ -44,6 +49,10 @@ class _StubChatServer:
         )
         self._session_mgr.save_session(session)
         return response
+
+    def interrupt_sender(self, sender_id: str) -> bool:
+        self._interrupt_calls.append(sender_id)
+        return sender_id in self._active_senders
 
 
 class _StubChannel(Channel):
@@ -151,3 +160,78 @@ def test_channel_lifecycle(daemon_service: DaemonService) -> None:
 
     stopped_state = next(c for c in daemon_service.status()["channels"] if c["name"] == "imessage")
     assert stopped_state["running"] is False
+
+
+# ---------------------------------------------------------------------------
+# Interrupt tests
+# ---------------------------------------------------------------------------
+
+
+def test_interrupt_sender_delegates_to_server(daemon_service: DaemonService) -> None:
+    daemon_service._server._active_senders.add("cli")
+    result = daemon_service.interrupt_sender("cli")
+    assert result is True
+    assert "cli" in daemon_service._server._interrupt_calls
+
+
+def test_interrupt_sender_no_active_loop(daemon_service: DaemonService) -> None:
+    result = daemon_service.interrupt_sender("nobody")
+    assert result is False
+
+
+def test_send_message_interrupt_word_with_active_loop(daemon_service: DaemonService) -> None:
+    """Interrupt word before lock should short-circuit when loop is active."""
+    daemon_service._server._active_senders.add("cli")
+    result = daemon_service.send_message("cli", "stop")
+    assert result == "Stopping..."
+    # handle_message should NOT have been called
+    assert ("cli", "stop") not in daemon_service._server.calls
+
+
+def test_send_message_interrupt_word_no_active_loop(daemon_service: DaemonService) -> None:
+    """Interrupt word without active loop falls through to normal processing."""
+    result = daemon_service.send_message("cli", "stop")
+    assert result == "echo:stop"
+    assert ("cli", "stop") in daemon_service._server.calls
+
+
+def test_send_message_incoming_message_interrupt(daemon_service: DaemonService) -> None:
+    """Interrupt check works for IncomingMessage objects too."""
+    from creel.channels.message import IncomingMessage
+
+    daemon_service._server._active_senders.add("user1")
+    incoming = IncomingMessage(sender_id="user1", text="stop", channel="test")
+    result = daemon_service.send_message(incoming)
+    assert result == "Stopping..."
+
+
+def test_interrupt_words_cached(daemon_service: DaemonService) -> None:
+    assert "stop" in daemon_service._interrupt_words
+    assert "cancel" in daemon_service._interrupt_words
+
+
+def test_stream_message_interrupt_yields_final(daemon_service: DaemonService) -> None:
+    """stream_message interrupt should yield a 'final' event, not 'done'."""
+    daemon_service._server._active_senders.add("cli")
+    events = list(daemon_service.stream_message("cli", "stop"))
+    assert len(events) == 1
+    assert events[0]["type"] == "final"
+    assert events[0]["payload"]["text"] == "Stopping..."
+
+
+def test_start_channel_configures_interrupt(minimal_agent_def, tmp_path: Path) -> None:
+    """start_channel should call configure_interrupt on the channel."""
+    server = _StubChatServer(tmp_path / "sessions")
+    svc = DaemonService(minimal_agent_def, server=server)
+
+    channel = _StubChannel()
+    svc.register_channel("test", channel)
+    svc.start_channel("test")
+
+    # Wait for channel to start
+    assert channel.started.wait(timeout=1)
+
+    assert channel._interrupt_fn is not None
+    assert "stop" in channel._interrupt_words
+
+    svc.stop_channel("test", timeout=1)

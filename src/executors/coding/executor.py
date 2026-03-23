@@ -225,6 +225,47 @@ BLOCKED_PATTERNS = [
 ]
 
 
+def _detect_mounted_project() -> str | None:
+    """Scan /mnt/ for a mounted project directory.
+
+    When tool config mounts are present, host directories appear under
+    /mnt/<host-path>.  If exactly one directory tree is mounted, return its
+    path so callers can use it as the working directory instead of the
+    ephemeral /workspace.
+
+    Returns:
+        The path to the mounted project directory, or None.
+    """
+    mnt = Path("/mnt")
+    if not mnt.is_dir():
+        return None
+
+    # Walk down from /mnt to find leaf directories that look like project roots.
+    # Tool config mounts land at /mnt/<full-host-path>, e.g. /mnt/Users/ross/projects/app
+    candidates: list[Path] = []
+    for child in mnt.iterdir():
+        if child.is_dir():
+            # Descend through single-child directories to the actual project root
+            cur = child
+            while True:
+                subdirs = [d for d in cur.iterdir() if d.is_dir()]
+                if len(subdirs) == 1:
+                    cur = subdirs[0]
+                else:
+                    break
+            candidates.append(cur)
+
+    if len(candidates) == 1:
+        return str(candidates[0])
+
+    # Multiple mounts: prefer the first writable one (rw mount = likely the project)
+    for candidate in candidates:
+        if os.access(candidate, os.W_OK):
+            return str(candidate)
+
+    return str(candidates[0]) if candidates else None
+
+
 def _safe_workspace_path(file_path: str) -> Path:
     """Resolve a path and verify it stays within the workspace.
 
@@ -495,14 +536,20 @@ def run_agent(
     if not task:
         return _error_result("Empty task", command="claude --print")
 
-    # Resolve working directory
+    # Resolve working directory: explicit arg > WORKSPACE env > mounted project > /workspace > cwd
     effective_workdir = workdir
     if not effective_workdir:
-        workspace = os.environ.get("WORKSPACE", "/workspace")
-        if os.path.isdir(workspace):
+        workspace = os.environ.get("WORKSPACE")
+        if workspace and os.path.isdir(workspace):
             effective_workdir = workspace
         else:
-            effective_workdir = os.getcwd()
+            mounted = _detect_mounted_project()
+            if mounted:
+                effective_workdir = mounted
+            elif os.path.isdir("/workspace"):
+                effective_workdir = "/workspace"
+            else:
+                effective_workdir = os.getcwd()
 
     # Resolve timeout
     if timeout is None:

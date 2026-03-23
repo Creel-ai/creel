@@ -511,7 +511,7 @@ def run_agent(
 
     try:
         result = subprocess.run(
-            ["claude", "--print", "--permission-mode", "plan", "--", task],
+            ["claude", "--print", "--permission-mode", "bypassPermissions", "--", task],
             cwd=effective_workdir,
             capture_output=True,
             text=True,
@@ -566,8 +566,8 @@ def _load_args() -> dict:
 
 def main() -> None:
     """Main entry point — reads parameters from env vars or CLI args."""
-    args = _load_args()
-    
+    args = _load_args()    
+
     # Dispatch based on args from JSON - no env var middle-man
     if "task" in args:
         task = args["task"]

@@ -550,6 +550,14 @@ def _run_executor_container(
     if config.secrets:
         env_vars.update(decrypt_env_file(config.secrets))
 
+    # Claude Code CLI uses CLAUDE_CODE_OAUTH_TOKEN, not ANTHROPIC_AUTH_TOKEN.
+    # When both are present, Claude Code prefers ANTHROPIC_AUTH_TOKEN and fails
+    # with "OAuth authentication is currently not supported". Remove the old
+    # var and set the correct one so coding_agent can authenticate.
+    if config.name == "coding" and "ANTHROPIC_AUTH_TOKEN" in env_vars:
+        token = env_vars.pop("ANTHROPIC_AUTH_TOKEN")
+        env_vars.setdefault("CLAUDE_CODE_OAUTH_TOKEN", token)
+
     # Pass args as env vars, but skip names that would clobber critical
     # system environment variables (e.g. "path" → PATH breaks containers).
     # Args are also available via the mounted JSON file (/creel-input.json).

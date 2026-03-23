@@ -746,7 +746,7 @@ def run_agent_loop(
         # Interrupt checkpoint — skip screening/execution if already interrupted
         if session_state is not None and session_state.interrupt.is_set():
             logger.info("Agent loop interrupted after LLM call (before tool screening)")
-            tool_results = [
+            _interrupt_results = [
                 {
                     "type": "tool_result",
                     "tool_use_id": b.id,
@@ -755,7 +755,7 @@ def run_agent_loop(
                 }
                 for b in tool_use_blocks
             ]
-            messages.append({"role": "user", "content": tool_results})
+            messages.append({"role": "user", "content": _interrupt_results})
             _ensure_tool_call_integrity(messages)
             return AgentResult(
                 text="Stopped.",

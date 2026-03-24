@@ -11,6 +11,8 @@ from typing import Any
 
 import httpx
 
+from creel.daemon.api_auth import ensure_dashboard_token
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,6 +39,17 @@ class DaemonApiClient:
         self._socket_path = Path(socket_path)
         self._timeout = timeout
         self._client: httpx.Client | None = None
+        self._token: str | None = None
+
+    def _get_token(self) -> str:
+        """Load the dashboard auth token (cached after first read)."""
+        if self._token is None:
+            self._token = ensure_dashboard_token()
+        return self._token
+
+    def _auth_headers(self) -> dict[str, str]:
+        """Return Authorization header for API requests."""
+        return {"Authorization": f"Bearer {self._get_token()}"}
 
     def _get_client(self) -> httpx.Client:
         if self._client is None or self._client.is_closed:
@@ -45,6 +58,7 @@ class DaemonApiClient:
                 transport=transport,
                 base_url="http://daemon",
                 timeout=self._timeout,
+                headers=self._auth_headers(),
             )
         return self._client
 

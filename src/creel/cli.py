@@ -126,11 +126,15 @@ def _daemon_request(
 ):
     import httpx
 
+    from creel.daemon.api_auth import ensure_dashboard_token
+
     transport = httpx.HTTPTransport(uds=str(socket_path))
+    headers = {"Authorization": f"Bearer {ensure_dashboard_token()}"}
     with httpx.Client(
         transport=transport,
         base_url="http://daemon",
         timeout=timeout,
+        headers=headers,
     ) as client:
         return client.request(method, url_path, json=json_body)
 

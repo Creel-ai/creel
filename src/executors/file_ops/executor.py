@@ -357,6 +357,10 @@ def _load_args_from_input_file() -> None:
     content) cannot survive the env-file format.  The container runner
     mounts the original args as ``/creel-input.json`` and sets
     ``CREEL_INPUT_FILE`` so we can recover the full values here.
+
+    WORKSPACE is never overwritten from args because the container runner
+    sets it to the correct /mnt-prefixed path; the args may contain the
+    raw host path (e.g. /Users/ross/...) which doesn't exist in the container.
     """
     input_file = os.environ.get("CREEL_INPUT_FILE", "")
     if not input_file or not os.path.isfile(input_file):
@@ -365,6 +369,10 @@ def _load_args_from_input_file() -> None:
         args: dict = json.load(f)
     for key, value in args.items():
         env_key = key.upper()
+        # Don't overwrite WORKSPACE — the container runner sets it to the
+        # correct /mnt-prefixed mount path; args contain the host path.
+        if env_key == "WORKSPACE" and "WORKSPACE" in os.environ:
+            continue
         os.environ[env_key] = str(value)
 
 

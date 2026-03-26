@@ -746,6 +746,8 @@ def _run_executor_container(
             # Add image name
             docker_cmd.append(image)
 
+            logger.debug("Docker cmd [%s]: %s", config.name, " ".join(docker_cmd))
+
             try:
                 result = subprocess.run(
                     docker_cmd,

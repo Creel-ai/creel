@@ -613,10 +613,11 @@ async def notes_search(
         return list_result
 
     query_lower = request.query.lower()
+    parsed = _parse_note_lines(list_result.output)
     matched = [
-        line.strip()
-        for line in list_result.output.splitlines()
-        if line.strip() and query_lower in line.lower()
+        f"{num}. {folder} - {title}"
+        for num, folder, title in parsed
+        if query_lower in folder.lower() or query_lower in title.lower()
     ]
 
     execution_id = str(uuid.uuid4())
@@ -645,11 +646,12 @@ async def notes_read(
     # Exact match on title or "folder - title"
     note_number = None
     for num, folder, title in parsed:
-        if name_lower == title.lower() or name_lower == f"{folder} - {title}".lower():
+        title_lower = title.lower()
+        if name_lower == title_lower or name_lower == f"{folder.lower()} - {title_lower}":
             note_number = num
             break
 
-    # Fallback: substring match
+    # Fallback: substring match on title
     if note_number is None:
         for num, _folder, title in parsed:
             if name_lower in title.lower():

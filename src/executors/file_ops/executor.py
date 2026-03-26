@@ -153,15 +153,22 @@ def register_skill():
 
 
 def _workspace() -> str:
-    """Return resolved workspace root path."""
-    return os.path.realpath(os.environ.get("WORKSPACE", "/workspace"))
+    """Return the workspace root path.
+
+    Uses os.path.abspath() instead of os.path.realpath() so that container
+    mount paths like /mnt/Users/ross/project are preserved as-is rather than
+    being resolved back to the host path (which doesn't exist in the container).
+    """
+    return os.path.abspath(os.environ.get("WORKSPACE", "/workspace"))
 
 
 def _safe_path(file_path: str) -> str:
     """Resolve a path and verify it stays within the workspace.
 
-    Resolves symlinks via os.path.realpath so that symlink-based
-    traversal is blocked.
+    Uses normpath (not realpath) for the final path so that container mount
+    paths like /mnt/Users/ross/project are preserved.  Symlink traversal is
+    blocked by a separate realpath check that verifies the target stays
+    within the workspace.
 
     Strips a leading 'workspace/' prefix or the actual WORKSPACE path prefix
     to avoid double-prefixing when the LLM includes a redundant prefix.
@@ -178,11 +185,16 @@ def _safe_path(file_path: str) -> str:
     elif file_path == workspace or file_path.startswith(workspace + "/"):
         # Absolute path already rooted in the workspace — strip the prefix
         file_path = file_path[len(workspace) :].lstrip("/") or "."
-    resolved = os.path.realpath(os.path.join(workspace, file_path))
-    # Ensure resolved path is workspace itself or a child of it
-    if resolved != workspace and not resolved.startswith(workspace + os.sep):
+    normed = os.path.normpath(os.path.join(workspace, file_path))
+    # Check 1: normpath collapses '..' — catches directory traversal
+    if normed != workspace and not normed.startswith(workspace + os.sep):
         raise ValueError(f"Path escapes workspace: {file_path}")
-    return resolved
+    # Check 2: realpath resolves symlinks — catches symlink traversal
+    real_workspace = os.path.realpath(workspace)
+    resolved = os.path.realpath(normed)
+    if resolved != real_workspace and not resolved.startswith(real_workspace + os.sep):
+        raise ValueError(f"Path escapes workspace: {file_path}")
+    return normed
 
 
 def action_read() -> dict:

@@ -269,11 +269,16 @@ def _detect_mounted_project() -> str | None:
 def _safe_workspace_path(file_path: str) -> Path:
     """Resolve a path and verify it stays within the workspace.
 
+    Uses normpath (not resolve()) so container mount paths like
+    /mnt/Users/ross/project are preserved.  Symlink traversal is blocked
+    by a separate realpath check.
+
     Strips a leading 'workspace/' prefix or the actual WORKSPACE path prefix
     to avoid double-pathing when the LLM includes a redundant prefix.
     Raises ValueError if the resolved path escapes the workspace.
     """
-    workspace = Path(os.environ.get("WORKSPACE", "/workspace")).resolve()
+    raw_ws = os.environ.get("WORKSPACE", "/workspace")
+    workspace = Path(os.path.abspath(raw_ws))
     ws_str = str(workspace)
     stripped = file_path.lstrip("/")
     if stripped.startswith("workspace/") or stripped == "workspace":
@@ -282,10 +287,17 @@ def _safe_workspace_path(file_path: str) -> Path:
     elif file_path == ws_str or file_path.startswith(ws_str + "/"):
         # Absolute path already rooted in the workspace — strip the prefix
         file_path = file_path[len(ws_str) :].lstrip("/") or "."
-    resolved = (workspace / file_path).resolve()
-    if resolved != workspace and not str(resolved).startswith(ws_str + os.sep):
+    normed = Path(os.path.normpath(workspace / file_path))
+    # Check 1: normpath collapses '..' — catches directory traversal
+    if normed != workspace and not str(normed).startswith(ws_str + os.sep):
         raise ValueError(f"Path escapes workspace: {file_path}")
-    return resolved
+    # Check 2: realpath resolves symlinks — catches symlink traversal
+    real_ws = Path(os.path.realpath(workspace))
+    real_ws_str = str(real_ws)
+    resolved = Path(os.path.realpath(normed))
+    if resolved != real_ws and not str(resolved).startswith(real_ws_str + os.sep):
+        raise ValueError(f"Path escapes workspace: {file_path}")
+    return normed
 
 
 def _error_result(error: str, *, command: str = "", **extra) -> dict:

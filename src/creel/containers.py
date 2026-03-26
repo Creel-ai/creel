@@ -633,20 +633,33 @@ def _run_executor_container(
         if rw_mount:
             ws_host_path = os.path.expanduser(rw_mount.path)
             if workspace_path:
-                # Explicit workspace arg — check if it falls within a configured mount
+                # Explicit workspace arg — check if it falls within a configured mount.
+                # Use realpath only for the comparison (to resolve symlinks); the
+                # WORKSPACE value itself uses expanduser so macOS automount paths
+                # like /home aren't resolved to /System/Volumes/Data/home.
                 resolved_ws = os.path.realpath(workspace_path)
                 resolved_mount = os.path.realpath(ws_host_path)
                 if resolved_ws == resolved_mount or resolved_ws.startswith(resolved_mount + os.sep):
-                    # Workspace is within the mount — use /mnt path
+                    # Workspace is within the mount — use /mnt path with subpath
                     suffix = resolved_ws[len(resolved_mount) :]
-                    env_vars["WORKSPACE"] = f"/mnt{resolved_mount}{suffix}"
+                    env_vars["WORKSPACE"] = f"/mnt{ws_host_path}{suffix}"
                 else:
                     # Workspace doesn't match any mount — use /mnt path of first rw
-                    # mount as WORKSPACE (the explicit arg is ignored when mounts exist)
+                    # mount as WORKSPACE (the explicit arg is ignored when rw mounts exist)
                     env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
             else:
                 # No explicit workspace arg — use first rw mount
                 env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
+        elif workspace_path:
+            # Only ro mounts + workspace arg — fall back to dynamic mount so writes
+            # go to the workspace directory rather than being silently lost.
+            resolved_ws = os.path.realpath(workspace_path)
+            if not os.path.isdir(resolved_ws):
+                raise RuntimeError("Workspace directory no longer exists")
+            action = config.args.get("action", "")
+            mount_mode = "ro" if action in ("read", "list") else "rw"
+            _workspace_mount = (resolved_ws, mount_mode)
+            env_vars["WORKSPACE"] = "/workspace"
     elif workspace_path:
         # No tool_config mounts — fall back to dynamic mount (legacy file_ops behavior)
         resolved_ws = os.path.realpath(workspace_path)

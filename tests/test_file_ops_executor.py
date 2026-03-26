@@ -650,3 +650,30 @@ class TestLoadArgsFromInputFile:
             _load_args_from_input_file()  # should not raise
         finally:
             cleanup()
+
+
+class TestSafePathMountPrefix:
+    """Tests for _safe_path handling of absolute mount path prefixes."""
+
+    def test_absolute_mount_path_stripped(self, workspace):
+        """Absolute path within workspace should have the workspace prefix stripped."""
+        ws_str = str(workspace)
+        result = _safe_path(f"{ws_str}/scripts/hello.py")
+        assert result == str(workspace / "scripts" / "hello.py")
+
+    def test_exact_workspace_path(self, workspace):
+        """Passing the exact workspace path should resolve to workspace root."""
+        ws_str = str(workspace)
+        result = _safe_path(ws_str)
+        assert result == str(workspace)
+
+    def test_mount_style_path(self, workspace):
+        """Paths like /mnt/home/user/project/file.txt should resolve correctly."""
+        ws_str = str(workspace)
+        result = _safe_path(f"{ws_str}/src/main.py")
+        assert result == str(workspace / "src" / "main.py")
+
+    def test_outside_absolute_path_blocked(self, workspace):
+        """Absolute paths outside workspace should be blocked."""
+        with pytest.raises(ValueError, match="Path escapes workspace"):
+            _safe_path("/etc/passwd")

@@ -263,3 +263,99 @@ class TestRunAgentWorkdir:
 
         assert result["workdir"] == "/mnt/Users/ross/projects/my-app"
         mock_detect.assert_called_once()
+
+    @patch("subprocess.run")
+    @patch("executors.coding.executor._detect_mounted_project")
+    def test_workspace_is_authoritative_skips_detect(
+        self, mock_detect: MagicMock, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """WORKSPACE should be used directly without calling _detect_mounted_project."""
+        workspace_dir = tmp_path / "ws"
+        workspace_dir.mkdir()
+        mock_run.return_value = MagicMock(returncode=0, stdout="done", stderr="")
+
+        with patch.dict(os.environ, {"WORKSPACE": str(workspace_dir)}):
+            result = run_agent("test task")
+
+        assert result["workdir"] == str(workspace_dir)
+        mock_detect.assert_not_called()
+
+    @patch("subprocess.run")
+    def test_workspace_used_even_without_isdir(self, mock_run: MagicMock) -> None:
+        """WORKSPACE should be used even if the directory doesn't exist yet.
+
+        The container runner sets WORKSPACE authoritatively; don't fall through
+        to heuristics if the directory hasn't been created yet.
+        """
+        mock_run.return_value = MagicMock(returncode=0, stdout="done", stderr="")
+
+        with patch.dict(os.environ, {"WORKSPACE": "/mnt/nonexistent/project"}):
+            result = run_agent("test task")
+
+        assert result["workdir"] == "/mnt/nonexistent/project"
+
+
+class TestSafeWorkspacePath:
+    """Test _safe_workspace_path resolves against WORKSPACE correctly."""
+
+    def test_relative_path(self, tmp_path: Path) -> None:
+        from executors.coding.executor import _safe_workspace_path
+
+        ws = tmp_path / "project"
+        ws.mkdir()
+        with patch.dict(os.environ, {"WORKSPACE": str(ws)}):
+            result = _safe_workspace_path("src/main.py")
+        assert result == ws / "src" / "main.py"
+
+    def test_workspace_prefix_stripped(self, tmp_path: Path) -> None:
+        from executors.coding.executor import _safe_workspace_path
+
+        ws = tmp_path / "project"
+        ws.mkdir()
+        with patch.dict(os.environ, {"WORKSPACE": str(ws)}):
+            result = _safe_workspace_path("workspace/src/main.py")
+        assert result == ws / "src" / "main.py"
+
+    def test_absolute_mount_path_stripped(self, tmp_path: Path) -> None:
+        """Absolute paths within the workspace should have the prefix stripped."""
+        from executors.coding.executor import _safe_workspace_path
+
+        ws = tmp_path / "project"
+        ws.mkdir()
+        ws_str = str(ws)
+        with patch.dict(os.environ, {"WORKSPACE": ws_str}):
+            result = _safe_workspace_path(f"{ws_str}/src/main.py")
+        assert result == ws / "src" / "main.py"
+
+    def test_workspace_root_via_mount_path(self, tmp_path: Path) -> None:
+        """Passing the exact workspace path should resolve to workspace root."""
+        from executors.coding.executor import _safe_workspace_path
+
+        ws = tmp_path / "project"
+        ws.mkdir()
+        ws_str = str(ws)
+        with patch.dict(os.environ, {"WORKSPACE": ws_str}):
+            result = _safe_workspace_path(ws_str)
+        assert result == ws
+
+    def test_traversal_blocked(self, tmp_path: Path) -> None:
+        import pytest
+
+        from executors.coding.executor import _safe_workspace_path
+
+        ws = tmp_path / "project"
+        ws.mkdir()
+        with patch.dict(os.environ, {"WORKSPACE": str(ws)}):
+            with pytest.raises(ValueError, match="Path escapes workspace"):
+                _safe_workspace_path("../../../etc/passwd")
+
+    def test_outside_absolute_path_blocked(self, tmp_path: Path) -> None:
+        import pytest
+
+        from executors.coding.executor import _safe_workspace_path
+
+        ws = tmp_path / "project"
+        ws.mkdir()
+        with patch.dict(os.environ, {"WORKSPACE": str(ws)}):
+            with pytest.raises(ValueError, match="Path escapes workspace"):
+                _safe_workspace_path("/etc/passwd")

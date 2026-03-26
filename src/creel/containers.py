@@ -632,6 +632,15 @@ def _run_executor_container(
         _workspace_mount = (resolved_ws, mount_mode)
         env_vars["WORKSPACE"] = "/workspace"
 
+    # For file_ops with inherited mounts (from coding) but no explicit workspace
+    # arg, set WORKSPACE to the first rw mount's container path so writes
+    # persist to the host instead of ephemeral /workspace.
+    if config.name == "file_ops" and not workspace_path and tool_config and tool_config.mounts:
+        rw_mount = next((m for m in tool_config.mounts if m.mode == "rw"), None)
+        if rw_mount:
+            ws_host_path = os.path.expanduser(rw_mount.path)
+            env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
+
     # Issue #304: For coding executor, set WORKSPACE to the first rw mount
     # so coding_write_file uses the mounted host path instead of ephemeral
     # /workspace.  Must be set before env-file write so the value is included.

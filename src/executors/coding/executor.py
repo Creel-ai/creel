@@ -269,16 +269,21 @@ def _detect_mounted_project() -> str | None:
 def _safe_workspace_path(file_path: str) -> Path:
     """Resolve a path and verify it stays within the workspace.
 
-    Strips a leading 'workspace/' prefix to avoid double-pathing.
+    Strips a leading 'workspace/' prefix or the actual WORKSPACE path prefix
+    to avoid double-pathing when the LLM includes a redundant prefix.
     Raises ValueError if the resolved path escapes the workspace.
     """
     workspace = Path(os.environ.get("WORKSPACE", "/workspace")).resolve()
+    ws_str = str(workspace)
     stripped = file_path.lstrip("/")
     if stripped.startswith("workspace/") or stripped == "workspace":
         stripped = stripped[len("workspace") :].lstrip("/") or "."
         file_path = stripped
+    elif file_path == ws_str or file_path.startswith(ws_str + "/"):
+        # Absolute path already rooted in the workspace — strip the prefix
+        file_path = file_path[len(ws_str) :].lstrip("/") or "."
     resolved = (workspace / file_path).resolve()
-    if resolved != workspace and not str(resolved).startswith(str(workspace) + os.sep):
+    if resolved != workspace and not str(resolved).startswith(ws_str + os.sep):
         raise ValueError(f"Path escapes workspace: {file_path}")
     return resolved
 
@@ -540,7 +545,9 @@ def run_agent(
     effective_workdir = workdir
     if not effective_workdir:
         workspace = os.environ.get("WORKSPACE")
-        if workspace and os.path.isdir(workspace):
+        if workspace:
+            # WORKSPACE is authoritative when set by the container runner.
+            # Don't fall through to heuristics — use it directly.
             effective_workdir = workspace
         else:
             mounted = _detect_mounted_project()

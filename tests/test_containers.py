@@ -392,3 +392,107 @@ class TestFileOpsMountInheritance:
 
         assert len(result) == 2
         assert len(coding_override.mounts) == original_len  # not mutated
+
+
+class TestFileOpsWorkspaceFromInheritedMounts:
+    """Tests that file_ops gets WORKSPACE from inherited mounts when no explicit workspace arg."""
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_workspace_set_from_inherited_rw_mount(
+        self, mock_run: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """file_ops without workspace arg should get WORKSPACE from first rw mount."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        # file_ops with inherited mounts (no explicit workspace arg)
+        tool_config = ToolConfig(
+            executor="file_ops",
+            description="file ops",
+            mounts=[
+                MountConfig(path="/home/user/project", mode="rw"),
+                MountConfig(path="/home/user/data", mode="ro"),
+            ],
+        )
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "write", "file_path": "test.py", "content": "hello"},
+        )
+        _run_executor_container(config, tool_config=tool_config)
+
+        assert "WORKSPACE=/mnt/home/user/project" in captured["env"]
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_explicit_workspace_arg_takes_precedence(
+        self, mock_run: MagicMock, mock_ensure: MagicMock, tmp_path: Path
+    ) -> None:
+        """Explicit workspace arg should still use /workspace mount, not inherited mounts."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        # Create the workspace directory so it passes the isdir check
+        ws_dir = tmp_path / "my_workspace"
+        ws_dir.mkdir()
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            captured["cmd"] = list(cmd)
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        tool_config = ToolConfig(
+            executor="file_ops",
+            description="file ops",
+            mounts=[MountConfig(path="/home/user/project", mode="rw")],
+        )
+        config = ExecutorConfig(
+            name="file_ops",
+            args={
+                "action": "write",
+                "file_path": "test.py",
+                "content": "hello",
+                "workspace": str(ws_dir),
+            },
+        )
+        _run_executor_container(config, tool_config=tool_config)
+
+        # Explicit workspace arg should produce /workspace, not /mnt{host_path}
+        assert "WORKSPACE=/workspace" in captured["env"]
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_no_mounts_no_workspace(self, mock_run: MagicMock, mock_ensure: MagicMock) -> None:
+        """file_ops without mounts or workspace arg should not set WORKSPACE."""
+        from creel.models import ExecutorConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "list", "directory": "."},
+        )
+        _run_executor_container(config)
+
+        env_lines = captured["env"].strip().split("\n")
+        ws_lines = [line for line in env_lines if line.startswith("WORKSPACE=")]
+        assert ws_lines == []

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 NON_RELOADABLE_FIELDS = frozenset(
     {
         "session.sessions_dir",
+        "workspace.path",
     }
 )
 

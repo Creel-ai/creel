@@ -1485,7 +1485,9 @@ def _get_kb(args: argparse.Namespace) -> KnowledgeBase:
         workspace = Path(agent_def.workspace.path)
         db_path = kb_config.db_path or str(workspace / ".kb_index.sqlite")
     except FileNotFoundError:
-        db_path = "workspace/.kb_index.sqlite"
+        from creel.paths import workspace_dir
+
+        db_path = str(workspace_dir() / ".kb_index.sqlite")
         kb_config = None
 
     chunk_size = kb_config.chunk_size if kb_config else 512

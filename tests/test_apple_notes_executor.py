@@ -5,7 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from executors.apple_notes.executor import call_bridge, create_note, list_notes, search_notes
+from executors.apple_notes.executor import (
+    call_bridge,
+    create_note,
+    list_notes,
+    read_note,
+    search_notes,
+)
 
 
 class TestBridgeClient:
@@ -165,6 +171,17 @@ class TestNotesOperations:
             "/notes/create", {"title": "Test Title", "body": "Test Body", "folder": "work"}
         )
 
+    @patch("executors.apple_notes.executor.call_bridge")
+    def test_read_note(self, mock_call_bridge):
+        """Test read_note function."""
+        mock_call_bridge.return_value = {"ok": True, "output": "# Note Content\n\nBody here"}
+
+        result = read_note("My Note")
+
+        assert result["ok"] is True
+        assert result["output"] == "# Note Content\n\nBody here"
+        mock_call_bridge.assert_called_once_with("/notes/read", {"name": "My Note"})
+
 
 class TestMainFunction:
     """Test the main executor function."""
@@ -250,10 +267,24 @@ class TestMainFunction:
 
         assert excinfo.value.code == 1
 
+    @patch("executors.apple_notes.executor.read_note")
     @patch("builtins.print")
-    def test_main_read_action_not_implemented(self, mock_print):
-        """Test main function with read action (not implemented)."""
-        with patch.dict(os.environ, {"ACTION": "read"}):
+    def test_main_read_action(self, mock_print, mock_read_note):
+        """Test main function with read action."""
+        mock_read_note.return_value = {"ok": True, "output": "Note content here"}
+
+        with patch.dict(os.environ, {"ACTION": "read", "NAME": "My Note"}):
+            from executors.apple_notes.executor import main
+
+            main()
+
+        mock_read_note.assert_called_once_with("My Note")
+        mock_print.assert_called_once_with("Note content here")
+
+    @patch("builtins.print")
+    def test_main_read_missing_name(self, mock_print):
+        """Test main function with read action but missing name."""
+        with patch.dict(os.environ, {"ACTION": "read"}, clear=True):
             with pytest.raises(SystemExit) as excinfo:
                 from executors.apple_notes.executor import main
 

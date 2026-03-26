@@ -107,6 +107,7 @@ def register_skill():
                 "ACTION": config.args.get("action", "list"),
                 "FOLDER": config.args.get("folder", ""),
                 "QUERY": config.args.get("query", ""),
+                "NAME": config.args.get("name", ""),
                 "TITLE": config.args.get("title", ""),
                 "BODY": config.args.get("body", ""),
             }.items()
@@ -193,6 +194,11 @@ def create_note(title: str, body: str = "", folder: str | None = None) -> dict[s
     return call_bridge("/notes/create", data)
 
 
+def read_note(name: str) -> dict[str, Any]:
+    """Read a note by name via bridge."""
+    return call_bridge("/notes/read", {"name": name})
+
+
 def main() -> None:
     """Main executor entry point."""
     action = os.environ.get("ACTION", "list")
@@ -219,9 +225,10 @@ def main() -> None:
             result = create_note(title, body, folder)
 
         elif action == "read":
-            # Note: memo CLI doesn't have a direct read by ID function,
-            # so we'd need to implement this differently or use search
-            raise NotImplementedError("Read action not implemented - use search instead")
+            name = os.environ.get("NAME")
+            if not name:
+                raise ValueError("NAME environment variable required for read action")
+            result = read_note(name)
 
         else:
             raise ValueError(f"Unknown action: {action}")

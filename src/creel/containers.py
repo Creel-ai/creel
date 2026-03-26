@@ -636,9 +636,7 @@ def _run_executor_container(
                 # Explicit workspace arg — check if it falls within a configured mount
                 resolved_ws = os.path.realpath(workspace_path)
                 resolved_mount = os.path.realpath(ws_host_path)
-                if resolved_ws == resolved_mount or resolved_ws.startswith(
-                    resolved_mount + os.sep
-                ):
+                if resolved_ws == resolved_mount or resolved_ws.startswith(resolved_mount + os.sep):
                     # Workspace is within the mount — use /mnt path
                     suffix = resolved_ws[len(resolved_mount) :]
                     env_vars["WORKSPACE"] = f"/mnt{resolved_mount}{suffix}"

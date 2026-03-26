@@ -433,10 +433,10 @@ class TestFileOpsWorkspaceFromInheritedMounts:
 
     @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
     @patch("subprocess.run")
-    def test_explicit_workspace_arg_takes_precedence(
+    def test_explicit_workspace_arg_with_mounts_uses_mnt(
         self, mock_run: MagicMock, mock_ensure: MagicMock, tmp_path: Path
     ) -> None:
-        """Explicit workspace arg should still use /workspace mount, not inherited mounts."""
+        """When mounts exist, workspace arg that doesn't match uses first rw mount."""
         from creel.models import ExecutorConfig, MountConfig, ToolConfig
 
         captured: dict = {}
@@ -469,8 +469,8 @@ class TestFileOpsWorkspaceFromInheritedMounts:
         )
         _run_executor_container(config, tool_config=tool_config)
 
-        # Explicit workspace arg should produce /workspace, not /mnt{host_path}
-        assert "WORKSPACE=/workspace" in captured["env"]
+        # With unified logic, tool_config mounts take precedence
+        assert "WORKSPACE=/mnt/home/user/project" in captured["env"]
 
     @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
     @patch("subprocess.run")
@@ -496,3 +496,188 @@ class TestFileOpsWorkspaceFromInheritedMounts:
         env_lines = captured["env"].strip().split("\n")
         ws_lines = [line for line in env_lines if line.startswith("WORKSPACE=")]
         assert ws_lines == []
+
+
+class TestUnifiedWorkspaceMount:
+    """Tests that the unified WORKSPACE logic works for ANY executor with rw mounts."""
+
+    @patch("creel.containers._ensure_image", return_value="executor-weather:abc123")
+    @patch("subprocess.run")
+    def test_any_executor_gets_workspace_from_rw_mount(
+        self, mock_run: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """Any executor (not just file_ops/coding) with rw mounts gets WORKSPACE."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        tool_config = ToolConfig(
+            executor="weather",
+            description="weather",
+            mounts=[MountConfig(path="/home/user/data", mode="rw")],
+        )
+        config = ExecutorConfig(name="weather", args={"location": "London"})
+        _run_executor_container(config, tool_config=tool_config)
+
+        assert "WORKSPACE=/mnt/home/user/data" in captured["env"]
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_workspace_arg_within_mount_uses_mnt_subpath(
+        self, mock_run: MagicMock, mock_ensure: MagicMock, tmp_path: Path
+    ) -> None:
+        """workspace arg that falls within a configured mount should use /mnt subpath."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        # Create a real directory structure for realpath to resolve
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        sub_dir = project_dir / "subdir"
+        sub_dir.mkdir()
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        tool_config = ToolConfig(
+            executor="file_ops",
+            description="file ops",
+            mounts=[MountConfig(path=str(project_dir), mode="rw")],
+        )
+        config = ExecutorConfig(
+            name="file_ops",
+            args={
+                "action": "write",
+                "file_path": "test.py",
+                "content": "hello",
+                "workspace": str(sub_dir),
+            },
+        )
+        _run_executor_container(config, tool_config=tool_config)
+
+        expected_ws = f"WORKSPACE=/mnt{project_dir}/subdir"
+        assert expected_ws in captured["env"]
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_workspace_arg_no_mounts_uses_dynamic_mount(
+        self, mock_run: MagicMock, mock_ensure: MagicMock, tmp_path: Path
+    ) -> None:
+        """workspace arg with no tool_config mounts should use legacy /workspace mount."""
+        from creel.models import ExecutorConfig
+
+        captured: dict = {}
+
+        ws_dir = tmp_path / "workspace"
+        ws_dir.mkdir()
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            captured["cmd"] = list(cmd)
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        config = ExecutorConfig(
+            name="file_ops",
+            args={
+                "action": "write",
+                "file_path": "test.py",
+                "content": "hello",
+                "workspace": str(ws_dir),
+            },
+        )
+        _run_executor_container(config)
+
+        # Legacy behavior: dynamic mount at /workspace
+        assert "WORKSPACE=/workspace" in captured["env"]
+        # Should have a -v mount for the workspace
+        cmd_str = " ".join(captured["cmd"])
+        assert "/workspace:" in cmd_str
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_no_rw_mounts_no_workspace_set(
+        self, mock_run: MagicMock, mock_ensure: MagicMock
+    ) -> None:
+        """Executors with only ro mounts and no workspace arg should not get WORKSPACE."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        tool_config = ToolConfig(
+            executor="file_ops",
+            description="file ops",
+            mounts=[MountConfig(path="/home/user/data", mode="ro")],
+        )
+        config = ExecutorConfig(
+            name="file_ops",
+            args={"action": "list", "directory": "."},
+        )
+        _run_executor_container(config, tool_config=tool_config)
+
+        env_lines = captured["env"].strip().split("\n")
+        ws_lines = [line for line in env_lines if line.startswith("WORKSPACE=")]
+        assert ws_lines == [], f"Expected no WORKSPACE, got: {ws_lines}"
+
+    @patch("creel.containers._ensure_image", return_value="executor-file-ops:abc123")
+    @patch("subprocess.run")
+    def test_ro_only_mounts_with_workspace_arg_uses_dynamic_mount(
+        self, mock_run: MagicMock, mock_ensure: MagicMock, tmp_path: Path
+    ) -> None:
+        """ro-only mounts + workspace arg should fall back to dynamic /workspace mount."""
+        from creel.models import ExecutorConfig, MountConfig, ToolConfig
+
+        captured: dict = {}
+
+        ws_dir = tmp_path / "workspace"
+        ws_dir.mkdir()
+
+        def capture_run(cmd, **kwargs):
+            env_idx = cmd.index("--env-file") + 1
+            captured["env"] = Path(cmd[env_idx]).read_text()
+            captured["cmd"] = list(cmd)
+            return MagicMock(returncode=0, stdout="{}", stderr="")
+
+        mock_run.side_effect = capture_run
+
+        tool_config = ToolConfig(
+            executor="file_ops",
+            description="file ops",
+            mounts=[MountConfig(path="/home/user/data", mode="ro")],
+        )
+        config = ExecutorConfig(
+            name="file_ops",
+            args={
+                "action": "write",
+                "file_path": "test.py",
+                "content": "hello",
+                "workspace": str(ws_dir),
+            },
+        )
+        _run_executor_container(config, tool_config=tool_config)
+
+        # Should fall back to legacy dynamic mount
+        assert "WORKSPACE=/workspace" in captured["env"]
+        cmd_str = " ".join(captured["cmd"])
+        assert "/workspace:" in cmd_str

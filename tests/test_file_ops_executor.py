@@ -96,6 +96,55 @@ class TestSafePath:
         result = _safe_path("/workspace/file.txt")
         assert result == str(workspace / "file.txt")
 
+    def test_mnt_style_workspace_preserves_path(self, tmp_path):
+        """WORKSPACE=/mnt/Users/ross/project should be preserved (not resolved)."""
+        # Simulate a container mount path that doesn't correspond to a real host path.
+        # Use tmp_path as the base to ensure the directory actually exists for realpath.
+        mnt_ws = tmp_path / "mnt" / "host" / "project"
+        mnt_ws.mkdir(parents=True)
+        old = os.environ.get("WORKSPACE")
+        os.environ["WORKSPACE"] = str(mnt_ws)
+        try:
+            result = _safe_path("hello.txt")
+            assert result == str(mnt_ws / "hello.txt")
+        finally:
+            if old is None:
+                os.environ.pop("WORKSPACE", None)
+            else:
+                os.environ["WORKSPACE"] = old
+
+    def test_mnt_style_workspace_dotdot_blocked(self, tmp_path):
+        """Directory traversal via .. must be blocked even with /mnt paths."""
+        mnt_ws = tmp_path / "mnt" / "host" / "project"
+        mnt_ws.mkdir(parents=True)
+        old = os.environ.get("WORKSPACE")
+        os.environ["WORKSPACE"] = str(mnt_ws)
+        try:
+            with pytest.raises(ValueError, match="Path escapes workspace"):
+                _safe_path("../../etc/passwd")
+        finally:
+            if old is None:
+                os.environ.pop("WORKSPACE", None)
+            else:
+                os.environ["WORKSPACE"] = old
+
+    def test_mnt_style_workspace_symlink_blocked(self, tmp_path):
+        """Symlink traversal must be blocked even with /mnt paths."""
+        mnt_ws = tmp_path / "mnt" / "host" / "project"
+        mnt_ws.mkdir(parents=True)
+        link = mnt_ws / "escape"
+        link.symlink_to("/etc")
+        old = os.environ.get("WORKSPACE")
+        os.environ["WORKSPACE"] = str(mnt_ws)
+        try:
+            with pytest.raises(ValueError, match="Path escapes workspace"):
+                _safe_path("escape/passwd")
+        finally:
+            if old is None:
+                os.environ.pop("WORKSPACE", None)
+            else:
+                os.environ["WORKSPACE"] = old
+
 
 class TestActionRead:
     """Tests for the read action."""

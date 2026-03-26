@@ -618,37 +618,57 @@ def _run_executor_container(
         elif bridge_config.token:
             env_vars["BRIDGE_TOKEN"] = bridge_config.token
 
-    # Handle workspace mount for file_ops (must be before env_file write
-    # so WORKSPACE=/workspace ends up in the env file, not the host path)
+    # --- Unified WORKSPACE logic (applies to ALL executors) ---
+    # Priority:
+    #   1. If tool_config has rw mounts, WORKSPACE = /mnt{host_path} of first rw mount
+    #   2. If an explicit workspace arg is passed AND falls within a configured mount,
+    #      use the /mnt path for that mount
+    #   3. If an explicit workspace arg is passed with NO matching mount, add a dynamic
+    #      mount (legacy file_ops behavior)
     _workspace_mount: tuple[str, str] | None = None
     workspace_path = config.args.get("workspace")
-    if workspace_path and config.name in ("file_ops",):
+
+    if tool_config and tool_config.mounts:
+        rw_mount = next((m for m in tool_config.mounts if m.mode == "rw"), None)
+        if rw_mount:
+            ws_host_path = os.path.expanduser(rw_mount.path)
+            if workspace_path:
+                # Explicit workspace arg — check if it falls within a configured mount.
+                # Use realpath only for the comparison (to resolve symlinks); the
+                # WORKSPACE value itself uses expanduser so macOS automount paths
+                # like /home aren't resolved to /System/Volumes/Data/home.
+                resolved_ws = os.path.realpath(workspace_path)
+                resolved_mount = os.path.realpath(ws_host_path)
+                if resolved_ws == resolved_mount or resolved_ws.startswith(resolved_mount + os.sep):
+                    # Workspace is within the mount — use /mnt path with subpath
+                    suffix = resolved_ws[len(resolved_mount) :]
+                    env_vars["WORKSPACE"] = f"/mnt{ws_host_path}{suffix}"
+                else:
+                    # Workspace doesn't match any mount — use /mnt path of first rw
+                    # mount as WORKSPACE (the explicit arg is ignored when rw mounts exist)
+                    env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
+            else:
+                # No explicit workspace arg — use first rw mount
+                env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
+        elif workspace_path:
+            # Only ro mounts + workspace arg — fall back to dynamic mount so writes
+            # go to the workspace directory rather than being silently lost.
+            resolved_ws = os.path.realpath(workspace_path)
+            if not os.path.isdir(resolved_ws):
+                raise RuntimeError("Workspace directory no longer exists")
+            action = config.args.get("action", "")
+            mount_mode = "ro" if action in ("read", "list") else "rw"
+            _workspace_mount = (resolved_ws, mount_mode)
+            env_vars["WORKSPACE"] = "/workspace"
+    elif workspace_path:
+        # No tool_config mounts — fall back to dynamic mount (legacy file_ops behavior)
         resolved_ws = os.path.realpath(workspace_path)
         if not os.path.isdir(resolved_ws):
             raise RuntimeError("Workspace directory no longer exists")
-        # Use read-only mount for read/list operations
         action = config.args.get("action", "")
         mount_mode = "ro" if action in ("read", "list") else "rw"
         _workspace_mount = (resolved_ws, mount_mode)
         env_vars["WORKSPACE"] = "/workspace"
-
-    # For file_ops with inherited mounts (from coding) but no explicit workspace
-    # arg, set WORKSPACE to the first rw mount's container path so writes
-    # persist to the host instead of ephemeral /workspace.
-    if config.name == "file_ops" and not workspace_path and tool_config and tool_config.mounts:
-        rw_mount = next((m for m in tool_config.mounts if m.mode == "rw"), None)
-        if rw_mount:
-            ws_host_path = os.path.expanduser(rw_mount.path)
-            env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
-
-    # Issue #304: For coding executor, set WORKSPACE to the first rw mount
-    # so coding_write_file uses the mounted host path instead of ephemeral
-    # /workspace.  Must be set before env-file write so the value is included.
-    if config.name == "coding" and tool_config and tool_config.mounts:
-        rw_mount = next((m for m in tool_config.mounts if m.mode == "rw"), None)
-        if rw_mount:
-            ws_host_path = os.path.expanduser(rw_mount.path)
-            env_vars["WORKSPACE"] = f"/mnt{ws_host_path}"
 
     # Write tool args as a JSON file so multiline values (e.g. file content)
     # are preserved.  The env-file format cannot represent newlines.

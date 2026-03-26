@@ -13,6 +13,7 @@ from creel.models import (
     SessionConfig,
     ToolConfig,
     ToolParameter,
+    WorkspaceConfig,
     load_agent_config,
     load_task,
 )
@@ -173,9 +174,40 @@ def test_agent_config_bounds() -> None:
         AgentConfig(max_turns=51)
 
 
-def test_session_config_defaults() -> None:
+def test_session_config_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("CREEL_HOME", str(tmp_path))
     cfg = SessionConfig()
-    assert cfg.sessions_dir == "sessions"
+    assert cfg.sessions_dir == str(tmp_path / "sessions")
+
+
+def test_session_config_absolute_path_unchanged() -> None:
+    cfg = SessionConfig(sessions_dir="/data/sessions")
+    assert cfg.sessions_dir == "/data/sessions"
+
+
+class TestWorkspaceConfigPath:
+    """Tests for WorkspaceConfig.path resolution (#279)."""
+
+    def test_relative_resolved_to_creel_home(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path))
+        cfg = WorkspaceConfig(path="workspace")
+        assert cfg.path == str(tmp_path / "workspace")
+
+    def test_default_resolved(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("CREEL_HOME", str(tmp_path))
+        cfg = WorkspaceConfig()
+        assert cfg.path == str(tmp_path / "workspace")
+
+    def test_absolute_path_unchanged(self) -> None:
+        cfg = WorkspaceConfig(path="/data/my-workspace")
+        assert cfg.path == "/data/my-workspace"
+
+    def test_tilde_expanded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HOME", "/Users/testuser")
+        cfg = WorkspaceConfig(path="~/my-workspace")
+        assert cfg.path == "/Users/testuser/my-workspace"
 
 
 def test_task_definition_mode_default(tmp_path: Path) -> None:

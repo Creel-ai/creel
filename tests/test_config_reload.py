@@ -115,6 +115,16 @@ class TestClassifyChanges:
         assert len(non_reloadable) == 1
         assert non_reloadable[0].field == "session.sessions_dir"
 
+    def test_non_reloadable_workspace_path(self):
+        change = ConfigChange(
+            field="workspace",
+            old_value={"path": "/old"},
+            new_value={"path": "/new"},
+        )
+        reloadable, non_reloadable = classify_changes([change])
+        assert len(non_reloadable) == 1
+        assert non_reloadable[0].field == "workspace.path"
+
     def test_mixed_changes(self):
         changes = [
             ConfigChange(field="llm", old_value={}, new_value={"model": "new"}),

@@ -262,7 +262,7 @@ class ContextPruningConfig(BaseModel):
 class SessionConfig(BaseModel):
     """Session storage settings."""
 
-    sessions_dir: str = "sessions"
+    sessions_dir: str = Field(default="sessions", validate_default=True)
     summarize_on_trim: bool = True
     ttl_hours: float = 0  # 0 = no expiry
     summary_model: str = "claude-haiku-4-5"
@@ -272,6 +272,16 @@ class SessionConfig(BaseModel):
     tool_cache: ToolCacheConfig = Field(default_factory=ToolCacheConfig)
     context_pruning: ContextPruningConfig = Field(default_factory=ContextPruningConfig)
     model_override: str | None = None  # Per-session "provider/model" override
+
+    @field_validator("sessions_dir")
+    @classmethod
+    def resolve_sessions_dir(cls, v: str) -> str:
+        expanded = os.path.expanduser(v)
+        if os.path.isabs(expanded):
+            return expanded
+        from creel.paths import creel_home
+
+        return str(creel_home() / expanded)
 
 
 class QuietHoursConfig(BaseModel):
@@ -322,7 +332,7 @@ class KnowledgeBaseConfig(BaseModel):
 class WorkspaceConfig(BaseModel):
     """Workspace directory settings for personality/memory files."""
 
-    path: str = "workspace"
+    path: str = Field(default="workspace", validate_default=True)
     timezone: str = "UTC"
     memory_days: int = 2
     memory_max_chars: int = 20_000
@@ -339,6 +349,16 @@ class WorkspaceConfig(BaseModel):
     memory_context_max_results: int = 20
     extra_paths: list[str] = Field(default_factory=list)
     index_session_transcripts: bool = False
+
+    @field_validator("path")
+    @classmethod
+    def resolve_workspace_path(cls, v: str) -> str:
+        expanded = os.path.expanduser(v)
+        if os.path.isabs(expanded):
+            return expanded
+        from creel.paths import creel_home
+
+        return str(creel_home() / expanded)
 
 
 class IMessageChannelConfig(BaseModel):

@@ -195,20 +195,84 @@ class TestNotesEndpoints:
 
     @patch("bridge.server.run_command")
     def test_notes_search(self, mock_run_command, client, notes_auth_headers):
-        """Test notes search endpoint."""
-        mock_run_command.return_value = BridgeResponse(ok=True, output="search results", error="")
+        """Test notes search endpoint filters results in Python."""
+        mock_run_command.return_value = BridgeResponse(
+            ok=True,
+            output="1. Notes - Training Log\n2. Archive - Recipes\n3. Notes - Travel Plans",
+            error="",
+        )
 
         response = client.post(
-            "/notes/search", json={"query": "test query"}, headers=notes_auth_headers
+            "/notes/search", json={"query": "training"}, headers=notes_auth_headers
         )
 
         assert response.status_code == 200
         result = response.json()
         assert result["ok"] is True
-        assert result["output"] == "search results"
+        assert "Training Log" in result["output"]
+        assert "Recipes" not in result["output"]
 
-        # Verify correct command was called
-        mock_run_command.assert_called_once_with(["memo", "notes", "-s", "test query"])
+        # Verify it lists all notes (not using -s flag)
+        mock_run_command.assert_called_once_with(["memo", "notes"])
+
+    @patch("bridge.server.run_command")
+    def test_notes_search_no_results(self, mock_run_command, client, notes_auth_headers):
+        """Test notes search with no matching results."""
+        mock_run_command.return_value = BridgeResponse(
+            ok=True,
+            output="1. Notes - Training Log\n2. Archive - Recipes",
+            error="",
+        )
+
+        response = client.post(
+            "/notes/search", json={"query": "nonexistent"}, headers=notes_auth_headers
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ok"] is True
+        assert "No notes found" in result["output"]
+
+    @patch("bridge.server.run_command")
+    def test_notes_read(self, mock_run_command, client, notes_auth_headers):
+        """Test notes read endpoint."""
+        mock_run_command.side_effect = [
+            BridgeResponse(
+                ok=True,
+                output="1. Notes - Training Log\n2. Archive - Recipes\n19. Notes - Creel",
+                error="",
+            ),
+            BridgeResponse(ok=True, output="# Creel\n\nNote content here", error=""),
+        ]
+
+        response = client.post("/notes/read", json={"name": "Creel"}, headers=notes_auth_headers)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ok"] is True
+        assert "Note content here" in result["output"]
+
+        assert mock_run_command.call_count == 2
+        mock_run_command.assert_any_call(["memo", "notes"])
+        mock_run_command.assert_any_call(["memo", "notes", "-v", "19"])
+
+    @patch("bridge.server.run_command")
+    def test_notes_read_not_found(self, mock_run_command, client, notes_auth_headers):
+        """Test notes read endpoint when note is not found."""
+        mock_run_command.return_value = BridgeResponse(
+            ok=True,
+            output="1. Notes - Training Log\n2. Archive - Recipes",
+            error="",
+        )
+
+        response = client.post(
+            "/notes/read", json={"name": "Nonexistent Note"}, headers=notes_auth_headers
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ok"] is False
+        assert "Note not found" in result["error"]
 
     @patch("bridge.server.run_command")
     def test_notes_create(self, mock_run_command, client, notes_auth_headers):
@@ -670,10 +734,13 @@ class TestArgumentInjectionPrevention:
 
     @patch("bridge.server.run_command")
     def test_no_shell_injection_in_search(self, mock_run_command, client, notes_auth_headers):
-        """Test that malicious search queries don't enable shell injection."""
+        """Test that malicious search queries don't enable shell injection.
+
+        Search now lists all notes and filters in Python, so the malicious
+        query is never passed to subprocess — only used for string matching.
+        """
         mock_run_command.return_value = BridgeResponse(ok=True, output="safe output", error="")
 
-        # Try a malicious query that would be dangerous with shell=True
         malicious_query = "test; rm -rf /; echo done"
         response = client.post(
             "/notes/search", json={"query": malicious_query}, headers=notes_auth_headers
@@ -681,8 +748,8 @@ class TestArgumentInjectionPrevention:
 
         assert response.status_code == 200
 
-        # Verify the command was called with the query as a single argument
-        mock_run_command.assert_called_once_with(["memo", "notes", "-s", malicious_query])
+        # Malicious query is only used for Python filtering, not passed to subprocess
+        mock_run_command.assert_called_once_with(["memo", "notes"])
 
     @patch("bridge.server.run_command")
     def test_no_shell_injection_in_create(self, mock_run_command, client, notes_auth_headers):

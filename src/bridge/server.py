@@ -56,6 +56,12 @@ class NotesSearchRequest(BaseModel):
     query: str
 
 
+class NotesReadRequest(BaseModel):
+    """Request for reading a specific note by name."""
+
+    name: str
+
+
 class NotesCreateRequest(BaseModel):
     """Request for creating a note."""
 
@@ -424,6 +430,19 @@ def run_command(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> Br
         )
 
 
+def _parse_note_lines(output: str) -> list[tuple[int, str, str]]:
+    """Parse memo notes list output into (number, folder, title) tuples.
+
+    Each line has format: '<N>. <Folder> - <Title>'
+    """
+    results = []
+    for line in output.splitlines():
+        m = re.match(r"^\s*(\d+)\.\s+(.+?)\s+-\s+(.+)$", line)
+        if m:
+            results.append((int(m.group(1)), m.group(2).strip(), m.group(3).strip()))
+    return results
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan manager."""
@@ -584,9 +603,66 @@ async def notes_list(
 async def notes_search(
     request: NotesSearchRequest, _: bool = Depends(authenticate_notes)
 ) -> BridgeResponse:
-    """Search notes via memo CLI."""
-    cmd = ["memo", "notes", "-s", request.query]
-    return run_command(cmd)
+    """Search notes via memo CLI (list all, then filter in Python).
+
+    memo's -s flag is interactive (fuzzy finder), so we list all notes
+    and do case-insensitive substring matching instead.
+    """
+    list_result = run_command(["memo", "notes"])
+    if not list_result.ok:
+        return list_result
+
+    query_lower = request.query.lower()
+    matched = [
+        line.strip()
+        for line in list_result.output.splitlines()
+        if line.strip() and query_lower in line.lower()
+    ]
+
+    execution_id = str(uuid.uuid4())
+    if matched:
+        return BridgeResponse(ok=True, output="\n".join(matched), execution_id=execution_id)
+    return BridgeResponse(
+        ok=True, output="No notes found matching query", execution_id=execution_id
+    )
+
+
+@app.post("/notes/read", response_model=BridgeResponse)
+async def notes_read(
+    request: NotesReadRequest, _: bool = Depends(authenticate_notes)
+) -> BridgeResponse:
+    """Read a specific note by name via memo CLI.
+
+    Lists all notes to find the note number, then uses -v to view its content.
+    """
+    list_result = run_command(["memo", "notes"])
+    if not list_result.ok:
+        return list_result
+
+    parsed = _parse_note_lines(list_result.output)
+    name_lower = request.name.lower()
+
+    # Exact match on title or "folder - title"
+    note_number = None
+    for num, folder, title in parsed:
+        if name_lower == title.lower() or name_lower == f"{folder} - {title}".lower():
+            note_number = num
+            break
+
+    # Fallback: substring match
+    if note_number is None:
+        for num, _folder, title in parsed:
+            if name_lower in title.lower():
+                note_number = num
+                break
+
+    if note_number is None:
+        execution_id = str(uuid.uuid4())
+        return BridgeResponse(
+            ok=False, error=f"Note not found: {request.name}", execution_id=execution_id
+        )
+
+    return run_command(["memo", "notes", "-v", str(note_number)])
 
 
 @app.post("/notes/create", response_model=BridgeResponse)

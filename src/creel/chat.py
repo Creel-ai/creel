@@ -67,6 +67,7 @@ def _strip_image_data_from_history(messages: list[dict]) -> None:
                         "text": "[Image — previously analyzed]",
                     }
 
+
 # Approval response patterns
 _APPROVE_WORDS = {"y", "yes"}
 _DENY_WORDS = {"n", "no"}

@@ -29,6 +29,51 @@ from creel.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
 
+
+def _strip_image_data_from_history(messages: list[dict], *, up_to: int | None = None) -> None:
+    """Replace base64 image data in session messages with lightweight placeholders.
+
+    Images are only needed by the LLM for the turn they arrive. Keeping
+    the full base64 in history causes every subsequent turn to re-send
+    tens of thousands of tokens worth of image data.
+
+    Args:
+        messages: The session message list (mutated in-place).
+        up_to: Only process messages at indices ``0..up_to-1``.  When
+            *None*, all messages are processed.
+
+    Modifies messages in-place. Handles both Anthropic and OpenAI formats.
+    """
+    target = messages[:up_to] if up_to is not None else messages
+    for msg in target:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for i, block in enumerate(content):
+            if not isinstance(block, dict):
+                continue
+
+            # Anthropic format: {"type": "image", "source": {"type": "base64", ...}}
+            if block.get("type") == "image":
+                source = block.get("source")
+                if isinstance(source, dict) and source.get("type") == "base64" and "data" in source:
+                    data_len = len(source.get("data", ""))
+                    media_type = source.get("media_type", "image/unknown")
+                    content[i] = {
+                        "type": "text",
+                        "text": f"[Image ({media_type}, ~{data_len // 1024}KB) — previously analyzed]",
+                    }
+
+            # OpenAI format: {"type": "image_url", "image_url": {"url": "data:...;base64,..."}}
+            elif block.get("type") == "image_url":
+                url = (block.get("image_url") or {}).get("url", "")
+                if url.startswith("data:") and ";base64," in url:
+                    content[i] = {
+                        "type": "text",
+                        "text": "[Image — previously analyzed]",
+                    }
+
+
 # Approval response patterns
 _APPROVE_WORDS = {"y", "yes"}
 _DENY_WORDS = {"n", "no"}
@@ -464,6 +509,12 @@ class ChatServer:
         with self._active_loops_lock:
             self._active_loops[sender_id] = session_state
 
+        # Record message count before the agent loop so we can strip
+        # image data only from prior turns (not the current one).
+        # Subtract 1 to exclude the user message just added above —
+        # its images need to survive this turn.
+        _pre_loop_msg_count = max(0, len(session.messages) - 1)
+
         # Run the agent loop (containerized or direct)
         try:
             result = self._invoke_agent_loop(
@@ -505,6 +556,12 @@ class ChatServer:
             self._send_batch_approval_request(sender_id, result.pending_approvals)
             self._session_mgr.save_session(session)
             return "⏳ Waiting for your approval to proceed."
+
+        # Strip base64 image data from prior turns to prevent
+        # re-sending large images on every subsequent turn.  The current
+        # turn's images are kept so the LLM saw them and so that any
+        # post-processing / test assertions still pass.
+        _strip_image_data_from_history(session.messages, up_to=_pre_loop_msg_count)
 
         # Save the updated messages (agent loop mutates the list)
         self._session_mgr.save_session(session)

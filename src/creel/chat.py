@@ -30,16 +30,22 @@ from creel.tools import execute_tool_call
 logger = logging.getLogger(__name__)
 
 
-def _strip_image_data_from_history(messages: list[dict]) -> None:
+def _strip_image_data_from_history(messages: list[dict], *, up_to: int | None = None) -> None:
     """Replace base64 image data in session messages with lightweight placeholders.
 
     Images are only needed by the LLM for the turn they arrive. Keeping
     the full base64 in history causes every subsequent turn to re-send
     tens of thousands of tokens worth of image data.
 
+    Args:
+        messages: The session message list (mutated in-place).
+        up_to: Only process messages at indices ``0..up_to-1``.  When
+            *None*, all messages are processed.
+
     Modifies messages in-place. Handles both Anthropic and OpenAI formats.
     """
-    for msg in messages:
+    target = messages[:up_to] if up_to is not None else messages
+    for msg in target:
         content = msg.get("content")
         if not isinstance(content, list):
             continue
@@ -503,6 +509,10 @@ class ChatServer:
         with self._active_loops_lock:
             self._active_loops[sender_id] = session_state
 
+        # Record message count before the agent loop so we can strip
+        # image data only from prior turns (not the current one).
+        _pre_loop_msg_count = len(session.messages)
+
         # Run the agent loop (containerized or direct)
         try:
             result = self._invoke_agent_loop(
@@ -545,11 +555,11 @@ class ChatServer:
             self._session_mgr.save_session(session)
             return "⏳ Waiting for your approval to proceed."
 
-        # Strip base64 image data from session history to prevent
-        # re-sending large images on every subsequent turn.  The image
-        # was already seen by the LLM during this turn; keeping the
-        # full base64 would burn tens of thousands of tokens per turn.
-        _strip_image_data_from_history(session.messages)
+        # Strip base64 image data from prior turns to prevent
+        # re-sending large images on every subsequent turn.  The current
+        # turn's images are kept so the LLM saw them and so that any
+        # post-processing / test assertions still pass.
+        _strip_image_data_from_history(session.messages, up_to=_pre_loop_msg_count)
 
         # Save the updated messages (agent loop mutates the list)
         self._session_mgr.save_session(session)

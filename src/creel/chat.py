@@ -511,7 +511,9 @@ class ChatServer:
 
         # Record message count before the agent loop so we can strip
         # image data only from prior turns (not the current one).
-        _pre_loop_msg_count = len(session.messages)
+        # Subtract 1 to exclude the user message just added above —
+        # its images need to survive this turn.
+        _pre_loop_msg_count = max(0, len(session.messages) - 1)
 
         # Run the agent loop (containerized or direct)
         try:

@@ -29,6 +29,44 @@ from creel.tools import execute_tool_call
 
 logger = logging.getLogger(__name__)
 
+
+def _strip_image_data_from_history(messages: list[dict]) -> None:
+    """Replace base64 image data in session messages with lightweight placeholders.
+
+    Images are only needed by the LLM for the turn they arrive. Keeping
+    the full base64 in history causes every subsequent turn to re-send
+    tens of thousands of tokens worth of image data.
+
+    Modifies messages in-place. Handles both Anthropic and OpenAI formats.
+    """
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for i, block in enumerate(content):
+            if not isinstance(block, dict):
+                continue
+
+            # Anthropic format: {"type": "image", "source": {"type": "base64", ...}}
+            if block.get("type") == "image":
+                source = block.get("source")
+                if isinstance(source, dict) and source.get("type") == "base64" and "data" in source:
+                    data_len = len(source.get("data", ""))
+                    media_type = source.get("media_type", "image/unknown")
+                    content[i] = {
+                        "type": "text",
+                        "text": f"[Image ({media_type}, ~{data_len // 1024}KB) — previously analyzed]",
+                    }
+
+            # OpenAI format: {"type": "image_url", "image_url": {"url": "data:...;base64,..."}}
+            elif block.get("type") == "image_url":
+                url = (block.get("image_url") or {}).get("url", "")
+                if url.startswith("data:") and ";base64," in url:
+                    content[i] = {
+                        "type": "text",
+                        "text": "[Image — previously analyzed]",
+                    }
+
 # Approval response patterns
 _APPROVE_WORDS = {"y", "yes"}
 _DENY_WORDS = {"n", "no"}
@@ -505,6 +543,12 @@ class ChatServer:
             self._send_batch_approval_request(sender_id, result.pending_approvals)
             self._session_mgr.save_session(session)
             return "⏳ Waiting for your approval to proceed."
+
+        # Strip base64 image data from session history to prevent
+        # re-sending large images on every subsequent turn.  The image
+        # was already seen by the LLM during this turn; keeping the
+        # full base64 would burn tens of thousands of tokens per turn.
+        _strip_image_data_from_history(session.messages)
 
         # Save the updated messages (agent loop mutates the list)
         self._session_mgr.save_session(session)

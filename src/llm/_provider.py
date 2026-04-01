@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import types
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,6 +40,16 @@ class ContainerLLMResponse:
     stop_reason: str = "end_turn"
     input_tokens: int = 0
     output_tokens: int = 0
+
+    @property
+    def usage(self):
+        """Expose token counts via a .usage attribute for compatibility with agent.py token tracking."""
+        if self.input_tokens or self.output_tokens:
+            return types.SimpleNamespace(
+                input_tokens=self.input_tokens,
+                output_tokens=self.output_tokens,
+            )
+        return None
 
 
 class ContainerProvider:

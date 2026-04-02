@@ -14,6 +14,7 @@ import hashlib
 import logging
 import re
 import sqlite3
+import threading
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from pathlib import Path
@@ -69,9 +70,10 @@ class MemoryIndex:
         self._db_path = db_path
         self._half_life = recency_half_life_days
         self._available = False
+        self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         try:
-            self._conn = sqlite3.connect(str(db_path))
+            self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
             self._conn.execute("PRAGMA journal_mode=WAL")
             # Test FTS5 availability
             self._conn.execute(
@@ -112,6 +114,16 @@ class MemoryIndex:
         """Scan memory files and re-index any that have changed. Returns count of files re-indexed."""
         if not self._available or self._conn is None:
             return 0
+        with self._lock:
+            return self._reindex_if_needed_locked(memory_dir, long_term_path, extra_paths)
+
+    def _reindex_if_needed_locked(
+        self,
+        memory_dir: Path,
+        long_term_path: Path,
+        extra_paths: list[Path] | None = None,
+    ) -> int:
+        assert self._conn is not None  # guaranteed by caller
 
         reindexed = 0
         current_paths: set[str] = set()
@@ -176,7 +188,7 @@ class MemoryIndex:
                 )
                 continue
 
-            self.reindex_file(file_path, date_str, _commit=False)
+            self._reindex_file_inner(file_path, date_str, _commit=False)
             self._conn.execute(
                 "INSERT OR REPLACE INTO file_meta "
                 "(path, mtime_ns, size, content_hash) VALUES (?, ?, ?, ?)",
@@ -210,6 +222,19 @@ class MemoryIndex:
         """
         if not self._available or self._conn is None:
             return
+        # When called directly (not from _reindex_if_needed_locked), acquire lock.
+        # _reindex_if_needed_locked already holds the lock and calls with _commit=False.
+        if _commit:
+            self._lock.acquire()
+        try:
+            self._reindex_file_inner(path, date_str, _commit=_commit)
+        finally:
+            if _commit:
+                self._lock.release()
+
+    def _reindex_file_inner(self, path: Path, date_str: str, *, _commit: bool = True) -> None:
+        """Inner reindex logic (caller must hold _lock or pass _commit=False from locked context)."""
+        assert self._conn is not None  # guaranteed by caller
         if date_str.startswith("shared:"):
             source = "shared"
         elif date_str == "long_term":
@@ -237,25 +262,27 @@ class MemoryIndex:
         """Insert a single entry into the FTS index."""
         if not self._available or self._conn is None:
             return
-        try:
-            self._conn.execute(
-                "INSERT INTO memory_fts (source, date_str, line_number, content) "
-                "VALUES (?, ?, ?, ?)",
-                (source, date_str, str(line_number), content.strip()),
-            )
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            logger.warning("FTS index_entry failed: %s", exc)
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO memory_fts (source, date_str, line_number, content) "
+                    "VALUES (?, ?, ?, ?)",
+                    (source, date_str, str(line_number), content.strip()),
+                )
+                self._conn.commit()
+            except sqlite3.Error as exc:
+                logger.warning("FTS index_entry failed: %s", exc)
 
     def remove_file(self, date_str: str) -> None:
         """Remove all entries for a given date_str from the index."""
         if not self._available or self._conn is None:
             return
-        try:
-            self._conn.execute("DELETE FROM memory_fts WHERE date_str = ?", (date_str,))
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            logger.warning("FTS remove_file failed: %s", exc)
+        with self._lock:
+            try:
+                self._conn.execute("DELETE FROM memory_fts WHERE date_str = ?", (date_str,))
+                self._conn.commit()
+            except sqlite3.Error as exc:
+                logger.warning("FTS remove_file failed: %s", exc)
 
     def search(
         self, query: str, max_results: int = 20, today: date | None = None
@@ -277,18 +304,19 @@ class MemoryIndex:
         # Escape double quotes in the fallback to prevent invalid FTS5 syntax.
         escaped = query.replace('"', '""')
         rows: list[tuple] = []
-        for attempt_query in (query, f'"{escaped}"'):
-            try:
-                rows = self._conn.execute(
-                    "SELECT date_str, line_number, content, bm25(memory_fts) "
-                    "FROM memory_fts WHERE memory_fts MATCH ? "
-                    "ORDER BY bm25(memory_fts) LIMIT ?",
-                    (attempt_query, max_results * 3),
-                ).fetchall()
-                break
-            except sqlite3.OperationalError:
-                logger.debug("FTS5 MATCH failed for query %r", attempt_query)
-                continue
+        with self._lock:
+            for attempt_query in (query, f'"{escaped}"'):
+                try:
+                    rows = self._conn.execute(
+                        "SELECT date_str, line_number, content, bm25(memory_fts) "
+                        "FROM memory_fts WHERE memory_fts MATCH ? "
+                        "ORDER BY bm25(memory_fts) LIMIT ?",
+                        (attempt_query, max_results * 3),
+                    ).fetchall()
+                    break
+                except sqlite3.OperationalError:
+                    logger.debug("FTS5 MATCH failed for query %r", attempt_query)
+                    continue
 
         if not rows:
             return []
@@ -304,9 +332,10 @@ class MemoryIndex:
 
     def close(self) -> None:
         """Close the database connection."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
 
 class MemoryManager:

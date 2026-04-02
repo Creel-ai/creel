@@ -84,6 +84,11 @@ ALLOWED_SUBCOMMANDS = frozenset(
         "search code",
         "search issues",
         "search prs",
+        "search repos",
+        "search commits",
+        "repo list",
+        "repo view",
+        "repo clone",
     }
 )
 
@@ -115,7 +120,7 @@ BLOCKED_PATTERNS = [
 ]
 
 # All valid top-level subcommand prefixes
-VALID_PREFIXES = frozenset({"issue", "pr", "run", "search", "api"})
+VALID_PREFIXES = frozenset({"issue", "pr", "run", "search", "api", "repo"})
 
 
 def _error_result(error: str, *, command: str = "", **extra) -> dict:

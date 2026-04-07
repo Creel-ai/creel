@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Creel — The AI Agent That Doesn't Trust Its Own Tools</title>
-  <meta name="description" content="Secure, self-hosted personal AI agent framework with 27+ integrations, per-tool Docker isolation, and a Guardian safety pipeline.">
+  <meta name="description" content="Secure, self-hosted personal AI agent framework with 30+ integrations, per-tool Docker isolation, and a Guardian safety pipeline.">
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="assets/creel-logo.jpg">
 </head>
@@ -19,7 +19,7 @@
       </a>
       <div class="nav-links">
         <a href="#features">Features</a>
-        <a href="#architecture">Architecture</a>
+        <a href="architecture/">Architecture</a>
         <a href="#quickstart">Get Started</a>
         <a href="https://github.com/Creel-ai/creel" class="btn btn-sm" target="_blank">GitHub ↗</a>
       </div>
@@ -32,7 +32,7 @@
     <div class="hero-inner">
       <img src="assets/creel-logo.jpg" alt="Creel logo" class="hero-logo">
       <h1>The only AI agent that doesn't trust its own tools.</h1>
-      <p class="hero-sub">A secure, self-hosted personal AI agent framework with 27+ integrations. Every tool runs in its own Docker container. Every action passes through a Guardian safety pipeline. You stay in control.</p>
+      <p class="hero-sub">A secure, self-hosted personal AI agent framework with 30+ integrations. Every tool runs in its own Docker container. Every action passes through a Guardian safety pipeline. You stay in control.</p>
       <div class="hero-actions">
         <a href="#quickstart" class="btn btn-primary">Get Started</a>
         <a href="https://github.com/Creel-ai/creel" class="btn btn-outline" target="_blank">View on GitHub</a>
@@ -94,8 +94,8 @@
 
         <div class="feature-card">
           <div class="feature-icon">🔌</div>
-          <h3>27+ Integrations</h3>
-          <p>Google Workspace, GitHub, Notion, Apple Notes &amp; Reminders, Things 3, Brave Search, browser automation, shell execution, and more — all containerized.</p>
+          <h3>30+ Integrations</h3>
+          <p>Google Workspace, GitHub, Notion, Apple Notes &amp; Reminders, Things 3, Brave Search, browser automation, clipboard, text-to-speech, shell execution, and more — all containerized.</p>
         </div>
 
       </div>
@@ -159,7 +159,7 @@
 <span class="c-comment"># Clone and set up</span>
 <span class="c-prompt">$</span> git clone https://github.com/Creel-ai/creel.git
 <span class="c-prompt">$</span> cd creel
-<span class="c-prompt">$</span> pyenv install 3.12.11
+<span class="c-prompt">$</span> pyenv install 3.12.12
 <span class="c-prompt">$</span> uv venv && source .venv/bin/activate
 <span class="c-prompt">$</span> uv pip install -e ".[dev]"
 
@@ -167,7 +167,7 @@
 <span class="c-prompt">$</span> export ANTHROPIC_API_KEY=sk-ant-...
 <span class="c-prompt">$</span> creel daemon start
 
-<span class="c-output">🧺 Creel daemon running. Tools loaded: 27. Guardian: active.</span>
+<span class="c-output">🧺 Creel daemon running. Tools loaded: 32. Guardian: active.</span>
 
 <span class="c-comment"># Or run a task directly</span>
 <span class="c-prompt">$</span> creel run morning-briefing</code></pre>

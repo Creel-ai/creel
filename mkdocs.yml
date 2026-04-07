@@ -36,12 +36,15 @@ nav:
     - Authentication: getting-started/authentication.md
     - Google Services Setup: getting-started/google-services.md
     - OpenClaw Migration: getting-started/openclaw-migration.md
+    - Telegram: getting-started/telegram.md
   - Architecture:
     - Overview: architecture/overview.md
     - Agent Mode: architecture/agent-mode.md
     - Channels: architecture/channels.md
     - Device Pairing: architecture/device-pairing.md
     - Guardian Security: architecture/guardian.md
+    - Browser Automation: architecture/browser.md
+    - Cron Scheduling: architecture/cron.md
   - Configuration:
     - Task Definitions: configuration/tasks.md
     - Agent Configuration: configuration/agent-config.md
@@ -60,6 +63,11 @@ nav:
     - Web Search & Fetch: executors/web.md
     - Shell Exec: executors/exec.md
     - Interactive Shell Exec: executors/exec-interactive.md
+    - GitHub: executors/github.md
+    - Clipboard: executors/clipboard.md
+    - Text-to-Speech: executors/tts.md
+    - Dev Session: executors/dev-session.md
+    - Host Exec: executors/host-exec.md
   - Deployment:
     - Container Mode: deployment/containers.md
     - Host Bridge: deployment/host-bridge.md

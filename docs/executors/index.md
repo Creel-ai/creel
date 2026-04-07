@@ -22,6 +22,10 @@ Executors are isolated, stateless data fetchers that run with minimal credential
 | file_ops | Host filesystem (scoped) | LLM, other credentials |
 | [exec](exec.md) | Host filesystem (scoped) | LLM, other credentials |
 | [exec_interactive](exec-interactive.md) | Network access (SSH, REPLs) | LLM, other credentials |
+| [clipboard](clipboard.md) | Bridge HTTP token (scoped) | LLM, other credentials |
+| [tts](tts.md) | ElevenLabs / OpenAI API key | LLM, other credentials |
+| [dev_session](dev-session.md) | None (containerized) | LLM, other credentials |
+| [host_exec](host-exec.md) | Bridge HTTP token (scoped) | LLM, other credentials |
 
 ## How Executors Run
 

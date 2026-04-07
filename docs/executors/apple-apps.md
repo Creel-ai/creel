@@ -6,43 +6,63 @@ These executors integrate with macOS applications via the [Host Bridge](../deplo
 
 Reads and creates notes in Notes.app. Uses the `memo` CLI tool for macOS integration.
 
-### Configuration
+### Tools
 
-```yaml
-apple_notes:
-  args:
-    action: "list_notes"   # list_notes, search_notes, read_note, create_note
-    folder: "Notes"
-    limit: "25"
-```
-
-### Parameters
+**`list_notes`** — List notes, optionally filtered by folder.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `action` | yes | `list_notes`, `search_notes`, `read_note`, or `create_note` |
 | `folder` | no | Notes folder name |
-| `limit` | no | Maximum notes to return (default: 25) |
+
+**`search_notes`** — Search notes by text query.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | yes | Search query |
+
+**`read_note`** — Read a specific note.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `note_id` | yes | Note identifier |
+
+**`create_note`** — Create a new note.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `title` | yes | Note title |
+| `body` | no | Note body text |
+| `folder` | no | Folder to create in |
 
 ## Apple Reminders
 
 Reads and creates reminders in Reminders.app. Uses the `remindctl` CLI tool for macOS integration.
 
-### Configuration
+### Tools
 
-```yaml
-apple_reminders:
-  args:
-    action: "list_reminders"  # list_reminders, create_reminder, complete_reminder, get_lists
-    list_name: "Reminders"
-```
-
-### Parameters
+**`list_reminders`** — List reminders from a list.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `action` | yes | `list_reminders`, `create_reminder`, `complete_reminder`, or `get_lists` |
 | `list_name` | no | Reminders list name |
+| `filter` | no | Filter: `incomplete` (default) or `all` |
+
+**`create_reminder`** — Create a new reminder.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `title` | yes | Reminder title |
+| `due_date` | no | Due date |
+| `notes` | no | Additional notes |
+| `list_name` | no | List to add to |
+
+**`complete_reminder`** — Mark a reminder as complete.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `name` | yes | Name of the reminder to complete |
+
+**`get_reminder_lists`** — List available reminder lists. No parameters.
 
 ## Things 3
 

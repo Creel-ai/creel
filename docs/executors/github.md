@@ -81,7 +81,7 @@ The executor enforces a built-in allowlist (see `src/executors/github/executor.p
 
 ### Always allowed (read-only)
 
-`issue list`, `issue view`, `pr list`, `pr view`, `pr diff`, `pr checks`, `run list`, `run view`, `run watch`, `search code`, `search issues`, `search prs`
+`issue list`, `issue view`, `pr list`, `pr view`, `pr diff`, `pr checks`, `run list`, `run view`, `run watch`, `search code`, `search issues`, `search prs`, `search repos`, `search commits`, `repo list`, `repo view`, `repo clone`
 
 ### Require review (write operations)
 

@@ -159,12 +159,14 @@
 <span class="c-comment"># Clone and set up</span>
 <span class="c-prompt">$</span> git clone https://github.com/Creel-ai/creel.git
 <span class="c-prompt">$</span> cd creel
-<span class="c-prompt">$</span> pyenv install 3.12.12
+<span class="c-prompt">$</span> pyenv install 3.12.11
 <span class="c-prompt">$</span> uv venv && source .venv/bin/activate
 <span class="c-prompt">$</span> uv pip install -e ".[dev]"
 
-<span class="c-comment"># Configure and start the daemon</span>
-<span class="c-prompt">$</span> export ANTHROPIC_API_KEY=sk-ant-...
+<span class="c-comment"># Initialize (interactive wizard)</span>
+<span class="c-prompt">$</span> creel init
+
+<span class="c-comment"># Start the daemon</span>
 <span class="c-prompt">$</span> creel daemon start
 
 <span class="c-output">🧺 Creel daemon running. Tools loaded: 32. Guardian: active.</span>

@@ -6,7 +6,7 @@ Get Creel running in 5 minutes. By the end you'll have a personal AI agent respo
 
 | Tool | What it's for | Install |
 |------|--------------|---------|
-| Python 3.11+ | Runtime | `pyenv install 3.12.12` |
+| Python 3.11+ | Runtime | `pyenv install 3.12.11` |
 | [age](https://github.com/FiloSottile/age) | Secrets encryption | `brew install age` |
 | Docker | Container isolation (optional) | [docker.com](https://docs.docker.com/get-docker/) |
 

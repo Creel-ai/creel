@@ -48,20 +48,28 @@ apple_reminders:
 
 Manages tasks in Things 3. Uses the `things` CLI tool for macOS integration.
 
-### Configuration
+### Tools
 
-```yaml
-things:
-  args:
-    action: "list_tasks"     # list_tasks, create_task, complete_task, search_tasks
-    area: "Personal"
-    limit: "25"
-```
-
-### Parameters
+**`list_things`** — List tasks from Things 3.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `action` | yes | `list_tasks`, `create_task`, `complete_task`, or `search_tasks` |
-| `area` | no | Things area to filter by |
-| `limit` | no | Maximum tasks to return (default: 25) |
+| `action` | no | `inbox` (default), `today`, `upcoming`, `projects`, or `search` |
+| `query` | no | Search query (required when action is `search`) |
+
+**`create_things_task`** — Create a new task in Things 3.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `title` | yes | Title of the task |
+| `notes` | no | Notes for the task |
+| `when` | no | When to schedule the task |
+| `deadline` | no | Deadline for the task |
+| `tags` | no | Tags for the task |
+| `list` | no | Project or area to add the task to |
+
+**`complete_things_task`** — Mark a task as complete.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | yes | ID of the task to complete |

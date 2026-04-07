@@ -11,11 +11,8 @@ The registry uses a two-phase discovery strategy: packaging-based entry points f
 ```mermaid
 flowchart TD
     R["ChannelRegistry.discover()"] --> EP["Scan entry points\ngroup: creel.channels"]
-    EP --> found{"Any plugins\nfound?"}
-    found -- yes --> REG["Register all discovered plugins"]
-    found -- no --> BI["Fallback: import built-in\nchannel modules directly"]
-    BI --> REG
-    REG --> AVAIL["registry.available()\nfiltered by platform"]
+    EP --> BI["Import built-in channel modules\nfor any not yet registered"]
+    BI --> AVAIL["registry.available()\nfiltered by platform"]
 ```
 
 **Entry points** are declared in `pyproject.toml`:
@@ -28,7 +25,7 @@ whatsapp = "creel.channels.whatsapp:register_plugin"
 telegram = "creel.channels.telegram:register_plugin"
 ```
 
-When entry points aren't available (e.g. running from source with `PYTHONPATH`), the registry falls back to directly importing the modules listed in `ChannelRegistry._BUILTIN_CHANNELS`.
+After scanning entry points, the registry always attempts to import built-in channel modules for any channels not yet registered. This covers development setups (e.g. running from source with `PYTHONPATH`) and partial entry-point discovery.
 
 ## Plugin Anatomy
 
@@ -127,13 +124,13 @@ Messages are dropped unless the sender matches `allowed_senders`. For group-capa
 ```yaml
 channels:
   telegram:
-    bot_token: ${TELEGRAM_BOT_TOKEN}
+    secrets: secrets/telegram.env.enc
     allowed_senders: ["12345678", "@myusername"]
     allowed_chats: ["-100987654"]
 ```
 
-!!! warning "Mandatory allow-list"
-    If `allowed_senders` is empty or omitted, **all inbound messages are rejected**. There is no open-to-all mode — this is a deliberate security default.
+!!! warning "Default: closed access"
+    With the default `sender_policy: closed`, if `allowed_senders` is empty or omitted, **all inbound messages are rejected**. Set `sender_policy: allowlist` or `sender_policy: open` for more permissive modes (see [Telegram setup](../getting-started/telegram.md#sender-policy)).
 
 ### Outbound filtering
 

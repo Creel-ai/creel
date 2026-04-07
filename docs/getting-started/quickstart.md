@@ -69,11 +69,13 @@ creel init
 
 The wizard will walk you through:
 
-1. **LLM provider** — Anthropic, OpenAI, or Ollama (local)
+1. **LLM provider** — Anthropic, OpenAI, Google (Gemini), or Ollama (local)
 2. **API key** — entered securely via hidden prompt, validated inline
 3. **Model** — defaults to the provider's recommended model
-4. **Channel** — Telegram, iMessage, or CLI-only
-5. **Features** — media processing, guardian security pipeline
+4. **Tools** — multi-select from the available tool catalog
+5. **Channel** — Telegram, iMessage, WhatsApp, or CLI-only
+6. **Security** — Guardian pipeline (policy engine, audit logging)
+7. **Media processing** — images and voice (optional)
 
 Your API key is encrypted with [age](https://github.com/FiloSottile/age) and stored in `~/.creel/secrets/` — plaintext never touches disk.
 
@@ -156,7 +158,7 @@ To remove: `creel daemon uninstall`
 
     ---
 
-    Define tools in `agent.yaml` — calendar, email, web search, and more. Each runs in its own isolated Docker container.
+    Define skills in `agent.yaml` — calendar, email, web search, and more. Each runs in its own isolated Docker container.
 
     [:octicons-arrow-right-24: Agent Configuration](../configuration/agent-config.md)
 

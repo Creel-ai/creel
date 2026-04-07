@@ -9,15 +9,15 @@ Tasks are YAML files in `tasks/`. Each defines what data to fetch, how to prompt
 name: morning_briefing
 schedule: "0 7 * * *"  # 7am daily
 
-fetch:
+executors:
   calendar:
-    image: executor-gcal:latest
+    executor: gcal
     secrets: secrets/gcal.env.enc
     args:
       range: today
 
   weather:
-    image: executor-weather:latest
+    executor: weather
     args:
       location: denver
 
@@ -35,7 +35,7 @@ output:
   to: "$PHONE"
 
 llm:
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-6
   max_tokens: 300
   secrets: secrets/anthropic.env.enc
 ```
@@ -46,14 +46,14 @@ llm:
 |-------|----------|-------------|
 | `name` | yes | Unique task identifier |
 | `schedule` | yes | 5-part cron expression |
-| `fetch` | yes | Map of executor name to config |
-| `fetch.<name>.image` | yes | Docker image for containerized mode |
-| `fetch.<name>.secrets` | no | Path to age-encrypted .env file |
-| `fetch.<name>.args` | no | Key-value args passed to the executor |
+| `executors` | no | Map of executor name to config |
+| `executors.<name>.executor` | yes | Executor module name (e.g., `gcal`, `weather`) |
+| `executors.<name>.secrets` | no | Path to age-encrypted .env file |
+| `executors.<name>.args` | no | Key-value args passed to the executor |
 | `prompt` | yes | Prompt template with `{name}` placeholders |
 | `output.type` | yes | `imessage`, `stdout`, or `file` |
 | `output.to` | yes | Phone number, empty string, or file path |
-| `llm.model` | no | Anthropic model ID (default: `claude-sonnet-4-20250514`) |
+| `llm.model` | no | Anthropic model ID (default: `claude-sonnet-4-6`) |
 | `llm.max_tokens` | no | Max response tokens (default: 300) |
 | `llm.secrets` | no | Path to age-encrypted .env with `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` |
 
@@ -69,9 +69,9 @@ name: email_triage
 schedule: "0 8 * * *"
 mode: agent
 
-fetch:
+executors:
   gmail:
-    image: executor-gmail:latest
+    executor: gmail_readonly
     secrets: secrets/gmail.env.enc
     args:
       query: "is:unread newer_than:1d"
@@ -101,7 +101,7 @@ output:
   to: "$PHONE"
 
 llm:
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-6
   max_tokens: 1024
   secrets: secrets/anthropic.env.enc
 ```

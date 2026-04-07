@@ -8,7 +8,7 @@ The Guardian layer screens inputs and validates tool calls before they execute. 
 flowchart TD
     A["Incoming message"] --> B["screen_input(text)\n← before session history"]
     B --> FC["FastClassifier\nDeBERTa/ONNX, ~10ms"]
-    B --> LJ["LLMJudge\nHaiku, ~300ms, off by default"]
+    B --> LJ["LLMJudge\nHaiku, ~300ms, uncertain only"]
     FC --> blocked{"blocked?"}
     LJ --> blocked
     blocked -- yes --> reject["Return rejection,\nskip agent loop"]
@@ -30,25 +30,83 @@ flowchart TD
 | Stage | Component | What it does |
 |-------|-----------|--------------|
 | 1 | Fast classifier | Local DeBERTa model scores prompt-injection likelihood against a confidence threshold |
-| 2 | LLM judge | Secondary Haiku-based check (disabled by default) |
+| 2 | LLM judge | Secondary Haiku-based check (enabled by default, fires only when classifier is uncertain) |
 | 3a | Temporary overrides | Time-limited allow/deny rules checked before static policy (`/allow`, `/deny` commands) |
 | 3b | Policy engine | `fnmatch` rules in `policies/default.yaml` map tool names to allow/review/deny |
-| 4 | Coherence check | LLM-based check that tool calls match the user's original intent (catches prompt injection causing unrelated actions) |
-| 5 | Network policy | Domain allowlist/blocklist, request/response size limits, and per-executor rate limiting for outbound HTTP requests |
+| 4 | Coherence check | LLM-based check that tool calls match the user's original intent (disabled by default, opt-in) |
+| 5 | Credential scanner | Scans tool output for leaked credentials before returning results to the LLM |
+| 6 | Drift detection | Detects when agent behavior drifts from the user's original intent over multi-turn conversations |
+| 7 | Network policy | Domain allowlist/blocklist, request/response size limits, and per-executor rate limiting for outbound HTTP requests |
 
 ## Policy Rules
 
 Policy rules are defined in `policies/default.yaml`:
 
 ```yaml
-allow:  [check_weather, check_calendar, check_email, read_email, check_drive, check_messages, get_chats, react_imessage]
-review: [send_*, upload_*, create_*, mark_*, trash_*]
+allow:
+  - check_weather
+  - check_calendar
+  - check_email
+  - read_email
+  - check_drive
+  - read_doc
+  - read_sheet
+  - notion_api
+  - check_messages
+  - get_chats
+  - react_imessage
+  - list_notes
+  - search_notes
+  - read_clipboard
+  - github
+  - web_search
+  - fetch_url
+  - synthesize_speech
+  - remember
+  - search_memory
+  # ... 40+ read-only tools total
+
+review:
+  - send_*
+  - upload_*
+  - create_*
+  - mark_*
+  - trash_*
+  - write_clipboard
+  - host_exec
+  - host_process
+  - dev_exec
+  - dev_process
+  - coding
+  - exec_interactive
+  - git_commit
+  - git_push
+  - notion_write
+  # ... plus browser, file ops, etc.
+
 deny:   [delete_*]
 
-# Tools that match 'review' rules but can skip human approval
+# Conditional deny rules block dangerous shell patterns
+# (rm -rf, reverse shells, fork bombs, pipe injection, etc.)
+# Applied to exec, host_exec, dev_exec, coding, exec_interactive
+deny_when:
+  - tool: exec
+    arg: command
+    pattern: "*rm -rf*"
+  # ... 100+ patterns across all exec-like tools
+
 auto_approve:
   - mark_read
   - react_imessage
+  - remember
+  - write_clipboard
+  - create_note
+  - create_reminder
+  - browser_open
+  - browser_navigate
+  - write_file
+  - edit_file
+  # ... 20+ tools that skip human confirmation
 ```
 
 Deny wins over review, review wins over allow. Unknown tools default to review. Tools listed in `auto_approve` skip the human confirmation prompt even when matched by a review rule.
@@ -189,13 +247,14 @@ guardian:
     default_on_timeout: deny
   fast_classifier:
     enabled: true
-    threshold: 0.95
+    threshold: 0.85
     model_name: protectai/deberta-v3-base-prompt-injection-v2
   llm_judge:
-    enabled: false
-  coherence:
     enabled: true
-    model: claude-haiku-4-5-20251001
+    uncertain_only: true
+  coherence:
+    enabled: false
+    model: claude-haiku-4-5
     max_tokens: 256
   policy:
     enabled: true

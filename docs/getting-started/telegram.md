@@ -85,7 +85,7 @@ If using webhook mode:
 Configure access in `agent.yaml`:
 
 ```yaml
-allowed_senders:          # required — at least one entry
+allowed_senders:          # required when sender_policy is "closed" (default)
   - "123456789"          # numeric user ID
   - "@yourusername"      # @username (case-sensitive)
 allowed_chats:
@@ -103,7 +103,31 @@ allowed_senders:
   - "$TELEGRAM_ALLOWED_SENDER"
 ```
 
-`allowed_senders` is mandatory — the channel will refuse to start without at least one entry. Outbound messages are also restricted to verified senders and listed chats. When a sender is identified by `@username`, their numeric chat ID is dynamically registered on first inbound message so that replies work.
+`allowed_senders` is mandatory when `sender_policy` is `closed` (the default) — the channel will refuse to start without at least one entry. Outbound messages are also restricted to verified senders and listed chats. When a sender is identified by `@username`, their numeric chat ID is dynamically registered on first inbound message so that replies work.
+
+### Sender Policy
+
+The `sender_policy` field controls how the bot handles messages from unknown senders:
+
+```yaml
+sender_policy: closed       # default — only allowed_senders can interact
+# sender_policy: allowlist  # same as closed, but with SenderGate for approval flows
+# sender_policy: open       # accept messages from anyone (allowed_senders optional)
+```
+
+| Policy | Behavior |
+|--------|----------|
+| `closed` | Only `allowed_senders` can interact. All others are silently ignored. |
+| `allowlist` | Unknown senders are held for owner approval. Enables `/approve` and `/deny` commands. |
+| `open` | Accept messages from any sender. `allowed_senders` is optional. |
+
+Additional fields for `allowlist`/`open` policies:
+
+| Field | Description |
+|-------|-------------|
+| `auto_approve_senders` | Automatically approve new senders without owner confirmation |
+| `notify_owner` | Send a notification to the owner when a new sender requests access |
+| `owner` | Explicit owner ID (defaults to first entry in `allowed_senders`) |
 
 ## 7. Group Chat
 

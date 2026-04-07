@@ -61,6 +61,4 @@ workspace/memory/
 # Coverage
 .coverage
 
-# MkDocs build output (except site project Vercel config)
-site/*
-!site/vercel.json
+

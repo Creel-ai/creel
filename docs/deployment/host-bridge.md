@@ -8,11 +8,27 @@ Docker containers are sandboxed and can't access the macOS scripting bridge or a
 
 ## How
 
-A FastAPI server runs as a host process and exposes REST endpoints at `/notes/*`, `/reminders/*`, `/things/*`, and `/imessage/*`. Containerized executors make HTTP requests to these endpoints with scoped authentication tokens.
+A FastAPI server runs as a host process and exposes REST endpoints for macOS-native tools and host operations. Containerized executors make HTTP requests to these endpoints with scoped authentication tokens.
+
+### Endpoint Groups
+
+| Path | Scope | Purpose |
+|------|-------|---------|
+| `/notes/*` | `NOTES` | Apple Notes (read, search, create) |
+| `/reminders/*` | `REMINDERS` | Apple Reminders (list, create, complete) |
+| `/things/*` | `THINGS` | Things 3 task management |
+| `/imessage/*` | `IMESSAGE` | iMessage send/receive |
+| `/clipboard/*` | `CLIPBOARD` | macOS clipboard read/write |
+| `/browser/*` | `BROWSER` | Playwright browser automation |
+| `/git/*` | `GIT` | Git operations (status, diff, log, commit, push) |
+| `/exec` | `EXEC` | Host command execution |
+| `/process` | `EXEC` | Background process management |
+| `/sessions` | `EXEC` | Session listing |
+| `/health` | — | Health check (no auth required) |
 
 ## Security
 
-Each executor receives a scoped token that only grants access to its specific tool endpoints. For example, the `apple_notes` executor can only call `/notes/*` endpoints, not `/reminders/*` or `/things/*`.
+Each executor receives a scoped token that only grants access to its specific endpoint group. For example, the `apple_notes` executor receives a `NOTES`-scoped token and can only call `/notes/*` endpoints, not `/reminders/*`, `/clipboard/*`, or any other group.
 
 ## CLI Integration
 

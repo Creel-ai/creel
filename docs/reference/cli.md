@@ -50,14 +50,44 @@ By default, `creel init` launches an interactive wizard that validates credentia
 | `--migrate` | Copy existing repo-based config into `~/.creel/` |
 | `--repo-root PATH` | Repo root to migrate from (default: current directory) |
 | `--non-interactive` | Skip interactive wizard, use CLI flags below |
-| `--provider TYPE` | LLM provider: `anthropic`, `openai`, `ollama` |
+| `--provider TYPE` | LLM provider: `anthropic`, `openai`, `google`, `ollama` |
 | `--api-key KEY` | LLM API key |
 | `--model NAME` | LLM model name (defaults per provider) |
-| `--channel TYPE` | Channel: `telegram`, `imessage`, `none` |
+| `--channel TYPE` | Channel: `telegram`, `imessage`, `whatsapp`, `none` |
 | `--bot-token TOKEN` | Telegram bot token |
 | `--allowed-senders LIST` | Comma-separated list of allowed Telegram sender usernames |
 | `--enable-media` | Enable media processing (images, voice) |
+| `--tools LIST` | Comma-separated list of tools to enable |
 | `--no-guardian` | Disable guardian security pipeline |
+
+## Encrypt Command
+
+```bash
+creel encrypt <file> [options]
+```
+
+Encrypt a plaintext `.env` file with age.
+
+| Option | Description |
+|--------|-------------|
+| `--recipient PATH` | Path to age public key file (default: `~/.age/key.pub`) |
+| `--output PATH` | Custom output path (default: `<file>.enc`) |
+| `--delete` | Delete plaintext file after encryption |
+
+## Cron Commands
+
+```bash
+creel cron <subcommand> [options]
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all cron jobs |
+| `add` | Add a new cron job |
+| `edit <id>` | Edit an existing cron job |
+| `remove <id>` | Remove a cron job |
+| `run <id>` | Trigger a cron job immediately |
+| `runs <id>` | Show run history for a cron job |
 
 ## Daemon Commands
 
@@ -65,6 +95,7 @@ By default, `creel init` launches an interactive wizard that validates credentia
 |---------|-------------|
 | `creel daemon start` | Start daemon (`launchd` if installed, otherwise detached process) |
 | `creel daemon stop` | Stop daemon (or unload `launchd` service) |
+| `creel daemon restart` | Restart daemon |
 | `creel daemon status` | Show daemon process, API, and `launchd` status |
 | `creel daemon install` | Install daemon as a persistent `launchd` service (macOS) |
 | `creel daemon uninstall` | Uninstall daemon `launchd` service (macOS) |

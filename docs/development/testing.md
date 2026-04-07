@@ -141,5 +141,5 @@ Quick one-liner to validate a branch:
 # Run tests + import check + security scan
 python3 -m pytest tests/ -x -q && \
 python3 -c "import ast, pathlib; [ast.parse(p.read_text()) for p in pathlib.Path('.').rglob('*.py')]" && \
-grep -rn "shell=True" executors/ creel/ bridge/ 2>/dev/null && echo "⚠️  shell=True found!" || echo "✅ No shell=True"
+grep -rn "shell=True" src/executors/ src/creel/ src/bridge/ 2>/dev/null && echo "⚠️  shell=True found!" || echo "✅ No shell=True"
 ```

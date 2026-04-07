@@ -3,7 +3,7 @@
 All Google services use the same OAuth2 client credentials (client ID + client secret from a single GCP project) but obtain **separate refresh tokens** with different scopes. This means:
 
 - One `client_secret.json` file works for all services
-- Each service gets its own `.env` file (e.g. `secrets/gcal.env`, `secrets/gmail_send.env`)
+- Each service gets its own `.env` file (e.g. `secrets/gcal.env`, `secrets/gmail_send.env`), encrypted to `.env.enc` at rest
 - Each refresh token is scoped to a single API permission
 - Revoking one token doesn't affect the others
 
@@ -34,9 +34,12 @@ python scripts/setup-google-oauth.py --encrypt-all
 | Gmail (modify) | `gmail_modify` | `gmail.modify` |
 | Google Drive (read) | `drive` | `drive.readonly` |
 | Google Drive (write) | `drive_write` | `drive.file` |
-| Google Docs | `google_docs` | `documents`, `documents.readonly` |
-| Google Sheets | `google_sheets` | `spreadsheets`, `spreadsheets.readonly` |
-| Google Slides | `google_slides` | `presentations`, `presentations.readonly` |
+| Google Docs (read) | `docs_read` | `documents.readonly` |
+| Google Docs (write) | `docs_write` | `documents` |
+| Google Sheets (read) | `sheets_read` | `spreadsheets.readonly` |
+| Google Sheets (write) | `sheets_write` | `spreadsheets` |
+| Google Slides (read) | `slides_read` | `presentations.readonly` |
+| Google Slides (write) | `slides_write` | `presentations` |
 
 ## GCP Project Setup
 

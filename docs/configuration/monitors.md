@@ -72,8 +72,8 @@ monitors:
 | `executor` | yes | — | Executor to fetch data (`gmail_readonly`, `gcal`, `exec`, etc.) |
 | `prompt` | yes | — | What to check for — the LLM evaluates this against executor output |
 | `schedule` | yes | — | 5-part cron expression |
-| `delivery` | no | `announce` | Channel name for alert delivery |
-| `delivery_mode` | no | `announce` | `announce`, `webhook`, or `none` |
+| `delivery` | no | `none` | Channel name for alert delivery |
+| `delivery_mode` | no | `none` | `announce`, `webhook`, or `none` |
 | `delivery_url` | no | — | Webhook URL (required when `delivery_mode: webhook`) |
 | `alert_level` | no | `notice` | `info`, `notice`, or `urgent` |
 | `quiet_hours` | no | — | `HH:MM-HH:MM` range to suppress non-urgent alerts |

@@ -40,10 +40,10 @@ This produces `secrets/anthropic.env.enc` and deletes the plaintext file.
 
 ## Key Location
 
-The decryption key path defaults to `~/.age/key.txt`. Override with the `AGE_IDENTITY` environment variable:
+The decryption key path defaults to `~/.age/key.txt`. Override with the `AGE_IDENTITY_FILE` environment variable:
 
 ```bash
-export AGE_IDENTITY=/path/to/key.txt
+export AGE_IDENTITY_FILE=/path/to/key.txt
 ```
 
 ## `.env` File Format

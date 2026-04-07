@@ -14,7 +14,7 @@ A secure LLM task runner and personal AI assistant that separates credential-bea
 - **Scheduled tasks** — Cron-based scheduling for recurring tasks like morning briefings and email digests.
 - **Interactive agent mode** — Chat via CLI (with TUI) or iMessage with full tool calling support.
 - **Guardian security pipeline** — Multi-stage input screening and action validation with prompt-injection detection, policy enforcement, and audit logging.
-- **27+ executors** — Google Calendar, Gmail, Drive, Docs, Sheets, Slides, Apple Notes, Reminders, Things 3, iMessage, Telegram, WhatsApp, Notion, GitHub, web search, browser automation, and more.
+- **30+ integrations** — Google Calendar, Gmail, Drive, Docs, Sheets, Slides, Apple Notes, Reminders, Things 3, iMessage, Notion, GitHub, web search, browser automation, clipboard, text-to-speech, and more. Channels include Telegram, WhatsApp, and webhooks.
 - **Container isolation** — Production mode runs executors in Docker containers with read-only filesystems, dropped capabilities, and memory/CPU limits.
 - **Secrets management** — age-encrypted secrets decrypted at runtime; the LLM never touches credential files.
 

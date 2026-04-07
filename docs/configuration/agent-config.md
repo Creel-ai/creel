@@ -9,31 +9,26 @@ system_prompt: |
   You are a personal assistant. Be concise and helpful.
   Today is {date}.
 
-tools:
-  check_weather:
-    executor: weather
-    description: "Get current weather and forecast"
-    parameters:
-      location:
-        type: string
-        description: "City name or coordinates"
-        required: true
+skills:
+  weather:
+    # Executor auto-detected from skill ID
+    tools:
+      check_weather:
+        description: "Get current weather and forecast"
 
-  check_email:
-    executor: gmail_readonly
+  gmail_readonly:
     secrets: secrets/gmail.env.enc
-    description: "Search Gmail for emails"
-    parameters:
-      query:
-        type: string
-        description: "Gmail search query"
-        required: true
+    tools:
+      check_email:
+        description: "Search Gmail for emails"
+      read_email:
+        description: "Read a specific email by ID"
 
-  # ... see agent.yaml for all tools (calendar, drive, iMessage, etc.)
+  # ... see agent.yaml for all skills (calendar, drive, iMessage, etc.)
 
 llm:
   model: claude-sonnet-4-20250514
-  max_tokens: 1024
+  max_tokens: 4096
   secrets: secrets/anthropic.env.enc
 
 agent:
@@ -41,7 +36,6 @@ agent:
 
 session:
   sessions_dir: sessions
-  max_history: 50
   summarize_on_trim: true
   context_pruning:
     enabled: true
@@ -57,7 +51,7 @@ workspace:
   path: workspace
   timezone: "America/Denver"
   memory_days: 2
-  memory_max_chars: 5000
+  memory_max_chars: 20000
   max_chars_per_file: 20000
 
 channels:
@@ -86,7 +80,6 @@ Sessions are stored as JSON files in `sessions/` (gitignored) and persist conver
 | Field | Description |
 |-------|-------------|
 | `sessions_dir` | Directory to store session JSON files |
-| `max_history` | Maximum number of messages to keep in history |
 | `summarize_on_trim` | Build a summarize callback for use by `/compact` and context pruning |
 
 ### Context Pruning
@@ -95,7 +88,7 @@ Context pruning automatically manages the token window during long conversations
 
 | Field | Description |
 |-------|-------------|
-| `context_pruning.enabled` | Enable automatic context pruning (default: `false`) |
+| `context_pruning.enabled` | Enable automatic context pruning (default: `true`) |
 | `context_pruning.threshold` | Fraction of `max_context_tokens` at which pruning triggers (default: `0.80`) |
 | `context_pruning.min_recent_messages` | Number of recent messages to always keep (default: `4`) |
 

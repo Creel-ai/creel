@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture — Creel</title>
+  <meta name="description" content="How Creel enforces per-tool isolation, Guardian safety, and credential separation to keep your AI agent secure.">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="icon" href="../assets/creel-logo.jpg">
+  <style>
+    .arch-page { padding: 120px 24px 80px; }
+    .arch-page h1 { font-size: 2.4rem; font-weight: 800; margin-bottom: 16px; }
+    .arch-page .lead { color: var(--text-dim); font-size: 1.1rem; max-width: 640px; margin-bottom: 48px; line-height: 1.7; }
+
+    /* Isolation table */
+    .iso-table { width: 100%; border-collapse: collapse; margin-bottom: 48px; }
+    .iso-table th, .iso-table td {
+      text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 0.95rem;
+    }
+    .iso-table th { color: var(--text-dim); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .iso-table td:first-child { font-weight: 600; white-space: nowrap; }
+    .iso-table .has { color: var(--green); }
+    .iso-table .no { color: var(--red); }
+
+    /* Full diagram */
+    .diagram-section { padding: 60px 0; }
+    .diagram-section h2 { font-size: 1.8rem; margin-bottom: 40px; }
+
+    .full-diagram {
+      display: grid; grid-template-columns: 1fr; gap: 24px;
+      max-width: 800px; margin: 0 auto;
+    }
+
+    .diagram-row {
+      display: flex; align-items: stretch; gap: 16px; justify-content: center; flex-wrap: wrap;
+    }
+
+    .diagram-box {
+      background: var(--surface); border: 2px solid var(--border); border-radius: 12px;
+      padding: 24px; text-align: center; flex: 1; min-width: 180px; max-width: 320px;
+    }
+    .diagram-box h4 { font-size: 1rem; margin-bottom: 6px; }
+    .diagram-box p { color: var(--text-dim); font-size: 0.85rem; line-height: 1.5; }
+    .diagram-box .items { color: var(--text-dim); font-size: 0.8rem; margin-top: 8px; line-height: 1.6; }
+
+    .diagram-box.channels { border-color: var(--green); }
+    .diagram-box.orchestrator { border-color: var(--blue); }
+    .diagram-box.guardian { border-color: var(--accent); }
+    .diagram-box.executors { border-color: var(--red); }
+    .diagram-box.bridge { border-color: var(--yellow); }
+    .diagram-box.llm { border-color: var(--purple); }
+
+    .diagram-connector {
+      text-align: center; color: var(--text-dim); font-size: 1.2rem; padding: 4px 0;
+    }
+
+    /* Guardian detail */
+    .guardian-section { padding: 60px 0; background: var(--bg2); }
+    .guardian-section h2 { font-size: 1.8rem; margin-bottom: 40px; text-align: center; }
+    .guardian-layers {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 700px; margin: 0 auto;
+    }
+    .layer-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 24px; position: relative;
+    }
+    .layer-card .layer-num {
+      position: absolute; top: 12px; right: 16px; font-size: 0.75rem;
+      font-weight: 700; color: var(--text-dim); font-family: var(--mono);
+    }
+    .layer-card h4 { margin-bottom: 6px; }
+    .layer-card p { color: var(--text-dim); font-size: 0.9rem; line-height: 1.5; }
+
+    .layer-card.l1 h4 { color: var(--blue); }
+    .layer-card.l2 h4 { color: var(--purple); }
+    .layer-card.l3 h4 { color: var(--accent); }
+    .layer-card.l4 h4 { color: var(--green); }
+
+    /* Executor grid */
+    .executor-section { padding: 60px 0; }
+    .executor-section h2 { font-size: 1.8rem; margin-bottom: 12px; }
+    .executor-section .lead { margin-bottom: 32px; }
+    .exec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+    .exec-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 20px;
+    }
+    .exec-card h4 { font-size: 0.95rem; margin-bottom: 4px; }
+    .exec-card p { color: var(--text-dim); font-size: 0.8rem; line-height: 1.4; }
+    .exec-card .exec-icon { font-size: 1.4rem; margin-bottom: 8px; }
+
+    /* Key insight callout */
+    .callout {
+      background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.2);
+      border-radius: 10px; padding: 20px 24px; margin: 40px 0; font-size: 0.95rem;
+      line-height: 1.6;
+    }
+    .callout strong { color: var(--accent); }
+
+    @media (max-width: 700px) {
+      .diagram-row { flex-direction: column; align-items: center; }
+      .diagram-box { max-width: 100%; }
+      .guardian-layers { grid-template-columns: 1fr; }
+      .arch-page h1 { font-size: 1.8rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../" class="nav-logo">
+        <img src="../assets/creel-logo.jpg" alt="Creel" width="32" height="32">
+        <span>Creel</span>
+      </a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="./">Architecture</a>
+        <a href="../#quickstart">Get Started</a>
+        <a href="https://github.com/Creel-ai/creel" class="btn btn-sm" target="_blank">GitHub ↗</a>
+      </div>
+      <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.nav-links').classList.toggle('open')">☰</button>
+    </div>
+  </nav>
+
+  <!-- Header -->
+  <section class="arch-page">
+    <div class="container">
+      <h1>Architecture</h1>
+      <p class="lead">Creel enforces <strong>per-tool isolation</strong> — each executor runs in its own container with only the credentials it needs. The LLM never sees secrets. A compromised tool can't reach other tools' data.</p>
+
+      <!-- Isolation table -->
+      <table class="iso-table">
+        <thead>
+          <tr><th>Component</th><th>Has access to</th><th>Does NOT have</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Each executor</td>
+            <td class="has">Only its own credential (one OAuth scope, one API key)</td>
+            <td class="no">LLM, other tools' credentials</td>
+          </tr>
+          <tr>
+            <td>Bridge executors</td>
+            <td class="has">Scoped HTTP token for one macOS app</td>
+            <td class="no">LLM, other bridge endpoints</td>
+          </tr>
+          <tr>
+            <td>LLM Runner</td>
+            <td class="has">Anthropic API key only</td>
+            <td class="no">Any tool credentials</td>
+          </tr>
+          <tr>
+            <td>Orchestrator</td>
+            <td class="has">All secrets, LLM output</td>
+            <td class="no">Untrusted external input</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>Key insight:</strong> Even if prompt injection occurs (e.g., via a calendar event title), the LLM container has nothing to exfiltrate except its own API key. A compromised executor can only access its one scoped credential — not your email, not your files, not your messages.
+      </div>
+    </div>
+  </section>
+
+  <!-- System Diagram -->
+  <section class="diagram-section" style="background: var(--bg2);">
+    <div class="container">
+      <h2>System Diagram</h2>
+      <div class="full-diagram">
+
+        <!-- Channels -->
+        <div class="diagram-row">
+          <div class="diagram-box channels">
+            <h4>Channels</h4>
+            <p>Input from users</p>
+            <div class="items">TUI / CLI &middot; iMessage &middot; Telegram &middot; WhatsApp &middot; Webhooks</div>
+          </div>
+        </div>
+
+        <div class="diagram-connector">&#8595;</div>
+
+        <!-- Orchestrator -->
+        <div class="diagram-row">
+          <div class="diagram-box orchestrator">
+            <h4>Orchestrator</h4>
+            <p>Scheduler, agent loop, prompt builder, output router</p>
+          </div>
+        </div>
+
+        <div class="diagram-connector">&#8595;</div>
+
+        <!-- Guardian -->
+        <div class="diagram-row">
+          <div class="diagram-box guardian">
+            <h4>Guardian Pipeline</h4>
+            <p>4-layer safety gate — every tool call passes through here</p>
+          </div>
+        </div>
+
+        <div class="diagram-connector">&#8595; approved</div>
+
+        <!-- Executors + Bridge side by side -->
+        <div class="diagram-row">
+          <div class="diagram-box executors">
+            <h4>Docker Executors</h4>
+            <p>Isolated containers</p>
+            <div class="items">Google Suite &middot; Notion &middot; GitHub &middot; Search &middot; Shell &middot; TTS &middot; Dev Sessions</div>
+          </div>
+          <div class="diagram-box bridge">
+            <h4>Host Bridge</h4>
+            <p>macOS native access</p>
+            <div class="items">Notes &middot; Reminders &middot; Things 3 &middot; iMessage &middot; Clipboard</div>
+          </div>
+        </div>
+
+        <div class="diagram-connector">&#8595; JSON results</div>
+
+        <!-- LLM -->
+        <div class="diagram-row">
+          <div class="diagram-box llm">
+            <h4>LLM Container</h4>
+            <p>Claude — has Anthropic API key only, no tool credentials</p>
+          </div>
+        </div>
+
+        <div class="diagram-connector">&#8595; response</div>
+
+        <!-- Output -->
+        <div class="diagram-row">
+          <div class="diagram-box channels">
+            <h4>Output</h4>
+            <p>Routed back through channels to you</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Guardian Pipeline Detail -->
+  <section class="guardian-section">
+    <div class="container">
+      <h2>Guardian Pipeline</h2>
+      <div class="guardian-layers">
+        <div class="layer-card l1">
+          <span class="layer-num">01</span>
+          <h4>Fast Classifier</h4>
+          <p>DeBERTa/ONNX model provides instant risk scoring on every input. Catches obvious prompt injection attempts in milliseconds.</p>
+        </div>
+        <div class="layer-card l2">
+          <span class="layer-num">02</span>
+          <h4>LLM Judge</h4>
+          <p>Claude Haiku performs a deeper contextual safety review. Catches subtle attacks that bypass pattern matching.</p>
+        </div>
+        <div class="layer-card l3">
+          <span class="layer-num">03</span>
+          <h4>Policy Engine</h4>
+          <p>YAML-defined rules enforce your explicit constraints. Allow, review, or deny tools by pattern. Block dangerous shell commands.</p>
+        </div>
+        <div class="layer-card l4">
+          <span class="layer-num">04</span>
+          <h4>Coherence Check</h4>
+          <p>Validates that the requested action matches the user's original intent. Detects drift between what was asked and what's being executed.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Executor Overview -->
+  <section class="executor-section">
+    <div class="container">
+      <h2>30+ Executors</h2>
+      <p class="lead">Each executor is a self-contained package with its own Dockerfile. In production, every one runs in an isolated container with <code>--read-only</code>, <code>--cap-drop=ALL</code>, memory/CPU limits, and a 60-second timeout.</p>
+      <div class="exec-grid">
+        <div class="exec-card">
+          <div class="exec-icon">📅</div>
+          <h4>Google Calendar</h4>
+          <p>Read and write calendar events via OAuth</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">📧</div>
+          <h4>Gmail</h4>
+          <p>Read, send, and manage email with scoped access</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">📁</div>
+          <h4>Google Drive</h4>
+          <p>Read and write files in Drive</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">📄</div>
+          <h4>Docs / Sheets / Slides</h4>
+          <p>Full Google Workspace document access</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">💬</div>
+          <h4>iMessage</h4>
+          <p>Send and receive via BlueBubbles or bridge</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">📝</div>
+          <h4>Apple Notes</h4>
+          <p>Search, read, and create notes</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">✅</div>
+          <h4>Reminders &amp; Things</h4>
+          <p>Apple Reminders and Things 3 task management</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">📋</div>
+          <h4>Clipboard</h4>
+          <p>Read and write macOS clipboard via bridge</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🔍</div>
+          <h4>Brave Search</h4>
+          <p>Web search via Brave Search API</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🌐</div>
+          <h4>Browser</h4>
+          <p>Playwright-based web automation</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🌤</div>
+          <h4>Weather</h4>
+          <p>Weather forecasts with no credentials</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🔗</div>
+          <h4>Fetch URL</h4>
+          <p>Retrieve and parse web page content</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">📓</div>
+          <h4>Notion</h4>
+          <p>Read and write Notion pages and databases</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🐙</div>
+          <h4>GitHub</h4>
+          <p>Issues, PRs, repos via GitHub CLI</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">⚙️</div>
+          <h4>Shell Exec</h4>
+          <p>Sandboxed command execution on mounted paths</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🛠</div>
+          <h4>Dev Session</h4>
+          <p>Long-lived containerized dev environments</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🖥</div>
+          <h4>Host Exec</h4>
+          <p>Run commands on the host via bridge</p>
+        </div>
+        <div class="exec-card">
+          <div class="exec-icon">🔊</div>
+          <h4>Text-to-Speech</h4>
+          <p>ElevenLabs, OpenAI, or local TTS backends</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="../assets/creel-logo.jpg" alt="Creel" width="28" height="28">
+        <span>Creel</span>
+        <span class="dim">&middot; MIT License</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/Creel-ai/creel" target="_blank">GitHub</a>
+        <a href="https://discord.gg/wGym2meFFZ" target="_blank">Discord</a>
+        <a href="https://twitter.com/creelai" target="_blank">Twitter</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

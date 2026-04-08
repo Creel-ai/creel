@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from guardian.audit import AuditLogger, _hash_text
+from guardian.blocklist import check_blocklist
 from guardian.coherence import CoherenceChecker
 from guardian.credential_scanner import CredentialMatch, scan_for_credentials
 from guardian.drift import DriftDetector
@@ -274,11 +275,30 @@ class Guardian:
     def validate_action(self, tool_name: str, tool_args: dict) -> ActionDecision:
         """Validate a proposed tool action against the policy engine (stage 3).
 
-        Temporary overrides are checked first (highest priority). If an
-        override matches, it bypasses the static policy entirely.
+        The destructive command blocklist is checked first as a hard safety
+        floor — it cannot be overridden by policy or temporary overrides.
+        Temporary overrides are checked next, then the static policy.
 
         Returns an ActionDecision with the verdict.
         """
+        # Hard safety floor: destructive command blocklist (not overridable)
+        blocklist_result = check_blocklist(tool_name, tool_args)
+        if blocklist_result.blocked:
+            logger.warning("Blocklist denied %s: %s", tool_name, blocklist_result.reason)
+            if self._audit:
+                self._audit.log_action(
+                    tool_name=tool_name,
+                    arg_keys=list(tool_args.keys()),
+                    verdict="deny",
+                    matched_rule=f"blocklist:{blocklist_result.pattern_matched}",
+                )
+            return ActionDecision(
+                verdict=ActionVerdict.DENY,
+                tool_name=tool_name,
+                matched_rule=f"blocklist:{blocklist_result.pattern_matched}",
+                reason=blocklist_result.reason,
+            )
+
         # Check temporary overrides first
         override_decision = self._override_manager.check(tool_name, tool_args)
         if override_decision is not None:

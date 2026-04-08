@@ -132,6 +132,7 @@ class SkillRegistry:
         "executors.weather.executor",
         "executors.gcal.executor",
         "executors.gcal_write.executor",
+        "executors.cal_availability.executor",
         "executors.gmail_readonly.executor",
         "executors.gmail_send.executor",
         "executors.gmail_modify.executor",

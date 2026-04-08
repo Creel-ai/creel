@@ -132,6 +132,10 @@ def run_task(
 
     logger.info("LLM response: %d chars", len(result))
 
+    # Load output secrets if configured (e.g. Telegram bot token)
+    if task.output.secrets:
+        _load_secrets_to_env(task.output.secrets)
+
     # Route output
     logger.info("Sending output via %s", task.output.type)
     send_output(result, task.output)

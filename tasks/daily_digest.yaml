@@ -1,0 +1,64 @@
+name: daily_digest
+schedule: "0 14 * * *"  # 7:00 AM MST = 14:00 UTC
+
+executors:
+  weather:
+    args:
+      location: "broomfield, co"
+
+  calendar:
+    secrets: secrets/gcal.env.enc
+    args:
+      range: today
+
+  things:
+    args:
+      action: today
+
+  gmail_readonly:
+    secrets: secrets/gmail.env.enc
+    args:
+      query: "is:unread is:important newer_than:12h"
+      max_results: "15"
+      full_body: "false"
+
+prompt: |
+  You are my personal morning briefing assistant. Compile a clean, scannable
+  daily digest from the data below. Today is {date}.
+
+  ## Data sources
+
+  **Weather (Broomfield, CO):**
+  {weather}
+
+  **Calendar — today's events:**
+  {calendar}
+
+  **Things 3 — today's tasks:**
+  {things}
+
+  **Gmail — unread important emails (last 12 hours):**
+  {gmail_readonly}
+
+  ## Formatting rules
+
+  1. Start with a friendly one-line greeting that includes today's date and a
+     brief weather note (temperature + conditions).
+  2. **Calendar** — list events chronologically with times. Flag any conflicts.
+  3. **Tasks** — list today's Things 3 tasks. Note any with deadlines.
+  4. **Email** — summarize each important unread email in one line. Flag
+     anything urgent or requiring a reply.
+  5. End with a short "heads up" section for any upcoming deadlines or
+     scheduling conflicts worth noting.
+
+  Keep the entire briefing under 300 words. Use Markdown formatting.
+
+output:
+  type: telegram
+  to: "$TELEGRAM_CHAT_ID"
+  secrets: secrets/telegram.env.enc
+
+llm:
+  model: claude-sonnet-4-6
+  max_tokens: 600
+  secrets: secrets/anthropic.env.enc

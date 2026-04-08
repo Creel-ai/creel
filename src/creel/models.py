@@ -85,11 +85,12 @@ class OutputConfig(BaseModel):
 
     type: str
     to: str
+    secrets: str | None = None
 
     @field_validator("type")
     @classmethod
     def validate_output_type(cls, v: str) -> str:
-        allowed = {"imessage", "stdout", "file"}
+        allowed = {"imessage", "stdout", "file", "telegram"}
         if v not in allowed:
             raise ValueError(f"output type must be one of {allowed}, got '{v}'")
         return v

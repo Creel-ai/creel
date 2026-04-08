@@ -75,7 +75,7 @@ def test_invalid_output_type(tmp_path: Path) -> None:
         "schedule": "0 7 * * *",
         "executors": {},
         "prompt": "test",
-        "output": {"type": "telegram", "to": "someone"},
+        "output": {"type": "carrier_pigeon", "to": "someone"},
     }
     path = tmp_path / "bad_output.yaml"
     path.write_text(yaml.dump(task))

@@ -140,6 +140,7 @@ class SkillRegistry:
         "executors.google_docs.executor",
         "executors.google_sheets.executor",
         "executors.google_slides.executor",
+        "executors.google_contacts.executor",
         "executors.apple_notes.executor",
         "executors.apple_reminders.executor",
         "executors.brave_search.executor",
